@@ -94,9 +94,16 @@ Implement tasks from an OpenSpec change.
 
 7. **Implement tasks (loop until done or blocked)**
 
+   **强制 TDD/BDD 入口（每个会写代码的 task 都适用）：**
+   - 先按 `test-driven-development` skill 走 RED → 验红 → GREEN → 验绿 → REFACTOR
+   - 写任何生产代码前，必须存在一个**先前失败过**的单元测试
+   - 测试函数体首行是 `Given:` 三段中文注释（`// Given:` 或 `# Given:`），之后才是 setup / mock / 被测调用 / 断言
+   - 注释规则与反模式见 `.claude/skills/test-driven-development/{SKILL.md, testing-anti-patterns.md}`
+   - 例外：纯文档 / 纯配置 / 一次性 prototype 类 task 可跳过，但必须明告用户
+
    For each pending task:
    - Show which task is being worked on
-   - Make the code changes required
+   - Make the code changes required (TDD/GWT entry applies — see above)
    - Keep changes minimal and focused
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task

@@ -89,6 +89,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add WARNING: "Scenario not covered: <scenario name>"
        - Recommendation: "Add test or implementation for scenario: <description>"
 
+   **Test Discipline Check (TDD/BDD)**:
+   - 对本次变更里每个新增/修改的生产源文件，确认存在配对的测试文件
+   - 抽样若干测试函数，逐一核对：
+     - 测试函数体首行是 `Given:` 三段中文注释（`Given:` / `When:` / `Then:`）
+     - When 段只触发一次被测函数（一个用例只测一个动作）
+     - Then 注释列举的可观察结果数量与断言数量一致
+     - 不出现 `testing-anti-patterns.md` 列举的 5 个反模式（mock 滥用、生产类塞测试专用方法、不懂依赖就 mock、不完整 mock、测试事后补救）
+   - 若违反任一条：
+     - Add CRITICAL: "TDD/BDD discipline violation in <file>:<test_name>"
+     - Recommendation: "按 `.claude/skills/test-driven-development/SKILL.md` 重写该测试：先写 GWT 三段注释，再写期望失败的断言，最后写实现"
+
 7. **Verify Coherence**
 
    **Design Adherence**:
