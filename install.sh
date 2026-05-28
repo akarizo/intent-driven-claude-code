@@ -215,7 +215,7 @@ cat <<EOF
        openspec schema validate intent-driven
 
 更多:
-  - 9 个 opsx-* slash command 见 .claude/commands/
+  - 11 个 slash command 见 .claude/commands/（9 个 opsx-* 工作流 + 2 个 claudemd-* 项目记忆）
   - 15 个 skill 见 .claude/skills/（含 test-driven-development）
   - schema 副本见 openspec/schemas/intent-driven/
 EOF
