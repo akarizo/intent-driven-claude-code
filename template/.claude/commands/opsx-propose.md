@@ -72,6 +72,14 @@ When ready to implement, run /opsx-apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
+4.5 **渲染审批面板 HTML**
+
+   按 `.claude/skills/spec-html-render/SKILL.md` 的流程把当前 change 的工件 + in-force ADR 渲染为单文件 `openspec/changes/<name>/spec.html`，便于用户在浏览器一屏审批意图。
+
+   - 这是强制步骤，**每次 propose 走完全部工件后都要跑**；不提供关闭开关
+   - 失败不阻塞主流程：捕获异常后只 warn 一行，继续 step 5
+   - 一次 Write 整文件，已存在则覆盖
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"

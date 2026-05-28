@@ -70,6 +70,15 @@ Continue working on a change by creating the next artifact.
    - This shouldn't happen with a valid schema
    - Show status and suggest checking for issues
 
+3.5 **刷新审批面板 HTML**
+
+   按 `.claude/skills/spec-html-render/SKILL.md` 的流程**全量**重渲 `openspec/changes/<name>/spec.html`，把已存在工件 + in-force ADR 一并纳入。
+
+   - 只要至少有 1 个 artifact 已完成就跑；artifact = 0 由 skill 自身跳过
+   - 这是强制步骤，**每次 continue 创建工件后都要跑**；不提供关闭开关
+   - 失败不阻塞主流程：捕获异常后只 warn 一行，继续 step 4
+   - 一次 Write 整文件，已存在则覆盖
+
 4. **After creating an artifact, show progress**
    ```bash
    openspec status --change "<name>"

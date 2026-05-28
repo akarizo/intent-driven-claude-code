@@ -64,8 +64,8 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 ```
 your-project/
 ├── .claude/
-│   ├── commands/       # 9 个 /opsx-* slash 命令
-│   └── skills/         # 14 个 skill（9 个 openspec-*，5 个共享）
+│   ├── commands/       # 9 个 /opsx-* + 2 个 /claudemd-* + 1 个 /spec-html
+│   └── skills/         # 16 个 skill（9 个 openspec-* + grill-me + c4-diagrams + adr + tdd + gherkin + bulk-apply + spec-html-render）
 ├── openspec/
 │   ├── config.yaml     # schema: intent-driven + 4 条 rules
 │   └── schemas/intent-driven/   # 离线 schema 副本
@@ -103,21 +103,37 @@ openspec schema validate intent-driven
 
 ---
 
-## 9 个 slash 命令速查
+## Slash 命令速查
 
 | 命令 | 一句话 |
 | --- | --- |
 | `/opsx-new <name>` | 创建变更，停在第一个 artifact 模板等用户确认 |
-| `/opsx-propose <name>` | 一次性生成 apply 所需的所有 artifacts |
-| `/opsx-continue [name]` | 推进下一个 artifact |
+| `/opsx-propose <name>` | 一次性生成 apply 所需的所有 artifacts，自动出 `spec.html` |
+| `/opsx-continue [name]` | 推进下一个 artifact，自动刷新 `spec.html` |
 | `/opsx-apply [name]` | 按 tasks 执行实现，逐条勾选 |
 | `/opsx-verify [name]` | 三维一致性检查（completeness / correctness / coherence） |
 | `/opsx-archive [name]` | 归档已完成变更（要求 implementation 已合回 `main`） |
 | `/opsx-sync [name]` | 把 delta specs 合入主 specs |
 | `/opsx-explore [topic]` | 探索模式：只思考、不实现 |
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
+| `/spec-html [name]` | 手动重渲 `openspec/changes/<name>/spec.html` 意图审批面板（propose/continue 已自动跑） |
+| `/claudemd-sync` | 把本轮变更**全覆盖**增量同步到 CLAUDE.md |
+| `/claudemd-distill` | 累积多轮后压缩 CLAUDE.md |
 
 详细工作流：[docs/WORKFLOW_zh.md](docs/WORKFLOW_zh.md)
+
+### HTML 意图审批面板
+
+每次 `/opsx-propose` 全量完成 / `/opsx-continue` 推进一个工件 / 你手动 `/spec-html` 时，
+`spec-html-render` skill 都会把当前 change 的 `proposal / specs / design / tasks` 加上 in-force ADR
+渲染成单文件 `openspec/changes/<change>/spec.html`：
+
+- 单文件 self-contained — 双击在浏览器打开即可，Mermaid 图通过 jsdelivr CDN 渲染，离线时降级为代码块
+- Swiss/Editorial 风格 — sticky 顶栏 + 左侧目录 + 9 个固定章节（Why / What / Capabilities / Specs / Design / Diagrams / Mockups / ADRs / Tasks）
+- 自动判断是否画简化原型 — capabilities 含 UI/UX/数据流/状态机关键字时，从 `spec-html-render/references/mockup-examples.md` 改写 1–3 个 inline SVG/HTML 原型
+- 暗色模式跟随系统 + 手动 toggle (`localStorage` 持久化)
+
+完全只是 render layer，不参与 OpenSpec merge；改 spec 请改 markdown 后让命令自动重渲。
 
 ---
 
