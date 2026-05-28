@@ -216,6 +216,6 @@ cat <<EOF
 
 更多:
   - 9 个 opsx-* slash command 见 .claude/commands/
-  - 14 个 skill 见 .claude/skills/
+  - 15 个 skill 见 .claude/skills/（含 test-driven-development）
   - schema 副本见 openspec/schemas/intent-driven/
 EOF

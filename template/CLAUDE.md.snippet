@@ -5,4 +5,6 @@
 - 命令前缀 `/opsx-*`（详见 `.claude/skills/openspec-*-change/`）；apply / bulk-apply 开始前会停下确认
 - Git：`propose → apply` 与 `apply → archive` 都必须先合入 `main`；不代你 commit/branch/merge
 - Schema：`intent-driven`（`openspec/config.yaml`，副本 `openspec/schemas/intent-driven/`）；CLI 用 `openspec --help`
+- TDD：写实现前先写失败测试；红→验红→绿→验绿→重构（详见 `.claude/skills/test-driven-development/`）
+- 单测先写 `// Given:` `// When:` `// Then:`（Python 用 `#`）三段中文注释再写代码，每段一句具体描述
 <!-- intent-driven:end -->
