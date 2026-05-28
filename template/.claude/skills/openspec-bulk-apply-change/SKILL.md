@@ -74,12 +74,13 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
    Call the **AskUserQuestion tool** with:
    - question: `确认并行 apply 这 N 个变更吗？将创建独立 worktree 并派发子 agent。`
-   - header: `开始 bulk apply`
+   - header: `开始 bulk`
    - options:
      - `确认开始` — proceed to step 5
+     - `先看每个 change 的 tasks` — for each change in the list, print the first 3 pending task titles, then re-ask this question
      - `取消` — abort, no worktree or subagent created
 
-   The batch-level confirmation is collected ONCE here. Each dispatched subagent inherits this approval and MUST skip its own per-change confirmation in `openspec-apply-change` step 6.
+   The batch-level confirmation is collected ONCE here. Each dispatched subagent is invoked with `/opsx-apply <change> --no-confirm`, which suppresses the `openspec-apply-change` step 6 per-change confirmation.
 
 5. **Create isolated worktrees**
 
@@ -101,12 +102,11 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
    - Work only in the assigned worktree.
    - Use `openspec-git-discipline` before applying.
-   - Run `/opsx-apply <change>`.
+   - Run `/opsx-apply <change> --no-confirm` (the `--no-confirm` flag suppresses the step 6 per-change confirmation, since the parent already collected one batch-level confirmation in step 4).
    - Run `/opsx-verify <change>` after apply work is complete.
    - Stop after verification.
    - Do not merge, archive, or commit unless explicitly instructed by the parent prompt.
    - Return implementation outcome, verification status, changed files, blockers, and unresolved warnings.
-   - Skip the `openspec-apply-change` step 6 per-change confirmation (batch was already approved by the parent in step 4).
 
 7. **Collect and normalize reports**
 

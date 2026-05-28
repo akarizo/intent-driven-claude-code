@@ -35,12 +35,13 @@ Apply multiple active OpenSpec changes concurrently.
 
    Call the **AskUserQuestion tool** with:
    - question: `确认并行 apply 这 N 个变更吗？将创建独立 worktree 并派发子 agent。`
-   - header: `开始 bulk apply`
+   - header: `开始 bulk`
    - options:
      - `确认开始` — proceed to step 4
+     - `先看每个 change 的 tasks` — for each change in the list, print the first 3 pending task titles, then re-ask this question
      - `取消` — abort, no worktree or subagent created
 
-   The batch-level confirmation is collected ONCE here. Each dispatched subagent inherits this approval and skips its own per-change confirmation.
+   The batch-level confirmation is collected ONCE here. Each dispatched subagent is invoked with `/opsx-apply <change> --no-confirm` so it skips its own per-change confirmation.
 
 4. **Follow the bulk apply skill exactly**
 
@@ -49,7 +50,7 @@ Apply multiple active OpenSpec changes concurrently.
    - Run OpenSpec git discipline checks before apply.
    - Create isolated worktrees under `.worktrees/<change>` unless another root is requested.
    - Dispatch one subagent per change.
-   - Run `/opsx-apply <change>` and `/opsx-verify <change>` in each subagent. Subagents MUST skip the per-change confirmation step (batch already approved).
+   - Run `/opsx-apply <change> --no-confirm` and `/opsx-verify <change>` in each subagent. The `--no-confirm` flag suppresses the per-change confirmation (batch was already approved in step 3).
    - Collect normalized apply and verify reports.
    - Report results without merging or archiving.
 

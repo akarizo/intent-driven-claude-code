@@ -3,7 +3,6 @@ description: Propose a new change - create it and generate all artifacts in one 
 ---
 
 Propose a new change - create the change and generate all artifacts in one step.
-!!before you start apply, you need ask user approvel, cause apply ussally take a lot of token.
 
 I'll create a change with artifacts:
 - proposal.md (what & why)

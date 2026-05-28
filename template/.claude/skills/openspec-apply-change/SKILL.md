@@ -68,6 +68,12 @@ Implement tasks from an OpenSpec change.
 
    Before touching any code, you MUST stop and ask the user.
 
+   **Skip this step entirely when EITHER** condition holds:
+   - The invocation includes the `--no-confirm` flag, OR
+   - You were dispatched as a delegated subagent from a bulk-apply parent (e.g., `/opsx-bulk-apply`), which already collected one batch-level confirmation.
+
+   Otherwise:
+
    Show a short preview:
    - Change name and schema
    - Progress: "N/M tasks complete, K remaining"
@@ -85,7 +91,6 @@ Implement tasks from an OpenSpec change.
    Guardrails:
    - Do NOT enter the implementation loop without an explicit `确认开始` answer.
    - If the user picks `取消`, exit and report no changes were made.
-   - Skip this step ONLY when invoked as a delegated subagent from a bulk-apply parent (the parent already collected one batch-level confirmation).
 
 7. **Implement tasks (loop until done or blocked)**
 
