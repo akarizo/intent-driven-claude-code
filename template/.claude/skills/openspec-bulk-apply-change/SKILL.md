@@ -64,7 +64,25 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
    - Note the implementation scope needed by the delegated apply flow.
    - Exclude blocked or all-done changes from execution and include them in the final report.
 
-4. **Create isolated worktrees**
+4. **MANDATORY: confirm batch with user before dispatch**
+
+   Before creating any worktree or dispatching any subagent, you MUST stop and ask the user.
+
+   Show:
+   - Change list to be applied (names only)
+   - Worktree root that will be used (default `.worktrees/`)
+
+   Call the **AskUserQuestion tool** with:
+   - question: `确认并行 apply 这 N 个变更吗？将创建独立 worktree 并派发子 agent。`
+   - header: `开始 bulk`
+   - options:
+     - `确认开始` — proceed to step 5
+     - `先看每个 change 的 tasks` — for each change in the list, print the first 3 pending task titles, then re-ask this question
+     - `取消` — abort, no worktree or subagent created
+
+   The batch-level confirmation is collected ONCE here. Each dispatched subagent is invoked with `/opsx-apply <change> --no-confirm`, which suppresses the `openspec-apply-change` step 6 per-change confirmation.
+
+5. **Create isolated worktrees**
 
    For each executable candidate change:
 
@@ -72,7 +90,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
    - Keep the parent agent out of direct implementation work in the main workspace.
    - Do not create commits, branches, or merges unless the user explicitly approved them.
 
-5. **Dispatch subagents in parallel**
+6. **Dispatch subagents in parallel**
 
    For each executable candidate change:
 
@@ -84,13 +102,13 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
    - Work only in the assigned worktree.
    - Use `openspec-git-discipline` before applying.
-   - Run `/opsx-apply <change>`.
+   - Run `/opsx-apply <change> --no-confirm` (the `--no-confirm` flag suppresses the step 6 per-change confirmation, since the parent already collected one batch-level confirmation in step 4).
    - Run `/opsx-verify <change>` after apply work is complete.
    - Stop after verification.
    - Do not merge, archive, or commit unless explicitly instructed by the parent prompt.
    - Return implementation outcome, verification status, changed files, blockers, and unresolved warnings.
 
-6. **Collect and normalize reports**
+7. **Collect and normalize reports**
 
    For each executed change, capture:
 
@@ -100,7 +118,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
    - Files changed summary
    - Blockers or unresolved warnings
 
-7. **Report back without merging**
+8. **Report back without merging**
 
    Present a final bulk-apply report:
 
@@ -138,6 +156,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
 ## Guardrails
 
+- Always pause for explicit user confirmation in step 4 before creating worktrees or dispatching subagents.
 - Do not auto-merge.
 - Do not auto-archive.
 - Do not bulk-apply when only one candidate change remains.

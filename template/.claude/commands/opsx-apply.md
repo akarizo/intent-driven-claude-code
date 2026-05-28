@@ -2,11 +2,9 @@
 description: Implement tasks from an OpenSpec change (Experimental)
 ---
 
-!!before you start apply, you need ask user approvel, cause apply ussally take a lot of token.
-
 Implement tasks from an OpenSpec change.
 
-**Input**: Optionally specify a change name (e.g., `/opsx-apply add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name (e.g., `/opsx-apply add-auth`). Append `--no-confirm` to skip the step 6 confirmation gate (used by `/opsx-bulk-apply` subagents). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -59,7 +57,35 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-6. **Implement tasks (loop until done or blocked)**
+6. **MANDATORY: confirm with user before implementation**
+
+   Before touching any code, you MUST stop and ask the user.
+
+   **Skip this step entirely when EITHER** condition holds:
+   - The invocation includes the `--no-confirm` flag, OR
+   - You were dispatched as a delegated subagent from a bulk-apply parent (e.g., `/opsx-bulk-apply`), which already collected one batch-level confirmation.
+
+   Otherwise:
+
+   Show a short preview:
+   - Change name and schema
+   - Progress: "N/M tasks complete, K remaining"
+   - First 3 pending task titles (titles only, no implementation detail)
+   - High-level scope: which capabilities or files will be touched (one line)
+
+   Then call the **AskUserQuestion tool** with:
+   - question: `确认开始 apply <name> 吗？接下来会按 tasks 顺序写入代码。`
+   - header: `开始 apply`
+   - options:
+     - `确认开始` — proceed to step 7 (implementation loop)
+     - `先看完整 tasks` — print the full task list, then re-ask this question
+     - `取消` — stop immediately, do not change any file
+
+   Guardrails:
+   - Do NOT enter the implementation loop without an explicit `确认开始` answer.
+   - If the user picks `取消`, exit and report no changes were made.
+
+7. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -74,7 +100,7 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+8. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
@@ -134,6 +160,7 @@ What would you like to do?
 ```
 
 **Guardrails**
+- Always pause for explicit user confirmation in step 6 before any code change (except delegated bulk-apply subagent runs)
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
