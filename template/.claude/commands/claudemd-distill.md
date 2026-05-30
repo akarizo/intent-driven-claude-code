@@ -26,7 +26,7 @@ description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余�
    - 所有 CLAUDE.md
    - `template/CLAUDE.md.snippet`（如存在，作为"硬约束基线"参考）
    - `.claude/skills/` 与 `.claude/commands/` 清单（用于判断哪些 CLAUDE.md 条目已被 skill/command 承载）
-   - `openspec/` / `adr/` 目录清单（用于判断哪些条目已被规格或决策记录承载）
+   - `openspec/`（含 `adr/`、`superpower/`）目录清单（用于判断哪些条目已被规格或决策记录承载）
 
 3. **逐文件分析压缩点**
 

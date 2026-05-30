@@ -54,13 +54,13 @@ description: 把 OpenSpec change 工件渲染为单文件 HTML 审批面板 `ope
 3. **扫描 in-force ADR**
 
    ```bash
-   ls adr/ 2>/dev/null
+   ls openspec/adr/ 2>/dev/null
    ```
 
-   - 并行 Read 所有 `adr/NNNN-*.md`
+   - 并行 Read 所有 `openspec/adr/NNNN-*.md`
    - 解析每份的 `Status:` 与 `Supersedes:` 字段
    - 按 supersedes 链算出当前 in-force 集合 (accepted 且未被 supersede)
-   - 若 `adr/` 不存在或为空 → in-force 集合为空，本步骤跳过
+   - 若 `openspec/adr/` 不存在或为空 → in-force 集合为空，本步骤跳过
 
 4. **读取模板**
 
