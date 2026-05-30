@@ -77,7 +77,33 @@ cd ~/your-project
 curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh | bash
 ```
 
-安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。
+安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。**默认模式只增不改，绝不覆盖你的文件。**
+
+### 一键更新（已装项目）
+
+默认安装是「只增不改」，**重复跑 `install.sh` 不会更新已装的 skill / 命令 / schema**。库演进后给老项目推更新，加 `--upgrade` 即可（三种形态任选其一）：
+
+```bash
+# 方式 A：克隆后运行（推荐 — 可审计）
+git clone https://github.com/akarizo/intent-driven-claude-code.git /tmp/idt
+/tmp/idt/install.sh --upgrade ~/path/to/your-project
+
+# 方式 B：curl 一行
+curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh \
+  | bash -s -- --upgrade ~/path/to/your-project
+
+# 方式 C：进到项目目录里就地更新（TARGET 缺省 pwd）
+cd ~/your-project
+curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh | bash -s -- --upgrade
+```
+
+`--upgrade` 的边界很清楚：
+
+- **刷新（库自有）**：`.claude/commands/`、`.claude/skills/`、`openspec/schemas/`，并刷新 CLAUDE.md 的 `intent-driven` marker 段。
+- **保留（用户数据）**：`openspec/changes`、`openspec/specs`、`openspec/adr/*.md`、`openspec/superpower`、`openspec/config.yaml`、ADR 风格 `preferences.md`、以及 CLAUDE.md marker 段以外的正文。
+- **一次性迁移**：把旧版散落在项目根的 `adr/*.md` 自动搬进 `openspec/adr/` 并删空根 `adr/`（同名冲突会跳过并提示人工核对）。
+
+> `--upgrade` 会覆盖 `.claude/` 下的库文件，所以**别在 `.claude/skills/` 里直接改库代码**——你的个性化应放在项目自己的文件里。
 
 ---
 
@@ -281,17 +307,18 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## CLAUDE.md.snippet（11 行硬约束）
+## CLAUDE.md.snippet（12 行硬约束）
 
-`install.sh` 注入到目标项目 CLAUDE.md 末尾的 11 行常驻约束（用 marker 包裹幂等追加）：
+`install.sh` 注入到目标项目 CLAUDE.md 末尾的 12 行常驻约束（用 marker 包裹幂等追加；`--upgrade` 时整段刷新）：
 
-1. 5-artifact 链与 ADR 不可改
+1. 5-artifact 链与 ADR 不可改（ADR 入 `openspec/adr/`）
 2. `/opsx-*` 命令前缀；apply / bulk-apply 开始前会停下确认
 3. Git：propose → apply 与 apply → archive 必须先合入 main；不代你 commit/branch/merge
 4. Schema 来源
 5. **TDD 铁律**：写实现前先写失败测试；红→验红→绿→验绿→重构
 6. **单测先写 GWT 三段中文注释**，再写代码
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
+8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill。
 
@@ -331,7 +358,7 @@ openspec schema validate intent-driven
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
 | PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审 |
 | 知识维护 | 无 | `/claudemd-sync` ↔ `/claudemd-distill` 周期性配合 |
-| 安装方式 | 手动复制目录 | `install.sh` 一键，幂等 |
+| 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |
 
 OpenSpec 上游命令、技能和 schema **内容字节级一致**，仅迁移路径与添加安装器。本仓库新增的 TDD / PR / CLAUDE.md 三类增强独立成文件，不污染上游内容。
