@@ -18,7 +18,7 @@ schema 把这套规则编码在 `openspec/schemas/intent-driven/schema.yaml` 里
 | 1. proposal | `proposal.md` | 为什么现在做？影响什么 capability？ | `grill-me` |
 | 2. specs | `specs/<capability>/spec.md` | 系统外部可观测的行为是什么？ | `gherkin-authoring` |
 | 3. design | `design.md` | 怎么实现？权衡了什么？ | `c4-diagrams` |
-| 4. adr | `<repo>/adr/NNNN-*.md` | 哪些是长期不可逆的架构决策？ | `architectural-decision-records` |
+| 4. adr | `<repo>/openspec/adr/NNNN-*.md` | 哪些是长期不可逆的架构决策？ | `architectural-decision-records` |
 | 5. tasks | `tasks.md` | 怎么落到逐条可勾选的步骤？ | —— |
 
 ---
@@ -94,7 +94,7 @@ Rule: Users can export their own data
 - **Migration Plan**：上线 / 回滚步骤
 - **Open Questions**：尚未解决的问题；如果建议变更某个 in-force ADR，写在这里，由 adr 阶段处理
 
-**铁律**：写 design 前先读 `adr/`，构建 supersession 图，识别**当前生效**的 ADR 集合。
+**铁律**：写 design 前先读 `openspec/adr/`，构建 supersession 图，识别**当前生效**的 ADR 集合。
 新 design 必须跟现行 ADR 一致；要推翻某个现行 ADR，只能在 Open Questions 提议并让 adr 阶段新建一个 supersede。
 
 ---
@@ -171,10 +171,10 @@ cd ~/my-app
 
 # Claude 会：
 #   - openspec new change add-user-export
-#   - 生成 proposal.md, specs/user-export/spec.md, design.md, adr/0042-*.md, tasks.md
+#   - 生成 proposal.md, specs/user-export/spec.md, design.md, openspec/adr/0042-*.md, tasks.md
 
 # 2. 用户审阅，提交到 PR，合到 main
-git add openspec adr
+git add openspec
 git commit -m "propose: add-user-export"
 git push  # 走 PR 合 main
 

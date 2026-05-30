@@ -171,7 +171,6 @@ copy_tree() {
 
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"
 copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec"
-copy_tree "$TEMPLATE_SRC/adr"      "$TARGET/adr"
 
 # ---------------------------------------------------------------------------
 # CLAUDE.md 注入 (marker 包裹，幂等)
@@ -219,4 +218,5 @@ cat <<EOF
   - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render）
   - schema 副本见 openspec/schemas/intent-driven/
   - HTML 审批面板：propose/continue 后自动出 openspec/changes/<change>/spec.html
+  - 落点收敛：ADR → openspec/adr/；探索设计稿 → openspec/superpower/；项目根仅 .claude/ + openspec/ + CLAUDE.md
 EOF

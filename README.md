@@ -92,8 +92,9 @@ your-project/
 │   └── skills/         # 16 个 skill（见下方）
 ├── openspec/
 │   ├── config.yaml     # schema: intent-driven + 4 条 rules
-│   └── schemas/intent-driven/   # 离线 schema 副本
-├── adr/.gitkeep        # ADR 工作流落地点
+│   ├── schemas/intent-driven/   # 离线 schema 副本
+│   ├── adr/.gitkeep    # ADR 落地点（openspec/adr/NNNN-*.md，不可改 / supersede）
+│   └── superpower/.gitkeep      # 探索 / 头脑风暴设计稿落点
 └── CLAUDE.md           # 追加一段「Intent-Driven 工作流」中文 snippet
                          # （已存在则用 marker 块幂等追加；不存在则新建）
 ```
@@ -115,7 +116,7 @@ your-project/
 | proposal | _为什么_ 要做这次变更（背景 / 价值 / 范围） | `/opsx-new` 或 `/opsx-propose` |
 | specs | _做什么_（Gherkin 接受标准 + 行为契约） | `/opsx-continue`（gherkin-authoring skill 接管） |
 | design | _怎么做_（结构 / 数据流 / 关键算法 / 备选方案） | `/opsx-continue` |
-| adr | 不可逆架构决策 → 写进 `adr/NNNN-*.md` 后**不可改**，需变更则 supersede | `/opsx-continue`（architectural-decision-records skill 接管） |
+| adr | 不可逆架构决策 → 写进 `openspec/adr/NNNN-*.md` 后**不可改**，需变更则 supersede | `/opsx-continue`（architectural-decision-records skill 接管） |
 | tasks | 按怎样的步骤实现（checkbox 列表） | `/opsx-continue` |
 
 不想分阶段思考？`/opsx-propose <name>` 一次性把 5 个 artifact 全生成出来。
@@ -307,7 +308,7 @@ cd ~/path/to/your-project
 
 Claude 会：
 1. 调用 `openspec new change add-hello-world` 创建变更骨架
-2. 依次生成 `proposal.md` → `specs/.../spec.md` → `design.md` → `adr/NNNN-*.md` → `tasks.md`
+2. 依次生成 `proposal.md` → `specs/.../spec.md` → `design.md` → `openspec/adr/NNNN-*.md` → `tasks.md`
 3. 提示运行 `/opsx-apply` 进入实现阶段（届时 TDD/BDD 入口生效）
 
 CLI 验证：
