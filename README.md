@@ -79,13 +79,22 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 
 安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。**默认模式只增不改，绝不覆盖你的文件。**
 
-### 升级已装项目
+### 一键更新（已装项目）
 
-默认安装是「只增不改」，所以**重复跑 `install.sh` 不会更新已装的 skill / 命令 / schema**。库演进后要把更新推到老项目，用 `--upgrade`：
+默认安装是「只增不改」，**重复跑 `install.sh` 不会更新已装的 skill / 命令 / schema**。库演进后给老项目推更新，加 `--upgrade` 即可（三种形态任选其一）：
 
 ```bash
+# 方式 A：克隆后运行（推荐 — 可审计）
+git clone https://github.com/akarizo/intent-driven-claude-code.git /tmp/idt
 /tmp/idt/install.sh --upgrade ~/path/to/your-project
-# 或 curl: ... | bash -s -- --upgrade ~/path/to/your-project
+
+# 方式 B：curl 一行
+curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh \
+  | bash -s -- --upgrade ~/path/to/your-project
+
+# 方式 C：进到项目目录里就地更新（TARGET 缺省 pwd）
+cd ~/your-project
+curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh | bash -s -- --upgrade
 ```
 
 `--upgrade` 的边界很清楚：
