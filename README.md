@@ -298,17 +298,18 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## CLAUDE.md.snippet（11 行硬约束）
+## CLAUDE.md.snippet（12 行硬约束）
 
-`install.sh` 注入到目标项目 CLAUDE.md 末尾的 11 行常驻约束（用 marker 包裹幂等追加）：
+`install.sh` 注入到目标项目 CLAUDE.md 末尾的 12 行常驻约束（用 marker 包裹幂等追加；`--upgrade` 时整段刷新）：
 
-1. 5-artifact 链与 ADR 不可改
+1. 5-artifact 链与 ADR 不可改（ADR 入 `openspec/adr/`）
 2. `/opsx-*` 命令前缀；apply / bulk-apply 开始前会停下确认
 3. Git：propose → apply 与 apply → archive 必须先合入 main；不代你 commit/branch/merge
 4. Schema 来源
 5. **TDD 铁律**：写实现前先写失败测试；红→验红→绿→验绿→重构
 6. **单测先写 GWT 三段中文注释**，再写代码
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
+8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill。
 
@@ -348,7 +349,7 @@ openspec schema validate intent-driven
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
 | PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审 |
 | 知识维护 | 无 | `/claudemd-sync` ↔ `/claudemd-distill` 周期性配合 |
-| 安装方式 | 手动复制目录 | `install.sh` 一键，幂等 |
+| 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |
 
 OpenSpec 上游命令、技能和 schema **内容字节级一致**，仅迁移路径与添加安装器。本仓库新增的 TDD / PR / CLAUDE.md 三类增强独立成文件，不污染上游内容。
