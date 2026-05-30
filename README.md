@@ -77,7 +77,24 @@ cd ~/your-project
 curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh | bash
 ```
 
-安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。
+安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。**默认模式只增不改，绝不覆盖你的文件。**
+
+### 升级已装项目
+
+默认安装是「只增不改」，所以**重复跑 `install.sh` 不会更新已装的 skill / 命令 / schema**。库演进后要把更新推到老项目，用 `--upgrade`：
+
+```bash
+/tmp/idt/install.sh --upgrade ~/path/to/your-project
+# 或 curl: ... | bash -s -- --upgrade ~/path/to/your-project
+```
+
+`--upgrade` 的边界很清楚：
+
+- **刷新（库自有）**：`.claude/commands/`、`.claude/skills/`、`openspec/schemas/`，并刷新 CLAUDE.md 的 `intent-driven` marker 段。
+- **保留（用户数据）**：`openspec/changes`、`openspec/specs`、`openspec/adr/*.md`、`openspec/superpower`、`openspec/config.yaml`、ADR 风格 `preferences.md`、以及 CLAUDE.md marker 段以外的正文。
+- **一次性迁移**：把旧版散落在项目根的 `adr/*.md` 自动搬进 `openspec/adr/` 并删空根 `adr/`（同名冲突会跳过并提示人工核对）。
+
+> `--upgrade` 会覆盖 `.claude/` 下的库文件，所以**别在 `.claude/skills/` 里直接改库代码**——你的个性化应放在项目自己的文件里。
 
 ---
 
