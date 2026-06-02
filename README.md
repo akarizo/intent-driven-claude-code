@@ -322,7 +322,6 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 9. **CLAUDE.md 层级规范**：放置铁律（LCA）/ 头部三件套 / 固定段目录 / 指针优先 / 排版密集 —— 全文见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）
 
-
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 
 ---
