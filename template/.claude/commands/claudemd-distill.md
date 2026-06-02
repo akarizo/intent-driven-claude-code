@@ -24,7 +24,7 @@ description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余�
 
    并行读取：
    - 所有 CLAUDE.md
-   - `template/CLAUDE.md.snippet`（如存在，作为"硬约束基线"参考）
+   - `.claude/claudemd-standard.md`（CLAUDE.md 层级规范的硬约束基线：段目录 / 骨架 / 排除清单 / 尺寸预算的权威）
    - `.claude/skills/` 与 `.claude/commands/` 清单（用于判断哪些 CLAUDE.md 条目已被 skill/command 承载）
    - `openspec/`（含 `adr/`、`superpower/`）目录清单（用于判断哪些条目已被规格或决策记录承载）
 
@@ -118,7 +118,7 @@ description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余�
 
 **Guardrails**
 
-- **永不删除硬约束**：snippet 注入段（marker 之间）、git 纪律、ADR 不可改、TDD/GWT 等强制规则必须保留
+- **永不删除硬约束**：snippet 注入段（marker 之间）、`.claude/claudemd-standard.md` 定义的固定段骨架、git 纪律、ADR 不可改、TDD/GWT 等强制规则必须保留
 - **永不破坏 marker**：`<!-- intent-driven:begin --> ... <!-- intent-driven:end -->` 必须原样在文件中，且首尾包裹的内容不动（除非用户明确说改）
 - **指针不要悬空**：写"详见 <path>"前必须验证 path 真实存在（`ls` / `find` 验证）
 - **monorepo 各自独立**：根 CLAUDE.md 与 sub-repo CLAUDE.md 的压缩方案分别确认，不打包

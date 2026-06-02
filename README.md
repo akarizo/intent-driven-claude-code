@@ -115,7 +115,8 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 your-project/
 ├── .claude/
 │   ├── commands/       # 13 个 slash 命令（见下方）
-│   └── skills/         # 16 个 skill（见下方）
+│   ├── skills/         # 16 个 skill（见下方）
+│   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
 ├── openspec/
 │   ├── config.yaml     # schema: intent-driven + 4 条 rules
 │   ├── schemas/intent-driven/   # 离线 schema 副本
@@ -307,9 +308,9 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## CLAUDE.md.snippet（12 行硬约束）
+## CLAUDE.md.snippet（常驻硬约束）
 
-`install.sh` 注入到目标项目 CLAUDE.md 末尾的 12 行常驻约束（用 marker 包裹幂等追加；`--upgrade` 时整段刷新）：
+`install.sh` 注入到目标项目 CLAUDE.md 的常驻约束（用 marker 包裹幂等追加；`--upgrade` 时整段刷新）：
 
 1. 5-artifact 链与 ADR 不可改（ADR 入 `openspec/adr/`）
 2. `/opsx-*` 命令前缀；apply / bulk-apply 开始前会停下确认
@@ -319,8 +320,9 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 6. **单测先写 GWT 三段中文注释**，再写代码
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
+9. **CLAUDE.md 层级规范**：放置铁律（LCA）/ 头部三件套 / 固定段目录 / 指针优先 / 排版密集 —— 全文见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）
 
-每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill。
+每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 
 ---
 

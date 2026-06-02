@@ -9,4 +9,12 @@
 - 单测先写 `// Given:` `// When:` `// Then:`（Python 用 `#`）三段中文注释再写代码，每段一句具体描述
 - HTML 审批面板：propose / continue 每出一个工件都会自动重渲 `openspec/changes/<change>/spec.html`（Mermaid + 必要时 SVG 原型），浏览器双击即可一屏审批意图；手动重渲用 `/spec-html <change>`
 - 落点收敛：ADR 入 `openspec/adr/`；探索 / 头脑风暴的设计稿、spec 草稿（未成 opsx change 的）入 `openspec/superpower/`；保持项目根只剩 `.claude/`、`openspec/`、`CLAUDE.md`
+
+## CLAUDE.md 层级规范（规范驱动）
+权威全文 + 骨架模板 + 段目录权威表见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）。要点：
+
+- **放置（LCA）**：事实写在"恰好为真"的最低层级 — 全仓为真→根 / 仅单子项目→该子项目 / 仅单模块→叶子；父层已有则子层只留指针、禁重复。
+- **头部三件套**（每层含叶子强制）：标题 + `>` 引用块（路径 + ↑父 ↔兄弟 ↓子 + ADR）+ 一句话定位。
+- **固定段目录**（按序取子集）：核心约束→架构→入口→契约→构建/测试→部署→〈领域段〉→已废弃/禁用→表达约定→Backlog；领域知识只落自由扩展区。
+- **排版密集 + 指针优先**：一事一行、`**bold**` 起头、矩阵用表格；有正式归宿（ADR/spec/代码）只留指针、禁内联；超尺寸预算（根~140/子~120/叶~50 行）跑 `/claudemd-distill`。
 <!-- intent-driven:end -->
