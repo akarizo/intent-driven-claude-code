@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 ```
 your-project/
 ├── .claude/
-│   ├── commands/       # 13 个 slash 命令（见下方）
+│   ├── commands/       # 14 个 slash 命令（见下方）
 │   ├── skills/         # 16 个 skill（见下方）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
 ├── openspec/
@@ -223,7 +223,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## 13 个 slash 命令
+## 14 个 slash 命令
 
 按命名空间分组。
 
@@ -241,12 +241,13 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `/opsx-sync [name]` | delta specs 合入主 specs |
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
 
-### `/claudemd-*`（CLAUDE.md 知识维护，2 个）
+### `/claudemd-*`（CLAUDE.md 知识维护，3 个）
 
 | 命令 | 时机 | 模式 |
 | --- | --- | --- |
 | `/claudemd-sync` | 每轮变更结束 / PR 前 | 增量、全覆盖、不压缩、逐条与用户讨论 |
 | `/claudemd-distill` | 合并到 main 后 / 累积几轮 sync | 全量、彻底压缩、保留必要、逐文件确认 |
+| `/claudemd-standardize` | 初次采纳标准 / 大幅漂移后 | 全量对标：正确层级创建缺失 + 全部按标准重生成（证据→合并→review） |
 
 两者周期性配合，**不在同一轮一起跑**（sync 扩张，distill 收敛）。
 
