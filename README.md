@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 ```
 your-project/
 ├── .claude/
-│   ├── commands/       # 14 个 slash 命令（见下方）
+│   ├── commands/       # 15 个 slash 命令（见下方）
 │   ├── skills/         # 16 个 skill（见下方）
 │   ├── hooks/          # 分级门禁 intent-gate.py + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
 │   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
@@ -241,7 +241,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## 14 个 slash 命令
+## 15 个 slash 命令
 
 按命名空间分组。
 
@@ -260,12 +260,13 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
 | `/opsx-mini "<理由+范围>" \| --done` | 声明 mini 任务，留痕 `.mini-active` 让分级门禁放行其源码（命令本身即逻辑，无同名 skill） |
 
-### `/claudemd-*`（CLAUDE.md 知识维护，2 个）
+### `/claudemd-*`（CLAUDE.md 知识维护，3 个）
 
 | 命令 | 时机 | 模式 |
 | --- | --- | --- |
 | `/claudemd-sync` | 每轮变更结束 / PR 前 | 增量、全覆盖、不压缩、逐条与用户讨论 |
 | `/claudemd-distill` | 合并到 main 后 / 累积几轮 sync | 全量、彻底压缩、保留必要、逐文件确认 |
+| `/claudemd-standardize` | 初次采纳标准 / 大幅漂移后 | 全量对标：正确层级创建缺失 + 全部按标准重生成（证据→合并→review） |
 
 两者周期性配合，**不在同一轮一起跑**（sync 扩张，distill 收敛）。
 
@@ -340,7 +341,6 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 9. **CLAUDE.md 层级规范**：放置铁律（LCA）/ 头部三件套 / 固定段目录 / 指针优先 / 排版密集 —— 全文见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）
-
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 

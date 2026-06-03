@@ -404,7 +404,7 @@ cat <<EOF
        openspec schema validate intent-driven
 
 更多:
-  - 14 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 2 个 claudemd-* + /spec-html + /pr-ship）
+  - 15 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 3 个 claudemd-* + /spec-html + /pr-ship）
   - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render）
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-sync·/claudemd-distill 的硬约束基线）
