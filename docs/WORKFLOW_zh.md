@@ -208,8 +208,8 @@ git checkout main && git pull
 `intent-gate.py` 拦 `Write|Edit`，命中任一即放行，否则 DENY 并回灌指引：
 
 1. 项目无 `openspec/` → 放行（非 intent-driven 项目，门禁 no-op）
-2. 目标命中豁免名单（`*.md` / `openspec/**` / `.claude/**` / `docs/**` / `*.json·yaml·toml` 等配置）
-3. 存在某个非 archive change 的 `tasks.md`（已进入 apply 上下文）
+2. 目标命中豁免名单：文档（`*.md`/`*.rst`/`*.txt`）、`openspec/**`、`.claude/**`、`docs/**`、生成式 lockfile/清单（`*.lock`/`package-lock.json`/`pnpm-lock.yaml`/`go.sum`）。**通用 `*.json`/`*.yaml`/`*.toml`/`*.ini` 不再整类豁免**——它们可能是中级+ 的 CI/k8s/IaC/schema/app 配置改动，受门禁；确属 mini 走 `/opsx-mini`（`openspec/`、`.claude/` 内的配置仍按目录豁免）
+3. 存在某个非 archive change 且其 `tasks.md` **仍有未勾选 `- [ ]`**（实现进行中）——全勾选（应归档）或无 checkbox 不再放行，避免「一个没归档的旧 change 永久放行后续所有源码写入」
 4. `openspec/.mini-active` 有效（24h 内）且其 `scope` 覆盖该文件
 
 配套提醒 `intent-reminder.py`（UserPromptSubmit）在每个任务开头注入本 rubric。

@@ -11,13 +11,16 @@
 #
 # 契约：从 stdin 读 Claude Code 的 PreToolUse JSON；DENY 时向 stdout 打 permissionDecision=deny。
 # fail-open：本脚本任何异常一律放行（exit 0，无输出）——坏门禁绝不能锁死编辑能力。
-import sys, os, json, fnmatch
+import sys, os, json, re, fnmatch
 from datetime import datetime, timezone, timedelta
 
 EXEMPT_DIR_PREFIX = ("openspec/", ".claude/", "docs/")
-EXEMPT_BASENAME = {".gitignore", ".mini-active", "LICENSE", "LICENSE.md", "LICENSE.txt"}
-EXEMPT_EXT = {".md", ".mdx", ".markdown", ".txt", ".rst",
-              ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".lock"}
+# 仅豁免: 文档 + 生成式 lockfile/清单。通用 json/yaml/toml/ini 不再整类豁免——
+# 它们可能承载中级+ 改动(CI / k8s / IaC / schema / app 配置)，应受门禁；确属 mini 走 /opsx-mini。
+# (openspec/ 与 .claude/ 内的配置仍按目录前缀豁免。)
+EXEMPT_BASENAME = {".gitignore", ".mini-active", "LICENSE", "LICENSE.md", "LICENSE.txt",
+                   "package-lock.json", "pnpm-lock.yaml", "go.sum"}
+EXEMPT_EXT = {".md", ".mdx", ".markdown", ".txt", ".rst", ".lock"}
 MINI_TTL = timedelta(hours=24)
 
 
@@ -60,6 +63,15 @@ def is_exempt(rel_posix):
     return ext.lower() in EXEMPT_EXT
 
 
+_UNCHECKED = re.compile(r"^\s*[-*+]\s+\[ \]", re.M)
+
+
+def has_unchecked_task(text):
+    # tasks.md 仍有未勾选 '- [ ]' → 实现进行中；全勾选(应归档)或无 checkbox 则不算 apply 上下文，
+    # 避免「一个没归档的旧 change 永久放行后续所有源码写入」的强制力衰减。
+    return bool(_UNCHECKED.search(text))
+
+
 def has_apply_context(root):
     changes = os.path.join(root, "openspec", "changes")
     if not os.path.isdir(changes):
@@ -71,8 +83,15 @@ def has_apply_context(root):
     for name in names:
         if name == "archive":
             continue
-        d = os.path.join(changes, name)
-        if os.path.isdir(d) and os.path.isfile(os.path.join(d, "tasks.md")):
+        tasks = os.path.join(changes, name, "tasks.md")
+        if not os.path.isfile(tasks):
+            continue
+        try:
+            with open(tasks, "r", encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            continue
+        if has_unchecked_task(text):
             return True
     return False
 

@@ -136,7 +136,7 @@ your-project/
 
 不是所有改动都值得 5 工件。安装器注入两个 hook（需 python3），把「该不该走工作流」从自觉变成强制：
 
-- **PreToolUse 门禁**（`intent-gate.py`）：拦 `Write|Edit`。改**源码**时，除非 ① 已进入某个 change 的 apply 阶段（存在 `tasks.md`），② 或先用 `/opsx-mini` 声明过 mini，否则**直接拒绝**并提示先 `/opsx-propose`。文档 / 配置 / `openspec/` / `.claude/` / `docs/` 等路径永远放行。
+- **PreToolUse 门禁**（`intent-gate.py`）：拦 `Write|Edit`。改**源码或通用配置（`json`/`yaml`/IaC/schema）**时，除非 ① 当前有进行中的 change（`tasks.md` 仍有未勾选项），② 或先用 `/opsx-mini` 声明过 mini，否则**直接拒绝**并提示先 `/opsx-propose`。文档 / `openspec/` / `.claude/` / `docs/` / lockfile 永远放行。
 - **UserPromptSubmit 提醒**（`intent-reminder.py`）：每个任务开头注入分级 rubric，并强调**原生 plan mode 的 markdown plan ≠ 工作流**。
 
 | 任务 | 例子 | 走法 |
