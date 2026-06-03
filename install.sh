@@ -286,14 +286,15 @@ settings_path, fragment_path = sys.argv[1], sys.argv[2]
 with open(fragment_path, encoding="utf-8") as f:
     frag = json.load(f)
 existed = os.path.isfile(settings_path)
-data = {}
 if existed:
     try:
         with open(settings_path, encoding="utf-8") as f:
             data = json.load(f)
     except (ValueError, OSError):
-        data = {}
-if not isinstance(data, dict):
+        print("error_malformed"); sys.exit(0)   # 解析失败 → 中止, 绝不覆盖用户内容
+    if not isinstance(data, dict):
+        print("error_malformed"); sys.exit(0)   # 已存在但非 JSON 对象 → 同样中止
+else:
     data = {}
 hooks = data.setdefault("hooks", {})
 
@@ -328,8 +329,9 @@ PY
   case "$status" in
     created)   log_add ".claude/settings.json (注入 intent-driven hooks)"; ADD_COUNT=$((ADD_COUNT+1)) ;;
     merged)    log_upd ".claude/settings.json (合并 intent-driven hooks)"; UPD_COUNT=$((UPD_COUNT+1)) ;;
-    unchanged) log_skip ".claude/settings.json (hooks 已在, 跳过)"; SKIP_COUNT=$((SKIP_COUNT+1)) ;;
-    *)         log_info ".claude/settings.json: $status" ;;
+    unchanged)       log_skip ".claude/settings.json (hooks 已在, 跳过)"; SKIP_COUNT=$((SKIP_COUNT+1)) ;;
+    error_malformed) log_err  ".claude/settings.json 非法 JSON 或非对象，已跳过 hooks 合并以免覆盖你的内容；请修复后重跑 install" ;;
+    *)               log_info ".claude/settings.json: $status" ;;
   esac
 }
 
