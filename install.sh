@@ -114,6 +114,16 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
+# 软前置：python3（intent-driven 门禁/提醒 hook 需要它；缺失不阻断安装，只是 hook 不生效）
+# ---------------------------------------------------------------------------
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_OK=1
+else
+  PYTHON_OK=0
+  log_info "未检测到 python3：intent-driven 门禁/提醒 hook 需 python3 才生效（其余功能不受影响）"
+fi
+
+# ---------------------------------------------------------------------------
 # 模板源定位：本地 vs 管道
 # ---------------------------------------------------------------------------
 MODE="local"
@@ -256,6 +266,74 @@ refresh_marker_block() {
 }
 
 # ---------------------------------------------------------------------------
+# settings.json hooks 合并：把 .claude/hooks/hooks.json 的 hooks 幂等并入目标 settings.json
+#   settings.json 属用户数据，绝不 copy_tree 覆盖——故 hooks 配置以独立 fragment 下发再合并
+#   按 command 串去重，保留用户其余 key；install / upgrade 都跑；缺 python3 则打印手动指引
+# ---------------------------------------------------------------------------
+merge_settings() {
+  local settings="$TARGET/.claude/settings.json"
+  local fragment="$TARGET/.claude/hooks/hooks.json"
+  [[ -f "$fragment" ]] || return 0
+  if [[ "${PYTHON_OK:-0}" != 1 ]]; then
+    log_info ".claude/settings.json: 无 python3，跳过 hooks 自动合并（门禁/提醒暂不生效）"
+    log_info "  手动：把 .claude/hooks/hooks.json 的 hooks 节并入 .claude/settings.json"
+    return 0
+  fi
+  local status
+  status=$(python3 - "$settings" "$fragment" <<'PY'
+import json, os, sys
+settings_path, fragment_path = sys.argv[1], sys.argv[2]
+with open(fragment_path, encoding="utf-8") as f:
+    frag = json.load(f)
+existed = os.path.isfile(settings_path)
+data = {}
+if existed:
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (ValueError, OSError):
+        data = {}
+if not isinstance(data, dict):
+    data = {}
+hooks = data.setdefault("hooks", {})
+
+def key(entry):
+    return tuple(h.get("command") for h in entry.get("hooks", []))
+
+changed = False
+for event, entries in frag.get("hooks", {}).items():
+    bucket = hooks.setdefault(event, [])
+    seen = {key(e) for e in bucket}
+    for e in entries:
+        if key(e) not in seen:
+            bucket.append(e)
+            seen.add(key(e))
+            changed = True
+
+if not existed:
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("created")
+elif changed:
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("merged")
+else:
+    print("unchanged")
+PY
+) || { log_err ".claude/settings.json 合并失败（hooks 未注入）"; return 0; }
+  case "$status" in
+    created)   log_add ".claude/settings.json (注入 intent-driven hooks)"; ADD_COUNT=$((ADD_COUNT+1)) ;;
+    merged)    log_upd ".claude/settings.json (合并 intent-driven hooks)"; UPD_COUNT=$((UPD_COUNT+1)) ;;
+    unchanged) log_skip ".claude/settings.json (hooks 已在, 跳过)"; SKIP_COUNT=$((SKIP_COUNT+1)) ;;
+    *)         log_info ".claude/settings.json: $status" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # 复制：库自有文件 vs 用户数据
 # ---------------------------------------------------------------------------
 # .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md）
@@ -267,6 +345,11 @@ if [[ "$UPGRADE" == 1 ]]; then
   copy_tree "$TEMPLATE_SRC/openspec/schemas" "$TARGET/openspec/schemas" 1
   migrate_root_adr
 fi
+
+# ---------------------------------------------------------------------------
+# settings.json：合并 intent-driven hooks（门禁 intent-gate + 提醒 intent-reminder）
+# ---------------------------------------------------------------------------
+merge_settings
 
 # ---------------------------------------------------------------------------
 # CLAUDE.md 注入 (marker 包裹，幂等；升级时刷新段内内容)
@@ -321,8 +404,9 @@ cat <<EOF
        openspec schema validate intent-driven
 
 更多:
-  - 13 个 slash command 见 .claude/commands/（9 个 opsx-* + 2 个 claudemd-* + /spec-html + /pr-ship）
+  - 14 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 2 个 claudemd-* + /spec-html + /pr-ship）
   - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render）
+  - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-sync·/claudemd-distill 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
   - HTML 审批面板：propose/continue 后自动出 openspec/changes/<change>/spec.html
