@@ -191,9 +191,45 @@ git checkout main && git pull
 
 ---
 
-## 何时**不**用这个 schema
+## 任务分级 · 何时必须走工作流，何时可跳过
 
-- 文档单改、依赖升级、临时性 hotfix：太重，用 commit message 就够
+这套 5 工件流不是对所有改动一刀切。按任务分级决定：**中级+ 必须严格走，mini 才允许跳过**。
+源码写入由 PreToolUse 门禁 `.claude/hooks/intent-gate.py` 强制——绕不过去（需 python3）。
+
+| | mini（允许跳过） | 中级+（必须严格工作流） |
+| --- | --- | --- |
+| 触发 | 文档/注释单改 · 依赖升级 · 配置值调整 · 单文件无行为变化 hotfix · 内部一次性脚本 | 新 capability · 新公共 API/命令 · 改公共契约(签名/返回/错误码/**数据投影·序列化**) · 跨模块 · 引入新抽象/依赖/模式 · 影响数据模型/迁移 · 长期不可逆设计决策 |
+| 走法 | 文档/配置类自动放行；源码 mini 先 `/opsx-mini "<理由+范围>"` 留痕 | `/opsx-propose`（或 `/opsx-new`）建五工件 → `/opsx-apply` |
+
+> **判据来源**：本表由 schema README 的 "Good fit / Not a good fit" 与下方旧「何时不用」固化而来，不另造词。
+
+### 门禁怎么放行
+
+`intent-gate.py` 拦 `Write|Edit`，命中任一即放行，否则 DENY 并回灌指引：
+
+1. 项目无 `openspec/` → 放行（非 intent-driven 项目，门禁 no-op）
+2. 目标命中豁免名单：文档（`*.md`/`*.rst`/`*.txt`）、`openspec/**`、`.claude/**`、`docs/**`、生成式 lockfile/清单（`*.lock`/`package-lock.json`/`pnpm-lock.yaml`/`go.sum`）。**通用 `*.json`/`*.yaml`/`*.toml`/`*.ini` 不再整类豁免**——它们可能是中级+ 的 CI/k8s/IaC/schema/app 配置改动，受门禁；确属 mini 走 `/opsx-mini`（`openspec/`、`.claude/` 内的配置仍按目录豁免）
+3. 存在某个非 archive change 且其 `tasks.md` **仍有未勾选 `- [ ]`**（实现进行中）——全勾选（应归档）或无 checkbox 不再放行，避免「一个没归档的旧 change 永久放行后续所有源码写入」
+4. `openspec/.mini-active` 有效（24h 内）且其 `scope` 覆盖该文件
+
+配套提醒 `intent-reminder.py`（UserPromptSubmit）在每个任务开头注入本 rubric。
+
+### ⚠ plan mode 不等于工作流
+
+原生 plan mode 产出的 markdown plan + `ExitPlanMode` 审批，**不满足**中级+ 的工件要求。
+approve 一份 plan ≠ 建了 `proposal→specs→design→adr→tasks`。plan 是临时的、不归档、不可追溯；
+五工件是持久、可审计、可归档的。**别让「规划过了」的错觉吞掉真正的工作流。**
+
+### 反面教材（真实复盘）
+
+> 「新增 a320 能力 + 动 RawParam 投影」被误判为「加性 non-breaking，可直接做」，于是切进 plan mode、
+> approve 一份 markdown plan 后直接 TDD 实现，5 工件一个没建。
+> 实则它同时命中两条中级+ 触发器——**新 capability + 改数据投影契约**——本该 `/opsx-propose`，
+> 由 design 阶段把投影的架构决策摆出来给人审，而不是在代码里默默定掉。
+
+### 何时整套都不用
+
+- 纯文档单改、依赖升级、临时 hotfix：太重，commit message 就够（= mini，走 `/opsx-mini` 或直接改豁免路径）
 - 行为驱动但不涉及架构决策：考虑用 `behaviour-driven` schema 替代
 - 内部脚本 / 玩具项目：YAGNI
 

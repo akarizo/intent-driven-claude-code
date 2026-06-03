@@ -114,8 +114,10 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 ```
 your-project/
 ├── .claude/
-│   ├── commands/       # 14 个 slash 命令（见下方）
+│   ├── commands/       # 15 个 slash 命令（见下方）
 │   ├── skills/         # 16 个 skill（见下方）
+│   ├── hooks/          # 分级门禁 intent-gate.py + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
+│   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
 ├── openspec/
 │   ├── config.yaml     # schema: intent-driven + 4 条 rules
@@ -126,7 +128,23 @@ your-project/
                          # （已存在则用 marker 块幂等追加；不存在则新建）
 ```
 
-不写：`~/.claude`、系统配置、settings。所有改动严格限定在目标项目根。
+不写：`~/.claude`、系统配置、全局 settings。所有改动严格限定在目标项目根——含合并**项目级** `.claude/settings.json` 的 hooks 节（保留你其余配置）。
+
+---
+
+## 分级门禁 · mini 跳过 / 中级+ 强制
+
+不是所有改动都值得 5 工件。安装器注入两个 hook（需 python3），把「该不该走工作流」从自觉变成强制：
+
+- **PreToolUse 门禁**（`intent-gate.py`）：拦 `Write|Edit`。改**源码或通用配置（`json`/`yaml`/IaC/schema）**时，除非 ① 当前有进行中的 change（`tasks.md` 仍有未勾选项），② 或先用 `/opsx-mini` 声明过 mini，否则**直接拒绝**并提示先 `/opsx-propose`。文档 / `openspec/` / `.claude/` / `docs/` / lockfile 永远放行。
+- **UserPromptSubmit 提醒**（`intent-reminder.py`）：每个任务开头注入分级 rubric，并强调**原生 plan mode 的 markdown plan ≠ 工作流**。
+
+| 任务 | 例子 | 走法 |
+| --- | --- | --- |
+| **mini**（可跳过） | 文档 / 依赖升级 / 配置值 / 单文件无行为变化 hotfix | 文档配置直接改；源码先 `/opsx-mini "<理由+范围>"` 留痕（24h、限 scope） |
+| **中级+**（强制） | 新 capability / 改公共契约·数据投影 / 跨模块 / 架构决策 | `/opsx-propose` 建五工件 → `/opsx-apply` |
+
+> 设计原则：**门禁不替你分级，它逼分级变成显式、留痕的动作**——mini 被允许但必须「被命名」，中级+ 因别无他路而自然汇入工作流。详见 [`docs/WORKFLOW_zh.md`](docs/WORKFLOW_zh.md)。
 
 ---
 
@@ -223,11 +241,11 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## 14 个 slash 命令
+## 15 个 slash 命令
 
 按命名空间分组。
 
-### `/opsx-*`（OpenSpec 工作流，9 个）
+### `/opsx-*`（OpenSpec 工作流，10 个）
 
 | 命令 | 一句话 |
 | --- | --- |
@@ -240,6 +258,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `/opsx-archive [name]` | 归档已完成变更（要求 implementation 已合回 main） |
 | `/opsx-sync [name]` | delta specs 合入主 specs |
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
+| `/opsx-mini "<理由+范围>" \| --done` | 声明 mini 任务，留痕 `.mini-active` 让分级门禁放行其源码（命令本身即逻辑，无同名 skill） |
 
 ### `/claudemd-*`（CLAUDE.md 知识维护，3 个）
 
@@ -271,7 +290,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ### OpenSpec 工作流（9 个）
 
-每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑。
+每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑（例外：`/opsx-mini` 是轻量命令，逻辑内联，无同名 skill）。
 
 | Skill | 对应命令 |
 | --- | --- |
