@@ -115,7 +115,8 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 your-project/
 ├── .claude/
 │   ├── commands/       # 15 个 slash 命令（见下方）
-│   ├── skills/         # 16 个 skill（见下方）
+│   ├── skills/         # 17 个 skill（见下方）
+│   ├── agents/         # 1 个 subagent：code-reviewer（逐 task 守门 + /pr-ship 评审共用）
 │   ├── hooks/          # 分级门禁 intent-gate.py + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
 │   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
@@ -170,7 +171,25 @@ your-project/
 
 ### 阶段 2 · 实现（开始动代码）
 
-`/opsx-apply <name>` 按 tasks 顺序执行，**每个会写代码的 task 都强制走 TDD/BDD 循环**：
+`/opsx-apply <name>` 开始前会让你选**执行模式**：
+
+| 模式 | 承载 skill | 适用 | 守门 |
+| --- | --- | --- | --- |
+| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 新 capability / 改契约 / 跨模块 / 架构决策 | **每个 task 实现完即派 `code-reviewer` 守门**，CRITICAL/HIGH 阻断 |
+| **串行（轻量）** | `openspec-apply-change` | 简单变更 / 无 subagent 环境 | 无（靠 `/pr-ship` 末尾） |
+
+> `--no-confirm`（`/opsx-bulk-apply` 子 agent 用）一律走串行——subagent 不能再嵌套 subagent。
+
+**subagent 逐 task 守门**的循环（吸收 `sdd-plus-superpowers` 的 subagent-development 玩法——其源头是 [obra/superpowers](https://github.com/obra/superpowers) 的 subagent-driven-development / requesting-code-review；本库**中文化自研、不依赖外部插件**）：
+
+```
+对每个 task：
+  派 fresh 实现 subagent（强制 TDD）→ 派 code-reviewer subagent 审本 task 净 diff
+    → CRITICAL/HIGH 存在 → 回灌修复 → 复审（循环到清零）→ 才勾 checkbox → 下一个 task
+全部 task 完成：full review（整体 diff）→ /opsx-verify → 收口（不 merge 不 archive）
+```
+
+无论哪种模式，**每个会写代码的 task 都强制走 TDD/BDD 循环**：
 
 ```
 RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
@@ -182,6 +201,18 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - **GWT 注释先于代码**：测试函数体首行是 `// Given:`（Python 用 `#`）、`When:`、`Then:` 三段中文注释，之后才是 setup / mock / 被测调用 / 断言
 - 一个测试只触发一个被测动作（When 块单一）
 - 反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
+
+#### 两层守门 · 实现中 vs 合并前
+
+`code-reviewer` 这个 agent **一个定义服务三处**，靠"不同 diff 范围"区分，不会把同一段代码白审两次：
+
+| 守门点 | diff 范围 | 时机 | 动作 |
+| --- | --- | --- | --- |
+| 逐 task review | 单 task 净 diff | 每个 task 写完 | **CRITICAL/HIGH 挡 checkbox**，回灌修 |
+| full review | 整个 change 累计 diff | 全部 task 完成 | archive 前整体自查 |
+| `/pr-ship` review | PR ↔ target 分支 diff | PR 阶段 | 评论入库（带签名）给人类 reviewer |
+
+前两者在本地是**自查**，最后一个在 PR 是**入库留痕**——层次不同，互补不重复。
 
 ### 阶段 3 · 知识沉淀（PR 前）
 
@@ -253,7 +284,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `/opsx-propose <name>` | 一次性生成 apply 所需的全部 artifacts，**自动渲染 spec.html** |
 | `/opsx-continue [name]` | 推进下一个 artifact，**自动刷新 spec.html** |
 | `/opsx-explore [topic]` | 探索模式：只思考、不实现 |
-| `/opsx-apply [name]` | 按 tasks 执行实现（强制 TDD/BDD 入口） |
+| `/opsx-apply [name]` | 按 tasks 执行实现（强制 TDD/BDD 入口）；可选 **subagent 逐 task 守门** 或串行 |
 | `/opsx-verify [name]` | 三维一致性 + TDD/BDD 纪律检查 |
 | `/opsx-archive [name]` | 归档已完成变更（要求 implementation 已合回 main） |
 | `/opsx-sync [name]` | delta specs 合入主 specs |
@@ -284,13 +315,13 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 ---
 
-## 16 个 skill
+## 17 个 skill
 
 按主题分组。详细规范见各自 `SKILL.md`。
 
-### OpenSpec 工作流（9 个）
+### OpenSpec 工作流（10 个）
 
-每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑（例外：`/opsx-mini` 是轻量命令，逻辑内联，无同名 skill）。
+每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑（例外：`/opsx-mini` 是轻量命令，逻辑内联，无同名 skill）。`openspec-subagent-apply-change` 无独立命令，由 `/opsx-apply` 的模式选择转调。
 
 | Skill | 对应命令 |
 | --- | --- |
@@ -298,7 +329,8 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `openspec-new-change` | `/opsx-new` |
 | `openspec-continue-change` | `/opsx-continue` |
 | `openspec-explore` | `/opsx-explore` |
-| `openspec-apply-change` | `/opsx-apply`（含 TDD/BDD 强制入口） |
+| `openspec-apply-change` | `/opsx-apply`（串行模式 · 含 TDD/BDD 强制入口） |
+| `openspec-subagent-apply-change` | `/opsx-apply` 选「subagent 逐 task 守门」时转调（每 task 派 subagent 实现 + `code-reviewer` 守门） |
 | `openspec-verify-change` | `/opsx-verify`（含 Test Discipline Check） |
 | `openspec-archive-change` | `/opsx-archive` |
 | `openspec-sync-specs` | `/opsx-sync` |
@@ -325,6 +357,14 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | Skill | 目的 |
 | --- | --- |
 | `grill-me` | 「拷问式」交流：用户希望被反问、质疑、压力测试方案时使用（来源 [mattpocock/skills](https://github.com/mattpocock/skills)） |
+
+---
+
+## 1 个 subagent（`.claude/agents/`）
+
+| Agent | 职责 |
+| --- | --- |
+| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审守门员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法 + 签名）。**三处共用**：`openspec-subagent-apply-change` 的逐 task 守门、full review，以及 `/pr-ship` 的 PR 评审。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
 
 ---
 
@@ -378,7 +418,8 @@ openspec schema validate intent-driven
 | 技能位置 | `.opencode/skills/` + `.agents/skills/` | `.claude/skills/`（合并后） |
 | 插件机制 | `opencode.json` 声明 superpowers | 不需要：Claude Code 用户自行装 [Superpowers](https://github.com/obra/superpowers) |
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
-| PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审 |
+| 逐 task 守门 | 无 | `openspec-subagent-apply-change`：每 task 派 subagent 实现 + `code-reviewer` 守门（CRITICAL/HIGH 阻断）。**吸收 sdd-plus-superpowers 玩法但中文化自研，不依赖 obra/superpowers 插件** |
+| PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审（复用 `code-reviewer` agent） |
 | 知识维护 | 无 | `/claudemd-sync` ↔ `/claudemd-distill` 周期性配合 |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |

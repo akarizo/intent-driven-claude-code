@@ -135,32 +135,25 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 8. **呼叫干净的 code-review subagent 评审 diff**
 
-   用 **Agent 工具** 启一个 `subagent_type=code-reviewer` 的 subagent（也可在 GitLab 项目里手动改为别的评审 agent）。
+   用 **Agent 工具** 启一个 `subagent_type=code-reviewer` 的 subagent。该 agent 的定义在 `.claude/agents/code-reviewer.md`——它的 system prompt **已包含**完整的分级 rubric（CRITICAL/HIGH/MEDIUM/LOW，含 intent-driven 的 TDD/GWT 纪律检查）、finding 格式（`文件:行号` + 修法）、末尾签名、以及"只读不改码 / 不带主会话上下文"的纪律。**不要在这里重抄一份 rubric**——只传 PR 特有的上下文，rubric/格式/签名交给 agent 自己。
 
-   **关键**：subagent prompt **必须自包含**——它不知道主会话的上下文，只能依赖你提供的信息：
+   传给它的 prompt（PR 特有信息，自包含）：
 
    ```
-   背景: 我们正在 review GitHub/GitLab 上的 PR/MR #<num>。
+   背景: review GitHub/GitLab 上的 PR/MR #<num>。
    仓库: <origin URL>
    target branch: <target>
    PR/MR URL: <url>
 
-   你的任务:
-   1. 用 `gh pr diff <num>` 或 `glab mr diff <num>` 取回完整 diff
-   2. 对 diff 做完整 code review，按下列分级输出:
-      - CRITICAL: 安全漏洞 / 数据丢失风险 / 明显的逻辑错误
-      - HIGH: 重大 bug / 重大质量问题 / 测试缺失
-      - MEDIUM: 可维护性 / 性能 / 代码风格
-      - LOW: 微小优化 / 命名建议 / 注释建议
-   3. 每条 finding 必须含: 文件路径:行号 + 问题描述 + 具体修法建议
-   4. 输出格式: 完整 markdown, 准备直接贴到 PR/MR 评论
-   5. 报告末尾签名: `— reviewed by Claude Code (code-reviewer subagent), <YYYY-MM-DD>`
+   审查范围: 本 PR 相对 target 分支的完整 diff。
+   取 diff: `gh pr diff <num>`（GitHub）或 `glab mr diff <num>`（GitLab）。
+   diff 为空或拉不到 → 报告"无变更"并停止。
 
-   不需要主会话上下文。如果 diff 为空或拉不到, 报告 "无变更" 并停止。
-   不要修代码 — 只 review。
+   按你（code-reviewer）既定的分级标准、finding 格式与签名输出完整 markdown，准备直接贴成 PR/MR 评论。
+   monorepo 跨多个 sub-repo 时按 sub-repo 分块组织 finding。
    ```
 
-   subagent 返回 markdown 报告。
+   subagent 返回 markdown 报告（分级 + 签名由 agent system prompt 保证，与逐 task 守门用的是**同一套标准**，不会漂移）。
 
 9. **把 review 提交为 PR/MR 评论**
 

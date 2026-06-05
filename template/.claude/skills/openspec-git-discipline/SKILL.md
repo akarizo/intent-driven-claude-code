@@ -15,7 +15,15 @@ Every OpenSpec state change must cross `main` before the next lifecycle phase de
 - Apply may run on `main`, a branch, or a worktree only if that exact proposal change is already available on `main`.
 - Archive may run only from `main` after implementation is merged back.
 
-Never create commits, branches, or merges unless the user explicitly asks.
+Never create commits, branches, or merges unless the user explicitly asks. This rule protects **lifecycle / shared state** — it forbids auto-committing proposal/archive artifacts, auto-creating branches, and above all any `merge` / `push` / `archive` that the user did not ask for.
+
+**Carve-out — per-task implementation commits during apply:** the `openspec-subagent-apply-change` (逐 task 守门) flow produces a small local commit per task during the apply phase. This is **allowed and not a violation**, because such commits are:
+
+- **local only** — they land on the current feature branch / worktree, never on `main`, and are never `push`ed, `merge`d, or `archive`d by the flow;
+- **lifecycle-neutral** — they do not advance the propose→apply→archive state; they are just the audit trail of "this task's implementation", fully `reset`-able;
+- **already consented** — the user explicitly opted in by choosing the "subagent 逐 task 守门" mode at the `/opsx-apply` step-6 prompt (which states that per-task local commits will be created). This satisfies the "unless the user explicitly asks" condition for these commits only.
+
+This carve-out covers **only** per-task implementation commits inside that apply flow. It does NOT relax anything about merge / push / archive, about committing proposal or archive artifacts, or about touching `main`.
 
 ## Gates
 
@@ -56,6 +64,6 @@ Use this language:
 - Treating worktree visibility as proof that the proposal reached `main`.
 - Creating the next continue artifact without asking about committing the previous one.
 - Archiving from a feature branch or before implementation is merged to `main`.
-- Auto-committing, branching, or merging without explicit user approval.
+- Auto-merging or auto-pushing without explicit user approval; auto-committing proposal/archive artifacts; auto-creating branches without approval. (Per-task *implementation* commits inside the `openspec-subagent-apply-change` flow are exempt — see the Carve-out under Core Rule — but auto-merge / auto-push / auto-archive never are.)
 
 All of these mean: pause, explain the boundary, and ask the user to make the git state explicit.

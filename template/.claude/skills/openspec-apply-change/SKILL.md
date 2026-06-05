@@ -81,15 +81,17 @@ Implement tasks from an OpenSpec change.
    - High-level scope: which capabilities or files will be touched (one line)
 
    Then call the **AskUserQuestion tool** with:
-   - question: `确认开始 apply <name> 吗？接下来会按 tasks 顺序写入代码。`
+   - question: `确认开始 apply <name> 吗？选择执行模式：`
    - header: `开始 apply`
    - options:
-     - `确认开始` — proceed to step 7 (implementation loop)
+     - `subagent 逐 task 守门（推荐 · 中级+）` — 转用 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并在当前分支产生一个本地 commit（不 push / merge）+ 派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。**不进入下面的串行 step 7。**（选此项即同意逐 task 本地 commit。）
+     - `串行（轻量）` — proceed to step 7 (serial implementation loop)
      - `先看完整 tasks` — print the full task list, then re-ask this question
      - `取消` — stop immediately, do not change any file
 
    Guardrails:
-   - Do NOT enter the implementation loop without an explicit `确认开始` answer.
+   - Do NOT enter any implementation path without an explicit confirmation answer.
+   - 选 `subagent 逐 task 守门` → 改用 `openspec-subagent-apply-change` 承载后续流程；选 `串行（轻量）` 或 `--no-confirm` → step 7。`--no-confirm`（bulk-apply 子 agent）一律串行，subagent 不能再嵌套 subagent。
    - If the user picks `取消`, exit and report no changes were made.
 
 7. **Implement tasks (loop until done or blocked)**

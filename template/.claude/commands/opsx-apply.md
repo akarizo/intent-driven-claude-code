@@ -4,7 +4,9 @@ description: Implement tasks from an OpenSpec change (Experimental)
 
 Implement tasks from an OpenSpec change.
 
-**Input**: Optionally specify a change name (e.g., `/opsx-apply add-auth`). Append `--no-confirm` to skip the step 6 confirmation gate (used by `/opsx-bulk-apply` subagents). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name (e.g., `/opsx-apply add-auth`). Append `--no-confirm` to skip the step 6 confirmation gate and go straight to the serial implementation path (used by `/opsx-bulk-apply` subagents; subagents cannot nest, so the per-task gatekeeper path is never taken under `--no-confirm`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+
+**两种执行模式**：step 6 让用户在「**subagent 逐 task 守门**」（推荐中级+；转调 `openspec-subagent-apply-change` skill，每个 task 实现完即派 `code-reviewer` 守门）与「**串行（轻量）**」（主会话逐 task 串行写，即 step 7）之间选择。
 
 **Steps**
 
@@ -74,18 +76,24 @@ Implement tasks from an OpenSpec change.
    - High-level scope: which capabilities or files will be touched (one line)
 
    Then call the **AskUserQuestion tool** with:
-   - question: `确认开始 apply <name> 吗？接下来会按 tasks 顺序写入代码。`
+   - question: `确认开始 apply <name> 吗？选择执行模式：`
    - header: `开始 apply`
    - options:
-     - `确认开始` — proceed to step 7 (implementation loop)
+     - `subagent 逐 task 守门（推荐 · 中级+）` — 转调 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并**在当前分支产生一个本地 commit**（不 push / 不 merge），完成即派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。**不进入下面的 step 7 串行循环。**（选此项即视为同意逐 task 本地 commit——见 `openspec-git-discipline` carve-out。）
+     - `串行（轻量）` — proceed to step 7（主会话逐 task 串行写，今日行为）
      - `先看完整 tasks` — print the full task list, then re-ask this question
      - `取消` — stop immediately, do not change any file
 
    Guardrails:
-   - Do NOT enter the implementation loop without an explicit `确认开始` answer.
+   - Do NOT enter any implementation path without an explicit confirmation answer.
+   - 选 `subagent 逐 task 守门` → 立即转用 `openspec-subagent-apply-change` skill 承载后续全部流程，不再走本命令 step 7。
+   - 选 `串行（轻量）` → 走 step 7。
    - If the user picks `取消`, exit and report no changes were made.
+   - **`--no-confirm` 一律走串行（step 7）**：bulk-apply 派发的子 agent 用此 flag，且 subagent 不能再嵌套 subagent，所以子 agent 内不触发逐 task 守门路径。
 
-7. **Implement tasks (loop until done or blocked)**
+7. **Implement tasks — 串行模式 (loop until done or blocked)**
+
+   > 仅当用户选了"串行（轻量）"或传了 `--no-confirm` 时执行本步。选了"subagent 逐 task 守门"则跳过本步，全部交给 `openspec-subagent-apply-change`。
 
    For each pending task:
    - Show which task is being worked on
@@ -161,6 +169,7 @@ What would you like to do?
 
 **Guardrails**
 - Always pause for explicit user confirmation in step 6 before any code change (except delegated bulk-apply subagent runs)
+- step 6 选「subagent 逐 task 守门」→ 转 `openspec-subagent-apply-change`（逐 task 实现 + 守门）；选「串行」或 `--no-confirm` → step 7
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
