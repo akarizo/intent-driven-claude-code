@@ -146,6 +146,37 @@ Rule: Users can export their own data
 
 ---
 
+## apply 两种执行模式 · 串行 vs subagent 逐 task 守门
+
+`/opsx-apply <name>` 开始前（step 6 确认）让你选执行模式：
+
+| 模式 | 承载 skill | 怎么跑 | 守门 |
+| --- | --- | --- | --- |
+| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 主会话逐个 task 派 **fresh 实现 subagent**（强制 TDD），完成即派 **`code-reviewer` subagent** 审本 task 净 diff | **CRITICAL/HIGH 阻断**，回灌修复过才勾 checkbox；末尾 full review + verify |
+| **串行（轻量）** | `openspec-apply-change` | 主会话逐 task 串行写 | 无（靠 `/pr-ship` 末尾一次性评审） |
+
+**逐 task 守门循环**（吸收自 sdd-plus-superpowers 的 subagent-development 玩法，中文化自研、不依赖外部插件）：
+
+```
+对每个 task：
+  派 fresh 实现 subagent（走 test-driven-development：RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）
+    → 派 code-reviewer subagent 审本 task 净 diff（CRITICAL/HIGH 阻断）
+    → 有阻断项 → 回灌实现 subagent 修 → 复审（循环到清零）
+    → 勾选 checkbox - [ ] → - [x] → 下一个 task
+全部 task 完成 → full review（整个 change 累计 diff）→ /opsx-verify → 收口（不 merge 不 archive）
+```
+
+**关键约束**：
+
+- **不开 worktree**：逐 task 是串行累积（task2 依赖 task1 产出），在当前工作区。原生 `isolation: worktree` 每次派发开独立 worktree、看不到前序 task，不适用；这也让分级门禁 `intent-gate.py` 零改动生效。
+- **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行。
+- **三处守门同一 agent**：逐 task review（单 task 净 diff）/ full review（累计 diff）/ `/pr-ship`（PR↔target diff），靠 diff 范围区分，互补不重复。
+- **`code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
+
+详见 `.claude/skills/openspec-subagent-apply-change/SKILL.md` 与 `.claude/agents/code-reviewer.md`。
+
+---
+
 ## Git 纪律
 
 | 时机 | 规则 |
@@ -178,10 +209,13 @@ git add openspec
 git commit -m "propose: add-user-export"
 git push  # 走 PR 合 main
 
-# 3. 在 main 或 worktree 实现
+# 3. 实现
 git checkout -b feat/add-user-export
 /opsx-apply add-user-export
-# Claude 按 tasks 逐条实现，勾选 checkbox
+# step 6 选执行模式：
+#   - subagent 逐 task 守门（推荐）：每个 task 派 subagent 实现 + code-reviewer 守门，
+#     CRITICAL/HIGH 阻断、回灌修复过才勾 checkbox；末尾 full review + verify
+#   - 串行（轻量）：主会话逐条实现，勾选 checkbox
 
 # 4. 实现合回 main 后归档
 git checkout main && git pull

@@ -407,7 +407,9 @@ cat <<EOF
 
 更多:
   - 15 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 3 个 claudemd-* + /spec-html + /pr-ship）
-  - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render）
+  - 17 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render、openspec-subagent-apply-change）
+  - 1 个 agent 见 .claude/agents/（code-reviewer：逐 task 守门 + /pr-ship 评审共用）
+  - apply 两模式：中级+ 推荐「subagent 逐 task 守门」(openspec-subagent-apply-change)，每个 task 实现完即派 code-reviewer 守门(CRITICAL/HIGH 阻断)；轻量退回串行
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-sync·/claudemd-distill 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
