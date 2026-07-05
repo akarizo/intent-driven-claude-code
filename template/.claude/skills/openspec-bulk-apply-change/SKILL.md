@@ -44,7 +44,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
    - Run `git status --short`.
    - Verify `openspec/changes/<change>/` has no uncommitted proposal files.
-   - Verify the proposal change exists on `main` before applying from any branch or worktree.
+   - Verify the proposal artifacts are captured in a dedicated artifacts-only commit before applying from any branch or worktree (merging to `main` is not required).
 
    If any candidate fails the gate, exclude it from execution and report the reason. If fewer than 2 executable candidates remain, stop and report that bulk apply is not appropriate.
 
@@ -138,7 +138,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 | 2+ active candidates | Bulk apply in isolated worktrees |
 | Explicit list of 2+ changes | Bulk apply only those changes |
 | 1 candidate | Stop and use `/opsx-apply <change>` |
-| Proposal not on `main` | Exclude or stop before apply |
+| Proposal artifacts not in a dedicated commit | Exclude or stop before apply |
 | Blocked or all-done change | Skip execution and report status |
 | Subagent finishes apply | Require `/opsx-verify <change>` before review-ready |
 | User asks to merge/archive | Stop and require explicit follow-up approval |
@@ -164,4 +164,4 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 - Do not run bulk apply in the main workspace; use isolated worktrees only.
 - Keep `.worktrees/` as the default worktree root unless the user specifies another location.
 - Require `/opsx-verify` in every delegated apply flow before reporting a change as review-ready.
-- Preserve OpenSpec git discipline: apply only changes whose proposal state has reached `main`.
+- Preserve OpenSpec git discipline: apply only changes whose proposal artifacts sit in a dedicated artifacts-only commit.
