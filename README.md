@@ -350,7 +350,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | Skill | 目的 |
 | --- | --- |
 | `test-driven-development` | TDD 红绿重构 + **Given/When/Then 单测注释 6 条强约束** + 反例/正例，配套 `testing-anti-patterns.md` 5 个反模式 + gate functions |
-| `openspec-git-discipline` | propose → apply 与 apply → archive 都必须先合入 main；不代用户 commit/branch/merge |
+| `openspec-git-discipline` | apply 前工件须单独成一个 commit（只含工件，无需先合 main）；archive 前实现必须已合回 main；不代用户 commit/branch/merge |
 
 ### 协作工具（1 个）
 
@@ -374,7 +374,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 1. 5-artifact 链与 ADR 不可改（ADR 入 `openspec/adr/`）
 2. `/opsx-*` 命令前缀；apply / bulk-apply 开始前会停下确认
-3. Git：propose → apply 与 apply → archive 必须先合入 main；不代你 commit/branch/merge
+3. Git：apply 前工件须单独成一个 commit（只含工件，无需先合 main）；archive 前实现必须已合回 main；不代你 commit/branch/merge
 4. Schema 来源
 5. **TDD 铁律**：写实现前先写失败测试；红→验红→绿→验绿→重构
 6. **单测先写 GWT 三段中文注释**，再写代码

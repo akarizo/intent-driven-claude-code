@@ -182,8 +182,8 @@ Rule: Users can export their own data
 | 时机 | 规则 |
 | --- | --- |
 | propose 前 | 优先在 `main` 上；不在则警告并询问 |
-| propose 后 | 提示用户 commit；可选建 PR 分支 |
-| apply 前 | **proposal 必须已在 `main`**；之后可在 main / 分支 / worktree 实现 |
+| propose 后 | 提示用户把工件**单独提交为一个 commit**（只含 openspec 工件，不混实现代码）；可选建 PR 分支 |
+| apply 前 | **工件必须已单独成一个 commit**（无需先合 `main`）；之后可在 main / 分支 / worktree 实现 |
 | archive 前 | **必须从 `main` 运行**；implementation 必须已合回 |
 | archive 后 | 提示 commit archive 与 spec sync 改动 |
 
@@ -204,10 +204,9 @@ cd ~/my-app
 #   - openspec new change add-user-export
 #   - 生成 proposal.md, specs/user-export/spec.md, design.md, openspec/adr/0042-*.md, tasks.md
 
-# 2. 用户审阅，提交到 PR，合到 main
+# 2. 用户审阅，把工件单独提交为一个 commit（只含 openspec 工件；无需先合 main）
 git add openspec
 git commit -m "propose: add-user-export"
-git push  # 走 PR 合 main
 
 # 3. 实现
 git checkout -b feat/add-user-export
