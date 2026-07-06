@@ -25,6 +25,7 @@ Do not use ADRs for transient implementation details, meeting notes, or insignif
 6. If facts are missing, mark them as `Unknown` or ask a focused question; do not invent context, options, or quality attributes.
 7. Write honest consequences: benefits, downsides, follow-up.
 8. Preserve history: supersede old accepted ADRs; do not rewrite them away.
+9. Numbering: in the intent-driven OpenSpec workflow, a new ADR is created **unnumbered on a branch** as `openspec/adr/DRAFT-kebab-title.md`; the `NNNN` sequence is assigned only at merge time (see the `openspec-git-discipline` skill). A `Supersedes:` field still names the prior ADR's real, already-merged number. The `ADR-012` in the example below is a *reference* to an existing numbered ADR, not a branch filename.
 
 ## Template Choice
 

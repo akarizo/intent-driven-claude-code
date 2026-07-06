@@ -57,9 +57,9 @@ description: 把 OpenSpec change 工件渲染为单文件 HTML 审批面板 `ope
    ls openspec/adr/ 2>/dev/null
    ```
 
-   - 并行 Read 所有 `openspec/adr/NNNN-*.md`
+   - 并行 Read 所有 `openspec/adr/NNNN-*.md` **以及本分支新建的 `openspec/adr/DRAFT-*.md`**（后者是当前 change 提出、尚未定号的 ADR，合并时才编号；审批面板必须让用户看到它）
    - 解析每份的 `Status:` 与 `Supersedes:` 字段
-   - 按 supersedes 链算出当前 in-force 集合 (accepted 且未被 supersede)
+   - 按 supersedes 链算出当前 in-force 集合 (accepted 且未被 supersede)；`DRAFT-*` 归为「本次新增、待定号」单独一组呈现
    - 若 `openspec/adr/` 不存在或为空 → in-force 集合为空，本步骤跳过
 
 4. **读取模板**

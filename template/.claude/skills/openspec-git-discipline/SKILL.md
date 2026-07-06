@@ -33,6 +33,7 @@ This carve-out covers **only** per-task implementation commits inside that apply
 | During continue | Before creating the next artifact, ask the user to commit completed artifact changes or explicitly continue without that checkpoint. |
 | After propose | Ask the user to commit proposal artifacts as a dedicated artifacts-only commit; offer to create a PR branch for review. |
 | Before apply | Confirm the proposal artifacts sit in a dedicated commit (artifacts only); then apply may run from `main`, a branch, or a worktree. |
+| Before merging ADRs to `main` | If the branch created any `DRAFT-*.md` under `openspec/adr/`, number them first (see ADR numbering below). Never merge a `DRAFT-*` ADR into `main`. |
 | Before archive | Stop unless implementation is merged back to `main` and archive is running from `main`. |
 | After archive | Ask the user to commit archive/spec sync changes. |
 
@@ -58,12 +59,42 @@ Use this language:
 
 > I should not archive this yet because archive must run from `main` after implementation is merged back. Verify makes a change eligible to merge; it does not replace the merge.
 
+## ADR Numbering at Merge
+
+ADRs are numbered with a repo-wide monotonic sequence (`NNNN-kebab-title.md`).
+A sequence is a global counter, so two branches that each pick "highest + 1"
+while proposing collide on the same number and conflict at merge - both on the
+filename and on any `Supersedes:` / CLAUDE.md pointer to that number.
+
+To prevent this, ADRs are created **unnumbered on a branch** (`DRAFT-kebab-title.md`)
+and numbered **only at merge time**, by whoever lands the branch on `main`:
+
+1. Check out the latest `main`. `ls openspec/adr/` and find the highest existing `NNNN`.
+2. Assign `max+1, max+2, ...` to each `DRAFT-*.md` in this change, in logical order.
+3. `git mv openspec/adr/DRAFT-kebab-title.md openspec/adr/NNNN-kebab-title.md` (preserves history).
+4. Edit the title line inside the file: `# DRAFT.` → `# NNNN.`.
+5. Back-fill any in-change reference to the draft (a sibling ADR's `Supersedes:`,
+   a `design.md` pointer, a `（ADR-DRAFT-x）` placeholder in CLAUDE.md) with the real number.
+6. Commit the numbering, then merge/PR to `main`.
+
+Each branch re-scans `main` independently before it lands, so a branch that
+merges after another sees the just-assigned numbers and continues from there -
+the sequence stays gap-free and collision-free. A `Supersedes:` pointing at a
+prior ADR keeps that prior ADR's real number: it already lives on `main` and is
+stable; only the branch's own new ADRs are deferred.
+
+Never create commits, branches, or merges unless the user explicitly asks; the
+numbering steps above are what to do when the user drives the merge, not license
+to merge on your own.
+
 ## Red Flags
 
 - Applying a proposal whose artifacts are uncommitted, or whose commit mixes artifacts with implementation code.
 - Treating files visible on disk (or in a worktree) as proof that the artifacts were committed.
 - Creating the next continue artifact without asking about committing the previous one.
 - Archiving from a feature branch or before implementation is merged to `main`.
+- Merging a `DRAFT-*.md` ADR into `main` without numbering it first.
+- Assigning an ADR sequence number while still on a branch (that is what collides).
 - Auto-merging or auto-pushing without explicit user approval; auto-committing proposal/archive artifacts; auto-creating branches without approval. (Per-task *implementation* commits inside the `openspec-subagent-apply-change` flow are exempt — see the Carve-out under Core Rule — but auto-merge / auto-push / auto-archive never are.)
 
 All of these mean: pause, explain the boundary, and ask the user to make the git state explicit.
