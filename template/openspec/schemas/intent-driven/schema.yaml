@@ -205,8 +205,9 @@ artifacts:
       Process:
 
       1. Read every existing ADR in <repo>/openspec/adr/. Build the supersession graph
-      from each ADR's Supersedes field. Note the highest sequence number in
-      use.
+      from each ADR's Supersedes field. This tells you which prior ADRs are
+      in force - you do NOT need the highest sequence number here, because new
+      ADRs are not numbered on a branch (see step 3).
 
       2. Re-read design.md. Identify decisions that meet ALL of these:
 
@@ -220,20 +221,37 @@ artifacts:
       prior.
 
       3. For each qualifying decision, create a NEW file at
-      <repo>/openspec/adr/NNNN-kebab-title.md, where NNNN is a 4-digit sequence one
-      greater than the highest existing. Use the template (MADR-short). If
-      this decision replaces a prior in-force ADR, set Status to
-      "accepted, supersedes ADR-NNNN", populate the `Supersedes:` field, and
-      explain in Context why the prior decision is being revisited. Do NOT
-      touch the prior ADR's file.
+      <repo>/openspec/adr/DRAFT-kebab-title.md. Do NOT assign a sequence number
+      on the branch: parallel branches that each pick "highest + 1" collide on
+      the same number and conflict at merge time. The 4-digit sequence number is
+      assigned only at merge time (see "Numbering at merge" below), by whoever
+      lands the branch on main. Use the template (MADR-short); its title line
+      stays "# DRAFT. <title>" until numbered. If this decision replaces a prior
+      in-force ADR, set Status to "accepted, supersedes ADR-NNNN" and populate
+      the `Supersedes:` field with the prior ADR's REAL number (it already lives
+      on main and its number is stable) - only this new ADR's own number is
+      deferred. Explain in Context why the prior decision is being revisited. Do
+      NOT touch the prior ADR's file.
 
       4. If nothing meets the bar, do not invent ADRs. The step still completes
-      as long as <repo>/openspec/adr/ already contains at least one ADR file.
+      as long as <repo>/openspec/adr/ already contains at least one ADR file
+      (numbered or DRAFT).
 
 
-      Filename convention: NNNN-kebab-title.md (e.g.,
-      0042-use-postgres-for-catalog.md). Sequence is monotonic across the
-      whole repo and never reused.
+      Filename convention: DRAFT-kebab-title.md on a branch; NNNN-kebab-title.md
+      once numbered (e.g., 0042-use-postgres-for-catalog.md). Sequence is
+      monotonic across the whole repo and never reused.
+
+
+      Numbering at merge: before merging a branch's ADRs into main, whoever lands
+      the branch must (a) re-scan main's openspec/adr/ for the current highest
+      NNNN, (b) assign max+1, max+2 ... to each DRAFT in this change in order,
+      (c) `git mv DRAFT-kebab-title.md NNNN-kebab-title.md` to preserve history,
+      (d) change the title line "# DRAFT." to "# NNNN.", (e) back-fill any
+      in-change reference to the draft (design.md pointers, a sibling ADR's
+      Supersedes) with the real number, then (f) commit and merge. Each branch
+      re-scans main independently, so a branch landing after another sees the
+      just-assigned numbers and picks up where they left off - no collision.
     requires:
       - design
   - id: tasks

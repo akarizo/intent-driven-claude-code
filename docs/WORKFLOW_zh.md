@@ -18,7 +18,7 @@ schema 把这套规则编码在 `openspec/schemas/intent-driven/schema.yaml` 里
 | 1. proposal | `proposal.md` | 为什么现在做？影响什么 capability？ | `grill-me` |
 | 2. specs | `specs/<capability>/spec.md` | 系统外部可观测的行为是什么？ | `gherkin-authoring` |
 | 3. design | `design.md` | 怎么实现？权衡了什么？ | `c4-diagrams` |
-| 4. adr | `<repo>/openspec/adr/NNNN-*.md` | 哪些是长期不可逆的架构决策？ | `architectural-decision-records` |
+| 4. adr | `<repo>/openspec/adr/DRAFT-*.md`（合并时定号为 `NNNN-*.md`） | 哪些是长期不可逆的架构决策？ | `architectural-decision-records` |
 | 5. tasks | `tasks.md` | 怎么落到逐条可勾选的步骤？ | —— |
 
 ---
@@ -116,7 +116,19 @@ Rule: Users can export their own data
 ...为什么要重新讨论 ADR-0017...
 ```
 
-文件名：`NNNN-kebab-title.md`，NNNN 是仓库范围全局递增，**永不复用**。
+文件名：分支上先用 `DRAFT-kebab-title.md`（**不取顺序号**），合并入 main 前才定号成 `NNNN-kebab-title.md`。NNNN 是仓库范围全局递增，**永不复用**。
+
+> **为什么分支上不取号**：`NNNN` 是仓库范围的全局计数器。并行分支若各自扫 main 取「最大号 +1」，会撞到同一个号，合并第二条时文件名与 `Supersedes:` / CLAUDE.md 指针双双冲突。所以号推迟到「分支 → main」这一刻才由落地分支的人分配。
+>
+> **合并前定号 6 步**（详见 `openspec-git-discipline` skill）：
+> 1. 切到最新 main，`ls openspec/adr/` 取当前最大 `NNNN`
+> 2. 给本 change 的每个 `DRAFT-*` 顺次分配 `max+1、max+2…`
+> 3. `git mv DRAFT-kebab-title.md NNNN-kebab-title.md`（保留历史）
+> 4. 改文件内首行 `# DRAFT.` → `# NNNN.`
+> 5. 回填本 change 内对该 draft 的引用（兄弟 ADR 的 `Supersedes:`、design 指针、CLAUDE.md 占位）
+> 6. 提交定号后再合并
+>
+> 每条分支合并前**各自**重扫 main 的当前 max，后合并的分支看到的已是前一条定好的号，顺序天然错开、无缝无撞。`Supersedes:` 指向的旧 ADR 保留其**真实旧号**（它已在 main、号稳定），只有本分支自己的新 ADR 号被推迟。
 
 何时建 ADR？满足三个条件全部：
 
@@ -202,7 +214,7 @@ cd ~/my-app
 
 # Claude 会：
 #   - openspec new change add-user-export
-#   - 生成 proposal.md, specs/user-export/spec.md, design.md, openspec/adr/0042-*.md, tasks.md
+#   - 生成 proposal.md, specs/user-export/spec.md, design.md, openspec/adr/DRAFT-*.md, tasks.md
 
 # 2. 用户审阅，把工件单独提交为一个 commit（只含 openspec 工件；无需先合 main）
 git add openspec
