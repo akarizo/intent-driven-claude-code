@@ -4,6 +4,8 @@ description: Sync delta specs from a change to main specs
 
 Sync delta specs from a change to main specs.
 
+> **模型建议**：本命令是机械同步任务（delta spec 搬运合并），主会话在 Opus 时建议先 `/model sonnet` 再跑，省约 5× token。需要复杂判断时自行保留 Opus。
+
 This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).
 
 **Input**: Optionally specify a change name after `/opsx-sync` (e.g., `/opsx-sync add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
