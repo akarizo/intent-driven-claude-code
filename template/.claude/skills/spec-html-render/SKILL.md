@@ -7,6 +7,8 @@ description: 把 OpenSpec change 工件渲染为单文件 HTML 审批面板 `ope
 
 把 OpenSpec change 下的 markdown 工件 (proposal / specs / design / tasks) 与 in-force ADR 渲染为一份**单文件 self-contained** 的 HTML 审批面板，让用户双击在浏览器里一眼审批 AI 即将做的事。
 
+> **模型建议**：本 skill 是低推理任务（读工件 + 模板占位块替换 + 一次 Write 渲染），主会话在 Opus 时建议先 `/model sonnet` 再跑，省约 5× token。需要复杂判断时自行保留 Opus。
+
 ## 何时触发
 
 下面三种情况**全部**应当触发本 skill：

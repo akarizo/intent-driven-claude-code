@@ -4,6 +4,8 @@ description: 把本轮变更增量同步到 CLAUDE.md（全覆盖、不压缩、
 
 把本轮（当前分支相对于 main / 当前 session）的变更**增量**同步到 CLAUDE.md。**全覆盖，不压缩**——压缩留给 `/claudemd-distill` 处理。
 
+> **模型建议**：本命令是机械同步任务（把变更增量落进 CLAUDE.md），主会话在 Opus 时建议先 `/model sonnet` 再跑，省约 5× token。需要复杂判断时自行保留 Opus。
+
 **Input**: 可选指定参考分支（默认 `origin/main`）。例如 `/claudemd-sync origin/release-v2`。
 
 **Steps**

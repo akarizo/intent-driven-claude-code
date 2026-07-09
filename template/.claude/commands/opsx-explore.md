@@ -4,6 +4,8 @@ description: Enter explore mode - think through ideas, investigate problems, cla
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
+> **模型建议**：探索模式以读代码 + 澄清需求为主，多数情况低推理，主会话在 Opus 时可先 `/model sonnet` 省 token。但若要做长链推理 / 深度设计权衡，保留 Opus。
+
 **IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, and investigate the codebase, but you must NEVER write code or implement features. If the user asks you to implement something, remind them to exit explore mode first and create a change proposal. You MAY create OpenSpec artifacts (proposals, designs, specs) if the user asks—that's capturing thinking, not implementing.
 
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
