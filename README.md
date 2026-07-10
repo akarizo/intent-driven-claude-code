@@ -6,6 +6,10 @@
 proposal → specs → design → adr → tasks   ┐
                                           │  规划阶段（不写代码）
                                           ▼
+                                    /opsx-explore
+                                          │  (暂不清楚问题从探索开始，你的理解如果伴随不确定，推荐大多数时候从这开始)
+                                    /opsx-propose
+                                          │  开始编写spec，会提供spec.html给你查看
                                     /opsx-apply
                                           │  实现阶段（TDD 红绿重构 + GWT 注释）
                                           ▼
@@ -19,7 +23,7 @@ proposal → specs → design → adr → tasks   ┐
                                           │  三维一致性 + TDD/BDD 纪律检查
                                           ▼
                                   /opsx-archive
-                                          │  归档（要求已合 main）
+                                          │  推荐回到main分支再处理归档
                                           ▼
                               （累积几轮后） /claudemd-distill
                                           ▼  彻底压缩所有 CLAUDE.md
