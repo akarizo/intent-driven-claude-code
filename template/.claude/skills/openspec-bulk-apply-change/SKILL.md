@@ -13,7 +13,7 @@ metadata:
 
 Apply multiple active OpenSpec changes by creating isolated worktrees, dispatching delegated apply flows in parallel subagents, running verification in each flow, and reporting back without merging or archiving.
 
-**REQUIRED SUB-SKILL:** Use `openspec-git-discipline` before any apply or worktree workflow.
+**REQUIRED SUB-SKILL:** Use `openspec-git-discipline` before any apply or worktree workflow. Its **Worktree Isolation** section defines the authoritative worktree path (`.worktrees/<change>/`) and branch naming (`worktree-<change>`) — bulk apply is the multi-change case of that same per-change isolation rule.
 
 ## When to Use
 
@@ -86,7 +86,7 @@ Do not use bulk mode when only one candidate change remains. Stop and tell the u
 
    For each executable candidate change:
 
-   - Create a git worktree under `.worktrees/<change>` unless the user specified another root.
+   - Create a git worktree under `.worktrees/<change>` on branch `worktree-<change>` (the authoritative path/naming from `openspec-git-discipline`) unless the user specified another root.
    - Keep the parent agent out of direct implementation work in the main workspace.
    - Do not create commits, branches, or merges unless the user explicitly approved them.
 

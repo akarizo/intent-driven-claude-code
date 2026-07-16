@@ -389,6 +389,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# .gitignore：确保每 change 的 .worktrees/ 被忽略 (幂等；仅在已有 .gitignore 时追加)
+# 新规则「每 change 一个 worktree」会在项目根产生 .worktrees/，其内容各自跟踪
+# worktree-<change> 分支，不该作为主仓库未跟踪噪音出现在 git status。
+# ---------------------------------------------------------------------------
+TARGET_GITIGNORE="$TARGET/.gitignore"
+if [[ -f "$TARGET_GITIGNORE" ]]; then
+  if grep -qE '^\.worktrees/?$' "$TARGET_GITIGNORE"; then
+    log_skip ".gitignore (.worktrees/ 已忽略, 跳过)"
+    SKIP_COUNT=$((SKIP_COUNT+1))
+  else
+    printf '\n# Intent-driven per-change worktrees (每 change 一间；内容各自跟踪 worktree-<change> 分支)\n.worktrees/\n' >> "$TARGET_GITIGNORE"
+    log_app ".gitignore (追加 .worktrees/)"
+  fi
+else
+  log_info ".gitignore: 项目无 .gitignore，未创建；如用 git 请手动忽略 .worktrees/"
+fi
+
+# ---------------------------------------------------------------------------
 # 摘要
 # ---------------------------------------------------------------------------
 echo
@@ -413,7 +431,8 @@ cat <<EOF
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-sync·/claudemd-distill 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
-  - HTML 审批面板：propose/continue 后自动出 openspec/changes/<change>/spec.html
-  - 落点收敛：ADR → openspec/adr/；探索设计稿 → openspec/superpower/；项目根仅 .claude/ + openspec/ + CLAUDE.md
+  - Worktree 隔离：每个 change 从 propose 起在自己的 .worktrees/<change>/ (branch worktree-<change>) 里进行，工件+实现全落其中，项目根保持干净；权威见 .claude/skills/openspec-git-discipline/
+  - HTML 审批面板：propose/continue 后自动出 (worktree 内) openspec/changes/<change>/spec.html
+  - 落点收敛：每 change 产物落其 worktree；ADR → openspec/adr/；探索设计稿 → openspec/superpower/；项目根仅 .claude/ + openspec/ + CLAUDE.md (+ 已忽略的 .worktrees/)
   - 已装项目升级：./install.sh --upgrade（刷新库文件 + 自动迁移 adr，用户数据不动）
 EOF

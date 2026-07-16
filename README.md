@@ -173,6 +173,8 @@ your-project/
 
 **意图审批面板**：propose / continue 每完成一个工件后会自动重渲 `openspec/changes/<change>/spec.html` —— 单文件含 Mermaid 与必要原型，双击浏览器一屏审批意图。手动重渲：`/spec-html <change>`。
 
+**Worktree 隔离**：每个 change 从 `/opsx-propose` 起就在自己的独立 worktree（`.worktrees/<change>/`，分支 `worktree-<change>`）里进行 —— 5 工件 + `spec.html` + 实现代码全落这一间 worktree，主仓库工作区（`main`）随时干净、并行推进多个 change 互不踩踏。粒度是**每 change 一间**（不是每 task），change 内逐 task 在同一间累积。权威纪律见 `openspec-git-discipline` skill 的 Worktree Isolation 节；`.worktrees/` 由安装器自动加入 `.gitignore`。
+
 ### 阶段 2 · 实现（开始动代码）
 
 `/opsx-apply <name>` 开始前会让你选**执行模式**：

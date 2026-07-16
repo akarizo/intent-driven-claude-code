@@ -34,6 +34,9 @@ pnpm-debug.log*
 # OpenSpec local output
 openspec/.cache/
 
+# Intent-driven per-change worktrees (每 change 一间；内容各自跟踪 worktree-<change> 分支，不作为主仓库未跟踪噪音)
+.worktrees/
+
 # Editor and OS files
 .DS_Store
 Thumbs.db

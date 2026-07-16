@@ -18,6 +18,8 @@ I'll create a change with artifacts:
 
 When ready to implement, run /opsx-apply
 
+**REQUIRED SUB-SKILL：** 建 change 前先用 `openspec-git-discipline` 的 **Worktree Isolation** 节 —— 本 change 的一切产物落在它自己的 `.worktrees/<name>/` worktree 内，主仓库工作区不落产物。
+
 ---
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
@@ -33,11 +35,24 @@ When ready to implement, run /opsx-apply
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
+1.5 **建并进入本 change 的 worktree**（见 `openspec-git-discipline` 的 Worktree Isolation）
+
+   在建 change 目录**之前**，先把工作区隔离到本 change 专属的 worktree：
+
+   ```bash
+   git worktree add .worktrees/<name> -b worktree-<name>
+   ```
+
+   然后进入它（CWD = `.worktrees/<name>/`），之后 step 2 起的 `openspec` CLI 与所有工件写入都用相对路径，自然落在 worktree 内。
+
+   - worktree 已存在（同名 change 续做）→ 直接进入，不重复 `add`。
+   - 建 worktree 是工作区准备、非 lifecycle 推进，可直接做；但 push / merge / 删 worktree 仍交用户授权。
+
 2. **Create the change directory**
    ```bash
    openspec new change "<name>"
    ```
-   This creates a scaffolded change at `openspec/changes/<name>/` with `.openspec.yaml`.
+   This creates a scaffolded change at `openspec/changes/<name>/` (worktree 内) with `.openspec.yaml`.
 
 3. **Get the artifact build order**
    ```bash

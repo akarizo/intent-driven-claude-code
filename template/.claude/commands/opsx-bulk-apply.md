@@ -48,7 +48,7 @@ Apply multiple active OpenSpec changes concurrently.
    The skill must:
 
    - Run OpenSpec git discipline checks before apply.
-   - Create isolated worktrees under `.worktrees/<change>` unless another root is requested.
+   - Create isolated worktrees under `.worktrees/<change>` on branch `worktree-<change>` (authoritative path/naming from `.claude/skills/openspec-git-discipline/`) unless another root is requested.
    - Dispatch one subagent per change.
    - Run `/opsx-apply <change> --no-confirm` and `/opsx-verify <change>` in each subagent. The `--no-confirm` flag suppresses the per-change confirmation (batch was already approved in step 3).
    - Collect normalized apply and verify reports.
