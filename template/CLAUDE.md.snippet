@@ -3,13 +3,14 @@
 变更走 5 artifact：`proposal → specs → design → adr → tasks`。ADR 入 `openspec/adr/` 后不可改，需变更则 supersede 旧版。
 
 - 命令前缀 `/opsx-*`（详见 `.claude/skills/openspec-*-change/`）；apply / bulk-apply 开始前会停下确认
-- Git：apply 前工件须**单独成一个 commit**（只含工件、不混实现代码，无需先合 `main`）；archive 前实现必须已合回 `main`；不代你 commit/branch/merge
+- **Worktree 隔离**：每个 change 从 propose 起就在自己的 `.worktrees/<change>/` worktree +`worktree-<change>` 分支里进行，5 工件 + `spec.html` + 实现代码**全落 worktree 内**，主仓库工作区（`main`）不落任何 change 产物；每 change 一间（非每 task），逐 task 在同一间累积；权威定义见 `.claude/skills/openspec-git-discipline/`（Worktree Isolation）
+- Git：apply 前工件须**单独成一个 commit**（只含工件、不混实现代码，无需先合 `main`）；archive 前实现必须已合回 `main`；建 change worktree 可自动做（工作区准备），但 merge/push/删 worktree 交你授权；不代你 commit/branch/merge
 - Schema：`intent-driven`（`openspec/config.yaml`，副本 `openspec/schemas/intent-driven/`）；CLI 用 `openspec --help`
 - TDD：写实现前先写失败测试；红→验红→绿→验绿→重构（详见 `.claude/skills/test-driven-development/`）
 - 单测先写 `// Given:` `// When:` `// Then:`（Python 用 `#`）三段中文注释再写代码，每段一句具体描述
 - apply 两模式：中级+ 推荐「subagent 逐 task 守门」(`openspec-subagent-apply-change`)——每个 task 派 subagent 实现(强制 TDD)+ 派 `code-reviewer` 守门，CRITICAL/HIGH 挡 checkbox；轻量可退回串行(`openspec-apply-change`)。`--no-confirm`/bulk-apply 子 agent 一律串行
 - HTML 审批面板：propose / continue 每出一个工件都会自动重渲 `openspec/changes/<change>/spec.html`（Mermaid + 必要时 SVG 原型），浏览器双击即可一屏审批意图；手动重渲用 `/spec-html <change>`
-- 落点收敛：ADR 入 `openspec/adr/`；探索 / 头脑风暴的设计稿、spec 草稿（未成 opsx change 的）入 `openspec/superpower/`；保持项目根只剩 `.claude/`、`openspec/`、`CLAUDE.md`
+- 落点收敛：每 change 产物落其 `.worktrees/<change>/` worktree，**主仓库根随时干净**；ADR 入 `openspec/adr/`；探索 / 头脑风暴的设计稿、spec 草稿（未成 opsx change 的）入 `openspec/superpower/`；主仓库根只剩 `.claude/`、`openspec/`、`CLAUDE.md`（+ 已 gitignore 的 `.worktrees/`）
 
 ## 任务分级 · 何时必须走工作流
 **中级+ 必须走 5 工件，mini 才可跳过**。源码写入受 PreToolUse 门禁 `.claude/hooks/intent-gate.py` 强制（需 python3）。

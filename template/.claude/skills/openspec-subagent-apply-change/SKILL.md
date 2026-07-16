@@ -30,18 +30,18 @@ metadata:
 
 | Skill | 粒度 | 隔离 | 守门 |
 | --- | --- | --- | --- |
-| `openspec-apply-change`（串行） | 单 change，主会话逐 task 串行写 | 当前工作区 | 无（靠 /pr-ship 末尾） |
-| **本 skill** | 单 change，**逐 task 派 subagent** | 当前工作区（不开 worktree） | **每 task 一个守门员** + 末尾 full review |
+| `openspec-apply-change`（串行） | 单 change，主会话逐 task 串行写 | 本 change 的 worktree | 无（靠 /pr-ship 末尾） |
+| **本 skill** | 单 change，**逐 task 派 subagent** | 本 change 的 worktree（不为每 task 各开） | **每 task 一个守门员** + 末尾 full review |
 | `openspec-bulk-apply-change` | **多 change**，各派 subagent 跑整个 apply | 每 change 一个 worktree | 各自 apply 内的纪律 |
 
-**为什么不开 worktree**：逐 task 是**串行累积**（task2 依赖 task1 的产出），必须在同一工作区。Claude Code 原生 `isolation: worktree` 每次派发都新建独立 worktree、看不到前序 task 的产出，不适用。worktree 是 bulk-apply 为"多 change 并行互不干扰"用的，逐 task 不需要。在当前工作区累积还让分级门禁（`intent-gate.py`）零改动生效。
+**worktree 粒度 = 每 change 一间，不是每 task 一间**：本 change 从 propose 起就在自己的 `.worktrees/<name>/` worktree 内（见 `openspec-git-discipline` 的 Worktree Isolation），apply 也在**这一间**里进行。逐 task 是**串行累积**（task2 依赖 task1 的产出），所有 task 必须在**同一间** worktree 里累积 —— 因此**不要为每个 task 各开 worktree、也不要在本 change worktree 内再嵌套子 worktree**。Claude Code 原生 `isolation: worktree` 每次派发都新建独立 worktree、看不到前序 task 产出，正是这里要避免的。在本 change worktree 内累积还让分级门禁（`intent-gate.py`，相对路径判断）零改动生效。
 
 ## Steps
 
 ### 1. 选 change 并跑 git discipline
 
 - 确定 change 名（命令给了就用；否则从上下文推断 / 唯一 active 自动选 / 歧义则 `openspec list --json` + AskUserQuestion）。宣布："Using change: <name>"。
-- 用 `openspec-git-discipline`：确认 **proposal 已在 `main`**；`git status --short` 看工作树状态。未满足则停下报告，不强行开工。
+- 用 `openspec-git-discipline`：① 确认 CWD 已在本 change 的 `.worktrees/<name>/` worktree 内（见 Worktree Isolation）——不在则进入已存在的 worktree，缺失则停下报告；② 确认 proposal 工件已在一个单独 commit（只含工件、无实现代码，无需先合 `main`）；③ `git status --short` 看工作树状态。未满足则停下报告，不强行开工。
 
 ### 2. 取 apply 上下文
 
@@ -84,7 +84,7 @@ git status --short          # 工作区必须干净
 prompt 必须**自包含**（subagent 不带主会话上下文）：
 
 ```
-背景：你在为 OpenSpec change `<name>` 实现单个 task。在当前工作区直接操作（不要新建 worktree、不要切分支、不要 push）。
+背景：你在为 OpenSpec change `<name>` 实现单个 task。在本 change 的 worktree 内直接操作（主会话已进入它；不要再新建/嵌套 worktree、不要切分支、不要 push）。
 
 运行环境（已为你查好）：
 - repo 根：<绝对路径>
@@ -137,7 +137,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 - reviewer 报告**有 CRITICAL 或 HIGH** → **不勾 checkbox**。派一个 fresh 修复 subagent（`subagent_type: general-purpose`）。它也是 cold 的，prompt 必须把"修什么、在哪、问题是什么"讲全：
 
   ```
-  背景：修复一个 OpenSpec change 里某 task 实现被 code-reviewer 挡下的问题。在当前工作区直接操作，不要 push / 切分支。
+  背景：修复一个 OpenSpec change 里某 task 实现被 code-reviewer 挡下的问题。在本 change 的 worktree 内直接操作（主会话已进入它），不要 push / 切分支 / 新建 worktree。
 
   运行环境：<同 4a：repo 根 / change 目录 / 相关源文件 / 测试命令 / 有 Write·Edit·Bash 权限>
   本 task：<task 编号 + 描述>
@@ -194,8 +194,8 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 
 ## Guardrails
 
-- 始终先 `openspec-git-discipline`：proposal 未到 `main` 不开工。
-- **不开 worktree**：在当前工作区逐 task 累积。
+- 始终先 `openspec-git-discipline`：确认已在本 change 的 worktree 内、proposal 工件已单独成 commit，否则不开工。
+- **worktree 每 change 一间**：在本 change 的 `.worktrees/<name>/` worktree 内逐 task 累积；不为每个 task 各开、不嵌套子 worktree。
 - 每个 task **先实现 subagent、再 reviewer subagent**，CRITICAL/HIGH 不修不勾 checkbox。
 - 实现 subagent **必须**走 TDD（RED→GREEN→REFACTOR + GWT 中文注释）；reviewer 把"测试缺失 / TDD 被破坏"按 HIGH 阻断。
 - reviewer 是**干净、只读**的（prompt 自包含、不带主会话上下文、只 review 不改码）。
@@ -209,7 +209,7 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 
 | Mistake | Fix |
 | --- | --- |
-| 给每个 task 开独立 worktree | 逐 task 是串行累积，用同一工作区 |
+| 给每个 task 开独立 worktree | 逐 task 是串行累积，全在本 change 的**同一间** worktree 里；每 change 一间、不是每 task 一间 |
 | 实现 subagent 跳过 TDD | prompt 强制走 test-driven-development；reviewer 按 HIGH 阻断缺测试 |
 | reviewer 带了主会话上下文 | prompt 自包含、不传对话历史，保独立性 |
 | CRITICAL 没修就勾 checkbox | 阻断阈值 = CRITICAL + HIGH，回灌修复过才勾 |

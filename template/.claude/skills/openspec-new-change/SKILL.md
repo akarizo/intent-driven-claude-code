@@ -11,6 +11,8 @@ metadata:
 
 Start a new change using the experimental artifact-driven approach.
 
+**REQUIRED SUB-SKILL：** 建 change 前先用 `openspec-git-discipline` 的 **Worktree Isolation** 节 —— 本 change 一切产物落它自己的 `.worktrees/<name>/` worktree 内，主仓库工作区不落产物。
+
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
 **Steps**
@@ -23,6 +25,16 @@ Start a new change using the experimental artifact-driven approach.
    From their description, derive a kebab-case name (e.g., "add user authentication" → `add-user-auth`).
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
+
+1.5 **建并进入本 change 的 worktree**（见 `openspec-git-discipline` 的 Worktree Isolation）
+
+   在 `openspec new change` **之前**先隔离工作区：
+
+   ```bash
+   git worktree add .worktrees/<name> -b worktree-<name>
+   ```
+
+   进入它（CWD = `.worktrees/<name>/`）；worktree 已存在则直接进入。之后 step 3 起的相对路径自然落 worktree 内。建 worktree 是工作区准备（非 lifecycle 推进）可直接做，push / merge / 删 worktree 交用户授权。
 
 2. **Determine the workflow schema**
 
@@ -39,7 +51,7 @@ Start a new change using the experimental artifact-driven approach.
    openspec new change "<name>"
    ```
    Add `--schema <name>` only if the user requested a specific workflow.
-   This creates a scaffolded change at `openspec/changes/<name>/` with the selected schema.
+   This creates a scaffolded change at `openspec/changes/<name>/` (worktree 内) with the selected schema.
 
 4. **Show the artifact status**
    ```bash

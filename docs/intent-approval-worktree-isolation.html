@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>意图审批 · 每 change 独立 worktree 隔离纪律</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --font-display: ui-serif, "Iowan Old Style", "Songti SC", Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sp-1: .3rem; --sp-2: .6rem; --sp-3: 1rem; --sp-4: 1.5rem; --sp-5: 2.25rem; --sp-6: 3.25rem;
+  --r-sm: 5px; --r-md: 10px; --r-lg: 18px;
+  --tap: cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root, [data-theme="light"] {
+  --bg: #f7f5ef; --surface: #ffffff; --surface-2: #efece3; --surface-3: #e6e2d5;
+  --fg: #15161a; --fg-muted: #5b5e68; --border: #d9d4c3; --border-strong: #1a1b20;
+  --accent: #1d4ed8; --accent-soft: #dbeafe;
+  --ok: #15803d; --ok-soft: #dcfce7; --warn: #b45309; --warn-soft: #fef3c7;
+  --bad: #b91c1c; --bad-soft: #fee2e2;
+  --shadow: 0 6px 24px -8px rgba(20,21,26,.16);
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f13; --surface: #16181d; --surface-2: #1d2027; --surface-3: #23262e;
+    --fg: #f3f1e8; --fg-muted: #9a9ea9; --border: #2b2f37; --border-strong: #f3f1e8;
+    --accent: #60a5fa; --accent-soft: rgba(96,165,250,.18);
+    --ok: #4ade80; --ok-soft: rgba(74,222,128,.16); --warn: #fbbf24; --warn-soft: rgba(251,191,36,.16);
+    --bad: #f87171; --bad-soft: rgba(248,113,113,.18);
+    --shadow: 0 8px 30px -10px rgba(0,0,0,.6); --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+[data-theme="dark"] {
+  --bg: #0e0f13; --surface: #16181d; --surface-2: #1d2027; --surface-3: #23262e;
+  --fg: #f3f1e8; --fg-muted: #9a9ea9; --border: #2b2f37; --border-strong: #f3f1e8;
+  --accent: #60a5fa; --accent-soft: rgba(96,165,250,.18);
+  --ok: #4ade80; --ok-soft: rgba(74,222,128,.16); --warn: #fbbf24; --warn-soft: rgba(251,191,36,.16);
+  --bad: #f87171; --bad-soft: rgba(248,113,113,.18);
+  --shadow: 0 8px 30px -10px rgba(0,0,0,.6); --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); line-height: 1.6;
+  font-size: 16px; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: var(--sp-5) var(--sp-4) var(--sp-6); }
+header.hero { margin-bottom: var(--sp-5); }
+.kicker {
+  display: inline-flex; align-items: center; gap: .5em;
+  font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--fg-muted);
+  border: 1px solid var(--border); border-radius: 100px; padding: .3em .9em; margin-bottom: var(--sp-3);
+}
+.kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+h1 { font-family: var(--font-display); font-size: clamp(1.9rem, 1.2rem + 3vw, 3rem); line-height: 1.1; margin: 0 0 var(--sp-3); letter-spacing: -.01em; }
+.lede { font-size: 1.12rem; color: var(--fg-muted); max-width: 62ch; margin: 0; }
+section { margin-top: var(--sp-5); }
+h2 { font-family: var(--font-display); font-size: 1.5rem; margin: 0 0 var(--sp-3); display: flex; align-items: baseline; gap: .55em; letter-spacing: -.01em; }
+h2 .n { font-family: var(--font-mono); font-size: .85rem; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: .05em .5em; }
+h3 { font-size: 1.05rem; margin: var(--sp-4) 0 var(--sp-2); }
+p { margin: 0 0 var(--sp-2); }
+code { font-family: var(--font-mono); font-size: .86em; background: var(--surface-2); padding: .12em .4em; border-radius: var(--r-sm); border: 1px solid var(--border); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+.card + .card { margin-top: var(--sp-3); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* problem/solution split */
+.split { border-left: 3px solid var(--border); padding-left: var(--sp-3); }
+.split.bad { border-color: var(--bad); }
+.split.ok { border-color: var(--ok); }
+.split .tag { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; }
+.split.bad .tag { color: var(--bad); }
+.split.ok .tag { color: var(--ok); }
+
+/* diagram */
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+pre.ascii { font-family: var(--font-mono); font-size: .82rem; line-height: 1.5; margin: 0; white-space: pre; color: var(--fg); }
+pre.ascii .m { color: var(--fg-muted); }
+pre.ascii .a { color: var(--accent); font-weight: 600; }
+pre.ascii .g { color: var(--ok); font-weight: 600; }
+pre.ascii .r { color: var(--bad); font-weight: 600; }
+pre.ascii .w { color: var(--warn); font-weight: 600; }
+
+/* table */
+.tbl { width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: .62em .8em; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-muted); font-weight: 700; }
+tbody tr:hover { background: var(--surface-2); }
+td code { white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: .7rem; font-weight: 700; padding: .12em .55em; border-radius: 100px; letter-spacing: .03em; }
+.pill.new { background: var(--ok-soft); color: var(--ok); }
+.pill.mod { background: var(--warn-soft); color: var(--warn); }
+.pill.core { background: var(--accent-soft); color: var(--accent); }
+
+/* decision recap */
+.decisions { display: grid; grid-template-columns: 1fr; gap: var(--sp-2); }
+.dec { display: grid; grid-template-columns: 180px 1fr; gap: var(--sp-3); align-items: start; padding: var(--sp-2) 0; border-bottom: 1px dashed var(--border); }
+.dec:last-child { border-bottom: none; }
+.dec .q { font-weight: 700; font-size: .92rem; }
+.dec .a { color: var(--fg-muted); }
+.dec .a b { color: var(--accent); font-weight: 700; }
+@media (max-width: 560px) { .dec { grid-template-columns: 1fr; gap: .3rem; } }
+
+ul.clean { margin: var(--sp-2) 0; padding-left: 1.2em; }
+ul.clean li { margin-bottom: .4em; }
+.callout { border-radius: var(--r-md); padding: var(--sp-3); border: 1px solid; margin-top: var(--sp-3); font-size: .92rem; }
+.callout.warn { background: var(--warn-soft); border-color: var(--warn); }
+.callout.info { background: var(--accent-soft); border-color: var(--accent); }
+.callout .h { font-weight: 700; display: block; margin-bottom: .3em; }
+.mono-inline { font-family: var(--font-mono); font-size: .85em; }
+
+/* export bar */
+.exportbar { position: sticky; bottom: 0; margin-top: var(--sp-6); display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.exportbar .lbl { font-size: .85rem; color: var(--fg-muted); margin-right: auto; }
+button.btn { font-family: var(--font-body); font-size: .9rem; font-weight: 600; cursor: pointer; border-radius: var(--r-md); padding: .6em 1.1em; border: 1px solid var(--border-strong); background: var(--fg); color: var(--bg); transition: transform var(--tap), opacity .15s; }
+button.btn.ghost { background: transparent; color: var(--fg); }
+button.btn:hover { transform: translateY(-1px); }
+button.btn:active { transform: translateY(0); }
+.footnote { margin-top: var(--sp-4); font-size: .8rem; color: var(--fg-muted); text-align: center; }
+kbd { font-family: var(--font-mono); font-size: .8em; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: .1em .4em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>意图审批面板 · 待你确认</div>
+  <h1>每个 change 一个独立 worktree —— 所有产物落在 worktree 内，主仓库工作区永远干净</h1>
+  <p class="lede">你提出两条规避规则。我把它们提炼成一条贯穿 intent-driven 生命周期的<strong>「隔离纪律」</strong>，并定位到 template 里最精确的落点。请审阅意图，确认后我再动手。</p>
+</header>
+
+<!-- ============ 你的决策回执 ============ -->
+<section>
+  <h2><span class="n">回执</span>你已拍板的三项决策</h2>
+  <div class="card">
+    <div class="decisions">
+      <div class="dec">
+        <div class="q">worktree 粒度</div>
+        <div class="a"><b>每个 change 一个 worktree</b> —— 不推翻「逐 task 在同一区串行累积」的设计，只是把整个 change 的工作区从 main 挪到独立 worktree。</div>
+      </div>
+      <div class="dec">
+        <div class="q">worktree 权威路径</div>
+        <div class="a"><b>${workspace}/.worktrees/</b>（复数，仓库根下）—— 沿用 bulk-apply 已用的约定，统一三处不一致的旧写法。</div>
+      </div>
+      <div class="dec">
+        <div class="q">工件约束范围</div>
+        <div class="a"><b>所有产物</b>（5 工件 + spec.html + 实现代码）都必须落在 worktree 内，主仓库工作区不落任何产物。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 问题 → 目标 ============ -->
+<section>
+  <h2><span class="n">1</span>为什么要改</h2>
+  <div class="grid-2">
+    <div class="card split bad">
+      <span class="tag">现状 · 问题</span>
+      <p style="margin-top:.5rem">整个 opsx 生命周期（propose → continue → apply → verify）默认在<strong>当前工作区（通常是 main）</strong>里产生所有工件与实现代码。</p>
+      <ul class="clean">
+        <li>main 工作区被半成品工件 + 未完成实现污染</li>
+        <li>并行推进多个 change 时互相踩踏</li>
+        <li>worktree 只在 <code>bulk-apply</code>（多 change 并行）时才用，单 change 完全裸奔在 main</li>
+      </ul>
+    </div>
+    <div class="card split ok">
+      <span class="tag">目标 · 隔离纪律</span>
+      <p style="margin-top:.5rem">一个 change 从 <strong>propose 起手</strong>就进入 <code>.worktrees/&lt;change&gt;/</code> 的独立 worktree + branch。</p>
+      <ul class="clean">
+        <li>该 change 的一切产物都落在这个 worktree 内</li>
+        <li>主仓库工作区（main）永远只剩已合并的历史，随时干净</li>
+        <li>逐 task 仍在<strong>同一个</strong> worktree 内串行累积（task 依赖前序产出，不受影响）</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 核心机制 ============ -->
+<section>
+  <h2><span class="n">2</span>核心机制：切 CWD，不改路径常量</h2>
+  <div class="callout info">
+    <span class="h">关键洞察 —— 为什么这个改动很小</span>
+    所有 skill / hook / <code>openspec</code> CLI 用的都是<strong>相对路径</strong>（<code>openspec/changes/&lt;change&gt;/…</code>）。只要把 worktree 根设成当前工作目录（CWD），这些相对路径就<strong>自然落在 worktree 内</strong>。因此无需改写每个 skill 的路径常量 —— 只需在生命周期入口建立「进 worktree」这一步。
+  </div>
+  <div class="diagram" style="margin-top:var(--sp-3)">
+<pre class="ascii"><span class="m">主仓库根 (main, 始终干净)</span>
+  intent-driven-claude-code/
+  ├─ .claude/  openspec/  CLAUDE.md          <span class="m">← 已合并的历史</span>
+  └─ <span class="a">.worktrees/</span>                             <span class="m">← gitignore, 每 change 一间</span>
+       ├─ <span class="a">add-user-auth/</span>   <span class="m">[branch: worktree-add-user-auth]</span>
+       │    └─ openspec/changes/add-user-auth/
+       │         ├─ proposal.md specs/ design.md  <span class="g">← 工件落这里</span>
+       │         ├─ tasks.md  <span class="a">spec.html</span>              <span class="g">← HTML 面板也落这里</span>
+       │         └─ <span class="m">…</span>
+       │    └─ src/…                          <span class="g">← apply 实现代码也落这里</span>
+       └─ <span class="a">fix-cache-ttl/</span>   <span class="m">[branch: worktree-fix-cache-ttl]  ← 并行不踩踏</span>
+
+<span class="w">生命周期时序</span>
+  /opsx-propose add-user-auth
+     │  ① git worktree add .worktrees/add-user-auth -b worktree-add-user-auth
+     │  ② cd 进该 worktree (CWD = worktree 根)
+     │  ③ openspec new change → 工件写入 <span class="g">worktree 内</span> openspec/changes/…
+     ▼
+  /opsx-continue → 后续工件 + spec.html 全在<span class="g">同一 worktree</span>
+     ▼
+  /opsx-apply → 逐 task subagent 在<span class="g">同一 worktree</span>串行累积实现代码
+     ▼
+  /pr-ship → 从 worktree-add-user-auth 发 PR，合回 main（你授权）
+     ▼
+  worktree remove（在主仓库根执行）→ 该 change 收尾</pre>
+  </div>
+</section>
+
+<!-- ============ 改动清单 ============ -->
+<section>
+  <h2><span class="n">3</span>落点清单：改哪些文件、为什么</h2>
+  <p class="lede" style="font-size:1rem;margin-bottom:var(--sp-3)">策略：<strong>建立单一权威来源</strong>（git-discipline 里新增一节），生命周期各 skill 只加<strong>指针 + 入口动作</strong>，避免规则散落。</p>
+  <div class="tbl card" style="padding:var(--sp-2)">
+  <table>
+    <thead>
+      <tr><th>文件</th><th>类型</th><th>改动</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>skills/openspec-git-discipline/SKILL.md</code></td>
+        <td><span class="pill core">权威源</span></td>
+        <td>新增一节 <strong>「Worktree 隔离纪律」</strong>：每 change 一个 <code>.worktrees/&lt;change&gt;/</code> worktree + branch；所有产物落 worktree 内、禁写主仓库工作区；worktree 清理只在主仓库根做。这是规则的唯一定义处，其余文件引它。</td>
+      </tr>
+      <tr>
+        <td><code>skills/openspec-propose/SKILL.md</code><br><code>skills/openspec-new-change/SKILL.md</code></td>
+        <td><span class="pill mod">改</span></td>
+        <td>在「创建 change 目录」<strong>之前</strong>插入入口步骤：为该 change 建 worktree（<code>.worktrees/&lt;change&gt;</code> + <code>worktree-&lt;change&gt;</code> 分支）并进入它，后续 <code>openspec new change</code> 及工件写入自然落在 worktree 内。开头加 REQUIRED SUB-SKILL 指针。</td>
+      </tr>
+      <tr>
+        <td><code>skills/openspec-continue-change/SKILL.md</code><br><code>skills/openspec-apply-change/SKILL.md</code></td>
+        <td><span class="pill mod">改</span></td>
+        <td>开工前<strong>确认已在该 change 的 worktree 内</strong>（不在则先进入 / 报告）；加纪律指针。apply 的两种模式都在该 worktree 内进行。</td>
+      </tr>
+      <tr>
+        <td><code>skills/openspec-subagent-apply-change/SKILL.md</code></td>
+        <td><span class="pill mod">改·协调冲突</span></td>
+        <td>现文案说「不开 worktree、在当前工作区累积」，与新规则字面冲突。改为：<strong>在本 change 的 worktree 内逐 task 串行累积</strong>（每 change 一个 worktree ✓，change 内逐 task 同区累积 ✓ —— 两者一致，只是措辞需澄清「当前工作区」＝「本 change 的 worktree」）。subagent prompt 里的「不要新建 worktree」改为「在本 change worktree 内操作，不要再新建子 worktree」。</td>
+      </tr>
+      <tr>
+        <td><code>skills/openspec-bulk-apply-change/SKILL.md</code><br><code>commands/opsx-bulk-apply.md</code></td>
+        <td><span class="pill mod">改·统一路径</span></td>
+        <td>把 <code>.worktrees/</code> 确认为权威路径（本已是复数，只需与新权威节对齐措辞、加指针）。已一致，改动最小。</td>
+      </tr>
+      <tr>
+        <td><code>CLAUDE.md.snippet</code></td>
+        <td><span class="pill mod">改·常驻记忆</span></td>
+        <td>Git 段落加一行隔离纪律 + <code>.worktrees/&lt;change&gt;/</code> 路径；「落点收敛」行补「每 change 产物落其 worktree，主仓库根保持干净」。这是分发到用户项目的常驻精简版。</td>
+      </tr>
+      <tr>
+        <td><code>.gitignore</code></td>
+        <td><span class="pill new">加</span></td>
+        <td>新增 <code>.worktrees/</code>（当前未被忽略 —— 已验证 <code>git check-ignore</code> exit=1）。worktree 内容跟踪各自分支，不该作为未跟踪噪音出现在主仓库 <code>git status</code>。</td>
+      </tr>
+      <tr>
+        <td><code>README.md</code></td>
+        <td><span class="pill mod">改·文档</span></td>
+        <td>worktree 表述与新纪律同步（现仅 bulk-apply 一处提及）。轻量。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 冲突协调 ============ -->
+<section>
+  <h2><span class="n">4</span>一处必须点破的既有冲突</h2>
+  <div class="card">
+    <h3 style="margin-top:0">「逐 task 守门」曾写「不开 worktree」—— 与新规则字面打架，实则可调和</h3>
+    <p><code>openspec-subagent-apply-change</code> 现在明确写着「<strong>为什么不开 worktree</strong>：逐 task 是串行累积，Claude Code 原生 <code>isolation:worktree</code> 每次派发都新建独立 worktree、看不到前序产出」。</p>
+    <div class="callout warn">
+      <span class="h">调和方式（与你「每 change 一个 worktree」的决策完全一致）</span>
+      那段话反对的是「<strong>给每个 task 各开一个</strong> worktree」——这仍然错，不改。新规则要的是「<strong>整个 change 一个</strong> worktree」。两个粒度不冲突：change 级开一间 worktree，change 内逐 task 在<strong>这一间</strong>里串行累积。改动只是把该 skill 里「当前工作区」的措辞澄清为「<strong>本 change 的 worktree</strong>」，并在 subagent prompt 里把「不要新建 worktree」改成「在本 change worktree 内操作、不要再嵌套子 worktree」。逐 task 累积机制、commit 锚点、门禁豁免全部零改动。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 不做什么 ============ -->
+<section>
+  <h2><span class="n">5</span>边界：这次不碰什么</h2>
+  <div class="card">
+    <ul class="clean">
+      <li><strong>不改 <code>intent-gate.py</code> 门禁</strong> —— 它用相对路径判断，CWD 切到 worktree 后行为不变，零改动生效。</li>
+      <li><strong>不改 <code>spec-html-render</code> 输出路径常量</strong> —— <code>openspec/changes/&lt;change&gt;/spec.html</code> 是相对路径，CWD 在 worktree 内即自然落对。</li>
+      <li><strong>不改 <code>install.sh</code> 拷贝逻辑</strong> —— 它拷 template 的静态文件，与运行期 worktree 无关；仅 <code>.gitignore</code> 随 template 分发。</li>
+      <li><strong>不自动 commit / branch / merge / 清理 worktree</strong> —— 建 worktree 是工作区准备（非 lifecycle 状态推进），但 merge / 删分支 / <code>worktree remove</code> 仍交你授权（守 CLAUDE.md git 铁律）。</li>
+      <li><strong>不走完整 5 工件 opsx 流程</strong> —— 本次产物全是规则文档（<code>.md</code> / <code>.snippet</code> / <code>.gitignore</code>，门禁豁免路径），且是对工作流规则自身的元修改；用 HTML 面板审批意图更合适。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 验证 ============ -->
+<section>
+  <h2><span class="n">6</span>怎么验证改完是对的</h2>
+  <div class="card">
+    <ul class="clean">
+      <li><strong>规则自洽</strong>：git-discipline 新节 与 各 skill 指针互指无悬空；<code>grep -rn '\.worktrees\?' template/</code> 全部指向复数 <code>.worktrees/</code>，无残留单数写法。</li>
+      <li><strong>冲突已消</strong>：<code>subagent-apply-change</code> 里不再有「不开 worktree」的裸表述，只剩「不为每个 task 各开 worktree」+「在本 change worktree 内累积」。</li>
+      <li><strong>gitignore 生效</strong>：<code>git check-ignore .worktrees/</code> 返回 exit=0。</li>
+      <li><strong>端到端演练</strong>（可选）：跑一次 <code>/opsx-propose demo-x</code>，确认 change 目录建在 <code>.worktrees/demo-x/openspec/changes/demo-x/</code>，且主仓库根 <code>git status</code> 干净。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 导出 ============ -->
+<div class="exportbar">
+  <span class="lbl">审阅完这份意图？导出你的批注，或直接在对话里回我「同意 / 要改 X」。</span>
+  <button class="btn ghost" onclick="exportMd()">导出为 Markdown</button>
+  <button class="btn" onclick="window.print()">打印 / 存 PDF</button>
+</div>
+<p class="footnote">此面板由规划阶段生成，位于本任务 worktree <code>.worktrees/worktree-enforce-per-change/docs/</code> 内 —— 已遵循「产物落 worktree、不提主仓库根」的新规则本身。</p>
+
+</div>
+
+<script>
+function exportMd() {
+  var md = [
+    '# 意图审批：每个 change 一个独立 worktree 隔离纪律',
+    '',
+    '## 你的三项决策',
+    '- worktree 粒度：**每个 change 一个 worktree**（不推翻逐 task 同区串行累积）',
+    '- 权威路径：**${workspace}/.worktrees/**（复数，仓库根下）',
+    '- 工件范围：**所有产物**（5 工件 + spec.html + 实现代码）落 worktree 内，主仓库工作区不落产物',
+    '',
+    '## 核心机制',
+    '所有 skill/hook/openspec CLI 用相对路径 → 把 worktree 设为 CWD，相对路径自然落 worktree 内。无需改路径常量，只在生命周期入口加「进 worktree」步骤。',
+    '',
+    '## 落点清单',
+    '- openspec-git-discipline/SKILL.md — 【权威源】新增「Worktree 隔离纪律」节',
+    '- openspec-propose / openspec-new-change — 建 change 前插入建 worktree + 进入的入口步骤 + 指针',
+    '- openspec-continue-change / openspec-apply-change — 开工前确认在本 change worktree 内 + 指针',
+    '- openspec-subagent-apply-change — 协调冲突：「当前工作区」澄清为「本 change 的 worktree」；不再嵌套子 worktree',
+    '- openspec-bulk-apply-change / opsx-bulk-apply.md — 确认 .worktrees/ 为权威路径（已一致，对齐措辞）',
+    '- CLAUDE.md.snippet — Git 段加隔离纪律行 + 路径；落点收敛行补主仓库根保持干净',
+    '- .gitignore — 新增 .worktrees/（当前未忽略）',
+    '- README.md — worktree 表述同步',
+    '',
+    '## 冲突协调',
+    'subagent-apply 曾写「不开 worktree」——反对的是「每 task 各开一个」，仍成立；新规则是「每 change 开一个」，粒度不冲突。只澄清措辞，逐 task 累积机制零改动。',
+    '',
+    '## 不碰',
+    'intent-gate.py / spec-html 路径常量 / install.sh 拷贝逻辑 / 不自动 merge·删分支·remove worktree / 不走完整 5 工件流程',
+    '',
+    '## 验证',
+    'grep 全指向复数 .worktrees/；无「不开 worktree」裸表述；git check-ignore .worktrees/ =0；可选跑 /opsx-propose demo-x 确认落点。'
+  ].join('\n');
+  var blob = new Blob([md], {type: 'text/markdown;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'intent-approval-worktree-isolation.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>

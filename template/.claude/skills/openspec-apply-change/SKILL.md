@@ -11,6 +11,8 @@ metadata:
 
 Implement tasks from an OpenSpec change.
 
+**REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
@@ -23,6 +25,10 @@ Implement tasks from an OpenSpec change.
    - If ambiguous, run `openspec list --json` to get available changes and use the **AskUserQuestion tool** to let the user select
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).
+
+1.5 **确认已在本 change 的 worktree 内**（见 `openspec-git-discipline` 的 Worktree Isolation）
+
+   apply 前 CWD 必须是 `.worktrees/<name>/`。不在则进入已存在的 worktree；worktree 缺失（工件从未落 worktree）则停下报告，不在主仓库工作区写实现代码。两种 apply 模式（串行 / 逐 task 守门）都在这一间 worktree 内进行。
 
 2. **Check status to understand the schema**
    ```bash

@@ -11,6 +11,8 @@ metadata:
 
 Continue working on a change by creating the next artifact.
 
+**REQUIRED SUB-SKILL：** 用 `openspec-git-discipline` 的 **Worktree Isolation** 节 —— 续做前必须已在本 change 的 `.worktrees/<name>/` worktree 内，新工件也落在那里。
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
@@ -28,6 +30,10 @@ Continue working on a change by creating the next artifact.
    Mark the most recently modified change as "(Recommended)" since it's likely what the user wants to continue.
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
+
+1.5 **确认已在本 change 的 worktree 内**（见 `openspec-git-discipline` 的 Worktree Isolation）
+
+   续做前 CWD 必须是 `.worktrees/<name>/`。若不在（例如新会话从主仓库根起）：worktree 已存在则进入它；不存在（此前工件未在 worktree 内建）则停下报告，不在主仓库工作区续写工件。
 
 2. **Check current status**
    ```bash

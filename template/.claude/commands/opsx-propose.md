@@ -26,11 +26,21 @@ When ready to implement, run /opsx-apply
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
+1.5 **建并进入本 change 的 worktree**（见 `.claude/skills/openspec-git-discipline/` 的 Worktree Isolation）
+
+   在建 change 目录**之前**，先隔离工作区到本 change 专属 worktree（一切产物落其中，主仓库根不落产物）：
+
+   ```bash
+   git worktree add .worktrees/<name> -b worktree-<name>
+   ```
+
+   进入它（CWD = `.worktrees/<name>/`）；worktree 已存在则直接进入。之后 step 2 起的相对路径自然落 worktree 内。
+
 2. **Create the change directory**
    ```bash
    openspec new change "<name>"
    ```
-   This creates a scaffolded change at `openspec/changes/<name>/` with `.openspec.yaml`.
+   This creates a scaffolded change at `openspec/changes/<name>/` (worktree 内) with `.openspec.yaml`.
 
 3. **Get the artifact build order**
    ```bash
