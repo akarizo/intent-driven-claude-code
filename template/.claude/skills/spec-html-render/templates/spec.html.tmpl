@@ -514,6 +514,8 @@ section h4 {
   color: var(--color-fg-muted);
 }
 body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
 
 /* Mockups */
 .mockup-frame {
@@ -766,17 +768,29 @@ footer {
 </script>
 
 <script type="module">
-  // Mermaid 通过 jsdelivr CDN 加载；离线时给 body 加 .offline 让 .diagram-fallback 显示
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
   try {
     const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
     mod.default.initialize({
-      startOnLoad: true,
-      theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default',
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
       fontFamily: 'var(--font-body)'
     });
+    await mod.default.run();
+    clearTimeout(timer);
   } catch (e) {
-    document.body.classList.add('offline');
-    console.warn('[spec-html] Mermaid CDN 加载失败，已切换降级显示。', e);
+    clearTimeout(timer);
+    degrade(e);
   }
 </script>
 

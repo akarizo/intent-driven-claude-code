@@ -126,7 +126,7 @@ description: 把 OpenSpec change 工件渲染为单文件 HTML 审批面板 `ope
 ## 设计原则
 
 - **单文件 self-contained**：除 `https://cdn.jsdelivr.net/npm/mermaid@10/...` 外不引任何外部资源；不引外部字体、图标库、UI 框架。
-- **离线兼容**：Mermaid CDN 失败时模板会自动给 `<body>` 加 `.offline`，原始 mermaid 源码以 `<pre>` 显示，不留白屏。
+- **离线兼容**：Mermaid CDN 失败或 10s 超时时模板会自动给 `<body>` 加 `.offline`，图的纯文本降级版以 `<pre>` 显示，不留白屏。
 - **HTML 是 render layer**：所有"事实来源"是 markdown 工件；不要在 HTML 里写 markdown 没有的事实，不要修改任何 markdown。
 - **反模板**：跟随 Swiss/Editorial 风格 — 大 hero 标题、强对比、克制留白、克制阴影、不滥用渐变。看着不像 GitHub README、不像 shadcn 默认面板。
 - **中文为主，必要术语保留英文**：章节 eyebrow、step-key (GIVEN/WHEN/THEN)、技术词保留英文；其余正文中文。
@@ -141,6 +141,7 @@ description: 把 OpenSpec change 工件渲染为单文件 HTML 审批面板 `ope
 - **一次 Write 完成**：禁止用 Edit 拼接 HTML。HTML 模板很整体，分段写容易破坏结构。
 - **mockup 不要满屏画**：1-3 个足够；多了反而干扰审批。
 - **找不到模板时报错**：`templates/spec.html.tmpl` 不存在 → 报错让用户检查 skill 是否完整安装。
+- **Mermaid 脚本段原样保留**：模板尾部的 `<script type="module">` 不要改写。其中 `startOnLoad` 恒为 `false` + 显式 `await mermaid.run()` —— 动态 import 落地时 window 的 `load` 事件早已触发，改回 `startOnLoad: true` 会让所有图**静默不渲染**（无报错、无降级，页面只剩空白图框）。
 
 ## 常见误用
 
