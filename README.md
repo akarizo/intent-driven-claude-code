@@ -190,9 +190,10 @@ your-project/
 
 ```
 对每个 task：
-  派 fresh 实现 subagent（强制 TDD）→ 派 code-reviewer subagent 审本 task 净 diff
-    → CRITICAL/HIGH 存在 → 回灌修复 → 复审（循环到清零）→ 才勾 checkbox → 下一个 task
-全部 task 完成：full review（整体 diff）→ /opsx-verify → 收口（不 merge 不 archive）
+  派 fresh 实现 subagent（强制 TDD）→ 派 code-reviewer 审本 task 净 diff（mode=full）
+    → CRITICAL/HIGH 存在 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 清零
+    → 勾 checkbox + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）→ 下一个 task
+全部 task 完成：问一次整合审位置（立即 ship → 交给 /pr-ship）→ /opsx-verify → 收口（不 merge 不 archive）
 ```
 
 无论哪种模式，**每个会写代码的 task 都强制走 TDD/BDD 循环**：
@@ -208,17 +209,21 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - 一个测试只触发一个被测动作（When 块单一）
 - 反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
 
-#### 两层守门 · 实现中 vs 合并前
+#### 守门分层 · 靠 review 水位线避免重复审同一段代码
 
-`code-reviewer` 这个 agent **一个定义服务三处**，靠"不同 diff 范围"区分，不会把同一段代码白审两次：
+`code-reviewer` 这个 agent **一个定义服务多处**。但要注意：这些守门点的 diff 范围本身是**包含关系**——`单 task 净 diff ⊂ change 累计 diff ≈ PR ↔ target diff`。光靠"范围不同"并不能避免重复，反而正是重复的来源。
 
-| 守门点 | diff 范围 | 时机 | 动作 |
-| --- | --- | --- | --- |
-| 逐 task review | 单 task 净 diff | 每个 task 写完 | **CRITICAL/HIGH 挡 checkbox**，回灌修 |
-| full review | 整个 change 累计 diff | 全部 task 完成 | archive 前整体自查 |
-| `/pr-ship` review | PR ↔ target 分支 diff | PR 阶段 | 评论入库（带签名）给人类 reviewer |
+真正避免重复的是 **review 水位线**（`openspec/changes/<change>/review-log.md`）：逐 task 守门每通过一个 task，就记下已审 commit 区间、阻断并修复的项数、以及未阻断的 MEDIUM/LOW（deferred）；后续每个守门点先读它，再决定审什么、不报什么。
 
-前两者在本地是**自查**，最后一个在 PR 是**入库留痕**——层次不同，互补不重复。
+| 守门点 | 评审模式 | diff 范围 | 时机 | 动作 |
+| --- | --- | --- | --- | --- |
+| 逐 task 守门 | `full` | 单 task 净 diff | 每个 task 写完 | **CRITICAL/HIGH 挡 checkbox**；通过则推进水位线并登记 deferred |
+| 阻断回灌复核 | `follow-up` | 只有那个 `fix:` commit | 修完 | 逐条核对 finding 闭环 + 修复自身有无新问题，**不重审整个 task** |
+| 整合审 | `integration` | change 累计 diff | 全部 task 完成 | 只报跨 task 交互 / 整体一致性 / 端到端完整性 / 工件与实现一致性。**位置由你选**（本地，或交给 `/pr-ship`），一次变更只跑一次；单 task 的 change 恒跳过 |
+| `/pr-ship` 评审 | 按水位线自动选 | PR ↔ target diff | PR 阶段 | 评论入库：报告 + **审查深度声明** + **守门期间 deferred 清单**（带签名）给人类 reviewer |
+| PR 复审 | `follow-up` | 只有修复补丁 | 用户选再走一轮 | 核对上轮 finding 闭环，不重扫整份 PR |
+
+**兜底**：读不到 `review-log.md`（串行 apply / 手工分支 / 非 OpenSpec 变更）时一切回退**全量审**——水位线只能缩小「已被守门覆盖」那部分的范围，**绝不让未审代码蒙混过关**。`REVIEWED_UPTO` 之后的任何 commit 一律按全量标准审。
 
 ### 阶段 3 · 知识沉淀（PR 前）
 
@@ -238,9 +243,9 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
-  → 起【干净的】code-reviewer subagent 评审 diff
-  → review markdown 作为评论入库（签名必带）
-  → 与用户逐条讨论修复 → 落地补丁到同 PR → 询问是否再走一轮
+  → 读 review 水位线定评审模式 → 起【干净的】code-reviewer subagent 评审
+  → 报告 + 审查深度声明 + 守门期间 deferred 清单 作为评论入库（签名必带）
+  → 与用户逐条讨论修复 → 落地补丁到同 PR → 增量复核（mode=follow-up，只审修复补丁）
 ```
 
 关键设计：
@@ -256,7 +261,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | --- | --- |
 | Completeness | tasks checkbox 全勾 / 每个 requirement 都有实现 |
 | Correctness | requirement → 代码映射 / scenario 覆盖 |
-| **Test Discipline (TDD/BDD)** | 测试函数体首行 GWT 注释 / When 单一动作 / Then 与断言数对齐 / 不触犯 5 反模式 |
+| **Test Discipline (TDD/BDD)** | **按 review 水位线分流**：走过逐 task 守门 → 只验配对测试文件存在 + 抽 1 例确认 GWT 注释（细节与反模式判定守门已按 HIGH 挡过，不重复抽查）；无水位线 → 完整抽查：GWT 注释 / When 单一动作 / Then 与断言数对齐 / 不触犯 5 反模式 |
 | Coherence | design 决策被遵循 / 代码风格一致 |
 
 违反 TDD 纪律记 **CRITICAL**，阻止归档。
@@ -370,7 +375,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 
 | Agent | 职责 |
 | --- | --- |
-| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审守门员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法 + 签名）。**三处共用**：`openspec-subagent-apply-change` 的逐 task 守门、full review，以及 `/pr-ship` 的 PR 评审。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审守门员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法 + 签名）。支持 **`full` / `integration` / `follow-up` 三种评审模式**：按 prompt 声明的已审范围决定审查边界，**不重复上报**已修复或已 deferred 的问题（确认上游没修好仍可报，须标注「上游 review 未闭环」）。**多处共用**：`openspec-subagent-apply-change` 的逐 task 守门与回灌复核、整合审，以及 `/pr-ship` 的 PR 评审与增量复核。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
 
 ---
 

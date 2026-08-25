@@ -164,7 +164,7 @@ Rule: Users can export their own data
 
 | 模式 | 承载 skill | 怎么跑 | 守门 |
 | --- | --- | --- | --- |
-| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 主会话逐个 task 派 **fresh 实现 subagent**（强制 TDD），完成即派 **`code-reviewer` subagent** 审本 task 净 diff | **CRITICAL/HIGH 阻断**，回灌修复过才勾 checkbox；末尾 full review + verify |
+| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 主会话逐个 task 派 **fresh 实现 subagent**（强制 TDD），完成即派 **`code-reviewer` subagent** 审本 task 净 diff | **CRITICAL/HIGH 阻断**，回灌修复过才勾 checkbox；通过则推进 **review 水位线**；末尾整合审位置由你选 + verify |
 | **串行（轻量）** | `openspec-apply-change` | 主会话逐 task 串行写 | 无（靠 `/pr-ship` 末尾一次性评审） |
 
 **逐 task 守门循环**（吸收自 sdd-plus-superpowers 的 subagent-development 玩法，中文化自研、不依赖外部插件）：
@@ -172,17 +172,19 @@ Rule: Users can export their own data
 ```
 对每个 task：
   派 fresh 实现 subagent（走 test-driven-development：RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）
-    → 派 code-reviewer subagent 审本 task 净 diff（CRITICAL/HIGH 阻断）
-    → 有阻断项 → 回灌实现 subagent 修 → 复审（循环到清零）
-    → 勾选 checkbox - [ ] → - [x] → 下一个 task
-全部 task 完成 → full review（整个 change 累计 diff）→ /opsx-verify → 收口（不 merge 不 archive）
+    → 派 code-reviewer subagent 审本 task 净 diff（mode=full，CRITICAL/HIGH 阻断）
+    → 有阻断项 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 循环到清零
+    → 勾选 checkbox - [ ] → - [x] + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）
+    → 下一个 task
+全部 task 完成 → AskUserQuestion 定整合审位置（立即 ship → 交给 /pr-ship；暂不 ship → 本地跑 mode=integration；
+                单 task 的 change 恒跳过）→ /opsx-verify → 收口（不 merge 不 archive）
 ```
 
 **关键约束**：
 
 - **不开 worktree**：逐 task 是串行累积（task2 依赖 task1 产出），在当前工作区。原生 `isolation: worktree` 每次派发开独立 worktree、看不到前序 task，不适用；这也让分级门禁 `intent-gate.py` 零改动生效。
 - **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行。
-- **三处守门同一 agent**：逐 task review（单 task 净 diff）/ full review（累计 diff）/ `/pr-ship`（PR↔target diff），靠 diff 范围区分，互补不重复。
+- **守门靠 review 水位线分层**：这些守门点的 diff 范围是**包含关系**（单 task ⊂ 累计 ≈ PR），光靠"范围不同"避免不了重复。`review-log.md` 记下已审区间与 deferred 清单，后续守门点读它决定审什么、不报什么：逐 task = `full`、回灌复核 = `follow-up`（只审 fix commit）、整合审 = `integration`（只报跨 task/整体/端到端/工件一致性，一次变更只跑一次）、PR 复审 = `follow-up`（只审修复补丁）。**读不到水位线一律回退全量审**——它只能缩小已覆盖部分的范围，不能放过未审代码。
 - **`code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
 
 详见 `.claude/skills/openspec-subagent-apply-change/SKILL.md` 与 `.claude/agents/code-reviewer.md`。
@@ -225,7 +227,8 @@ git checkout -b feat/add-user-export
 /opsx-apply add-user-export
 # step 6 选执行模式：
 #   - subagent 逐 task 守门（推荐）：每个 task 派 subagent 实现 + code-reviewer 守门，
-#     CRITICAL/HIGH 阻断、回灌修复过才勾 checkbox；末尾 full review + verify
+#     CRITICAL/HIGH 阻断、回灌修复过才勾 checkbox、通过则推进 review 水位线；
+#     末尾问一次整合审位置（本地 / 交给 pr-ship）+ verify
 #   - 串行（轻量）：主会话逐条实现，勾选 checkbox
 
 # 4. 实现合回 main 后归档
