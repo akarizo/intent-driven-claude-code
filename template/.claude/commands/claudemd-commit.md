@@ -142,6 +142,8 @@ python3 .claude/hooks/claudemd-lint.py
 - **指针写前验真**：`ls` / `find` / `cx` 确认目标存在；lint 会兜底拦悬空指针。
 - **monorepo 就近归位**（§2 LCA）：绝不把子项目的事写进根。
 - **收尾必须 lint 全绿**，禁带 ERROR 声明完成。
+- **别和门禁抢活**：字节预算 / 巨行 / 悬空指针 / `@` 语义 / 跨层重复由 `claudemd-lint` 机械判定（PostToolUse hook 写完即回灌）。
+  本命令只做机器判不了的部分：**准入四问、LCA 归属、分流去向**。见 standard §13b 的硬/软分界表。
 
 ## 与其它命令的分工
 

@@ -425,7 +425,10 @@ cat <<EOF
 
 更多:
   - 15 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 3 个 claudemd-* + /spec-html + /pr-ship）
-  - CLAUDE.md 体检：python3 .claude/hooks/claudemd-lint.py（字节预算 / 悬空指针 / 单行长度，建议接 pre-commit）
+  - CLAUDE.md 门禁 claudemd-lint：PostToolUse hook 已自动接线（写完当场回灌）
+    · 全仓扫描  python3 .claude/hooks/claudemd-lint.py
+    · 预算中性  python3 .claude/hooks/claudemd-lint.py --diff-gate --base HEAD --msg-file <f>
+    · pre-commit / commit-msg 片段见 .claude/claudemd-standard.md §13b
   - 17 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render、openspec-subagent-apply-change）
   - 1 个 agent 见 .claude/agents/（code-reviewer：逐 task 守门 + /pr-ship 评审共用）
   - apply 两模式：中级+ 推荐「subagent 逐 task 守门」(openspec-subagent-apply-change)，每个 task 实现完即派 code-reviewer 守门(CRITICAL/HIGH 阻断)；轻量退回串行

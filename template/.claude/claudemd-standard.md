@@ -242,6 +242,78 @@
 - ⚠ **`/claudemd-sync` 已废除**（2026-08-25）：它明写「不要压缩、宁可冗余」且每轮跑，而减法挂在一个更慢的命令上 —— 结构上就是**有齿无掣子的棘轮**，必然单调增长。`/claudemd-commit` 取代它，把加法与减法合进同一个动作。
 - distill 不再是「止血手段」而是「定期重排」：日常增长已由 commit 的预算中性约束住。
 
+## 13b. 硬约束 vs 软判断（谁来守）
+
+> 本规范的核心主张是「能机器拦的必须机器拦」。这一节把它应用到规范自己身上：
+> 逐条标出**谁负责执行**。凡标「机器」的，人和模型都不必再复核；凡标「判断」的，机器帮不上忙，只能靠流程留痕。
+
+### 机器守（`claudemd-lint`，可判定、零裁量）
+
+| 约束 | 判据 | 触发点 |
+|---|---|---|
+| 字节预算（分层，注入段单独计） | `len(bytes)` vs 闸门 | hook · pre-commit · CI |
+| 巨行（> 400 B 拦 / > 200 B 提醒） | 逐行字节 | 同上 |
+| 悬空指针 | 反引号内路径是否存在 | 同上 |
+| `@` 语义误用（裸 @ 急切导入 / 反引号内死记号） | 正则 + 层级 | 同上 |
+| **跨层重复**（违反「单一真相」） | 归一化行在祖先/后代两层同时出现 | 全仓扫描 |
+| **预算中性**（加一减一） | `git diff` 净字节 ≤ 0，否则要 commit message 申报 | commit-msg · CI |
+| 头部 `>` scope 块缺失 | 结构 | hook · pre-commit |
+| 日期腐烂（> 90 天未触碰） | 日期解析 | 全仓扫描（提醒） |
+
+### 人/模型判断（机器判不了，只能靠流程留痕）
+
+| 判断 | 为什么机器判不了 | 留痕机制 |
+|---|---|---|
+| 准入四问 Q1 会命中吗 | 需预测未来会话分布 | `/claudemd-commit` 逐条问答写进候选清单 |
+| Q2 不写会做错吗 | 需模拟模型的默认行为 | 同上 |
+| Q3 做错会静默吗 | 需理解失败传播路径 | 同上 |
+| 这条属于哪一层（LCA） | 需判断「对哪些单元为真」 | 同上；写错了跨层重复检测会兜底抓到 |
+| 该进 CLAUDE.md / rule / skill / 测试 | 需权衡命中率与可断言性 | §12b 分流表 + commit 报告的「分流去向」段 |
+
+> **关键取舍**：硬约束**管不了「这条该不该写」**，只管住**「写它要付出可审计的代价」**。
+> 预算中性闸就是这个思路的落点 —— 它对内容质量零判断，只让**增长必须显式**。
+> 棘轮的掣子不需要理解内容，只需要让加法留下记录。
+
+### 启发式信号（WARN 级 · 有假阳性 · 只提示不拦）
+
+介于硬软之间：模式可测但判断权在人。命中不阻断，只把「值得复核」这件事说出来。
+
+| 信号 | 命中什么 | 提示 |
+|---|---|---|
+| 变更史叙述 | `此前` `后来改成` `曾被` `那次回退` `旧表述` … | §11 祈使句判据 → 该进 ADR/git |
+| 防线重复 | `测试钉死` `AST guard` `pre-commit 拦` + 超长行 | §7 Q4 → 解释搬进 assert message，本文件留一行防线索引 |
+| 日期腐烂 | `（YYYY-MM-DD）` 超 90 天未触碰 | 复核是否仍成立 |
+
+### 接在哪三个触发点上（缺一则规则形同虚设）
+
+| 触发点 | 命令 | 抓什么 · 为什么在这一层 |
+|---|---|---|
+| **PostToolUse hook**（Write\|Edit） | `claudemd-lint.py --hook` | 写完 CLAUDE.md **当场**回灌结果 —— 在 agent 的循环内，当轮就能修，最便宜 |
+| **pre-commit** | `claudemd-lint.py` | 全仓扫描（含跨层重复），拦住本地提交 |
+| **commit-msg** | `claudemd-lint.py --diff-gate --base HEAD --msg-file $1` | 预算中性；净增须在 message 写 `claudemd-budget: +N <理由>` |
+
+`.pre-commit-config.yaml` 片段：
+
+```yaml
+  - repo: local
+    hooks:
+      - id: claudemd-lint
+        name: CLAUDE.md 硬约束
+        entry: python3 .claude/hooks/claudemd-lint.py
+        language: system
+        files: (^|/)CLAUDE\.md$
+        pass_filenames: false
+      - id: claudemd-budget-neutral
+        name: CLAUDE.md 预算中性
+        entry: python3 .claude/hooks/claudemd-lint.py --diff-gate --base HEAD --msg-file
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+```
+
+> ⚠ **PostToolUse hook 是三层里最重要的一层** —— 另两层只能在事后拦住，而它把反馈放回模型的编辑循环里。
+> 一个只在 CI 才响的门禁，等于把修复成本推到最贵的时刻。
+
 ## 14. 示例
 
 ### 14a. 合规子项目 CLAUDE.md（节选骨架）
