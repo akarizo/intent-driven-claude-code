@@ -4,7 +4,7 @@ description: 按 claudemd-standard 全量对标——在正确层级(LCA)创建�
 
 把整个仓库的 CLAUDE.md 体系**一次性拉到 `.claude/claudemd-standard.md` 标准**:① 在正确层级(LCA)**创建缺失**的 CLAUDE.md(已有不重建);② 对**全部** CLAUDE.md 走「证据调查 → 合并现存 → review」重生成或调整到标准。
 
-**何时用**:初次采纳本标准、或长期漂移后做一次全量对标。与另两个的分工:`/claudemd-sync` 增量沉淀本轮变更(文件变长);`/claudemd-distill` 压缩收敛(文件变短);**本命令 = 全量对标**(创建 + 全部重生成)。三者共用 `.claude/claudemd-standard.md` 为硬基线。
+**何时用**:初次采纳本标准、或长期漂移后做一次全量对标。与另两个的分工:`/claudemd-commit` 增量沉淀本轮变更(预算中性);`/claudemd-distill` 压缩收敛(文件变短);**本命令 = 全量对标**(创建 + 全部重生成)。三者共用 `.claude/claudemd-standard.md` 为硬基线,收尾均须 `claudemd-lint` 全绿。
 
 **Input**: 可选子树路径(默认全仓)。例 `/claudemd-standardize executor/`。
 
@@ -60,12 +60,12 @@ description: 按 claudemd-standard 全量对标——在正确层级(LCA)创建�
 - **LCA 放置**:子单元的事实不写进父层;父层已有则子层只留指针、禁重复。
 - **不碰无关**:只动 CLAUDE.md(+ 明确同意的下沉注释);不顺手改工作树里别的脏文件,提交时只 stage 本命令相关文件。
 - **git**:按仓库纪律(分支 / MR);不代用户 merge;⚠ squash 合并前确认源分支已含全部提交(避免「分支后续 push 漏合」)。
-- **何时不跑**:仓库处于活跃重构期(知识快速变动,跑了很快又得重写)→ 等稳态;只想沉淀本轮变更 → 用 `/claudemd-sync`;只想压缩 → 用 `/claudemd-distill`。
+- **何时不跑**:仓库处于活跃重构期(知识快速变动,跑了很快又得重写)→ 等稳态;只想沉淀本轮变更 → 用 `/claudemd-commit`;只想压缩 → 用 `/claudemd-distill`。
 
-**与 `/claudemd-sync`、`/claudemd-distill` 的分工**
+**与 `/claudemd-commit`、`/claudemd-distill` 的分工**
 
 | 命令 | 用途 | 时机 | 体量倾向 |
 | --- | --- | --- | --- |
 | `/claudemd-standardize`(本) | 全量对标:创建缺失 + 全部重生成到标准 | 初次采纳 / 大幅漂移后 | 一次性大动 |
-| `/claudemd-sync` | 增量沉淀本轮变更 | 每轮变更结束 / PR 前 | 文件变长 |
+| `/claudemd-commit` | 增量沉淀本轮变更 | 每轮变更结束 / PR 前 | 预算中性（净增 ≤ 0） |
 | `/claudemd-distill` | 压缩收敛已沉淀 | 合 main 后 / 累积多轮 | 文件变短 |

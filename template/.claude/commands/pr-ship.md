@@ -50,7 +50,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    - 本分支已有 commit 清单
    - 与 target 的 diff stat
 
-   **特别检查 CLAUDE.md**：若工作树或本分支有 `CLAUDE.md` 的改动，提醒用户「是否要先跑 `/claudemd-sync` 把本轮发现的差异沉淀进去再 ship」。若用户回答否，继续；若是，暂停本命令让用户跑完 sync 再回来。
+   **特别检查 CLAUDE.md**：若工作树或本分支有 `CLAUDE.md` 的改动，提醒用户「是否要先跑 `/claudemd-commit` 把本轮发现的差异沉淀进去再 ship」。若用户回答否，继续；若是，暂停本命令让用户跑完再回来。⚠ 另外跑一次 `python3 .claude/hooks/claudemd-lint.py`，带 ERROR 的 CLAUDE.md 不该进 PR。
 
 3. **如有未提交改动，先 commit**
 
@@ -344,11 +344,11 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 | 上游 | 本命令 (`/pr-ship`) | 下游 |
 | --- | --- | --- |
 | `/opsx-apply` 写完代码 | ship: commit → PR → self-review → 迭代 | 人类 reviewer 看 / 合并 |
-| `/claudemd-sync` 沉淀完知识 | ship: 把 CLAUDE.md 改动也带进同一个 PR | 合并后 `/claudemd-distill` |
+| `/claudemd-commit` 沉淀完知识 | ship: 把 CLAUDE.md 改动也带进同一个 PR | 累积多轮后 `/claudemd-distill` |
 
 典型使用顺序：
 1. `/opsx-apply <change>` → 写代码 + 测试
-2. `/claudemd-sync` → 把本轮变更里新的约定 / 反模式 / 偏差沉淀到 CLAUDE.md
+2. `/claudemd-commit` → 把本轮变更里新的约定 / 反模式沉淀到记忆层（预算中性；偏差进 backlog 不进 CLAUDE.md）
 3. `/pr-ship` → ship + 自审 + 迭代到 review 通过
 4. 人类 reviewer 看 / 合并到 main
 5. （合并几轮后）`/claudemd-distill` → 收敛 CLAUDE.md

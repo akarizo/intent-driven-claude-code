@@ -13,8 +13,8 @@ proposal → specs → design → adr → tasks   ┐
                                     /opsx-apply
                                           │  实现阶段（TDD 红绿重构 + GWT 注释）
                                           ▼
-                                   /claudemd-sync
-                                          │  增量沉淀本轮知识到 CLAUDE.md
+                                  /claudemd-commit
+                                          │  沉淀本轮知识（预算中性：加一减一）
                                           ▼
                                        /pr-ship
                                           │  端到端送出 + 干净 subagent 自审
@@ -39,7 +39,7 @@ proposal → specs → design → adr → tasks   ┐
 
 1. **把命令、技能、schema 适配到 Claude Code**（`.claude/commands/` 与 `.claude/skills/`）+ 一键 `install.sh`
 2. **把 [obra/superpowers](https://github.com/obra/superpowers) 的 TDD skill 中文化移植进来**，并叠加 BDD Given/When/Then 单测注释规范——见 `.claude/skills/test-driven-development/`
-3. **新增三个命令补齐变更全周期**：`/pr-ship`（送出 + 自审）/ `/claudemd-sync`（沉淀）/ `/claudemd-distill`（蒸馏）
+3. **新增命令补齐变更全周期**：`/pr-ship`（送出 + 自审）/ `/claudemd-commit`（预算中性沉淀）/ `/claudemd-distill`（蒸馏）+ `claudemd-lint`（机械门禁）
 
 ---
 
@@ -227,14 +227,17 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 
 ### 阶段 3 · 知识沉淀（PR 前）
 
-`/claudemd-sync` 把本轮变更的差异**增量**沉淀到 CLAUDE.md（**不压缩**）：
+`/claudemd-commit` 把本轮变更**预算中性**地沉淀进记忆层 —— 加一行必须减一行，加法与减法在同一个动作里：
 
 - 应追加的新约定 / skill / convention
 - 应废弃的旧条目
-- 本轮发现的「最佳工程实现偏差」（AI 观察到、本轮没修的问题）
-- 待沉淀的隐性知识（口头给过但未落地的反馈）
+- 待沉淀的隐性知识（口头给过但未落地的反馈）—— 这类最有价值，是唯一从代码推导不出来的
 
-monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
+每条先过**准入四问**（会命中吗 / 不写会错吗 / 错了会静默吗 / 能写成测试吗），再按**分流表**定载体：每会话必命中 → CLAUDE.md；只治理某片目录 → `.claude/rules/*.md` + `paths:`；多步流程 → skill；可断言 → 测试。「重要」不等于「该常驻」。
+
+monorepo 时按目录就近原则（LCA）归位。收尾必须 `claudemd-lint` 全绿。
+
+> ⚠ 前身 `/claudemd-sync` 已废除：它明写「不压缩、宁可冗余」且每轮跑，而减法挂在更慢的 distill 上 —— 结构上是**有齿无掣子的棘轮**，必然单调增长。
 
 ### 阶段 4 · 送出 + 自审（PR/MR 闭环）
 
@@ -302,15 +305,16 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
 | `/opsx-mini "<理由+范围>" \| --done` | 声明 mini 任务，留痕 `.mini-active` 让分级门禁放行其源码（命令本身即逻辑，无同名 skill） |
 
-### `/claudemd-*`（CLAUDE.md 知识维护，3 个）
+### `/claudemd-*`（CLAUDE.md 知识维护，3 个 + 1 个门禁）
 
-| 命令 | 时机 | 模式 |
+| 工具 | 时机 | 模式 |
 | --- | --- | --- |
-| `/claudemd-sync` | 每轮变更结束 / PR 前 | 增量、全覆盖、不压缩、逐条与用户讨论 |
-| `/claudemd-distill` | 合并到 main 后 / 累积几轮 sync | 全量、彻底压缩、保留必要、逐文件确认 |
-| `/claudemd-standardize` | 初次采纳标准 / 大幅漂移后 | 全量对标：正确层级创建缺失 + 全部按标准重生成（证据→合并→review） |
+| `claudemd-lint` | pre-commit / CI / 每次写入后 | 机械拦截：字节预算 / 单行长度 / 悬空指针 / `@` 误用 |
+| `/claudemd-commit` | 每轮变更结束 / PR 前 | 增量 + **预算中性**（加一减一，字节零净增）、逐条与用户讨论 |
+| `/claudemd-distill` | 累积多轮后 / 结构性重排 | 全量大扫除、逐文件确认 |
+| `/claudemd-standardize` | 初次采纳标准 / 大幅漂移后 | 全量对标：正确层级创建缺失 + 全部按标准重生成 |
 
-两者周期性配合，**不在同一轮一起跑**（sync 扩张，distill 收敛）。
+日常增长由 commit 的预算中性约束住 → distill 不再承担「止血」职责，只做定期重排。
 
 ### `/pr-*`（PR/MR 闭环，1 个）
 
@@ -391,7 +395,7 @@ monorepo 时按目录就近原则归位到对应 sub-repo 的 CLAUDE.md。
 6. **单测先写 GWT 三段中文注释**，再写代码
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
-9. **CLAUDE.md 层级规范**：放置铁律（LCA）/ 头部三件套 / 固定段目录 / 指针优先 / 排版密集 —— 全文见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）
+9. **CLAUDE.md 层级规范**：准入四问（静默失败才是不可替代辖区）/ 分流去向（CLAUDE.md·rules·skill·测试）/ 放置铁律（LCA）/ 头部三件套 / 字节预算（根 8KB·子 16KB·叶 6KB·单行 200B）—— 全文见 `.claude/claudemd-standard.md`（`/claudemd-commit`·`/claudemd-distill`·`claudemd-lint` 的硬约束基线）
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 
@@ -431,7 +435,7 @@ openspec schema validate intent-driven
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
 | 逐 task 守门 | 无 | `openspec-subagent-apply-change`：每 task 派 subagent 实现 + `code-reviewer` 守门（CRITICAL/HIGH 阻断）。**吸收 sdd-plus-superpowers 玩法但中文化自研，不依赖 obra/superpowers 插件** |
 | PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审（复用 `code-reviewer` agent） |
-| 知识维护 | 无 | `/claudemd-sync` ↔ `/claudemd-distill` 周期性配合 |
+| 知识维护 | 无 | `/claudemd-commit`（预算中性，加一减一）+ `/claudemd-distill`（定期重排）+ `claudemd-lint`（机械门禁：字节预算 / 悬空指针） |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |
 

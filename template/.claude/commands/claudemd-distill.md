@@ -2,9 +2,9 @@
 description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余、指针化已沉淀知识）
 ---
 
-对所有 CLAUDE.md 做**彻底压缩**：合并几轮 `/claudemd-sync` 沉淀下来的条目，在保留必要硬约束的基础上，把冗余、可由代码自解释、已落到其他文件（skill / ADR / 规格）的条目蒸馏掉。
+对所有 CLAUDE.md 做**彻底压缩**：合并多轮 `/claudemd-commit` 沉淀下来的条目，在保留必要硬约束的基础上，把冗余、可由代码自解释、已落到其他文件（skill / ADR / 规格）的条目蒸馏掉。
 
-**通常在合并到 main 后使用**——`/claudemd-sync` 负责把每轮变更全量沉淀到 CLAUDE.md（文件会变长），本命令负责定期收敛。
+**用于累积多轮后的结构性重排**——日常增长已由 `/claudemd-commit` 的预算中性约束住（加一减一），本命令不再承担「止血」职责，只做全量大扫除：跨段合并、整体指针化、删除已腐烂条目。
 
 **Input**: 可选指定单个 CLAUDE.md 路径。例如 `/claudemd-distill apps/web/CLAUDE.md`。默认处理所有 CLAUDE.md。
 
@@ -56,8 +56,10 @@ description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余�
    ```
    ### <CLAUDE.md 路径> — 压缩提案
 
-   **当前**: <X> 行 / <Y> 字符
-   **目标**: <X'> 行 / <Y'> 字符（节省约 <Z>%）
+   **当前**: <Y> 字节 / 闸门 <B> 字节（standard §12：根 8KB / 子 16KB / 叶 6KB）
+   **目标**: <Y'> 字节（节省约 <Z>%）
+   ⚠ 判去留前先过 §12b 分流表：只治理某片目录的段 → `.claude/rules/` + `paths:`；
+     多步流程 / 深度契约 → skill；可断言的 → 测试。**分流不等于删除，知识不丢。**
 
    **必留**（<N> 条，原样保留）:
    - <条目摘要>
@@ -125,12 +127,25 @@ description: 对所有 CLAUDE.md 做彻底压缩（保留必要、删除冗余�
 - **首选 Write 整文件重写**：压缩涉及多处删/挪/合，Edit 多次容易遗漏；先在内存里构造新内容，让用户预审整文件 diff，再一次 Write
 - **可逆性**：每次 Write 前 `cp <file> <file>.before-distill` 备份在 `/tmp/` 是可选的保险动作（用户可选择启用）
 
-**与 `/claudemd-sync` 的分工**
+**收尾必须 lint 全绿**
 
-参见 `/claudemd-sync` 文件中的对比表。简言之：sync 负责"加进来"，distill 负责"清出去"，两者周期性配合。
+```bash
+python3 .claude/hooks/claudemd-lint.py
+```
+
+红了继续减，禁带 ERROR 声明完成。
+
+**与其它命令的分工**
+
+| 工具 | 时机 | 模式 |
+| --- | --- | --- |
+| `claudemd-lint` | pre-commit / CI | 机械拦截 |
+| `/claudemd-commit` | 每轮变更后 | 增量 + 预算中性 |
+| `/claudemd-distill`（本命令） | 累积多轮后 / 结构性重排 | 全量大扫除 |
+
+⚠ `/claudemd-sync` 已于 2026-08-25 废除，由 `/claudemd-commit` 取代（原 sync 只加不减，是单调增长的根因）。
 
 **何时不该跑 distill**
 
-- 距离上次 distill 不到 3 轮 sync 沉淀 → 文件可能还没积够冗余，跑了也没什么可压
-- 项目处于活跃重构期 → 知识在快速变动，距离稳态太远，压缩后可能很快又得重写
-- 当前 CLAUDE.md ≤ 100 行（小项目）→ 没必要折腾
+- 项目处于活跃重构期 → 知识在快速变动，压缩后可能很快又得重写
+- `claudemd-lint` 已全绿且各文件余量充足 → 没必要折腾

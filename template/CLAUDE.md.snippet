@@ -1,45 +1,45 @@
 <!-- intent-driven:begin -->
-## Intent-Driven 工作流
-变更走 5 artifact：`proposal → specs → design → adr → tasks`。ADR 入 `openspec/adr/` 后不可改，需变更则 supersede 旧版。
-
-- 命令前缀 `/opsx-*`（详见 `.claude/skills/openspec-*-change/`）；apply / bulk-apply 开始前会停下确认
-- **Worktree 隔离**：每个 change 从 propose 起就在自己的 `.worktrees/<change>/` worktree +`worktree-<change>` 分支里进行，5 工件 + `spec.html` + 实现代码**全落 worktree 内**，主仓库工作区（`main`）不落任何 change 产物；每 change 一间（非每 task），逐 task 在同一间累积；权威定义见 `.claude/skills/openspec-git-discipline/`（Worktree Isolation）
-- Git：apply 前工件须**单独成一个 commit**（只含工件、不混实现代码，无需先合 `main`）；archive 前实现必须已合回 `main`；建 change worktree 可自动做（工作区准备），但 merge/push/删 worktree 交你授权；不代你 commit/branch/merge
-- Schema：`intent-driven`（`openspec/config.yaml`，副本 `openspec/schemas/intent-driven/`）；CLI 用 `openspec --help`
-- TDD：写实现前先写失败测试；红→验红→绿→验绿→重构（详见 `.claude/skills/test-driven-development/`）
-- 单测先写 `// Given:` `// When:` `// Then:`（Python 用 `#`）三段中文注释再写代码，每段一句具体描述
-- apply 两模式：中级+ 推荐「subagent 逐 task 守门」(`openspec-subagent-apply-change`)——每个 task 派 subagent 实现(强制 TDD)+ 派 `code-reviewer` 守门，CRITICAL/HIGH 挡 checkbox；轻量可退回串行(`openspec-apply-change`)。`--no-confirm`/bulk-apply 子 agent 一律串行
-- HTML 审批面板：propose / continue 每出一个工件都会自动重渲 `openspec/changes/<change>/spec.html`（Mermaid + 必要时 SVG 原型），浏览器双击即可一屏审批意图；手动重渲用 `/spec-html <change>`
-- 落点收敛：每 change 产物落其 `.worktrees/<change>/` worktree，**主仓库根随时干净**；ADR 入 `openspec/adr/`；探索 / 头脑风暴的设计稿、spec 草稿（未成 opsx change 的）入 `openspec/superpower/`；主仓库根只剩 `.claude/`、`openspec/`、`CLAUDE.md`（+ 已 gitignore 的 `.worktrees/`）
-
 ## 任务分级 · 何时必须走工作流
-**中级+ 必须走 5 工件，mini 才可跳过**。源码写入受 PreToolUse 门禁 `.claude/hooks/intent-gate.py` 强制（需 python3）。
+**中级+ 必须走 5 工件（`proposal → specs → design → adr → tasks`），mini 才可跳过**。源码写入受 PreToolUse 门禁 `.claude/hooks/intent-gate.py` 强制。
 
-- **中级+（强制 `/opsx-propose`）**：新 capability · 新公共 API/命令 · 改公共契约(签名/返回/错误码/**数据投影·序列化**) · 跨模块 · 引入新抽象/依赖 · 影响数据模型/迁移 · 任何长期不可逆设计决策
-- **mini（可跳过）**：文档/注释 · 依赖升级 · 配置值 · 单文件无行为变化 hotfix · 内部一次性脚本；改源码前先 `/opsx-mini "<理由+范围>"` 留痕（门禁 24h 内放行 scope 文件，完后 `/opsx-mini --done`）
-- ⚠ **原生 plan mode 的 markdown plan + ExitPlanMode ≠ 工作流**：approve 一份 plan 不满足中级+ 工件要求，你仍欠 `proposal→specs→design→adr→tasks`
-- **门禁放行**：豁免路径(`*.md`/`openspec/`/`.claude/`/`docs/`/lockfile) · 存在 live change 且 `tasks.md` 仍有未勾选项(实现中) · `.mini-active` 覆盖该文件；否则 DENY 回灌指引。**通用 `*.json/yaml/toml` 不豁免**(可能是中级+ 配置/IaC)
+- **中级+（强制 `/opsx-propose`）**：新 capability · 新公共 API/命令 · 跨模块 · 引入新抽象或依赖。
+- 中级+ 续：改公共契约（签名/返回/错误码/**数据投影·序列化**）· 影响数据模型或迁移 · 任何长期不可逆设计决策。
+- **mini（可跳过）**：文档/注释 · 依赖升级 · 配置值 · 单文件无行为变化 hotfix · 一次性脚本。
+- mini 改源码前先 `/opsx-mini "<理由+范围>"` 留痕：24h 内放行 scope 文件，完后 `--done`。
+- ⚠ **原生 plan mode 的 markdown plan + ExitPlanMode ≠ 工作流**：approve 一份 plan 不满足中级+ 工件要求，5 工件照欠
 
-## CLAUDE.md 层级规范（规范驱动）
-权威全文 + 骨架模板 + 段目录权威表见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）。要点：
+## Intent-Driven 工作流
+命令前缀 `/opsx-*`；机制细节在各自 skill 里，此处只留必须常驻的：
 
-- **放置（LCA）**：事实写在"恰好为真"的最低层级 — 全仓为真→根 / 仅单子项目→该子项目 / 仅单模块→叶子；父层已有则子层只留指针、禁重复。
-- **头部三件套**（每层含叶子强制）：标题 + `>` 引用块（路径 + ↑父 ↔兄弟 ↓子 + ADR）+ 一句话定位。
-- **固定段目录**（按序取子集）：核心约束→架构→入口→契约→构建/测试→部署→〈领域段〉→已废弃/禁用→表达约定→Backlog；领域知识只落自由扩展区。
-- **排版密集 + 指针优先**：一事一行、`**bold**` 起头、矩阵用表格；有正式归宿（ADR/spec/代码）只留指针、禁内联；超尺寸预算（根~140/子~120/叶~50 行）跑 `/claudemd-distill`。
-- **模块/叶子级特例**：离代码最近 → 不套固定段目录,改两支柱 = 导向(结构与职责 + 扩展点)+ 防错(不变量/陷阱·带 `path:line`);禁镜像代码,详 standard §6b。
+- **Worktree 隔离**：每 change 一间 `.worktrees/<change>/` + `worktree-<change>` 分支。
+- 5 工件 + `spec.html` + 实现**全落 worktree 内**，主仓库根随时干净。详 `.claude/skills/openspec-git-discipline/`
+- **Git 授权边界**：建 worktree 可自动做；**merge / push / 删 worktree / commit 一律交你授权**，不代劳
+- **ADR 不可改**：入 `openspec/adr/` 后需变更则 supersede 旧版，禁原地改
+- **TDD**：写实现前先写失败测试，红→验红→绿→验绿→重构；单测先写 `# Given: / # When: / # Then:` 三段中文注释（详见 `.claude/skills/test-driven-development/`）
+- **落点收敛**：ADR → `openspec/adr/`；未成 change 的探索稿 → `openspec/superpower/`；每 change 产物 → 其 worktree
+
+## 记忆分流（写 CLAUDE.md 前必读）
+权威全文 `.claude/claudemd-standard.md`；`/claudemd-commit` 沉淀、`/claudemd-distill` 重排、`claudemd-lint` 拦截。
+
+- **准入四问**（任一 ✗ 即不入）：① 会命中吗 ② 不写会做错吗 ③ 做错会**静默**吗 ④ 能写成测试/lint/hook 吗。
+- 第 ④ 问答「能」→ **去写那个**，本文件只留一行防线索引。
+- ⚠ **静默失败是 CLAUDE.md 唯一不可替代的辖区**；会报错的约束，循环自己会教。
+- **不默认落 CLAUDE.md**：每会话必命中 → CLAUDE.md；只治理某片目录 → `.claude/rules/*.md` + `paths:`（按读文件触发）。
+- 多步流程 · 深度契约 → skill；可断言 → 测试。**「重要」≠「该常驻」。**
+- **预算按字节**：根 ≤8KB（不含本注入段）/ 子 ≤16KB / 叶 ≤6KB / 单行 ≤200B。超线**当场**减（加一减一），禁推给以后。
+- ⚠ 指针写 `` `@path` ``（反引号内）**不会被加载**，是死记号；裸 `@path` 才是 launch 急切导入 —— 写指针别带 `@`。
 
 ## Model 路由（省 token）
-> ⚠ **优先级铁律**：subagent 模型解析顺序 = `CLAUDE_CODE_SUBAGENT_MODEL` env var **> Task 显式 `model` 参数 > agent frontmatter > 继承主会话**。env var 最高，压过一切。`.claude/settings.json` 设了 `=sonnet` → **所有 subagent 一律 Sonnet，传 `model: opus`/`haiku` 无效**（含内置 general-purpose/Explore/Plan）。别指望"派发时升 opus"——那条路已死。
+> ⚠ subagent 模型解析优先级 = `CLAUDE_CODE_SUBAGENT_MODEL` env **> Task 显式 `model` 参数 > frontmatter > 继承主会话**。env 最高、压过一切。
 
-- **subagent 一律 Sonnet**（env 锁定，传 `model:` 白传）：搜索 · 读文件 · 探索 · 渲染(spec-html) · 机械同步(opsx-sync / claudemd-sync) · 按固定判据打分 → Sonnet 质量足够、省约 5× token。
-- **确需 Opus 级子任务**（复杂多步重构 · 架构决策 · 难 bug 根因 · 长链推理设计 · 跨大量文件语义综合）：① **主会话直接做**（推荐，省一次派发）；或 ② 该会话把 env 临时改 `CLAUDE_CODE_SUBAGENT_MODEL=inherit` 再派发。别派 opus subagent。
-- **主会话自查**：低推理命令（`/spec-html` `/opsx-explore` `/opsx-sync` `/claudemd-sync`）建议先手动 `/model sonnet` 再跑——env 变量管不到主会话，只能靠这一步；需要复杂判断时自行保留 Opus。
+- **传 `model:` 可能是白传**：env 锁死时 Task 的 `model` 参数被**静默忽略**（无报错）—— 别指望「派发时升 opus」。
+- **确需 Opus 级子任务**（复杂重构 · 架构决策 · 难 bug 根因 · 跨大量文件语义综合）：**主会话直接做**（推荐），或临时改 env 为 `inherit` 再派发。
+- **主会话自查**：低推理命令（`/spec-html` `/opsx-explore` `/opsx-sync` `/claudemd-commit`）先手动 `/model sonnet`——env 管不到主会话。
 
 ## 上下文纪律
-> `[1m]` 长上下文变体是合理默认（1M 无加价、长任务不被 200k 硬切），但代价是失去 200k autocompact 自动兜底 → 上下文闸门全靠人工纪律。
+> `[1m]` 长上下文失去 200k autocompact 兜底 → 闸门全靠人工。
 
-- **compact/clear 是唯一闸门**：上下文 >150k 主动 `/compact`；切换新任务用 `/clear` 而非同会话续命——`[1m]` 下没有自动收敛，不管就一路涨到 500k+，每条消息背几十万 token 反复 cache read。
-- **挂机会话跨天必重启**：`model` 配置不热更新（仅 `env` 热更新），旧会话会一直停在启动时的模型层级；长时间挂机 = 旧模型 + 巨大上下文双重浪费。
-- **子 agent 上下文封顶**：单任务 scoped；预计超 ~100 轮或上下文超 150k 的工作先拆阶段、每阶段新开 agent 收束汇报，禁马拉松 subagent（单个 agent 背几十万 token 历史被反复 cache read，比多数主会话还重）。
+- **compact/clear 是唯一闸门**：>150k 主动 `/compact`；换任务用 `/clear` 而非同会话续命（不管就一路涨到 500k+，每条消息反复 cache read 几十万 token）。
+- **挂机会话跨天必重启**：`model` 配置不热更新（仅 `env` 热更新），旧会话恒停在启动时的模型层级。
+- **禁马拉松 subagent**：单任务 scoped；预计超 ~100 轮或 150k 上下文先拆阶段、每阶段新开 agent 收束。
 <!-- intent-driven:end -->
