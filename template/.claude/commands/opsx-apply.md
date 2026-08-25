@@ -79,7 +79,7 @@ Implement tasks from an OpenSpec change.
    - question: `确认开始 apply <name> 吗？选择执行模式：`
    - header: `开始 apply`
    - options:
-     - `subagent 逐 task 守门（推荐 · 中级+）` — 转调 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并**在当前分支产生一个本地 commit**（不 push / 不 merge），完成即派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。**不进入下面的 step 7 串行循环。**（选此项即视为同意逐 task 本地 commit——见 `openspec-git-discipline` carve-out。）
+     - `subagent 逐 task 守门（推荐 · 中级+）` — 转调 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并**在当前分支产生一个本地 commit**（不 push / 不 merge），完成即派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。守门结论写入 `review-log.md`（review 水位线），供后续 `/pr-ship` 与 `/opsx-verify` 判断已审范围、不再重复全量审；整合审位置在收口时由你选（本地 / 交给 `/pr-ship`）。**不进入下面的 step 7 串行循环。**（选此项即视为同意逐 task 本地 commit——见 `openspec-git-discipline` carve-out。）
      - `串行（轻量）` — proceed to step 7（主会话逐 task 串行写，今日行为）
      - `先看完整 tasks` — print the full task list, then re-ask this question
      - `取消` — stop immediately, do not change any file
@@ -169,7 +169,8 @@ What would you like to do?
 
 **Guardrails**
 - Always pause for explicit user confirmation in step 6 before any code change (except delegated bulk-apply subagent runs)
-- step 6 选「subagent 逐 task 守门」→ 转 `openspec-subagent-apply-change`（逐 task 实现 + 守门）；选「串行」或 `--no-confirm` → step 7
+- step 6 选「subagent 逐 task 守门」→ 转 `openspec-subagent-apply-change`（逐 task 实现 + 守门 + 写 review 水位线）；选「串行」或 `--no-confirm` → step 7
+- 串行模式**不产生** `review-log.md`：后续 `/pr-ship` 与 `/opsx-verify` 读不到水位线时按全量审处理，行为与既有一致
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

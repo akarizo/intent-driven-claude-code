@@ -36,6 +36,34 @@ metadata:
 
 **worktree 粒度 = 每 change 一间，不是每 task 一间**：本 change 从 propose 起就在自己的 `.worktrees/<name>/` worktree 内（见 `openspec-git-discipline` 的 Worktree Isolation），apply 也在**这一间**里进行。逐 task 是**串行累积**（task2 依赖 task1 的产出），所有 task 必须在**同一间** worktree 里累积 —— 因此**不要为每个 task 各开 worktree、也不要在本 change worktree 内再嵌套子 worktree**。Claude Code 原生 `isolation: worktree` 每次派发都新建独立 worktree、看不到前序 task 产出，正是这里要避免的。在本 change worktree 内累积还让分级门禁（`intent-gate.py`，相对路径判断）零改动生效。
 
+## Review 水位线（`review-log.md`）
+
+逐 task 守门产生的审查状态**必须落盘**，供后续 review 点（本 skill 的整合审、`/pr-ship` 的 PR 评审、`/opsx-verify` 的测试纪律检查）判断「哪段范围已经审过、哪些 finding 已经处理」，避免同一份代码被反复全量重审。
+
+**路径**：`openspec/changes/<change>/review-log.md`。落在 `openspec/` 内 → `intent-gate.py` 天然豁免、随 change 一起归档、人类可读、可进 PR。
+
+**格式**：
+
+````markdown
+# Review Log · <change>
+
+BASE_REF: <apply 开始前的 HEAD>
+REVIEWED_UPTO: <已被守门审过并通过的最新 commit>
+
+| # | scope | range | verdict | 阻断并修复 | date |
+|---|-------|-------|---------|-----------|------|
+| 1 | task 1.1 | a1b2c3d..4e5f6a | pass | 2 (HIGH) | 2026-08-25 |
+| 2 | task 1.2 | 4e5f6a..9f8e7d6 | pass | 0 | 2026-08-25 |
+
+## Deferred（未阻断，留给整合审与 PR 一并呈现）
+- MEDIUM `src/export.py:88` — 重复的日期解析，建议抽公共函数
+- LOW `src/api.py:12` — 命名 `tmp2` 不表意
+````
+
+**唯一写入方 = 本 skill 的主会话**：在 4d 勾选 checkbox 时追加一行并推进 `REVIEWED_UPTO`。`code-reviewer` subagent **不读**这个文件——它拿到的「已审范围 / 已处理 finding」由主会话摘进 prompt，保持 reviewer 干净、不带本地状态。
+
+**兜底原则**：任何读取方**读不到 `review-log.md` → 一切回退全量审**。水位线只能缩小「已被守门覆盖」那部分的范围，**永远不能**让未审代码蒙混过关——`REVIEWED_UPTO` 之后的任何 commit 一律按全量标准审。
+
 ## Steps
 
 ### 1. 选 change 并跑 git discipline
@@ -68,6 +96,8 @@ git status --short          # 工作区必须干净
 - 整个 change 的累计 diff = `git diff <BASE_REF>..HEAD`（两点，比 BASE_REF 与当前 HEAD 之间的全部 commit）。
 
 **前置硬要求**：开工前 `git status --short` 必须**干净**（无未提交改动）。若工作区脏，停下让用户先 commit / stash——否则首个 task 的 commit 会把无关改动一起裹进去，污染该 task 的净 diff。
+
+**水位线初始化**：若 `openspec/changes/<name>/review-log.md` 不存在，用刚记下的 `BASE_REF` 初始化它（格式见上面的 **Review 水位线** 节）；已存在（续做场景）则读出 `REVIEWED_UPTO`，从它之后的 task 继续。
 
 > 这些是**本地实现 commit**，落在当前 feature 分支 / worktree，绝不 push / merge / archive；用户已在 `/opsx-apply` step 6 选「subagent 逐 task 守门」时知情同意（见 `openspec-git-discipline` 的 carve-out）。
 
@@ -119,6 +149,8 @@ prompt 必须**自包含**（subagent 不带主会话上下文）：
 ```
 背景：review 一个 OpenSpec change 里单个 task 的实现。这是 intent-driven 工作流的逐 task 守门。
 
+评审模式：full —— 本 task 净 diff 就是全量范围，没有已审前置，按你的全部 checklist 维度审。
+
 审查范围（仅这个范围）：本 task 的净 diff = 实现 subagent 刚产生的那个 commit。
 取 diff：`git diff <本 task 起点 SHA>..HEAD`（两点；<本 task 起点 SHA> = 派实现 subagent 前主会话记下的 HEAD）。
   等价写法：`git show <本 task commit SHA>`。
@@ -149,12 +181,32 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
   强制要求：
   1. 只修上面列出的问题，不要顺手改别的。
   2. 修复也走 TDD：每个被挡的 bug，先写一个能复现它的失败测试（亲眼验证它红）→ 再改实现让它绿。不允许直接改实现不补测试。
-  3. 修完把改动追加为提交：`git commit --amend --no-edit`（并入本 task 的 commit，保持"一 task 一 commit"），或新增一个 `fix: ...` commit——二选一，但不要 push。
+  3. 修完把改动提交为**一个独立的 `fix:` commit**：`git commit -m "fix(<scope>): <task 编号> <finding 摘要>"`。**不要用 `git commit --amend`**——amend 会改写 commit SHA，导致「修复增量」这个区间无法稳定圈定，而下一步的聚焦复核正依赖这个区间。不要 push。（一个 task 因此可能对应多个 commit，整洁性让位于区间可圈定；PR 阶段可 squash 找回。）
 
   完成后报告：改了什么、新增哪些复现测试、RED→GREEN 输出、最终 commit SHA。
   ```
 
-  修完回到 4b 复审（diff 范围用更新后的 commit 区间）→ **循环直到无 CRITICAL/HIGH**。
+  修完派一个 fresh `code-reviewer` 做**聚焦复核**——**不重审整个 task**，只看修复增量与原 finding 是否闭环：
+
+  ```
+  背景：复核一个 OpenSpec change 里某 task 的修复补丁，判断上一轮 code review 挡下的问题是否已闭环。
+
+  评审模式：follow-up —— 只审下面这个修复 commit，**不要**重审本 task 的其余代码（那部分上一轮已审过）。
+
+  审查范围（仅这个范围）：修复 commit `<fix commit SHA>`。
+  取 diff：`git show <fix commit SHA>`。
+
+  上一轮挡下的 finding（逐条核对是否已闭环）：
+  <把上一轮报告里每条 CRITICAL/HIGH 原样贴出：文件:行号 + 问题 + 当时给的修法建议>
+
+  你的任务只有两条：
+  1. 逐条判定上面每个 finding 是「已闭环 / 未闭环 / 修得不对（引入新问题）」，各给一句依据。
+  2. 判断这个修复 commit 本身有没有新引入的 CRITICAL/HIGH 问题。
+
+  阻断阈值不变：CRITICAL 与 HIGH 都阻断。结论行明确"通过 / 阻断"，末尾签名。不要修代码。
+  ```
+
+  → **循环直到无 CRITICAL/HIGH**（每轮都只审当轮新增的 `fix:` commit）。
 - MEDIUM / LOW → 记录进收口报告，**不阻断**（除非用户另行要求）。
 - **回灌硬上限：3 轮**。第 3 轮复审仍有 CRITICAL/HIGH → **停下，不再自动回灌、不勾 checkbox、不向用户问"要不要继续修"**。把现状（剩余阻断项 + 已试 3 轮）报告给用户，由用户决定（往往意味着 task 描述/spec/设计本身有问题，需回 `/opsx-continue` 改工件，而非继续蛮修）。绝不蒙混勾选。
 
@@ -162,16 +214,55 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 
 仅在本 task 守门通过（无 CRITICAL/HIGH）后，**由主会话**（不是 subagent）把 `tasks.md` 里该 task 的 `- [ ]` 改成 `- [x]`（`tasks.md` 在 `openspec/`，门禁豁免，主会话 Edit 直接放行）。然后进入下一个 task。
 
-> 勾选这个动作本身的改动会落进**下一个** task 的 commit 里（或由用户在 pr-ship 前单独 commit），无所谓——它不影响逐 task 净 diff 的圈定（diff 比的是实现 subagent 的代码 commit）。
+紧接着**由主会话**追加水位线记录（格式见 **Review 水位线** 节）：
+
+- 在区间表追加一行：`scope` = 本 task 编号、`range` = `<本 task 起点 SHA>..<当前 HEAD>`、`verdict` = `pass`、`阻断并修复` = 本 task 回灌修掉的 CRITICAL/HIGH 条数；
+- 把 `REVIEWED_UPTO` 推进到当前 HEAD；
+- 把本 task 守门报告里**未阻断**的 MEDIUM / LOW 逐条登记到 `## Deferred` 清单（带 `文件:行号` + 一句摘要）——它们后续会随 `/pr-ship` 的 PR 评论上浮给人类 reviewer，不要只留在会话里。
+
+> 勾选这个动作本身的改动会落进**下一个** task 的 commit 里（或由用户在 pr-ship 前单独 commit），无所谓——它不影响逐 task 净 diff 的圈定（diff 比的是实现 subagent 的代码 commit）。`review-log.md` 的改动同理。
 > 输出建议：每个 task 实时显示 `Working on task N/M: <desc>` → `实现 subagent 返回（commit <SHA>）` → `守门：<通过 / 阻断 X 项，回灌第 K 轮>` → `✓ task complete`。
 
-### 5. Full review（全部 task 完成后）
+### 5. 整合审位置判定（全部 task 完成后）
 
-派一个 `code-reviewer` subagent 审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）。
+整合审（跨 task 交互 / 整体一致性 / 端到端完整性）在一次变更里**只跑一次**。它跑在本地还是跑在 `/pr-ship`，由**用户明确选择**决定——**不要靠推断**「用户是不是打算立刻 ship」。
 
-full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重点找：**跨 task 的交互问题**（task A 改的接口被 task B 误用）、**整体一致性**（命名/错误处理/分层风格跨 task 是否统一）、**端到端完整性**（各 task 拼起来是否真满足 change proposal 的整体目标、有无遗漏的 capability）。不要重复逐 task 已做的单 task 质量检查。
+**硬跳过条件（先判，命中就不问）**：change 只有 **1 个 task** → 整合审**恒跳过**，理由是逐 task 守门已覆盖它的全部 diff，再审一次就是重复审同一份。在收口报告里注明跳过与理由。
 
-> **跳过条件**：① change 只有 **1 个 task**——逐 task 已审过它的全部 diff，full review 会重复审同一份,直接跳过；② 用户计划立即 `/pr-ship`——可把整体审交给 pr-ship 的 PR 评审,跳过本步避免过近重复。其余情况默认执行。
+否则用 **AskUserQuestion** 问一次：
+
+- question：`<name> 的全部 task 已通过守门。整合审（跨 task 交互 / 整体一致性 / 端到端完整性）跑在哪一步？`
+- header：`整合审`
+- options：
+  - `立即 /pr-ship（推荐）` — **跳过本地整合审**，整合审在 PR 阶段做。`/pr-ship` 本来就必须产出一份贴 PR 的报告，整合审搭在那里零额外成本，且结论对人类 reviewer 可见。
+  - `暂不 ship，先在本地整合审` — 现在跑一次本地整合审（见下），之后再决定是否 ship。
+  - `都跳过` — 直接收口（用户自负其责，收口报告里注明整合审未执行）。
+
+选「暂不 ship」时，派一个 `code-reviewer` subagent 审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）：
+
+```
+背景：对一个 OpenSpec change 做整合审——全部 task 已逐个通过守门，现在只看它们拼起来有没有问题。
+
+评审模式：integration —— 下面这段范围**每个 task 的单 task 质量已被逐 task 守门审过并修过**，不要重复审。
+已审范围：<BASE_REF>..<REVIEWED_UPTO>（<N> 个 task，守门期间已阻断并修复 <X> 项）
+已登记为 deferred 的 finding（**不要重复上报**）：
+<把 review-log.md 的 Deferred 清单原样贴出>
+
+审查范围：`git diff <BASE_REF>..HEAD`（两点）。
+
+**只报这四类**：
+1. 跨 task 的交互问题（task A 改的接口 / 数据结构被 task B 误用）
+2. 整体一致性（命名、错误处理、分层风格跨 task 是否统一）
+3. 端到端完整性（各 task 拼起来是否真满足 change proposal 的整体目标、有无遗漏的 capability）
+4. 工件与实现是否一致（实现有没有偏离 spec / design 的约束）
+
+**不要报**：上面「已审范围」内的单 task 级质量问题、已登记为 deferred 的条目。
+例外——若你确认某条上游 finding 实际没修好，可以报，但必须标注「上游 review 未闭环」。
+
+按你的分级格式输出报告，结论行明确"通过 / 阻断"，末尾签名。不要修代码。
+```
+
+无论走哪条分支，都把**整合审位置**（本地 / 交给 pr-ship / 跳过及理由）记进收口报告，让下一步的人知道整合审有没有做、做在哪。
 
 ### 6. Verify
 
@@ -183,7 +274,8 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 
 - change 名 + schema
 - 每个 task：commit SHA、守门轮数、阻挡过的 CRITICAL/HIGH（摘要）、最终状态
-- full review 结论
+- **整合审位置**：本地已跑 / 交给 `/pr-ship` / 跳过（含理由）——以及跑了的话，结论是什么
+- **水位线区间**：`BASE_REF` → `REVIEWED_UPTO`，覆盖 N 个 task
 - `/opsx-verify` 结论
 - 改动文件汇总 + 本次产生的 commit 列表（`git log <BASE_REF>..HEAD --oneline`）
 - 遗留的 MEDIUM/LOW（供后续处理）
@@ -203,6 +295,9 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 - **每个 task 一个本地 commit**（实现 subagent 产生，落当前分支）——这是逐 task 圈 diff 的锚点，且已被 `openspec-git-discipline` 的 carve-out 允许（用户在 step 6 已知情同意）。
 - **不 push、不 merge、不 archive、不碰 main、不擅自建分支**——除非用户明确指示。逐 task 本地 commit ≠ 上述任一项。
 - 回灌**硬上限 3 轮**；到顶仍阻断就停下交用户，不再问"要不要继续"、不蒙混勾选。
+- **守门通过必须写水位线**（4d）：不写 `review-log.md`，后续 `/pr-ship` 与 `/opsx-verify` 就读不到已审范围，会退回全量重审——重复就是这么来的。
+- **修复用独立 `fix:` commit，禁 `--amend`**：amend 改写 SHA 会让修复增量区间不可圈定，聚焦复核只能退回重审整个 task。
+- **整合审只跑一次**，位置由用户在 step 5 明确选，不靠推断；1 个 task 的 change 恒跳过。
 - 子 agent 不能再嵌套 subagent；`--no-confirm`（bulk-apply）一律走串行 `openspec-apply-change`。
 
 ## Common Mistakes
@@ -220,3 +315,6 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 | 工作区脏就开工 | 首个 task commit 会裹进无关改动；step 3 先 `git status --short` 验干净 |
 | 实现 subagent 不 commit / 主会话替它 commit | 由实现 subagent 自己在 task 末尾 commit（它最清楚改了什么）；主会话只记起点 SHA |
 | 实现 subagent 用了只读的 code-reviewer 类型 | 实现要 Write/Edit/Bash，用 `general-purpose`；`code-reviewer` 只给守门 |
+| 修复用 `git commit --amend` | SHA 被改写 → 修复增量区间不可圈定 → 聚焦复核退化成重审整个 task。统一新增独立 `fix:` commit |
+| 守门通过了却不写 `review-log.md` | 后续 review 点读不到已审范围，全量重审，本 skill 的去重设计当场失效。4d 勾 checkbox 与写水位线是同一步 |
+| 靠推断「用户是不是要立刻 ship」决定跑不跑整合审 | 模型读不了心。step 5 用 AskUserQuestion 明确问，按答案硬判定 |

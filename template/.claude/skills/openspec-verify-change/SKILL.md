@@ -90,15 +90,25 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Recommendation: "Add test or implementation for scenario: <description>"
 
    **Test Discipline Check (TDD/BDD)**:
-   - 对本次变更里每个新增/修改的生产源文件，确认存在配对的测试文件
-   - 抽样若干测试函数，逐一核对：
-     - 测试函数体首行是 `Given:` 三段中文注释（`Given:` / `When:` / `Then:`）
-     - When 段只触发一次被测函数（一个用例只测一个动作）
-     - Then 注释列举的可观察结果数量与断言数量一致
-     - 不出现 `testing-anti-patterns.md` 列举的 5 个反模式（mock 滥用、生产类塞测试专用方法、不懂依赖就 mock、不完整 mock、测试事后补救）
-   - 若违反任一条：
-     - Add CRITICAL: "TDD/BDD discipline violation in <file>:<test_name>"
-     - Recommendation: "按 `.claude/skills/test-driven-development/SKILL.md` 重写该测试：先写 GWT 三段注释，再写期望失败的断言，最后写实现"
+
+   **先判断这个 change 走没走过逐 task 守门**——读 `openspec/changes/<name>/review-log.md`（review 水位线）：
+
+   - **水位线存在且 `REVIEWED_UPTO` 覆盖全部 task（走过逐 task 守门）→ 降级为存在性检查**：
+     - 对本次变更里每个新增/修改的生产源文件，确认存在配对的测试文件
+     - 抽 **1 例**测试函数，确认三段 `Given:` / `When:` / `Then:` 中文注释存在
+     - 缺配对测试文件、或抽样那例连三段注释都没有 → Add CRITICAL（这类硬缺失守门本不该放过，出现即说明守门失效，值得单独查）
+     - 报告中注明：「GWT 细节与 5 个反模式的判定已由逐 task 守门（按 HIGH 阻断）覆盖，此处不重复抽查——已审范围 `<BASE_REF>..<REVIEWED_UPTO>`」
+     - 理由：这些维度在实现的当下已被逐 task 守门按 HIGH 挡过一次，再完整抽一遍是同一套判据的第 N 次重扫，只增成本不增信息
+   - **读不到 `review-log.md`（串行 apply / 手工实现）→ 完整抽查**（以下为既有行为，不变）：
+     - 对本次变更里每个新增/修改的生产源文件，确认存在配对的测试文件
+     - 抽样若干测试函数，逐一核对：
+       - 测试函数体首行是 `Given:` 三段中文注释（`Given:` / `When:` / `Then:`）
+       - When 段只触发一次被测函数（一个用例只测一个动作）
+       - Then 注释列举的可观察结果数量与断言数量一致
+       - 不出现 `testing-anti-patterns.md` 列举的 5 个反模式（mock 滥用、生产类塞测试专用方法、不懂依赖就 mock、不完整 mock、测试事后补救）
+     - 若违反任一条：
+       - Add CRITICAL: "TDD/BDD discipline violation in <file>:<test_name>"
+       - Recommendation: "按 `.claude/skills/test-driven-development/SKILL.md` 重写该测试：先写 GWT 三段注释，再写期望失败的断言，最后写实现"
 
 7. **Verify Coherence**
 
@@ -125,11 +135,12 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ## Verification Report: <change-name>
 
    ### Summary
-   | Dimension    | Status           |
-   |--------------|------------------|
-   | Completeness | X/Y tasks, N reqs|
-   | Correctness  | M/N reqs covered |
-   | Coherence    | Followed/Issues  |
+   | Dimension       | Status                          |
+   |-----------------|---------------------------------|
+   | Completeness    | X/Y tasks, N reqs               |
+   | Correctness     | M/N reqs covered                |
+   | Test Discipline | 完整抽查 / 已降级（守门已覆盖 <区间>） |
+   | Coherence       | Followed/Issues                 |
    ```
 
    **Issues by Priority**:

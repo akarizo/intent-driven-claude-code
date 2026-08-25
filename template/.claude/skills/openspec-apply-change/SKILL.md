@@ -90,7 +90,7 @@ Implement tasks from an OpenSpec change.
    - question: `确认开始 apply <name> 吗？选择执行模式：`
    - header: `开始 apply`
    - options:
-     - `subagent 逐 task 守门（推荐 · 中级+）` — 转用 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并在当前分支产生一个本地 commit（不 push / merge）+ 派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。**不进入下面的串行 step 7。**（选此项即同意逐 task 本地 commit。）
+     - `subagent 逐 task 守门（推荐 · 中级+）` — 转用 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并在当前分支产生一个本地 commit（不 push / merge）+ 派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。守门结论写入 `review-log.md`（review 水位线）供后续 review 点判断已审范围；整合审位置在收口时由你选。**不进入下面的串行 step 7。**（选此项即同意逐 task 本地 commit。）
      - `串行（轻量）` — proceed to step 7 (serial implementation loop)
      - `先看完整 tasks` — print the full task list, then re-ask this question
      - `取消` — stop immediately, do not change any file

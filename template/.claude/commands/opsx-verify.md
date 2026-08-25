@@ -82,6 +82,24 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add WARNING: "Scenario not covered: <scenario name>"
        - Recommendation: "Add test or implementation for scenario: <description>"
 
+   **Test Discipline Check (TDD/BDD)**:
+
+   **先判断这个 change 走没走过逐 task 守门**——读 `openspec/changes/<name>/review-log.md`（review 水位线）：
+
+   - **水位线存在且 `REVIEWED_UPTO` 覆盖全部 task → 降级为存在性检查**：
+     - 每个新增/修改的生产源文件确认存在配对的测试文件
+     - 抽 **1 例**测试函数确认三段 `Given:` / `When:` / `Then:` 中文注释存在
+     - 缺配对测试文件、或抽样那例连三段注释都没有 → Add CRITICAL（守门本不该放过，出现即说明守门失效）
+     - 报告注明：「GWT 细节与 5 个反模式的判定已由逐 task 守门（按 HIGH 阻断）覆盖，此处不重复抽查」
+   - **读不到 `review-log.md`（串行 apply / 手工实现）→ 完整抽查**：
+     - 每个新增/修改的生产源文件确认存在配对的测试文件
+     - 抽样若干测试函数，逐一核对：三段 `Given:` 中文注释 / When 只触发一个被测动作 / Then 注释与断言一一对应 /
+       不触犯 `testing-anti-patterns.md` 的 5 个反模式
+     - 违反任一条 → Add CRITICAL: "TDD/BDD discipline violation in <file>:<test_name>"，
+       Recommendation: "按 `.claude/skills/test-driven-development/SKILL.md` 重写该测试"
+
+   > 本段与 `.claude/skills/openspec-verify-change/SKILL.md` 的 Test Discipline Check 是**同一份判据**，改一处必须同步另一处。
+
 7. **Verify Coherence**
 
    **Design Adherence**:
@@ -107,11 +125,12 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ## Verification Report: <change-name>
 
    ### Summary
-   | Dimension    | Status           |
-   |--------------|------------------|
-   | Completeness | X/Y tasks, N reqs|
-   | Correctness  | M/N reqs covered |
-   | Coherence    | Followed/Issues  |
+   | Dimension       | Status                          |
+   |-----------------|---------------------------------|
+   | Completeness    | X/Y tasks, N reqs               |
+   | Correctness     | M/N reqs covered                |
+   | Test Discipline | 完整抽查 / 已降级（守门已覆盖 <区间>） |
+   | Coherence       | Followed/Issues                 |
    ```
 
    **Issues by Priority**:
