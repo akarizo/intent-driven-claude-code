@@ -190,7 +190,7 @@ full review 的职责是**逐 task 审不到的东西**，prompt 里要点明重
 
 结尾固定提示：
 
-> 本次做了实现 + 逐 task 守门 + 验证，产生了 N 个本地 commit（在当前分支，**未 push、未 merge、未 archive**）。下一步：`/claudemd-sync`（沉淀知识）→ `/pr-ship`（送出 + 合并前守门；逐 task commit 可在 PR 时选 squash 合并）。合回 main 后再 `/opsx-archive <name>`。
+> 本次做了实现 + 逐 task 守门 + 验证，产生了 N 个本地 commit（在当前分支，**未 push、未 merge、未 archive**）。下一步：`/claudemd-commit`（预算中性沉淀知识）→ `/pr-ship`（送出 + 合并前守门；逐 task commit 可在 PR 时选 squash 合并）。合回 main 后再 `/opsx-archive <name>`。
 
 ## Guardrails
 

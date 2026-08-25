@@ -21,18 +21,20 @@
 - **门禁放行**：豁免路径(`*.md`/`openspec/`/`.claude/`/`docs/`/lockfile) · 存在 live change 且 `tasks.md` 仍有未勾选项(实现中) · `.mini-active` 覆盖该文件；否则 DENY 回灌指引。**通用 `*.json/yaml/toml` 不豁免**(可能是中级+ 配置/IaC)
 
 ## CLAUDE.md 层级规范（规范驱动）
-权威全文 + 骨架模板 + 段目录权威表见 `.claude/claudemd-standard.md`（`/claudemd-sync`·`/claudemd-distill` 的硬约束基线）。要点：
+权威全文见 `.claude/claudemd-standard.md`（`/claudemd-commit`·`/claudemd-distill`·`claudemd-lint` 的硬约束基线）。要点：
 
-- **放置（LCA）**：事实写在"恰好为真"的最低层级 — 全仓为真→根 / 仅单子项目→该子项目 / 仅单模块→叶子；父层已有则子层只留指针、禁重复。
-- **头部三件套**（每层含叶子强制）：标题 + `>` 引用块（路径 + ↑父 ↔兄弟 ↓子 + ADR）+ 一句话定位。
-- **固定段目录**（按序取子集）：核心约束→架构→入口→契约→构建/测试→部署→〈领域段〉→已废弃/禁用→表达约定→Backlog；领域知识只落自由扩展区。
-- **排版密集 + 指针优先**：一事一行、`**bold**` 起头、矩阵用表格；有正式归宿（ADR/spec/代码）只留指针、禁内联；超尺寸预算（根~140/子~120/叶~50 行）跑 `/claudemd-distill`。
-- **模块/叶子级特例**：离代码最近 → 不套固定段目录,改两支柱 = 导向(结构与职责 + 扩展点)+ 防错(不变量/陷阱·带 `path:line`);禁镜像代码,详 standard §6b。
+- **准入四问**（全过才入，任一 ✗ 即不入）：① 会命中吗 ② 不写会做错吗 ③ 做错会**静默**吗 ④ 能写成测试/lint/hook 吗（能 → 写那个，只留一行防线索引）。**静默失败是本文件唯一不可替代的辖区。**
+- **不默认落 CLAUDE.md**：每会话必命中→CLAUDE.md／只治理某片目录→`.claude/rules/*.md` + `paths:` frontmatter（按读文件触发）／多步流程·深度契约→skill／可断言→测试。「重要」≠「该常驻」。
+- **放置（LCA）**：事实写在"恰好为真"的最低层级；父层已有则子层只留指针、禁重复。
+- **头部三件套**（含叶子强制）：标题 + `>` 引用块（路径 + ↑父 ↔兄弟 ↓子 + ADR）+ 一句话定位。
+- **固定段目录**（按序取子集）：核心约束→架构→入口→契约→构建/测试→部署→〈领域段〉→已废弃/禁用→表达约定→Backlog。模块/叶子不套此表，改两支柱（导向 + 防错），详 standard §6b。
+- **预算按字节，不按行**（行数会被行长通胀架空）：根 ≤8KB / 子 ≤16KB / 叶 ≤6KB / **单行 ≤200B**。超线**当场**减（`/claudemd-commit` 预算中性：加一减一），禁推给以后。`claudemd-lint` 机械拦截。
+- **祈使句判据**：写不成祈使句的句子（「此前 X、后来改成 Y」）属 ADR，不属本文件。⚠ 指针写 `` `@path` ``（反引号内）**不会被加载**，是死记号 —— 写指针别带 `@`。
 
 ## Model 路由（省 token）
 > ⚠ **优先级铁律**：subagent 模型解析顺序 = `CLAUDE_CODE_SUBAGENT_MODEL` env var **> Task 显式 `model` 参数 > agent frontmatter > 继承主会话**。env var 最高，压过一切。`.claude/settings.json` 设了 `=sonnet` → **所有 subagent 一律 Sonnet，传 `model: opus`/`haiku` 无效**（含内置 general-purpose/Explore/Plan）。别指望"派发时升 opus"——那条路已死。
 
-- **subagent 一律 Sonnet**（env 锁定，传 `model:` 白传）：搜索 · 读文件 · 探索 · 渲染(spec-html) · 机械同步(opsx-sync / claudemd-sync) · 按固定判据打分 → Sonnet 质量足够、省约 5× token。
+- **subagent 一律 Sonnet**（env 锁定，传 `model:` 白传）：搜索 · 读文件 · 探索 · 渲染(spec-html) · 机械同步(opsx-sync / claudemd-commit) · 按固定判据打分 → Sonnet 质量足够、省约 5× token。
 - **确需 Opus 级子任务**（复杂多步重构 · 架构决策 · 难 bug 根因 · 长链推理设计 · 跨大量文件语义综合）：① **主会话直接做**（推荐，省一次派发）；或 ② 该会话把 env 临时改 `CLAUDE_CODE_SUBAGENT_MODEL=inherit` 再派发。别派 opus subagent。
 - **主会话自查**：低推理命令（`/spec-html` `/opsx-explore` `/opsx-sync` `/claudemd-sync`）建议先手动 `/model sonnet` 再跑——env 变量管不到主会话，只能靠这一步；需要复杂判断时自行保留 Opus。
 
