@@ -55,6 +55,12 @@ HISTORY_RE = re.compile(r"此前|后来改成|曾[被经取因]|那次回退|已
 # §7 Q4：已被测试/guard 拦住的约束，完整解释该搬进 assert message，本文件留一行防线索引
 GUARD_RE = re.compile(r"测试钉死|钉死|AST guard|pre-commit 拦|guard 守|回归 guard")
 
+# 单文件预算例外：写在 CLAUDE.md 里的块级 HTML 注释。
+# 官方 docs：块级 HTML 注释在注入模型上下文前会被剥掉 ⇒ 声明本身零上下文成本。
+#   <!-- claudemd-budget: 14336 理由：剩余全是静默失败不变量，砍它们是拿内容迁就阈值 -->
+# 例外**永不静默**：命中时照样打一条 warn，让它在每次扫描里都可见、可复核。
+BUDGET_EXEMPT_RE = re.compile(r"<!--\s*claudemd-budget:\s*(\d+)\s*(.*?)-->", re.S)
+
 MARK_BEGIN = "<!-- intent-driven:begin -->"
 MARK_END = "<!-- intent-driven:end -->"
 
@@ -151,10 +157,19 @@ def check(path, tier, root, index, today):
         b = text.index(MARK_END) + len(MARK_END)
         snippet_bytes = len(text[a:b].encode("utf-8"))
     own = len(raw) - snippet_bytes
-    if own > limit:
+    ex = BUDGET_EXEMPT_RE.search(text)
+    ex_limit = int(ex.group(1)) if ex else 0
+    ex_reason = " ".join(ex.group(2).split()) if ex else ""
+    effective = max(limit, ex_limit)
+    if own > effective:
         errs.append(
             "预算超线（%s）：自有内容 %s > %s（%.1f×）—— 减到线内或按 standard §7 ⑥ 当场分流/指针化"
-            % (TIER_CN[tier], fmt(own), fmt(limit), own / float(limit))
+            % (TIER_CN[tier], fmt(own), fmt(effective), own / float(effective))
+        )
+    elif ex_limit > limit:
+        warns.append(
+            "预算例外在用：闸门 %s → 声明 %s（当前 %s）。理由：%s"
+            % (fmt(limit), fmt(ex_limit), fmt(own), ex_reason or "(未写理由，请补)")
         )
     if snippet_bytes > SNIPPET_BUDGET:
         warns.append(
