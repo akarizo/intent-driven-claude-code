@@ -233,9 +233,16 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - 应废弃的旧条目
 - 待沉淀的隐性知识（口头给过但未落地的反馈）—— 这类最有价值，是唯一从代码推导不出来的
 
-每条先过**准入四问**（会命中吗 / 不写会错吗 / 错了会静默吗 / 能写成测试吗），再按**分流表**定载体：每会话必命中 → CLAUDE.md；只治理某片目录 → `.claude/rules/*.md` + `paths:`；多步流程 → skill；可断言 → 测试。「重要」不等于「该常驻」。
+每条先过**准入四问**（会命中吗 / 不写会错吗 / 错了会静默吗 / 能写成测试吗），再按**分流表**定载体：每会话必命中 → CLAUDE.md；**只是省重新查证的时间 → `memory/`**；只治理某片目录 → `.claude/rules/*.md` + `paths:`；多步流程 → skill；可断言 → 测试。「重要」不等于「该常驻」。
 
-monorepo 时按目录就近原则（LCA）归位。收尾必须 `claudemd-lint` 全绿。
+**CLAUDE.md ↔ memory 的分界**：不知道它会**做错事** → CLAUDE.md（约束）；不知道它只是**多花时间** → memory（发现）。memory 不是免费仓库——写一条就给所有会话永久加一行常驻索引，**未来 10 次会话用不到 1 次的别写**。已完结条目下沉到 `index-*.md` 二级索引即可退出常驻层（`index-` 是硬约定，`memory-lint` 靠它递归识别）。
+
+monorepo 时按目录就近原则（LCA）归位。收尾必须 `claudemd-lint` 与 `memory-lint` 全绿：
+
+```bash
+python3 .claude/hooks/memory-lint.py          # 全量检查本项目的 memory
+python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payload
+```
 
 > ⚠ 前身 `/claudemd-sync` 已废除：它明写「不压缩、宁可冗余」且每轮跑，而减法挂在更慢的 distill 上 —— 结构上是**有齿无掣子的棘轮**，必然单调增长。
 
@@ -310,6 +317,7 @@ monorepo 时按目录就近原则（LCA）归位。收尾必须 `claudemd-lint` 
 | 工具 | 时机 | 模式 |
 | --- | --- | --- |
 | `claudemd-lint` | pre-commit / CI / 每次写入后 | 机械拦截：字节预算 / 单行长度 / 悬空指针 / `@` 误用 |
+| `memory-lint` | 每次写入 memory 后 / CLI 全量 | 机械拦截：索引↔文件双向闭合（悬空指针 / 孤儿）· 状态漂移 · 索引行长与常驻预算 |
 | `/claudemd-commit` | 每轮变更结束 / PR 前 | 增量 + **预算中性**（加一减一，字节零净增）、逐条与用户讨论 |
 | `/claudemd-distill` | 累积多轮后 / 结构性重排 | 全量大扫除、逐文件确认 |
 | `/claudemd-standardize` | 初次采纳标准 / 大幅漂移后 | 全量对标：正确层级创建缺失 + 全部按标准重生成 |

@@ -262,6 +262,19 @@ git checkout main && git pull
 
 配套提醒 `intent-reminder.py`（UserPromptSubmit）在每个任务开头注入本 rubric。
 
+### 写入后的两道 lint（PostToolUse）
+
+`intent-gate` 管「能不能写」，写完之后还有两道机械门禁，各守一个常驻上下文载体：
+
+| lint | 守什么 | 拦什么 |
+| --- | --- | --- |
+| `claudemd-lint` | 仓库内的 `CLAUDE.md` | 字节预算 / 单行长度 / 悬空指针 / `@` 误用 |
+| `memory-lint` | `~/.claude/projects/<slug>/memory/` | 索引↔文件双向闭合（悬空指针 · 孤儿）· 状态漂移 · 索引行长与常驻预算 |
+
+memory 的加载条件是**索引每会话必付、正文按需 recall**，所以索引失真的代价与 `CLAUDE.md` 失真同级——而它此前完全没有守护。典型失效是 change 推进后 memory 文件改名，索引却没跟着改：指针悬空、新文件成孤儿、索引还在宣称一个早已过时的状态。跨几十个会话累积、由 agent 自动写入，人眼守不住。
+
+两者都 **fail-open**：任何内部异常一律放行，坏门禁不能锁死编辑。没有 memory 目录的项目零输出、零影响。
+
 ### ⚠ plan mode 不等于工作流
 
 原生 plan mode 产出的 markdown plan + `ExitPlanMode` 审批，**不满足**中级+ 的工件要求。
