@@ -20,6 +20,15 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/claudemd-lint.py\" --hook"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/memory-lint.py\" --hook"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
