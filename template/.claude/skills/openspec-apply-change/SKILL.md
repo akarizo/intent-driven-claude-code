@@ -1,200 +1,64 @@
 ---
 name: openspec-apply-change
-description: Implement tasks from an OpenSpec change. Use when the user wants to start implementing, continue implementation, or work through tasks.
+description: Implement tasks from an OpenSpec change using flight mode — 批准后从门禁 lint 一路跑到 PR，中途不问。Use when the user wants to start implementing, continue implementation, or work through tasks.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
-  version: "1.0"
+  version: "2.0"
   generatedBy: "1.3.1"
 ---
 
-Implement tasks from an OpenSpec change.
+飞行模式跑完一次 apply：选 change → git 纪律检查 → 切片规划 lint → 记录批准事件 → 启动切片工作流（不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解 → 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**：可选指定 change 名。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余步骤不适用于该分支。
 
 **Steps**
 
-1. **Select the change**
-
-   If a name is provided, use it. Otherwise:
-   - Infer from conversation context if the user mentioned a change
-   - Auto-select if only one active change exists
-   - If ambiguous, run `openspec list --json` to get available changes and use the **AskUserQuestion tool** to let the user select
-
-   Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).
+1. **选 change**
+   - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
+   - 宣告：`Using change: <name>`。
 
 1.5 **确认已在本 change 的 worktree 内**（见 `openspec-git-discipline` 的 Worktree Isolation）
+   CWD 必须是 `.worktrees/<name>/`；不在则进入已存在的 worktree；worktree 缺失 → 停下报告，不在主仓库工作区写实现代码。
+   `git status --short` 确认工件已单独 commit、工作树干净；不满足 → 停下报告。
 
-   apply 前 CWD 必须是 `.worktrees/<name>/`。不在则进入已存在的 worktree；worktree 缺失（工件从未落 worktree）则停下报告，不在主仓库工作区写实现代码。两种 apply 模式（串行 / 逐 task 守门）都在这一间 worktree 内进行。
-
-2. **Check status to understand the schema**
+2. **切片规划 lint**
    ```bash
-   openspec status --change "<name>" --json
+   python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
    ```
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
+   拿到 stdout 的 waves JSON。exit 非 0（规划红）→ 停下报告规划问题，不进入实现。
 
-3. **Get apply instructions**
-
+3. **记录批准事件 · 开飞行标记**
    ```bash
-   openspec instructions apply --change "<name>" --json
+   python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name>
    ```
+   写 `openspec/changes/<name>/.flight`（含启动时间）。
 
-   This returns:
-   - `contextFiles`: artifact ID -> array of concrete file paths (varies by schema - could be proposal/specs/design/tasks or spec/tests/implementation/docs)
-   - Progress (total, complete, remaining)
-   - Task list with status
-   - Dynamic instruction based on current state
+4. **启动切片工作流**
+   - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change, changeDir, hooksDir: ".claude/hooks", waves, useAgentTypes: true}`。
+   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`（多切片 wave 各自 `isolation: worktree`），回报只收其原样 JSON；wave 后派 `integrator` 合回；评审用 `code-reviewer` 并行派发（`run_in_background` 语义：不等）；最后一次批量修复与 final。
 
-   **Handle states:**
-   - If `state: "blocked"` (missing artifacts): show message, suggest using openspec-continue-change
-   - If `state: "all_done"`: congratulate, suggest archive
-   - Otherwise: proceed to implementation
+5. **收口分解**
+   ```bash
+   python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
+   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新>
+   ```
+   打印飞行记录；删除 `.flight`；把门禁绿的切片在 `tasks.md` 里勾选。
 
-4. **Read context files**
+6. **不问，直接进入 `/pr-ship`**
+   final 未绿或有 blocked 切片 → `/pr-ship` 以 draft 建 PR 并列出未过门禁项；否则正常建 PR。
 
-   Read every file path listed under `contextFiles` from the apply instructions output.
-   The files depend on the schema being used:
-   - **spec-driven**: proposal, specs, design, tasks
-   - Other schemas: follow the contextFiles from CLI output
-
-5. **Show current progress**
-
-   Display:
-   - Schema being used
-   - Progress: "N/M tasks complete"
-   - Remaining tasks overview
-   - Dynamic instruction from CLI
-
-6. **MANDATORY: confirm with user before implementation**
-
-   Before touching any code, you MUST stop and ask the user.
-
-   **Skip this step entirely when EITHER** condition holds:
-   - The invocation includes the `--no-confirm` flag, OR
-   - You were dispatched as a delegated subagent from a bulk-apply parent (e.g., `/opsx-bulk-apply`), which already collected one batch-level confirmation.
-
-   Otherwise:
-
-   Show a short preview:
-   - Change name and schema
-   - Progress: "N/M tasks complete, K remaining"
-   - First 3 pending task titles (titles only)
-   - High-level scope: which capabilities or files will be touched (one line)
-
-   Then call the **AskUserQuestion tool** with:
-   - question: `确认开始 apply <name> 吗？选择执行模式：`
-   - header: `开始 apply`
-   - options:
-     - `subagent 逐 task 守门（推荐 · 中级+）` — 转用 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并在当前分支产生一个本地 commit（不 push / merge）+ 派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。守门结论写入 `review-log.md`（review 水位线）供后续 review 点判断已审范围；整合审位置在收口时由你选。**不进入下面的串行 step 7。**（选此项即同意逐 task 本地 commit。）
-     - `串行（轻量）` — proceed to step 7 (serial implementation loop)
-     - `先看完整 tasks` — print the full task list, then re-ask this question
-     - `取消` — stop immediately, do not change any file
-
-   Guardrails:
-   - Do NOT enter any implementation path without an explicit confirmation answer.
-   - 选 `subagent 逐 task 守门` → 改用 `openspec-subagent-apply-change` 承载后续流程；选 `串行（轻量）` 或 `--no-confirm` → step 7。`--no-confirm`（bulk-apply 子 agent）一律串行，subagent 不能再嵌套 subagent。
-   - If the user picks `取消`, exit and report no changes were made.
-
-7. **Implement tasks (loop until done or blocked)**
-
-   **强制 TDD/BDD 入口（每个会写代码的 task 都适用）：**
-   - 先按 `test-driven-development` skill 走 RED → 验红 → GREEN → 验绿 → REFACTOR
-   - 写任何生产代码前，必须存在一个**先前失败过**的单元测试
-   - 测试函数体首行是 `Given:` 三段中文注释（`// Given:` 或 `# Given:`），之后才是 setup / mock / 被测调用 / 断言
-   - 注释规则与反模式见 `.claude/skills/test-driven-development/{SKILL.md, testing-anti-patterns.md}`
-   - 例外：纯文档 / 纯配置 / 一次性 prototype 类 task 可跳过，但必须明告用户
-
-   For each pending task:
-   - Show which task is being worked on
-   - Make the code changes required (TDD/GWT entry applies — see above)
-   - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
-   - Continue to next task
-
-   **Pause if:**
-   - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts
-   - Error or blocker encountered → report and wait for guidance
-   - User interrupts
-
-8. **On completion or pause, show status**
-
-   Display:
-   - Tasks completed this session
-   - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
-   - If paused: explain why and wait for guidance
-
-**Output During Implementation**
-
-```
-## Implementing: <change-name> (schema: <schema-name>)
-
-Working on task 3/7: <task description>
-[...implementation happening...]
-✓ Task complete
-
-Working on task 4/7: <task description>
-[...implementation happening...]
-✓ Task complete
-```
-
-**Output On Completion**
-
-```
-## Implementation Complete
-
-**Change:** <change-name>
-**Schema:** <schema-name>
-**Progress:** 7/7 tasks complete ✓
-
-### Completed This Session
-- [x] Task 1
-- [x] Task 2
-...
-
-All tasks complete! Ready to archive this change.
-```
-
-**Output On Pause (Issue Encountered)**
-
-```
-## Implementation Paused
-
-**Change:** <change-name>
-**Schema:** <schema-name>
-**Progress:** 4/7 tasks complete
-
-### Issue Encountered
-<description of the issue>
-
-**Options:**
-1. <option 1>
-2. <option 2>
-3. Other approach
-
-What would you like to do?
-```
+**暂停例外（仅这四种）**：spec 自相矛盾 · 需要破坏性操作 · 测试环境本身坏 · 同一门禁项连续 2 次红。
 
 **Guardrails**
-- Always pause for explicit user confirmation in step 6 before any code change (except delegated bulk-apply subagent runs)
-- Keep going through tasks until done or blocked
-- Always read context files before starting (from the apply instructions output)
-- If task is ambiguous, pause and ask before implementing
-- If implementation reveals issues, pause and suggest artifact updates
-- Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
-- Pause on errors, blockers, or unclear requirements - don't guess
-- Use contextFiles from CLI output, don't assume specific file names
+- 启动到 `/pr-ship` 之间不出现 AskUserQuestion。
+- `--gate=per-task` 转 legacy skill，不与本流程混用。
+- 不自动 merge / push / 删 worktree。
 
 **Fluid Workflow Integration**
 
-This skill supports the "actions on a change" model:
-
-- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+- 可随时调用；不锁相位（Before all artifacts are done、部分实现之后都能跑）。
+- 实现中若发现设计问题，允许建议更新工件，不是硬性阻断。
