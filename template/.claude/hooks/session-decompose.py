@@ -11,12 +11,18 @@
 # 只读，不改任何文件。兼容 Python 3.8+，只用标准库。
 import argparse
 import glob
+import importlib.util
 import json
 import os
 import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+
+# 阶段 → 路由角色（其他阶段不参与对账，只打印）
+PHASE_ROLE = {"Implement": "executor", "Fix": "executor", "Review": "reviewer", "Finalize": "integrator"}
+ROLE_ORDER = ("executor", "reviewer", "integrator")
+EXIT_ROUTE_MISMATCH = 3
 
 STRIP_RE = re.compile(
     r"<system-reminder>.*?</system-reminder>|<task-notification>.*?</task-notification>|"
@@ -185,12 +191,47 @@ def workflow_agents(wf_dir):
     return out
 
 
+def load_alias_of():
+    """按路径加载同目录 session-model.py 的 alias_of（文件名含连字符不能 import）；加载失败返回 None。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session-model.py")
+    try:
+        spec = importlib.util.spec_from_file_location("session_model", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.alias_of
+    except Exception:  # noqa: BLE001 — 判定脚本缺失/损坏都只退化，不阻断收口
+        return None
+
+
+def audit_routes(agents, expect, alias_of):
+    """按阶段→角色比对别名（比别名不比原始 id）；返回 (不符项, 已对账角色→期望别名)。"""
+    bad, seen = [], {}
+    for label, phase, model, _turns, _wall in agents:
+        role = PHASE_ROLE.get(phase)
+        if role is None or role not in expect:
+            continue
+        want, got = expect[role], alias_of(model)
+        seen[role] = want
+        if got != want:
+            bad.append((label, phase, want, model))
+    return bad, seen
+
+
 def main():
     ap = argparse.ArgumentParser(description="session-decompose：会话 wall-clock 归因")
     ap.add_argument("--session", required=True, help="主转录 .jsonl 路径")
     ap.add_argument("--subagents", help="子 agent 转录目录（缺省：<session 同名目录>/subagents）")
     ap.add_argument("--workflow", help="Workflow 运行的 Transcript dir（含 agent-*.jsonl 与 .meta.json），打印各 agent 实际模型")
+    ap.add_argument("--expect-models", help='路由表 JSON，如 \'{"executor":"opus","reviewer":"opus","integrator":"sonnet"}\'；不符 exit 3')
     args = ap.parse_args()
+    expect = None
+    if args.expect_models:
+        if not args.workflow:
+            ap.error("--expect-models 需要同时给 --workflow（否则无实际模型可对账）")
+        try:
+            expect = json.loads(args.expect_models)
+        except ValueError as exc:
+            ap.error("--expect-models 不是合法 JSON：%s" % exc)
     rows = load(args.session)
     if not rows:
         print("转录为空")
@@ -221,10 +262,22 @@ def main():
             print("  %-16s %-10s %-20s %4d  %s" % (label, phase, model, turns, fmt_h(wall)))
         models = Counter(m for _, _, m, _, _ in agents)
         print("  模型分布：%s" % dict(models))
+        if expect is not None:
+            alias_of = load_alias_of()
+            if alias_of is None:
+                print("  ⚠ 无法加载 session-model.py 的 alias_of，路由对账跳过（只打印）")
+            else:
+                bad, seen = audit_routes(agents, expect, alias_of)
+                if bad:
+                    for label, phase, want, model in bad:
+                        print("  ❌ %s · %s · 期望 %s · 实际 %s" % (label, phase, want, model))
+                    return EXIT_ROUTE_MISMATCH
+                print("  路由对账：✅ 一致（%s）" % " · ".join(
+                    "%s=%s" % (role, seen[role]) for role in ROLE_ORDER if role in seen))
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main() or 0)
     except BrokenPipeError:
         sys.exit(0)
