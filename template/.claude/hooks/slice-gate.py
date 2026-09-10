@@ -581,6 +581,67 @@ def cmd_baseline(args):
     sys.exit(0 if rc == 0 else 1)
 
 
+def report_latest(change_dir):
+    """gate-report.md 按切片取最后一行：{slice: {"ok": bool, "commit": 10位, "failed": str}}。"""
+    path = os.path.join(change_dir, REPORT)
+    latest = {}
+    if not os.path.isfile(path):
+        return latest
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            cols = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cols) >= 5 and cols[2] in ("ok", "red"):
+                latest[cols[1]] = {"ok": cols[2] == "ok", "commit": cols[3], "failed": cols[4]}
+    return latest
+
+
+def cmd_ship(args):
+    """draft / ready 裁决：只读 gate-report.md、HEAD、review-findings.json；工作流的 blocked 只作说明。"""
+    root = toplevel()
+    head = git(root, "rev-parse", "HEAD")
+    reasons = []
+    findings = {}
+    fpath = os.path.join(args.change_dir, "review-findings.json")
+    if os.path.isfile(fpath):
+        with open(fpath, "r", encoding="utf-8") as f:
+            findings = json.load(f) or {}
+    plan_path = os.path.join(args.change_dir, "slices.json")
+    if os.path.isfile(plan_path):
+        data = load_plan(args.change_dir)
+        latest = report_latest(args.change_dir)
+        for s in data.get("slices") or []:
+            row = latest.get(s["id"])
+            if row is None:
+                reasons.append("切片 %s 无门禁记录" % s["id"])
+            elif not row["ok"]:
+                reasons.append("切片 %s 门禁红：%s" % (s["id"], row["failed"]))
+        final = latest.get("final")
+        if final is None:
+            reasons.append("final 未运行")
+        elif not final["ok"]:
+            reasons.append("final 红：%s" % final["failed"])
+        elif final["commit"] != head[:10]:
+            reasons.append("final 过期：记录 %s，HEAD %s" % (final["commit"], head[:10]))
+    # 铁律 4：CRITICAL/HIGH 未闭环不得非 draft —— 与是否飞行模式无关，无条件检查
+    blocking = findings.get("blocking") or []
+    if blocking:
+        reasons.append("%d 条 CRITICAL/HIGH 评审未闭环" % len(blocking))
+    blocked = findings.get("blocked") or []
+    result = {"ready": not reasons, "commit": head, "reasons": reasons, "blocked": blocked}
+    timeline_record(args.change_dir, "ship", "ready" if result["ready"] else "draft: " + "; ".join(reasons))
+    if args.markdown:
+        parts = []
+        if reasons:
+            parts.append("## 飞行门禁未全绿\n\n" + "\n".join("- %s" % r for r in reasons))
+        if blocked:
+            parts.append("### 飞行中记 blocked 的切片\n\n" + "\n".join(
+                "- %s（%s）：%s" % (b.get("slice", "?"), b.get("kind", "infra"), b.get("reason", "")) for b in blocked))
+        print("\n\n".join(parts))
+    else:
+        print(json.dumps(result, ensure_ascii=False))
+    sys.exit(0 if result["ready"] else 1)
+
+
 def main():
     ap = argparse.ArgumentParser(description="slice-gate：切片规划 lint 与切片门禁")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -602,9 +663,12 @@ def main():
     p.add_argument("--red", action="store_true")
     p.add_argument("--failed")
     p.add_argument("--warnings")
+    p = sub.add_parser("ship", help="draft / ready 裁决：读 gate-report.md + HEAD + review-findings.json；退出码 0 ready / 1 draft")
+    p.add_argument("--change-dir", required=True)
+    p.add_argument("--markdown", action="store_true", help="打印可贴入 PR 正文的段落而不是 JSON")
     args = ap.parse_args()
     {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
-     "final": cmd_final, "baseline": cmd_baseline}[args.cmd](args)
+     "final": cmd_final, "baseline": cmd_baseline, "ship": cmd_ship}[args.cmd](args)
 
 
 if __name__ == "__main__":

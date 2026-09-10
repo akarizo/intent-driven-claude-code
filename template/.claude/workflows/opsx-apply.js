@@ -9,6 +9,8 @@
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
 //   expectHead    可选，change 分支最新 commit 前缀；执行体第零步校验自己的 worktree 基分支
 //   deps          可选，{ S3: ["S1","S2"], ... }（来自 slices.json）；依赖已 blocked 的切片直接记 blocked，不白跑
+//                 blocked 条目形如 { slice, kind: 'gate' | 'infra', reason }：gate = 切片门禁红；infra = agent 未返回 / 依赖跳过 / integrator 合回失败。
+//                 blocked 只进 PR 正文作说明；draft / ready 由 slice-gate.py ship 按 gate-report.md 裁决，不看本列表。
 //   models        必填：{ executor, reviewer, integrator }，按角色显式路由（铁律：不得留空让 env 默认兜底）
 //                 executor / reviewer = 会话主模型别名（如 "opus" / "fable"）；integrator = 低档模型（"sonnet"）
 //   efforts       可选：{ executor: "high", reviewer: "high", integrator: "low" }
@@ -109,7 +111,7 @@ for (const [i, allWave] of waves.entries()) {
   phase('Implement')
   const blockedIds = new Set(blocked.map((b) => b.slice))
   const skipped = allWave.filter((s) => (deps[s] || []).some((d) => blockedIds.has(d)))
-  for (const s of skipped) blocked.push({ slice: s, reason: `依赖已 blocked：${(deps[s] || []).filter((d) => blockedIds.has(d)).join(', ')}` })
+  for (const s of skipped) blocked.push({ slice: s, kind: 'infra', reason: `依赖已 blocked：${(deps[s] || []).filter((d) => blockedIds.has(d)).join(', ')}` })
   const wave = allWave.filter((s) => !skipped.includes(s))
   log(`wave ${i + 1}/${waves.length}: ${wave.join(', ') || '(全部因依赖 blocked 跳过)'}`)
   if (!wave.length) continue
@@ -121,9 +123,9 @@ for (const [i, allWave] of waves.entries()) {
         : r)))
   for (const [k, r] of done.entries()) {
     const s = wave[k]
-    if (!r) { blocked.push({ slice: s, reason: 'agent 未返回' }); continue }
+    if (!r) { blocked.push({ slice: s, kind: 'infra', reason: 'agent 未返回' }); continue }
     results.push(r)
-    if (!r.ok) { blocked.push({ slice: s, reason: r.failed.join('; ') }); continue }
+    if (!r.ok) { blocked.push({ slice: s, kind: 'gate', reason: r.failed.join('; ') }); continue }
   }
   const merged = wave.filter((s, k) => done[k] && done[k].ok)
   if (iso && merged.length) {
@@ -139,7 +141,7 @@ for (const [i, allWave] of waves.entries()) {
       `合回后逐条运行（把临时 worktree 里的门禁结论写回分支）：\n${recordCmds.join('\n')}\n` +
       `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`，最后再按第 0 项把飞行记录提交。返回 JSON。`,
       { label: `integrate:w${i + 1}`, schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
-    if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
+    if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, kind: 'infra', reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
   }
   for (const s of merged) {
     const gate = done[wave.indexOf(s)]
