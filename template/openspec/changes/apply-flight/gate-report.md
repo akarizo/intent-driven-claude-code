@@ -6,3 +6,5 @@
 | 2026-09-10T02:46:41Z | S1 | red | 5500f82000 | G6 ownership: emplate/openspec/changes/apply-flight/timeline.md 不在 owns 内 | 工作树有未提交改动：emplate/openspec/changes/apply-flight/timeline.md; G5 evidence: 无本切片的测试运行留痕 |
 | 2026-09-10T02:47:29Z | S1 | ok | 58fce0a03c | - | G5 evidence: 无本切片的测试运行留痕 |
 | 2026-09-10T02:50:23Z | S2 | ok | 61ff74c7d7 | - | G5 evidence: 无本切片的测试运行留痕 |
+| 2026-09-10T02:53:40Z | S3 | red | e05f921943 | G1 verify: exit 1 E         ...Full output truncated (123 lines hidden), use '-vv' to show)  tests/test_agents_workflow.py:43: AssertionError =========================== short test summary info ============================ FAILED tests/test_agents_workflow.py::test_workflow_script_valid - AssertionE... 1 failed, 3 passed in 0.04s | G5 evidence: 无本切片的测试运行留痕 |
+| 2026-09-10T02:56:55Z | S3 | ok | d978167dcb | - | G5 evidence: 无本切片的测试运行留痕 |

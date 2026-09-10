@@ -6,3 +6,5 @@
 2026-09-10T02:47:55Z	slice-start	S2
 2026-09-10T02:50:23Z	gate	S2 ok
 2026-09-10T02:50:39Z	slice-start	S3
+2026-09-10T02:53:40Z	gate	S3 red
+2026-09-10T02:56:55Z	gate	S3 ok

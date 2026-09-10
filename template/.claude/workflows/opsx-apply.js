@@ -62,8 +62,12 @@ const FINDINGS = {
   },
 }
 
+const expectHead = args.expectHead || null
 const executorPrompt = (s, retryOf) => [
   rules('slice-executor') + `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
+  expectHead
+    ? `第零步：运行 \`git rev-parse HEAD\`，若不是以 ${expectHead} 开头，说明你的 worktree 没有从 change 分支最新 commit 分叉——不要做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: worktree HEAD 不是 ${expectHead}"]}。`
+    : '',
   `切片包：${changeDir}/slices/${s}.md（scenario、owns、verify、接口摘要都在里面，先读它）。`,
   `第一步运行 \`${startCmd(s)}\`。`,
   retryOf
