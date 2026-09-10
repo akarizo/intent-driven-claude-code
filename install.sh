@@ -339,6 +339,8 @@ PY
 # 复制：库自有文件 vs 用户数据
 # ---------------------------------------------------------------------------
 # .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md）
+# 递归复制已覆盖 commands/ · skills/（含 legacy/）· agents/（slice-executor / integrator / code-reviewer）
+# · workflows/（opsx-apply.js 飞行调度器）· hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md"
 # openspec/：用户数据 + 种子目录，绝不覆盖
 copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec" 0
@@ -439,4 +441,6 @@ cat <<EOF
   - HTML 审批面板：propose/continue 后自动出 (worktree 内) openspec/changes/<change>/spec.html
   - 落点收敛：每 change 产物落其 worktree；ADR → openspec/adr/；探索设计稿 → openspec/superpower/；项目根仅 .claude/ + openspec/ + CLAUDE.md (+ 已忽略的 .worktrees/)
   - 已装项目升级：./install.sh --upgrade（刷新库文件 + 自动迁移 adr，用户数据不动）
+  - apply 默认走飞行模式（.claude/workflows/opsx-apply.js + slice-gate.py 门禁）：把测试命令（如 pytest/npm test）
+    加进 .claude/settings.json 的 allow 规则，避免 Workflow 并行跑切片时被权限提示逐个暂停
 EOF

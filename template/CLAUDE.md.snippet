@@ -8,15 +8,29 @@
 - mini 改源码前先 `/opsx-mini "<理由+范围>"` 留痕：24h 内放行 scope 文件，完后 `--done`。
 - ⚠ **原生 plan mode 的 markdown plan + ExitPlanMode ≠ 工作流**：approve 一份 plan 不满足中级+ 工件要求，5 工件照欠
 
-## Intent-Driven 工作流
+## Intent-Driven 工作流 · 飞行模式
 命令前缀 `/opsx-*`；机制细节在各自 skill 里，此处只留必须常驻的：
 
 - **Worktree 隔离**：每 change 一间 `.worktrees/<change>/` + `worktree-<change>` 分支。
 - 5 工件 + `spec.html` + 实现**全落 worktree 内**，主仓库根随时干净。详 `.claude/skills/openspec-git-discipline/`
+- **飞行流程**：tasks 阶段生成 `slices.json`（切片 owns/deps/verify/scenarios）+ 切片包；`/opsx-apply` 按 wave 并行派 `slice-executor`，`slice-gate.py` 机械门禁；评审离关键路径 + 一次批量修复；收口打印飞行记录。legacy 逐 task 守门用 `--gate=per-task` 显式选。
 - **Git 授权边界**：建 worktree 可自动做；**merge / push / 删 worktree / commit 一律交你授权**，不代劳
 - **ADR 不可改**：入 `openspec/adr/` 后需变更则 supersede 旧版，禁原地改
 - **TDD**：写实现前先写失败测试，红→验红→绿→验绿→重构；单测先写 `# Given: / # When: / # Then:` 三段中文注释（详见 `.claude/skills/test-driven-development/`）
+- **两处人类审批不可省**：飞行计划批准（运行 `/opsx-apply`）与 PR review
 - **落点收敛**：ADR → `openspec/adr/`；未成 change 的探索稿 → `openspec/superpower/`；每 change 产物 → 其 worktree
+
+## 铁律（零容忍）
+1. 先意图后代码：中级+ 无工件不写源码，门禁只加严不绕过。
+2. 规格即验收：scenario 测试骨架全部转 pass 才算 apply 完成。
+3. TDD 与留痕：先失败测试后代码；测试运行由 hook 留痕，不接受自述。
+4. 独立评审必有：CRITICAL/HIGH 未闭环不得非 draft PR。
+5. 门禁红不收口：slice-gate / final gate 红时禁勾选、禁声明完成。
+6. Git 边界：一 change 一 worktree，不自动 merge / push / 删；ADR 只 supersede。
+7. 两处审批不可省：飞行计划批准与 PR review。
+8. 度量必打印：apply 收口打印飞行记录，无数据不称提速。
+9. 零 token 优先：能脚本 / hook 判定的不交给模型。
+10. 回退必存在：机制失效时回退路径语义一致。
 
 ## 记忆分流（写 CLAUDE.md 前必读）
 权威全文 `.claude/claudemd-standard.md`；`/claudemd-commit` 沉淀、`/claudemd-distill` 重排、`claudemd-lint` 拦截。
@@ -30,10 +44,9 @@
 - ⚠ 指针写 `` `@path` ``（反引号内）**不会被加载**，是死记号；裸 `@path` 才是 launch 急切导入 —— 写指针别带 `@`。
 
 ## Model 路由（省 token）
-> ⚠ subagent 模型解析优先级 = `CLAUDE_CODE_SUBAGENT_MODEL` env **> Task 显式 `model` 参数 > frontmatter > 继承主会话**。env 最高、压过一切。
+> Claude Code v2.1.251 起 subagent 模型解析优先级 = Task 显式 `model` 参数 > agent frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` env > 继承主会话。env 只是**默认值**，不再必然优先于参数与 frontmatter；需强制统一时才设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（模板不设）。Fork 出的子会话恒随主会话模型，不受 env 影响。
 
-- **传 `model:` 可能是白传**：env 锁死时 Task 的 `model` 参数被**静默忽略**（无报错）—— 别指望「派发时升 opus」。
-- **确需 Opus 级子任务**（复杂重构 · 架构决策 · 难 bug 根因 · 跨大量文件语义综合）：**主会话直接做**（推荐），或临时改 env 为 `inherit` 再派发。
+- **确需 Opus 级子任务**（复杂重构 · 架构决策 · 难 bug 根因 · 跨大量文件语义综合）：**主会话直接做**（推荐），或在 Task / agent 定义里显式传 `model`。
 - **主会话自查**：低推理命令（`/spec-html` `/opsx-explore` `/opsx-sync` `/claudemd-commit`）先手动 `/model sonnet`——env 管不到主会话。
 
 ## 上下文纪律

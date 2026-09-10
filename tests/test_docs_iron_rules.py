@@ -1,8 +1,5 @@
-"""文档与铁律（scenario: executable-specs#claudemd-iron-rules / docs-updated, flight-apply#legacy-mode-optional）。
-骨架：xfail(strict) 直到 S6 实现；执行体去掉标记即解锁。"""
+"""文档与铁律（scenario: executable-specs#claudemd-iron-rules / docs-updated, flight-apply#legacy-mode-optional）。"""
 import re
-
-import pytest
 
 from conftest import ROOT
 
@@ -19,7 +16,6 @@ def before_legacy(text):
     return text[: m.start()] if m else text
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#claudemd-iron-rules")
 def test_claudemd_iron_rules():
     # Given: 本仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
     root = read("CLAUDE.md")
@@ -35,7 +31,6 @@ def test_claudemd_iron_rules():
     assert len(snippet.encode("utf-8")) <= 8 * 1024
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#docs-updated")
 def test_docs_updated():
     # Given: README.md、docs/WORKFLOW_zh.md、template/CLAUDE.md.snippet
     readme, workflow, snippet = read("README.md"), read("docs/WORKFLOW_zh.md"), read("template/CLAUDE.md.snippet")
@@ -50,7 +45,6 @@ def test_docs_updated():
     assert "2.1.251" in snippet and "压过一切" not in snippet
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: flight-apply#legacy-mode-optional")
 def test_legacy_mode_optional():
     # Given: 安装后的 skills 目录
     legacy = ROOT / "template" / ".claude" / "skills" / "legacy" / "openspec-subagent-apply-change" / "SKILL.md"

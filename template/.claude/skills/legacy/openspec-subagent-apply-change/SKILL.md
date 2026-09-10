@@ -1,6 +1,6 @@
 ---
 name: openspec-subagent-apply-change
-description: 用 subagent 逐 task 实现一个 OpenSpec change，每个 task 完成即派 code-reviewer 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。中级+ 变更的推荐 apply 模式。当用户在 /opsx-apply 选择"subagent 逐 task 守门"时使用。
+description: legacy 逐 task 守门 apply 模式。默认流程已改为飞行模式（slices.json + slice-gate 机械门禁 + 评审离路径），本 skill 仅在用户对 /opsx-apply 显式传 --gate=per-task 时按路径读取。当用户在 /opsx-apply --gate=per-task 时使用。
 license: MIT
 compatibility: Requires git, OpenSpec CLI, and Claude Code subagents (Agent tool).
 metadata:
@@ -8,7 +8,9 @@ metadata:
   version: "1.0"
 ---
 
-# OpenSpec Subagent Apply（逐 task 守门）
+> **legacy**：默认流程已改为飞行模式（见 `openspec-git-discipline` 与 `slice-gate.py`），本 skill 仅在 `/opsx-apply --gate=per-task` 时按路径读取，不再是推荐路径。实测逐 task 链路每 task 22–106 min，等 review/fix 子 agent 占 64–80% 时间。
+
+# OpenSpec Subagent Apply（逐 task 守门，legacy）
 
 用 fresh subagent 逐个 task 实现一个 OpenSpec change：**每个 task 由一个干净的实现 subagent 走完整 TDD 写出来，紧接着由一个干净的 `code-reviewer` subagent 守门**，CRITICAL/HIGH 级问题不修复不许勾选 checkbox。全部 task 完成后做一次整体 full review + `/opsx-verify`，最后收口报告，**不 merge 不 archive**。
 
