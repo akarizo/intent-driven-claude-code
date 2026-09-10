@@ -1,8 +1,5 @@
-"""会话主模型的机械判定（scenario: model-routing#session-model-*）。
-骨架：xfail(strict) 直到 S1 实现；执行体去掉标记即解锁。"""
+"""会话主模型的机械判定（scenario: model-routing#session-model-*）。"""
 import json
-
-import pytest
 
 from conftest import run_hook
 
@@ -17,7 +14,6 @@ def transcript(path, rows):
     return path
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：session-model.py 尚不存在")
 def test_session_model_resolves_alias(tmp_path):
     # Given: 一份转录，最后一条主循环 assistant 的 model 是 claude-opus-5[1m]
     path = transcript(tmp_path / "sess.jsonl", [
@@ -37,7 +33,6 @@ def test_session_model_resolves_alias(tmp_path):
     assert "session" in data and "source" in data
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：session-model.py 尚不存在")
 def test_session_model_latest_wins(tmp_path):
     # Given: 2026-09-10 事故会话的形状——中途换过模型（k3 → fable → opus）
     path = transcript(tmp_path / "sess.jsonl", [
@@ -55,7 +50,6 @@ def test_session_model_latest_wins(tmp_path):
     assert p.stdout.strip() == "opus"
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：session-model.py 尚不存在")
 def test_session_model_skips_sidechain(tmp_path):
     # Given: 转录末尾混有 isSidechain: true 的子 agent 条目（sonnet）
     path = transcript(tmp_path / "sess.jsonl", [
@@ -71,7 +65,6 @@ def test_session_model_skips_sidechain(tmp_path):
     assert p.stdout.strip() == "opus"
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：session-model.py 尚不存在")
 def test_session_model_fails_closed(tmp_path):
     # Given: 四种判定不出的输入——文件不存在 / 无 assistant 条目 / 第三方 id k3 / 既无 --session 也无环境变量
     missing = tmp_path / "nope.jsonl"
