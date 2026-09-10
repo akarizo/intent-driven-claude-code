@@ -8,3 +8,7 @@
 2026-09-10T02:50:39Z	slice-start	S3
 2026-09-10T02:53:40Z	gate	S3 red
 2026-09-10T02:56:55Z	gate	S3 ok
+2026-09-10T02:57:54Z	approve	wave 3 (S4,S5,S6) 交给 opsx-apply workflow
+2026-09-10T03:34:35Z	final	red
+2026-09-10T03:35:27Z	final	red
+2026-09-10T03:35:29Z	apply-done	blocked=1 blocking=3
