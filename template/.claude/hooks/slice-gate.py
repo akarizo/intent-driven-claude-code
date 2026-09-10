@@ -219,7 +219,9 @@ def changed_files(root, base):
     if base and base != head:
         committed = set(x for x in git(root, "diff", "--name-only", "%s..HEAD" % base).splitlines() if x)
     uncommitted = set()
-    for line in git(root, "status", "--porcelain").splitlines():
+    # 不能用 git()：它会 strip() 掉首行的前导空格（" M path" 会被截成 "M path"）
+    porcelain = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True, text=True).stdout
+    for line in porcelain.splitlines():
         if len(line) > 3:
             uncommitted.add(line[3:].split(" -> ")[-1].strip())
     return committed, uncommitted

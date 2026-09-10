@@ -188,6 +188,20 @@ def test_gate_missing_gwt(git_repo):
     assert any(f.startswith("G4") and "test_mod_adds" in f for f in out["failed"]), out["failed"]
 
 
+def test_gate_warns_uncommitted_with_full_path(git_repo):
+    # Given: 已 start 的切片 S1，commit 之后 src/mod.py 又被改动但未提交（git status 首行带前导空格）
+    change = gate_repo(git_repo)
+    (git_repo / "src" / "mod.py").write_text("def add(a, b):\n    return a + b  # touched\n", encoding="utf-8")
+
+    # When: 运行 gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 仍通过（文件在 owns 内），且 warnings 里的路径是完整的 src/mod.py 而不是被截断的
+    out = json.loads(p.stdout)
+    assert out["ok"] is True, out
+    assert any("src/mod.py" in w and "rc/mod.py" not in w.replace("src/mod.py", "") for w in out["warnings"]), out["warnings"]
+
+
 def test_final_gate_reports_scenarios(git_repo):
     # Given: slices.json 把 scenario cap#adds 映射到 tests/test_mod.py::test_mod_adds，且该测试通过、无 xfail
     change = gate_repo(git_repo)
