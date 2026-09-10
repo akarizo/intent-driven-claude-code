@@ -38,6 +38,14 @@ Never create commits, branches, or merges unless the user explicitly asks. This 
 
 This carve-out covers **only** per-task implementation commits inside that apply flow. It does NOT relax anything about merge / push / archive, or about auto-committing proposal or archive artifacts without the user asking.
 
+**Carve-out — wave 内并行切片临时 worktree（flight apply）：** `opsx-apply` 飞行工作流（`Workflow` 工具，或其 `Agent` 工具回退路径）为 wave 内并行的切片各开一个临时 worktree（`isolation: worktree`，见 `template/.claude/workflows/opsx-apply.js`）。这不违反上面「每 change 一间，禁止嵌套子 worktree」的规则，因为：
+
+- **由运行时创建，不是 LLM 手动嵌套** —— 临时 worktree 由 Workflow/Agent 运行时在该切片执行期间创建，执行体本身不手动在 change worktree 内再开子 worktree；
+- **以 SHA 合回，不是 `merge`/`push`** —— 每个切片的本地实现 commit 由 `integrator` 以该切片 HEAD 的 SHA 合回 change 分支，不 push、不 merge 进 main；
+- **清理由运行时负责** —— integrator 合回后，该切片的临时 worktree 由运行时清理，不留给执行体或用户手动清理。
+
+本 carve-out 只覆盖飞行 apply 工作流产生的 wave 内并行临时 worktree，不放松其它场景下「每 change 一间，禁止嵌套子 worktree」的规则，也不授权对 main 的 `push` 或 `merge`。
+
 ## Gates
 
 | Moment | Gate |

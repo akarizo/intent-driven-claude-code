@@ -90,3 +90,19 @@ def test_command_skill_sync():
 
     # Then: 每对提到的 hook 脚本集合一致（命令与 skill 不漂移）
     assert all(not d for _, _, d in diffs), diffs
+
+
+def test_git_discipline_wave_parallel_carveout():
+    # Given: template/.claude/skills/openspec-git-discipline/SKILL.md 的 Worktree Isolation 节
+    text = read(SKILLS / "openspec-git-discipline" / "SKILL.md")
+    section = text[text.index("## Worktree Isolation"):text.index("## Gates")]
+
+    # When: 检查该节文字
+    # Then: 核心禁令原文保留（禁止嵌套子 worktree）；新增 carve-out 说明 wave 内并行切片的临时 worktree
+    #       由 Workflow/Agent 运行时创建与清理、由 integrator 合回、不 push / 不 merge main，
+    #       与 opsx-apply.js 的 isolation: worktree 并行机制不再自相矛盾
+    assert "禁止为单个 task 各开 worktree，也禁止在 change worktree 内再嵌套子 worktree" in section
+    assert "wave" in section and "isolation" in section
+    assert "integrator" in section
+    assert "运行时" in section
+    assert "不 push" in section
