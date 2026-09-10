@@ -593,6 +593,10 @@ def render_footer(now, section_count, diagram_count, task_count):
 # ---------------------------------------------------------------- 渲染入口
 
 def render(change_dir, template_path, out_path, now_arg):
+    if not os.path.isdir(change_dir):
+        sys.stderr.write("change-dir 不存在: %s\n" % change_dir)
+        return 1
+
     tmpl = read_text(template_path)
     if tmpl is None:
         sys.stderr.write("模板不存在: %s\n" % template_path)
@@ -622,6 +626,9 @@ def render(change_dir, template_path, out_path, now_arg):
 
     diagram_count = len(extract_diagrams(design_text))
     section_count = sum(1 for k in ("why", "what", "capabilities", "specs", "design", "diagrams", "adrs", "tasks", "flight") if blocks.get(k))
+    if section_count == 0:
+        sys.stderr.write("change-dir 无可渲染工件（0 个 section），不写出空壳 spec.html: %s\n" % change_dir)
+        return 1
     blocks["footer"] = render_footer(now_iso(now_arg), section_count, diagram_count, task_count)
 
     out_html = tmpl

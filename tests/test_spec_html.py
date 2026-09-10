@@ -162,3 +162,30 @@ def test_spec_html_flight_multiline_decorator(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert '<span class="chip" data-state="pending">pending</span>' in html
     assert '<span class="chip" data-state="unlocked">unlocked</span>' not in html
+
+
+def test_spec_html_missing_change_dir(tmp_path):
+    # Given: 一个不存在的 change-dir 路径
+    change = tmp_path / "openspec" / "changes" / "does-not-exist"
+    out = tmp_path / "spec.html"
+
+    # When: 用该路径运行 spec_html.py
+    p = render(change, out)
+
+    # Then: 非 0 退出，且不静默 makedirs + 写出空壳 spec.html
+    assert p.returncode != 0
+    assert not out.exists()
+
+
+def test_spec_html_zero_sections_no_render(tmp_path):
+    # Given: change-dir 存在但没有任何工件（proposal/design/tasks/specs/slices.json 全缺）
+    change = tmp_path / "openspec" / "changes" / "empty-change"
+    change.mkdir(parents=True)
+    out = tmp_path / "spec.html"
+
+    # When: 渲染
+    p = render(change, out)
+
+    # Then: 恢复旧 Guardrail「artifact = 0 时不渲染」—— 非 0 退出，不写出只剩占位符的空壳文件
+    assert p.returncode != 0
+    assert not out.exists()
