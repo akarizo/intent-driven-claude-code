@@ -304,3 +304,26 @@ def test_route_audit_fails_when_one_role_missing(tmp_path):
     assert p.returncode != 0, p.stdout
     assert "未采样到角色 reviewer（期望 opus）" in p.stdout
     assert "✅" not in p.stdout
+
+
+def test_route_audit_ignores_empty_attempt(tmp_path):
+    # Given: 三个角色都被正常采样，另有一个被重试掉的空 attempt 转录（有 meta、无 assistant 轮次 → 实际模型 "?"）
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1")
+    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
+    wf_agent(wf, "a3", "claude-sonnet-5", "Finalize", "final")
+    (wf / "agent-a4.jsonl").write_text(json.dumps(
+        {"type": "user", "timestamp": "2026-09-10T10:00:00Z", "message": {"content": "x"}}) + "\n", encoding="utf-8")
+    (wf / "agent-a4.meta.json").write_text(
+        json.dumps({"description": "fix", "workflowPhase": "Fix", "agentType": "slice-executor"}), encoding="utf-8")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带 --expect-models 运行收口分解
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+
+    # Then: 空 attempt 只作未采样告警，不算跑错模型；三个角色都已采样故对账绿
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "❌" not in p.stdout
+    assert "对账" in p.stdout and "未采样" in p.stdout

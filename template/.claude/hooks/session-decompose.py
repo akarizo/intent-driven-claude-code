@@ -208,11 +208,15 @@ def load_alias_of():
 
 def audit_routes(agents, expect, alias_of):
     """按 agentType→角色（缺失才退回阶段）比对别名（比别名不比原始 id）。
-    返回 (不符项, 已对账角色→期望别名, 未采样到的角色)——零覆盖必须红，不能当一致。"""
-    bad, seen = [], {}
+    返回 (不符项, 已对账角色→期望别名, 未采样到的角色, 空 attempt)——零覆盖必须红，不能当一致。
+    没有 assistant 轮次的转录（被重试掉的空 attempt，模型为 "?"）不算跑错模型，只作未采样告警。"""
+    bad, seen, empty = [], {}, []
     for label, phase, model, _turns, _wall, atype in agents:
         role = AGENT_ROLE.get(atype) or PHASE_ROLE.get(phase)
         if role is None or role not in expect:
+            continue
+        if not model or model == "?":
+            empty.append((label, phase))
             continue
         want, got = expect[role], alias_of(model)
         seen[role] = want
@@ -220,7 +224,7 @@ def audit_routes(agents, expect, alias_of):
             bad.append((label, phase, want, model))
     ordered = [r for r in ROLE_ORDER if r in expect] + [r for r in expect if r not in ROLE_ORDER]
     missing = [r for r in ordered if r not in seen]
-    return bad, seen, missing
+    return bad, seen, missing, empty
 
 
 def main():
@@ -273,7 +277,9 @@ def main():
             if alias_of is None:
                 print("  ⚠ 无法加载 session-model.py 的 alias_of，路由对账跳过（只打印）")
             else:
-                bad, seen, missing = audit_routes(agents, expect, alias_of)
+                bad, seen, missing, empty = audit_routes(agents, expect, alias_of)
+                for label, phase in empty:
+                    print("  ⚠ 未采样 %s · %s（无 assistant 轮次，多半是被重试掉的空 attempt，不参与对账）" % (label, phase))
                 if bad or missing:
                     for label, phase, want, model in bad:
                         print("  ❌ %s · %s · 期望 %s · 实际 %s" % (label, phase, want, model))
