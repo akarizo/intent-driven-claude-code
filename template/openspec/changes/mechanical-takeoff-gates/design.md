@@ -85,6 +85,7 @@ hooks 文件名含连字符不能直接 `import`；`session-decompose.py` 以 `i
 批准必须**晚于计划工件最后一次改动**（`proposal.md` · `design.md` · `slices.json` · `specs/**/spec.md` 的最大 mtime），否则"改完计划再拿旧批准起飞"就能绕过。
 
 ⚠ **`tasks.md` 不算计划工件**（PR #29 评审实测）：收口要把门禁绿的切片勾成 `- [x]`，若把它算进锚点，勾一下就让批准过期——同一次飞行的收口与 `/pr-ship` 会被自家门禁拦住。勾选是执行记账，不是计划变更。
+  代价（已知边界）：批准后只改 `tasks.md` 的 verify 命令 / scenario 列表不会让批准过期。影响小——机械判定读的是 `slices.json`，`tasks.md` 由它生成——但 "计划变了必须重新批准" 在这一处不字面成立。
 
 - 不用 git commit 时间：真实流程里工件常在人说完 `/opsx-apply` 之后才被 artifacts-only commit，用 commit 时间会**误判**（批准早于 commit）。
 - 已知局限：`git checkout` / 重建 worktree 会刷新 mtime → 需要人再批准一次。方向是 fail-closed，可接受；命令的 deny 文案里写清楚怎么办。
@@ -92,6 +93,8 @@ hooks 文件名含连字符不能直接 `import`；`session-decompose.py` 以 `i
 ### D9 强制点：PreToolUse hook（模型绕不过）+ 命令内显式调用（给人看的理由）
 
 hook `takeoff-gate.py` 只判定**起飞类派发**：`Workflow` 且 `args.changeDir` 存在，或 `Agent`/`Task` 且 `subagent_type` 是 `slice-executor` / `integrator`；再要求 `tool_input` 里能定位到 `openspec/changes/<name>`。其余一律放行——**命中才 fail-closed，命中不到 fail-open**。
+
+⚠ **legacy `--gate=per-task` 路径 hook 覆盖不到**（PR #29 复核实测）：那条路径的实现体派发是 `subagent_type: general-purpose`，收窄判据后一律 fail-open，只剩 step 0 的 CLI 自检（靠模型守指令）。这是刻意取舍——legacy 是可选旁路，不值得为它放宽主路径判据；要收紧就得先把 legacy 的实现体改成 `slice-executor` 类型。
 
 ⚠ 判据必须窄到"起飞"（PR #29 评审实测）：早先按"tool_input 里出现 change 路径"判定，会把 `/pr-ship` 的 `code-reviewer` 派发（prompt 里带 `gate-report.md` 路径）也拦掉——等于本 change 亲手掐断铁律 4 的独立评审。强制点并不因此变松：一次飞行的第一个动作必是 Workflow 或 `slice-executor` 派发。
 
@@ -151,4 +154,5 @@ python3 .claude/hooks/takeoff-gate.py --change-dir DIR [--session PATH]     # �
 | 转录 JSONL 字段改名 | 两个脚本都 fail-closed 报错，不静默放行；测试用固定 fixture 锁字段 |
 | 批准词误判（人说"别起飞"含"起飞") | 令牌匹配限定在**整条消息 ≤ 40 字**或命令调用；否则只认 `/opsx-apply` 调用 |
 | `git checkout` 刷新 mtime → 误拦 | deny 文案给出补救：人再说一句批准即可 |
+| legacy `--gate=per-task` 路径不被 hook 覆盖 | 该路径派 `general-purpose`，判据窄化后 fail-open；只由 `/opsx-apply` step 0 的 CLI 自检守，已在 D9 写明 |
 | hook 影响无关 Agent 派发 | 只判定起飞类派发（Workflow 带 `args.changeDir` / Agent 派 `slice-executor`·`integrator`）且能定位到 change 目录；评审 · 探索 · 通用派发一律放行 |

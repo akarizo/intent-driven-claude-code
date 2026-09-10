@@ -95,16 +95,22 @@ def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
     payload = {"tool_name": "Workflow", "cwd": str(tmp_path),
                "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
 
-    # When: 以 hook 模式（stdin 收 PreToolUse JSON）分别运行
+    # When: 以 hook 模式（stdin 收 PreToolUse JSON）分别运行；再补一条线上真实形态——args 是 JSON 字符串、走 scriptPath
     p1 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(none)}))
     p2 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(okay)}))
+    real = {"tool_name": "Workflow", "cwd": str(tmp_path), "transcript_path": str(none),
+            "tool_input": {"scriptPath": "/x/template/.claude/workflows/opsx-apply.js",
+                           "args": json.dumps({"change": "demo", "changeDir": str(d)})}}
+    p3 = run_hook("takeoff-gate", stdin=json.dumps(real))
 
-    # Then: 未批准时输出 permissionDecision=deny 且 reason 含 spec.html 与显式 /opsx-apply 指引；已批准时静默放行
+    # Then: 未批准时输出 permissionDecision=deny 且 reason 含 spec.html 与显式 /opsx-apply 指引；已批准时静默放行；
+    #       args 为 JSON 字符串的真实形态同样 deny（这是主强制点唯一的线上形态，回归就会静默 fail-open）
     out = json.loads(p1.stdout)
     hook_out = out["hookSpecificOutput"]
     assert hook_out["permissionDecision"] == "deny"
     assert "spec.html" in hook_out["permissionDecisionReason"] and "/opsx-apply" in hook_out["permissionDecisionReason"]
     assert p2.returncode == 0 and p2.stdout.strip() == ""
+    assert json.loads(p3.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny", p3.stdout
 
 
 def test_takeoff_hook_denies_prompt_path_wrapped_in_backticks(tmp_path):
@@ -211,4 +217,6 @@ def test_tasks_tick_does_not_expire_approval(tmp_path):
 
     # Then: 勾选是执行记账不算改计划（放行）；真改了计划才算批准过期（deny）——新鲜度规则本身不能松
     assert after_tick.returncode == 0 and after_tick.stdout.strip() == "", after_tick.stdout
-    assert json.loads(after_replan.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
+    assert replan["permissionDecision"] == "deny"
+    assert "重新批准" in replan["permissionDecisionReason"]  # deny 必须来自「过期」而不是「没批准」
