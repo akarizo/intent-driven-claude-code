@@ -87,7 +87,7 @@
         "template/.claude/commands/spec-html.md",
         "tests/test_spec_html.py"
       ],
-      "deps": ["S1", "S2"],
+      "deps": ["S3"],
       "verify": "python3 -m pytest -q tests/test_spec_html.py",
       "packet": "slices/S4.md"
     },

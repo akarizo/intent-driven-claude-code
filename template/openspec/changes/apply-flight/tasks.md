@@ -13,7 +13,7 @@
 
 - [ ] S3 `agents/slice-executor.md` · `agents/integrator.md` · `agents/code-reviewer.md`（只留 full / follow-up，禁重跑测试，结构化 findings）· `workflows/opsx-apply.js`；scenarios：workflow-script-valid · executor-agent-contract · reviewer-no-rerun
 
-## S4 spec.html 脚本渲染 · deps: S1, S2 · verify: `python3 -m pytest -q tests/test_spec_html.py`
+## S4 spec.html 脚本渲染 · deps: S3（自举顺序：交给新 workflow 跑）· verify: `python3 -m pytest -q tests/test_spec_html.py`
 
 - [ ] S4 `hooks/spec_html.py`（沿用 block 契约 + 新增 `block:flight`）· 模板加飞行计划区 · `spec-html-render` skill 与 `/spec-html` 退化为一行调用；scenarios：spec-html-renders-artifacts · spec-html-flight-block
 
