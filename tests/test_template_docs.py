@@ -111,10 +111,9 @@ def test_git_discipline_wave_parallel_carveout():
 
 
 # ---------------------------------------------------------------- 起飞判据（scenario: model-routing#apply-resolves-main-model /
-# pr-ship-resolves-main-model, takeoff-approval#apply-checks-approval-gate）。骨架：xfail(strict) 直到 S3 实现。
+# pr-ship-resolves-main-model, takeoff-approval#apply-checks-approval-gate）。
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：命令仍让模型自述主模型")
 def test_apply_resolves_main_model():
     # Given: /opsx-apply 命令与 openspec-apply-change skill
     cmd = read(CMD / "opsx-apply.md")
@@ -132,7 +131,6 @@ def test_apply_resolves_main_model():
     assert ".flight" in cmd and '"models"' in cmd
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：pr-ship 仍让模型自述主模型")
 def test_pr_ship_resolves_main_model():
     # Given: /pr-ship 命令
     text = read(CMD / "pr-ship.md")
@@ -146,7 +144,6 @@ def test_pr_ship_resolves_main_model():
     assert "看 `/model`" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：apply 尚无 step 0 批准自检")
 def test_apply_checks_approval_gate():
     # Given: /opsx-apply 命令与 openspec-apply-change skill
     cmd = read(CMD / "opsx-apply.md")

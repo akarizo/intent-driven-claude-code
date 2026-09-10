@@ -60,11 +60,6 @@ def test_legacy_mode_optional():
 
 
 # ---------------------------------------------------------------- 判据机械化（scenario: model-routing#docs-state-mechanical-resolution）
-# 骨架：xfail(strict) 直到 S3 实现；执行体去掉标记即解锁。
-import pytest  # noqa: E402
-
-
-@pytest.mark.xfail(strict=True, reason="S3 未实现：文档仍是自述式判定")
 def test_docs_state_mechanical_resolution():
     # Given: README.md、docs/WORKFLOW_zh.md、template/CLAUDE.md.snippet、仓库根 CLAUDE.md、install.sh
     docs = {rel: read(rel) for rel in

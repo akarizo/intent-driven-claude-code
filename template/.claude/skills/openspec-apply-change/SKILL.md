@@ -9,21 +9,29 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
-飞行模式跑完一次 apply：选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
+飞行模式跑完一次 apply：批准自检（`takeoff-gate.py`；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
 
 **Input**：可选指定 change 名。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余步骤不适用于该分支。
+`--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
 
 **模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
 
 | 角色 | 模型 | effort |
 |---|---|---|
-| slice-executor（实现 / 批量修复） | 当前会话主模型别名（`fable` / `opus` / `sonnet`） | high |
-| code-reviewer（切片评审 / 复核） | 当前会话主模型别名 | high |
+| slice-executor（实现 / 批量修复） | 会话主模型别名 `<main>`（由 `session-model.py` 判定，见 step 4） | high |
+| code-reviewer（切片评审 / 复核） | 会话主模型别名 `<main>`（由 `session-model.py` 判定，见 step 4） | high |
 | integrator（合回 / 抽接口 / final） | `sonnet` | low |
 
 **Steps**
+
+0. **批准自检（起飞判据；批准由脚本校验，禁模型自证）**
+   先按 step 1 的规则定出 `<name>`（有参数直接用参数），再跑：
+   ```bash
+   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 没有人类批准 / 批准过期
+   ```
+   `exit 0` → stdout 是人类批准证据，留给 step 3 的 approve 事件。`exit ≠ 0` → **停下报告**：打印 `openspec/changes/<name>/spec.html` 的绝对路径，说明「起飞需要你自己发出 `/opsx-apply <change>`」，不进入后续步骤、不派发任何 agent。
 
 1. **选 change**
    - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
@@ -41,13 +49,17 @@ metadata:
 
 3. **记录批准事件并提交飞行记录**
    ```bash
-   python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name>
+   python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name> --note "<批准证据>"
    git add openspec/changes/<name>/timeline.md && git commit -m "chore(flight): approve"
    ```
-   飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（含启动时间）。
+   `<批准证据>` 用 step 0 `takeoff-gate.py` stdout 的原文，不自己编。飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，字段 `{"started","approval","models","efforts","raw","source"}`）。
 
 4. **启动切片工作流**
-   - 先确定当前会话模型别名 `<main>`（`/model` 显示的）。
+   - 先定出会话主模型别名 `<main>`：
+     ```bash
+     python3 .claude/hooks/session-model.py   # stdout: opus|sonnet|haiku|fable；exit 3 = 判定不出
+     ```
+     `exit ≠ 0` → **停下报告**，提示用 `--model=<alias>` 显式指定后重跑；有 `--model=` 旗标时以旗标为准。禁模型自述主模型。
    - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change, changeDir, hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves, useAgentTypes: true, expectHead: "<git rev-parse --short=10 HEAD>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
    - 同时传 `deps: <slices.json 里每片的 deps 映射>`，依赖已 blocked 的切片脚本不再派发。
    - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`、`effort: high`（多切片 wave 各自 `isolation: worktree`；prompt 首行带 `expectHead` 第零步基分支校验），回报只收其原样 JSON；门禁红则以其 `failed` 重派同一切片一次，仍红记 blocked，依赖它的切片直接记 blocked；wave 后派 `integrator`（`model: "sonnet"`、`effort: low`）先提交飞行记录、合回、逐片 `slice-gate.py record` 写回门禁结论；评审用 `code-reviewer`（`model: "<main>"`、`effort: high`）并行派发（`run_in_background` 语义：不等）；最后一次批量修复与 final。
@@ -56,19 +68,21 @@ metadata:
 5. **收口分解**
    ```bash
    python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
-   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir>
+   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir> --expect-models '<.flight 里的 models>'
    python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
    ```
-   打印飞行记录（含各 agent 实际模型，与路由表对账；对不上即铁律违规）；把 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`；删除 `.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 final）；把门禁绿的切片在 `tasks.md` 里勾选；飞行记录文件单独 `chore(flight)` commit。
+   `--expect-models` 机械对账：非 0 → 铁律 11 违规，收口报告点名不符的 agent，并让 `/pr-ship` 以 draft 建 PR（与 final 未绿同处置）。打印飞行记录（含各 agent 实际模型）；把 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`；删除 `.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 final）；把门禁绿的切片在 `tasks.md` 里勾选；飞行记录文件单独 `chore(flight)` commit。
 
 6. **不问，直接进入 `/pr-ship`**
-   final 未绿或有 blocked 切片 → `/pr-ship` 以 draft 建 PR 并列出未过门禁项；否则正常建 PR。
+   final 未绿 / 有 blocked 切片 / 模型对账非 0 → `/pr-ship` 以 draft 建 PR 并列出未过门禁项与路由不符的 agent；否则正常建 PR。
 
 **暂停例外（仅这四种）**：spec 自相矛盾 · 需要破坏性操作 · 测试环境本身坏 · 同一门禁项连续 2 次红。
 
 **Guardrails**
 - 启动到 `/pr-ship` 之间不出现 AskUserQuestion。
 - 模型按角色显式路由；派发时不得省略 `model`；收口报告必须打印各角色实际模型。
+- 起飞前的人类批准由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
+- `<main>` 由 `.claude/hooks/session-model.py` 判定，**禁模型自述**；判定不出停飞，人工 `--model=<alias>` 覆盖。
 - `--gate=per-task` 转 legacy skill，不与本流程混用。
 - 不自动 merge / push / 删 worktree。
 
