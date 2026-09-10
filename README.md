@@ -11,7 +11,7 @@ proposal → specs → design → adr → tasks   ┐
                                     /opsx-propose
                                           │  开始编写spec，会提供spec.html给你查看
                                     /opsx-apply
-                                          │  实现阶段（TDD 红绿重构 + GWT 注释）
+                                          │  飞行流程：切片(slices.json) → wave 并行 → 门禁 → 评审离路径
                                           ▼
                                   /claudemd-commit
                                           │  沉淀本轮知识（预算中性：加一减一）
@@ -119,9 +119,10 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 your-project/
 ├── .claude/
 │   ├── commands/       # 15 个 slash 命令（见下方）
-│   ├── skills/         # 17 个 skill（见下方）
-│   ├── agents/         # 1 个 subagent：code-reviewer（逐 task 守门 + /pr-ship 评审共用）
-│   ├── hooks/          # 分级门禁 intent-gate.py + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
+│   ├── skills/         # 16 个 skill + 1 个 legacy（见下方）
+│   ├── agents/         # 3 个 agent：slice-executor / integrator / code-reviewer（见下方）
+│   ├── workflows/      # opsx-apply.js：飞行流程的命名 Workflow 调度器
+│   ├── hooks/          # 分级门禁 intent-gate.py + 飞行门禁 slice-gate.py 等 + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
 │   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
 ├── openspec/
@@ -175,55 +176,61 @@ your-project/
 
 **Worktree 隔离**：每个 change 从 `/opsx-propose` 起就在自己的独立 worktree（`.worktrees/<change>/`，分支 `worktree-<change>`）里进行 —— 5 工件 + `spec.html` + 实现代码全落这一间 worktree，主仓库工作区（`main`）随时干净、并行推进多个 change 互不踩踏。粒度是**每 change 一间**（不是每 task），change 内逐 task 在同一间累积。权威纪律见 `openspec-git-discipline` skill 的 Worktree Isolation 节；`.worktrees/` 由安装器自动加入 `.gitignore`。
 
-### 阶段 2 · 实现（开始动代码）
+### 阶段 2 · 实现（飞行模式）
 
-`/opsx-apply <name>` 开始前会让你选**执行模式**：
-
-| 模式 | 承载 skill | 适用 | 守门 |
-| --- | --- | --- | --- |
-| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 新 capability / 改契约 / 跨模块 / 架构决策 | **每个 task 实现完即派 `code-reviewer` 守门**，CRITICAL/HIGH 阻断 |
-| **串行（轻量）** | `openspec-apply-change` | 简单变更 / 无 subagent 环境 | 无（靠 `/pr-ship` 末尾） |
-
-> `--no-confirm`（`/opsx-bulk-apply` 子 agent 用）一律走串行——subagent 不能再嵌套 subagent。
-
-**subagent 逐 task 守门**的循环（吸收 `sdd-plus-superpowers` 的 subagent-development 玩法——其源头是 [obra/superpowers](https://github.com/obra/superpowers) 的 subagent-driven-development / requesting-code-review；本库**中文化自研、不依赖外部插件**）：
+`/opsx-apply <name>` 默认走**飞行模式**，零执行模式问询——tasks 阶段已把实现拆成 `slices.json` 里的切片（`owns` / `deps` / `verify` / `scenarios`），apply 只是把这份计划跑起来：
 
 ```
-对每个 task：
-  派 fresh 实现 subagent（强制 TDD）→ 派 code-reviewer 审本 task 净 diff（mode=full）
-    → CRITICAL/HIGH 存在 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 清零
-    → 勾 checkbox + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）→ 下一个 task
-全部 task 完成：问一次整合审位置（立即 ship → 交给 /pr-ship）→ /opsx-verify → 收口（不 merge 不 archive）
+slice-gate.py lint（校验 slices.json）→ 算 wave
+  → 起命名 Workflow（.claude/workflows/opsx-apply.js，useAgentTypes 按 wave 并行派 slice-executor）
+    Workflow 不可用（未开通 / disableWorkflows）→ 回退：主会话按同一 waves 用 Agent 工具并行派发，语义一致
+  同 wave 内每个切片：slice-executor 走 TDD 实现（只写 owns 内文件）→ 收尾跑 slice-gate.py gate
+    → 门禁红重试一次，仍红则该切片 blocked、其余切片照常推进
+    → 门禁绿的切片立即离路径起 code-reviewer（不阻塞下一 wave 开工）
+  全部 wave 完成 → 汇总 CRITICAL/HIGH 一次批量修复 → slice-gate.py final（全量测试 + 全部 scenario 转 pass）
+  → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
+  → 转 /pr-ship
 ```
 
-无论哪种模式，**每个会写代码的 task 都强制走 TDD/BDD 循环**：
+**机械门禁**（`slice-gate.py`，零 token 判定）：
+
+| 阶段 | 检查 |
+| --- | --- |
+| `lint` | 切片数 1–9、DAG 深度 ≤ 3、同 wave `owns` 不相交、每片 `verify` 必填 |
+| `gate`（每切片收尾） | G1 `verify` 通过 / G2 lint·typecheck / G3 源码改动必配对测试 / G4 GWT 三段注释 / G5 RED 先于 GREEN 留痕 / G6 只写 `owns` 内文件 / G7 scenario 测试已映射且不再 xfail/skip |
+| `final`（全部切片完成） | 全量 test/lint/typecheck + 全部 scenario 状态 |
+
+**TDD 仍是硬约束**（详见 `.claude/skills/test-driven-development/SKILL.md`）：
 
 ```
 RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 ```
 
-具体硬约束（详见 `.claude/skills/test-driven-development/SKILL.md`）：
-
 - **铁律**：没有先失败过的测试，就没有生产代码
 - **GWT 注释先于代码**：测试函数体首行是 `// Given:`（Python 用 `#`）、`When:`、`Then:` 三段中文注释，之后才是 setup / mock / 被测调用 / 断言
 - 一个测试只触发一个被测动作（When 块单一）
-- 反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
+- 测试运行由 hook 留痕（`evidence.log`），**不接受自述**；反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
 
-#### 守门分层 · 靠 review 水位线避免重复审同一段代码
+#### Workflow 前置条件
 
-`code-reviewer` 这个 agent **一个定义服务多处**。但要注意：这些守门点的 diff 范围本身是**包含关系**——`单 task 净 diff ⊂ change 累计 diff ≈ PR ↔ target diff`。光靠"范围不同"并不能避免重复，反而正是重复的来源。
+飞行流程默认由 Claude Code 的**命名 Workflow**调度：
 
-真正避免重复的是 **review 水位线**（`openspec/changes/<change>/review-log.md`）：逐 task 守门每通过一个 task，就记下已审 commit 区间、阻断并修复的项数、以及未阻断的 MEDIUM/LOW（deferred）；后续每个守门点先读它，再决定审什么、不报什么。
+- 需要**付费计划**；**Pro 计划要在 `/config` 里手动打开 Workflow**
+- 把 `slice-gate.py` 与项目测试命令加进 `.claude/settings.json` 的 allow 规则，否则每个切片起步都会被权限提示打断并行
+- Workflow 不可用（未开通 / `disableWorkflows`）时自动回退为主会话 `Agent` 并行派发，语义一致
 
-| 守门点 | 评审模式 | diff 范围 | 时机 | 动作 |
-| --- | --- | --- | --- | --- |
-| 逐 task 守门 | `full` | 单 task 净 diff | 每个 task 写完 | **CRITICAL/HIGH 挡 checkbox**；通过则推进水位线并登记 deferred |
-| 阻断回灌复核 | `follow-up` | 只有那个 `fix:` commit | 修完 | 逐条核对 finding 闭环 + 修复自身有无新问题，**不重审整个 task** |
-| 整合审 | `integration` | change 累计 diff | 全部 task 完成 | 只报跨 task 交互 / 整体一致性 / 端到端完整性 / 工件与实现一致性。**位置由你选**（本地，或交给 `/pr-ship`），一次变更只跑一次；单 task 的 change 恒跳过 |
-| `/pr-ship` 评审 | 按水位线自动选 | PR ↔ target diff | PR 阶段 | 评论入库：报告 + **审查深度声明** + **守门期间 deferred 清单**（带签名）给人类 reviewer |
-| PR 复审 | `follow-up` | 只有修复补丁 | 用户选再走一轮 | 核对上轮 finding 闭环，不重扫整份 PR |
+#### 模型路由（按角色显式声明，铁律）
 
-**兜底**：读不到 `review-log.md`（串行 apply / 手工分支 / 非 OpenSpec 变更）时一切回退**全量审**——水位线只能缩小「已被守门覆盖」那部分的范围，**绝不让未审代码蒙混过关**。`REVIEWED_UPTO` 之后的任何 commit 一律按全量标准审。
+| 角色 | 模型 | effort | 为什么 |
+| --- | --- | --- | --- |
+| slice-executor（实现 / 批量修复） | 会话主模型 | high | 必须一次做对；实测 Sonnet 执行体 fix 子 agent 数 ≥ impl 数 |
+| code-reviewer（评审 / 复核） | 会话主模型 | high | 门禁判完机械项，剩下全是难判断；离关键路径 |
+| integrator / final-gate | sonnet | low | 纯机械 |
+| 渲染 / 分解 / 时间线 | 零 token 脚本 | — | 不用模型 |
+
+解析顺序自 Claude Code v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，env 只是默认值。`/opsx-apply` 把路由表以 `args.models` 显式传给工作流，脚本缺参即拒绝起飞；收口飞行记录打印各 agent 实际模型与路由表对账——2026-09-10 的自举 wave 3 就是因为回退路径没显式传 `model`，九个 agent 全落到了 Sonnet。
+
+> 想用旧的逐 task 阻断式守门？`/opsx-apply --gate=per-task` 走 legacy 路径，见下文「Legacy 模式」。
 
 ### 阶段 3 · 知识沉淀（PR 前）
 
@@ -248,14 +255,14 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ### 阶段 4 · 送出 + 自审（PR/MR 闭环）
 
-`/pr-ship` 端到端 12 步：
+`/pr-ship` 端到端：
 
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
-  → 读 review 水位线定评审模式 → 起【干净的】code-reviewer subagent 评审
-  → 报告 + 审查深度声明 + 守门期间 deferred 清单 作为评论入库（签名必带）
-  → 与用户逐条讨论修复 → 落地补丁到同 PR → 增量复核（mode=follow-up，只审修复补丁）
+  → 读 gate-report.md + evidence.log 作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
+  → 报告作为评论入库（签名必带）
+  → 与用户逐条讨论修复 → 落地补丁到同 PR → 自动修复至多 2 轮增量复核（mode=follow-up，只审修复补丁）
 ```
 
 关键设计：
@@ -271,7 +278,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | --- | --- |
 | Completeness | tasks checkbox 全勾 / 每个 requirement 都有实现 |
 | Correctness | requirement → 代码映射 / scenario 覆盖 |
-| **Test Discipline (TDD/BDD)** | **按 review 水位线分流**：走过逐 task 守门 → 只验配对测试文件存在 + 抽 1 例确认 GWT 注释（细节与反模式判定守门已按 HIGH 挡过，不重复抽查）；无水位线 → 完整抽查：GWT 注释 / When 单一动作 / Then 与断言数对齐 / 不触犯 5 反模式 |
+| **Test Discipline (TDD/BDD)** | 飞行模式：读 `gate-report.md` + `evidence.log`，确认全部切片门禁绿、scenario 已从 xfail 转 pass，不重复抽查（门禁已按 G4/G5 挡过）；legacy `--gate=per-task` 走逐 task 守门分流（见「Legacy 模式」） |
 | Coherence | design 决策被遵循 / 代码风格一致 |
 
 违反 TDD 纪律记 **CRITICAL**，阻止归档。
@@ -293,6 +300,20 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
+## Legacy 模式：逐 task 守门（`--gate=per-task`）
+
+飞行模式是默认。`/opsx-apply <name> --gate=per-task` 仍可选回旧的**逐 task 阻断式守门**——每个 task 派 fresh 实现 subagent 走完 TDD，紧接着派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox，靠 **review 水位线**（`review-log.md`）记已审区间避免重复审同一段代码：
+
+| 守门点 | 评审模式 | diff 范围 | 动作 |
+| --- | --- | --- | --- |
+| 逐 task 守门 | `full` | 单 task 净 diff | CRITICAL/HIGH 挡 checkbox；通过则推进水位线并登记 deferred |
+| 阻断回灌复核 | `follow-up` | 只有那个 `fix:` commit | 逐条核对 finding 闭环，不重审整个 task |
+| 整合审 | `integration` | change 累计 diff | 全部 task 完成后跑一次，只报跨 task / 整体一致性 |
+
+**为什么不再是默认**：2026-09-10 对 5 个跑该模式的会话做归因，每 task 链路 22–106 min，子 agent 时间里 review + fix 占 64–80%（真正实现只占 20–36%），主会话上下文峰值 619–847k。承载 skill 移到 `.claude/skills/legacy/openspec-subagent-apply-change/`，逻辑不变，只是从推荐路径降级为显式选项。
+
+---
+
 ## 15 个 slash 命令
 
 按命名空间分组。
@@ -305,7 +326,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | `/opsx-propose <name>` | 一次性生成 apply 所需的全部 artifacts，**自动渲染 spec.html** |
 | `/opsx-continue [name]` | 推进下一个 artifact，**自动刷新 spec.html** |
 | `/opsx-explore [topic]` | 探索模式：只思考、不实现 |
-| `/opsx-apply [name]` | 按 tasks 执行实现（强制 TDD/BDD 入口）；可选 **subagent 逐 task 守门** 或串行 |
+| `/opsx-apply [name]` | 飞行模式：按 `slices.json` wave 并行 + 机械门禁 + 评审离路径，零问询；`--gate=per-task` 走 legacy 逐 task 守门 |
 | `/opsx-verify [name]` | 三维一致性 + TDD/BDD 纪律检查 |
 | `/opsx-archive [name]` | 归档已完成变更（要求 implementation 已合回 main） |
 | `/opsx-sync [name]` | delta specs 合入主 specs |
@@ -338,13 +359,13 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
-## 17 个 skill
+## 16 个 skill + 1 个 legacy
 
 按主题分组。详细规范见各自 `SKILL.md`。
 
-### OpenSpec 工作流（10 个）
+### OpenSpec 工作流（9 个）
 
-每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑（例外：`/opsx-mini` 是轻量命令，逻辑内联，无同名 skill）。`openspec-subagent-apply-change` 无独立命令，由 `/opsx-apply` 的模式选择转调。
+每个 `/opsx-*` 命令背后都有一个同名 skill 承载执行逻辑（例外：`/opsx-mini` 是轻量命令，逻辑内联，无同名 skill）。
 
 | Skill | 对应命令 |
 | --- | --- |
@@ -352,12 +373,17 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | `openspec-new-change` | `/opsx-new` |
 | `openspec-continue-change` | `/opsx-continue` |
 | `openspec-explore` | `/opsx-explore` |
-| `openspec-apply-change` | `/opsx-apply`（串行模式 · 含 TDD/BDD 强制入口） |
-| `openspec-subagent-apply-change` | `/opsx-apply` 选「subagent 逐 task 守门」时转调（每 task 派 subagent 实现 + `code-reviewer` 守门） |
+| `openspec-apply-change` | `/opsx-apply` 飞行模式的落点收敛与前置校验 |
 | `openspec-verify-change` | `/opsx-verify`（含 Test Discipline Check） |
 | `openspec-archive-change` | `/opsx-archive` |
 | `openspec-sync-specs` | `/opsx-sync` |
 | `openspec-bulk-apply-change` | `/opsx-bulk-apply` |
+
+### Legacy（1 个）
+
+| Skill | 目的 |
+| --- | --- |
+| `legacy/openspec-subagent-apply-change` | 旧的逐 task 守门 apply 模式，仅 `/opsx-apply --gate=per-task` 时按路径读取，不再是默认 |
 
 ### 规格 / 文档（4 个）
 
@@ -383,11 +409,13 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
-## 1 个 subagent（`.claude/agents/`）
+## 3 个 agent（`.claude/agents/`）
 
 | Agent | 职责 |
 | --- | --- |
-| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审守门员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法 + 签名）。支持 **`full` / `integration` / `follow-up` 三种评审模式**：按 prompt 声明的已审范围决定审查边界，**不重复上报**已修复或已 deferred 的问题（确认上游没修好仍可报，须标注「上游 review 未闭环」）。**多处共用**：`openspec-subagent-apply-change` 的逐 task 守门与回灌复核、整合审，以及 `/pr-ship` 的 PR 评审与增量复核。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `slice-executor` | 飞行模式的切片执行体：按切片包做 TDD 实现，只写 `owns` 内文件，收尾跑 `slice-gate.py gate` 并原样回传门禁 JSON。`model: inherit` · `maxTurns: 40` · `permissionMode: acceptEdits`。 |
+| `integrator` | 飞行模式的集成员：把并行切片的 commit 合回 change 分支、抽公开接口摘要、跑全量门禁、记 timeline 事件。低推理机械活，`model: sonnet`。 |
+| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与 `evidence.log` 为准，**不重跑测试套件**，至多 1 次定向抽查。**多处共用**：飞行模式每切片门禁绿后的离路径评审、`/pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
 
 ---
 
@@ -396,14 +424,15 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 `install.sh` 注入到目标项目 CLAUDE.md 的常驻约束（用 marker 包裹幂等追加；`--upgrade` 时整段刷新）：
 
 1. 5-artifact 链与 ADR 不可改（ADR 入 `openspec/adr/`）
-2. `/opsx-*` 命令前缀；apply / bulk-apply 开始前会停下确认
+2. `/opsx-*` 命令前缀；`apply` 飞行模式零问询，`bulk-apply` 开始前会停下确认
 3. Git：apply 前工件须单独成一个 commit（只含工件，无需先合 main）；archive 前实现必须已合回 main；不代你 commit/branch/merge
 4. Schema 来源
 5. **TDD 铁律**：写实现前先写失败测试；红→验红→绿→验绿→重构
 6. **单测先写 GWT 三段中文注释**，再写代码
-7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型）；手动 `/spec-html`
+7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型 + 飞行计划区）；手动 `/spec-html`
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 9. **CLAUDE.md 层级规范**：准入四问（静默失败才是不可替代辖区）/ 分流去向（CLAUDE.md·rules·skill·测试）/ 放置铁律（LCA）/ 头部三件套 / 字节预算（根 8KB·子 16KB·叶 6KB·单行 200B）—— 全文见 `.claude/claudemd-standard.md`（`/claudemd-commit`·`/claudemd-distill`·`claudemd-lint` 的硬约束基线）
+10. **仓库铁律**：10 条零容忍项（先意图后代码 / 规格即验收 / TDD 与留痕 / 独立评审 / 门禁红不收口 / Git 边界 / 两处审批 / 度量必打印 / 零 token 优先 / 回退必存在）
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 
@@ -441,7 +470,7 @@ openspec schema validate intent-driven
 | 技能位置 | `.opencode/skills/` + `.agents/skills/` | `.claude/skills/`（合并后） |
 | 插件机制 | `opencode.json` 声明 superpowers | 不需要：Claude Code 用户自行装 [Superpowers](https://github.com/obra/superpowers) |
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
-| 逐 task 守门 | 无 | `openspec-subagent-apply-change`：每 task 派 subagent 实现 + `code-reviewer` 守门（CRITICAL/HIGH 阻断）。**吸收 sdd-plus-superpowers 玩法但中文化自研，不依赖 obra/superpowers 插件** |
+| 飞行式 apply | 无 | 默认模式：`slices.json` 切片 + wave 并行 `slice-executor` + `slice-gate.py` 机械门禁 + 评审离路径；`--gate=per-task` 保留旧的逐 task 守门（`legacy/openspec-subagent-apply-change`）。**中文化自研，不依赖 obra/superpowers 插件** |
 | PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审（复用 `code-reviewer` agent） |
 | 知识维护 | 无 | `/claudemd-commit`（预算中性，加一减一）+ `/claudemd-distill`（定期重排）+ `claudemd-lint`（机械门禁：字节预算 / 悬空指针） |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |

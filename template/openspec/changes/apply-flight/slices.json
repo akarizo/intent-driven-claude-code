@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "change": "apply-flight",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": null
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "门禁核心：slice-gate.py 与 intent-gate 定根 / 所有权",
+      "scenarios": [
+        "slice-gate#lint-accepts-valid-plan",
+        "slice-gate#lint-rejects-overlap",
+        "slice-gate#lint-rejects-depth",
+        "slice-gate#gate-pass-json",
+        "slice-gate#gate-ownership-violation",
+        "slice-gate#gate-missing-gwt",
+        "slice-gate#final-gate-reports-scenarios",
+        "slice-gate#intent-gate-worktree-root",
+        "slice-gate#intent-gate-ownership-deny"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "template/.claude/hooks/intent-gate.py",
+        "tests/conftest.py",
+        "tests/test_slice_gate.py",
+        "tests/test_intent_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py tests/test_intent_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "留痕与飞行记录：test-evidence / timeline / stop-gate / session-decompose + hooks 注册",
+      "scenarios": [
+        "slice-gate#evidence-log-records-test-runs",
+        "slice-gate#stop-hook-blocks-red-flight",
+        "flight-apply#timeline-report",
+        "flight-apply#session-decompose-runs"
+      ],
+      "owns": [
+        "template/.claude/hooks/test-evidence.py",
+        "template/.claude/hooks/timeline.py",
+        "template/.claude/hooks/stop-gate.py",
+        "template/.claude/hooks/session-decompose.py",
+        "template/.claude/hooks/hooks.json",
+        "template/.claude/settings.json",
+        "tests/test_evidence_timeline.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_evidence_timeline.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "执行体 / 集成员 / 评审员 agent 定义与 opsx-apply 工作流脚本",
+      "scenarios": [
+        "flight-apply#workflow-script-valid",
+        "flight-apply#executor-agent-contract",
+        "flight-apply#reviewer-no-rerun"
+      ],
+      "owns": [
+        "template/.claude/agents/slice-executor.md",
+        "template/.claude/agents/integrator.md",
+        "template/.claude/agents/code-reviewer.md",
+        "template/.claude/workflows/opsx-apply.js",
+        "tests/test_agents_workflow.py"
+      ],
+      "deps": ["S1", "S2"],
+      "verify": "python3 -m pytest -q tests/test_agents_workflow.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "spec_html.py 脚本渲染器 + 飞行计划区 + spec-html 命令与 skill 退化为一行调用",
+      "scenarios": [
+        "executable-specs#spec-html-renders-artifacts",
+        "executable-specs#spec-html-flight-block"
+      ],
+      "owns": [
+        "template/.claude/hooks/spec_html.py",
+        "template/.claude/skills/spec-html-render/**",
+        "template/.claude/commands/spec-html.md",
+        "tests/test_spec_html.py"
+      ],
+      "deps": ["S3"],
+      "verify": "python3 -m pytest -q tests/test_spec_html.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "命令与 skill 改写（propose / apply / continue / verify / new / pr-ship / git-discipline）+ schema 与 templates",
+      "scenarios": [
+        "flight-apply#apply-command-zero-prompts",
+        "flight-apply#pr-ship-single-review",
+        "executable-specs#schema-tasks-produce-slices",
+        "executable-specs#propose-command-triggers"
+      ],
+      "owns": [
+        "template/.claude/commands/opsx-*.md",
+        "template/.claude/commands/pr-ship.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/skills/openspec-continue-change/SKILL.md",
+        "template/.claude/skills/openspec-verify-change/SKILL.md",
+        "template/.claude/skills/openspec-new-change/SKILL.md",
+        "template/.claude/skills/openspec-git-discipline/SKILL.md",
+        "template/openspec/schemas/intent-driven/**",
+        "tests/test_template_docs.py"
+      ],
+      "deps": ["S3"],
+      "verify": "python3 -m pytest -q tests/test_template_docs.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "文档与铁律：README / WORKFLOW_zh / CLAUDE.md.snippet / 仓库根 CLAUDE.md / legacy 迁移 / install.sh",
+      "scenarios": [
+        "flight-apply#legacy-mode-optional",
+        "executable-specs#claudemd-iron-rules",
+        "executable-specs#docs-updated"
+      ],
+      "owns": [
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "template/CLAUDE.md.snippet",
+        "CLAUDE.md",
+        "template/.claude/skills/openspec-subagent-apply-change/**",
+        "template/.claude/skills/legacy/**",
+        "install.sh",
+        "tests/test_docs_iron_rules.py"
+      ],
+      "deps": ["S3"],
+      "verify": "python3 -m pytest -q tests/test_docs_iron_rules.py",
+      "packet": "slices/S6.md"
+    }
+  ],
+  "scenario_tests": {
+    "slice-gate#lint-accepts-valid-plan": "tests/test_slice_gate.py::test_lint_accepts_valid_plan",
+    "slice-gate#lint-rejects-overlap": "tests/test_slice_gate.py::test_lint_rejects_overlap",
+    "slice-gate#lint-rejects-depth": "tests/test_slice_gate.py::test_lint_rejects_depth",
+    "slice-gate#gate-pass-json": "tests/test_slice_gate.py::test_gate_pass_json",
+    "slice-gate#gate-ownership-violation": "tests/test_slice_gate.py::test_gate_ownership_violation",
+    "slice-gate#gate-missing-gwt": "tests/test_slice_gate.py::test_gate_missing_gwt",
+    "slice-gate#final-gate-reports-scenarios": "tests/test_slice_gate.py::test_final_gate_reports_scenarios",
+    "slice-gate#intent-gate-worktree-root": "tests/test_intent_gate.py::test_intent_gate_worktree_root",
+    "slice-gate#intent-gate-ownership-deny": "tests/test_intent_gate.py::test_intent_gate_ownership_deny",
+    "slice-gate#evidence-log-records-test-runs": "tests/test_evidence_timeline.py::test_evidence_log_records_test_runs",
+    "slice-gate#stop-hook-blocks-red-flight": "tests/test_evidence_timeline.py::test_stop_hook_blocks_red_flight",
+    "flight-apply#timeline-report": "tests/test_evidence_timeline.py::test_timeline_report",
+    "flight-apply#session-decompose-runs": "tests/test_evidence_timeline.py::test_session_decompose_runs",
+    "flight-apply#workflow-script-valid": "tests/test_agents_workflow.py::test_workflow_script_valid",
+    "flight-apply#executor-agent-contract": "tests/test_agents_workflow.py::test_executor_agent_contract",
+    "flight-apply#reviewer-no-rerun": "tests/test_agents_workflow.py::test_reviewer_no_rerun",
+    "executable-specs#spec-html-renders-artifacts": "tests/test_spec_html.py::test_spec_html_renders_artifacts",
+    "executable-specs#spec-html-flight-block": "tests/test_spec_html.py::test_spec_html_flight_block",
+    "flight-apply#apply-command-zero-prompts": "tests/test_template_docs.py::test_apply_command_zero_prompts",
+    "flight-apply#pr-ship-single-review": "tests/test_template_docs.py::test_pr_ship_single_review",
+    "executable-specs#schema-tasks-produce-slices": "tests/test_template_docs.py::test_schema_tasks_produce_slices",
+    "executable-specs#propose-command-triggers": "tests/test_template_docs.py::test_propose_command_triggers",
+    "flight-apply#legacy-mode-optional": "tests/test_docs_iron_rules.py::test_legacy_mode_optional",
+    "executable-specs#claudemd-iron-rules": "tests/test_docs_iron_rules.py::test_claudemd_iron_rules",
+    "executable-specs#docs-updated": "tests/test_docs_iron_rules.py::test_docs_updated"
+  }
+}

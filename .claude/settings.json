@@ -1,0 +1,20 @@
+{
+  "worktree": { "baseRef": "head" },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/intent-gate.py\"" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/stop-gate.py\"" } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/stop-gate.py\"" } ] }
+    ]
+  }
+}

@@ -1,9 +1,7 @@
-## 1. <!-- Task Group Name -->
+<!-- 本文件由 slices.json 生成，不要手写编辑；改动请改 slices.json 后重新生成。 -->
 
-- [ ] 1.1 <!-- Task description -->
-- [ ] 1.2 <!-- Task description -->
+## 切片
 
-## 2. <!-- Task Group Name -->
-
-- [ ] 2.1 <!-- Task description -->
-- [ ] 2.2 <!-- Task description -->
+- [ ] S1 <!-- 切片标题 --> （deps: - · verify: `<可执行的判定命令>`）
+- [ ] S2 <!-- 切片标题 --> （deps: S1 · verify: `<可执行的判定命令>`）
+- [ ] S3 <!-- 切片标题 --> （deps: S1 · verify: `<可执行的判定命令>`）

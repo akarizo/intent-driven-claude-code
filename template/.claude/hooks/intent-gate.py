@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 # intent-driven 分级门禁 · PreToolUse(Write|Edit)
 #
-# 作用：中级+ 任务必须先走 OpenSpec 5 工件工作流才能写源码；mini 任务需 /opsx-mini 留痕。
+# 作用：中级+ 任务必须先走 OpenSpec 工件工作流才能写源码；mini 任务需 /opsx-mini 留痕；
+#       切片进行中（存在 .openspec-slice 标记）只允许写该切片 owns 内的文件。
+# 定根：从目标文件所在目录向上找最近含 openspec/ 的目录（会话从主仓库根 cd 进 .worktrees/<change>/ 时，
+#       change 只存在于 worktree 内，按 CLAUDE_PROJECT_DIR 定根会误拒）；找不到再回退 CLAUDE_PROJECT_DIR。
+#       前提：openspec/ 位于 git toplevel（.openspec-slice 标记写在 toplevel）。openspec/ 嵌套在子目录的仓库
+#       （如本模板仓库自身的 template/openspec/）定根与标记位置对不上，所有权检查不生效——这类仓库不受本门禁管。
 # 决策树（任一命中即放行；否则 DENY）：
-#   1. 项目无 openspec/            → ALLOW（非 intent-driven 项目，门禁 no-op）
-#   2. 目标命中豁免名单            → ALLOW（*.md / openspec/** / .claude/** / docs/** / 配置）
+#   1. 根目录无 openspec/            → ALLOW（非 intent-driven 项目，门禁 no-op）
+#   2. 目标命中豁免名单            → ALLOW（*.md / openspec/** / .claude/** / docs/** / lockfile）
+#   2.5 根目录有 .openspec-slice    → 目标不在该切片 owns 内 → DENY（所有权）；在 → ALLOW
 #   3. 存在 live change 的 tasks.md → ALLOW（已进入 apply 上下文）
 #   4. .mini-active 有效且覆盖目标  → ALLOW（已显式声明 mini）
 #   5. 否则                        → DENY（回灌指引）
@@ -18,26 +24,19 @@ EXEMPT_DIR_PREFIX = ("openspec/", ".claude/", "docs/")
 # 仅豁免: 文档 + 生成式 lockfile/清单。通用 json/yaml/toml/ini 不再整类豁免——
 # 它们可能承载中级+ 改动(CI / k8s / IaC / schema / app 配置)，应受门禁；确属 mini 走 /opsx-mini。
 # (openspec/ 与 .claude/ 内的配置仍按目录前缀豁免。)
+# .openspec-slice 标记只由 slice-gate.py start 用 Python 写，不豁免：模型手写一个指向任意 owns 的标记应被拒
 EXEMPT_BASENAME = {".gitignore", ".mini-active", "LICENSE", "LICENSE.md", "LICENSE.txt",
                    "package-lock.json", "pnpm-lock.yaml", "go.sum"}
 EXEMPT_EXT = {".md", ".mdx", ".markdown", ".txt", ".rst", ".lock"}
 MINI_TTL = timedelta(hours=24)
+SLICE_MARKER = ".openspec-slice"
 
 
 def allow():
     sys.exit(0)
 
 
-def deny(rel):
-    reason = (
-        "🚫 intent-driven 门禁：`{rel}` 是源码，但当前没有进行中的 OpenSpec change（apply 上下文），"
-        "也没有覆盖它的 mini 声明。\n"
-        "• 中级+（新 capability / 改公共契约·数据投影 / 跨模块 / 引入新抽象·依赖 / 架构决策）：\n"
-        "  先 `/opsx-propose <name>` 生成 proposal→specs→design→adr→tasks 五工件，经 `/opsx-apply` 再写码。\n"
-        "• 确属 mini（文档 / 依赖升级 / 配置值 / 单文件无行为变化的 hotfix）：\n"
-        "  先 `/opsx-mini \"<理由>; 范围: {rel}\"` 留痕，门禁随后放行该文件。\n"
-        "⚠ 原生 plan mode 的 markdown plan + ExitPlanMode 审批不满足中级+ 工作流要求。"
-    ).format(rel=rel)
+def _emit_deny(reason):
     out = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -47,6 +46,28 @@ def deny(rel):
     }
     print(json.dumps(out, ensure_ascii=False))
     sys.exit(0)
+
+
+def deny(rel):
+    reason = (
+        "🚫 intent-driven 门禁：`{rel}` 是源码，但当前没有进行中的 OpenSpec change（apply 上下文），"
+        "也没有覆盖它的 mini 声明。\n"
+        "• 中级+（新 capability / 改公共契约·数据投影 / 跨模块 / 引入新抽象·依赖 / 架构决策）：\n"
+        "  先 `/opsx-propose <name>` 生成工件，经 `/opsx-apply` 再写码。\n"
+        "• 确属 mini（文档 / 依赖升级 / 配置值 / 单文件无行为变化的 hotfix）：\n"
+        "  先 `/opsx-mini \"<理由>; 范围: {rel}\"` 留痕，门禁随后放行该文件。\n"
+        "⚠ 原生 plan mode 的 markdown plan + ExitPlanMode 审批不满足中级+ 工作流要求。"
+    ).format(rel=rel)
+    _emit_deny(reason)
+
+
+def deny_ownership(rel, slice_id, owns):
+    reason = (
+        "🚫 切片所有权：切片 `{s}` 进行中，`{rel}` 不在它的 owns 内（{owns}）。\n"
+        "不要绕过：把该路径写进本切片门禁 JSON 的 failed（`G6 ownership: {rel}`）交回规划，"
+        "或由规划器把它加入 owns 后重跑本切片。"
+    ).format(s=slice_id, rel=rel, owns=", ".join(owns[:6]) + ("…" if len(owns) > 6 else ""))
+    _emit_deny(reason)
 
 
 def to_posix(rel):
@@ -61,6 +82,19 @@ def is_exempt(rel_posix):
         return True
     _, ext = os.path.splitext(base)
     return ext.lower() in EXEMPT_EXT
+
+
+def resolve_root(file_abs, project_dir):
+    """从目标文件向上找最近含 openspec/ 的目录（不越过 project_dir）；找不到回退 project_dir。"""
+    d = os.path.dirname(file_abs)
+    while d.startswith(project_dir):
+        if os.path.isdir(os.path.join(d, "openspec")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return project_dir
 
 
 _UNCHECKED = re.compile(r"^\s*[-*+]\s+\[ \]", re.M)
@@ -94,6 +128,37 @@ def has_apply_context(root):
         if has_unchecked_task(text):
             return True
     return False
+
+
+def glob_match(path, pattern):
+    if path == pattern or fnmatch.fnmatchcase(path, pattern):
+        return True
+    return pattern.endswith("/**") and path.startswith(pattern[:-3] + "/")
+
+
+def slice_ownership(root, rel_posix):
+    """返回 None（无切片进行中 / 读不到）或 (slice_id, owns, owned:bool)。"""
+    marker = os.path.join(root, SLICE_MARKER)
+    if not os.path.isfile(marker):
+        return None
+    try:
+        with open(marker, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        change_dir = data.get("change_dir") or ""
+        if not os.path.isabs(change_dir):
+            change_dir = os.path.join(root, change_dir)
+        with open(os.path.join(change_dir, "slices.json"), "r", encoding="utf-8") as f:
+            plan = json.load(f)
+    except (OSError, ValueError):
+        return None
+    slice_id = data.get("slice")
+    for s in plan.get("slices") or []:
+        if s.get("id") == slice_id:
+            owns = list(s.get("owns") or [])
+            change_rel = to_posix(os.path.relpath(change_dir, root))
+            owned = rel_posix.startswith(change_rel.rstrip("/") + "/") or any(glob_match(rel_posix, o) for o in owns)
+            return slice_id, owns, owned
+    return None
 
 
 def parse_marker(text):
@@ -169,15 +234,16 @@ def main():
         allow()
         return
 
-    root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-    root = os.path.realpath(root)
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+    project_dir = os.path.realpath(project_dir)
 
+    file_abs = file_path if os.path.isabs(file_path) else os.path.join(project_dir, file_path)
+    file_abs = os.path.realpath(file_abs)
+
+    root = resolve_root(file_abs, project_dir)
     if not os.path.isdir(os.path.join(root, "openspec")):
         allow()
         return
-
-    file_abs = file_path if os.path.isabs(file_path) else os.path.join(root, file_path)
-    file_abs = os.path.realpath(file_abs)
 
     rel = os.path.relpath(file_abs, root)
     rel_posix = to_posix(rel)
@@ -187,6 +253,17 @@ def main():
 
     if is_exempt(rel_posix):
         allow()
+        return
+    ownership = slice_ownership(root, rel_posix)
+    if ownership is not None:
+        slice_id, owns, owned = ownership
+        if not owned:
+            deny_ownership(rel_posix, slice_id, owns)
+            return
+        # owns 内也仍要求 apply 上下文成立：gate 从未绿的陈旧标记不能成为永久旁路
+        if has_apply_context(root):
+            allow()
+        deny(rel_posix)
         return
     if has_apply_context(root):
         allow()

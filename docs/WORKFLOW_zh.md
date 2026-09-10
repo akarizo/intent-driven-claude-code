@@ -158,36 +158,34 @@ Rule: Users can export their own data
 
 ---
 
-## apply 两种执行模式 · 串行 vs subagent 逐 task 守门
+## apply · 飞行模式
 
-`/opsx-apply <name>` 开始前（step 6 确认）让你选执行模式：
-
-| 模式 | 承载 skill | 怎么跑 | 守门 |
-| --- | --- | --- | --- |
-| **subagent 逐 task 守门**（推荐中级+） | `openspec-subagent-apply-change` | 主会话逐个 task 派 **fresh 实现 subagent**（强制 TDD），完成即派 **`code-reviewer` subagent** 审本 task 净 diff | **CRITICAL/HIGH 阻断**，回灌修复过才勾 checkbox；通过则推进 **review 水位线**；末尾整合审位置由你选 + verify |
-| **串行（轻量）** | `openspec-apply-change` | 主会话逐 task 串行写 | 无（靠 `/pr-ship` 末尾一次性评审） |
-
-**逐 task 守门循环**（吸收自 sdd-plus-superpowers 的 subagent-development 玩法，中文化自研、不依赖外部插件）：
+`/opsx-apply <name>` 默认走**飞行模式**：tasks 阶段已经把实现拆成 `slices.json`（每片声明 `owns` / `deps` / `verify` / `scenarios`）与配套切片包 `slices/<S>.md`；apply 零问询，直接把这份计划跑起来：
 
 ```
-对每个 task：
-  派 fresh 实现 subagent（走 test-driven-development：RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）
-    → 派 code-reviewer subagent 审本 task 净 diff（mode=full，CRITICAL/HIGH 阻断）
-    → 有阻断项 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 循环到清零
-    → 勾选 checkbox - [ ] → - [x] + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）
-    → 下一个 task
-全部 task 完成 → AskUserQuestion 定整合审位置（立即 ship → 交给 /pr-ship；暂不 ship → 本地跑 mode=integration；
-                单 task 的 change 恒跳过）→ /opsx-verify → 收口（不 merge 不 archive）
+slice-gate.py lint（校验 slices.json：片数 1–9 / DAG 深度 ≤ 3 / 同 wave owns 不相交 / verify 必填）
+  → 算 wave → 起命名 Workflow .claude/workflows/opsx-apply.js（useAgentTypes 按 wave 并行）
+    Workflow 不可用（未开通 / disableWorkflows）→ 回退：主会话按同一 waves 用 Agent 工具并行派发，语义一致
+  同 wave 内每个切片派 slice-executor（model: inherit，maxTurns 40，acceptEdits）：
+    走 test-driven-development（RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释），只写 owns 内文件
+    → 收尾跑 slice-gate.py gate（G1 verify / G2 lint·typecheck / G3 源码配对测试 / G4 GWT / G5 RED 先于 GREEN 留痕 / G6 所有权 / G7 scenario 已转 pass）
+    → 门禁红重试一次，仍红则该切片 blocked、其余切片继续；门禁绿立即离路径起 code-reviewer（不阻塞下一 wave）
+  全部 wave 完成 → integrator 合回并跑一次批量修复（汇总 CRITICAL/HIGH）→ slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）
+  → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录 → 转 /pr-ship
 ```
+
+**Workflow 前置条件**：需要付费计划（Pro 要在 `/config` 里手动打开 Workflow）；把 `slice-gate.py` 与测试命令加进项目 `.claude/settings.json` 的 allow 规则，否则每个切片起步都会被权限提示打断并行。
+
+**模型路由（铁律，按角色显式声明）**：slice-executor 与 code-reviewer 用会话主模型（effort high），integrator / final-gate 用 sonnet（effort low），渲染 / 分解 / 时间线是零 token 脚本。`/opsx-apply` 以 `args.models` 显式传入，脚本缺参拒绝起飞；收口飞行记录打印各 agent 实际模型与路由表对账。解析顺序自 v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，派发时留空 `model` 就会落到 env 默认值。
 
 **关键约束**：
 
-- **不开 worktree**：逐 task 是串行累积（task2 依赖 task1 产出），在当前工作区。原生 `isolation: worktree` 每次派发开独立 worktree、看不到前序 task，不适用；这也让分级门禁 `intent-gate.py` 零改动生效。
-- **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行。
-- **守门靠 review 水位线分层**：这些守门点的 diff 范围是**包含关系**（单 task ⊂ 累计 ≈ PR），光靠"范围不同"避免不了重复。`review-log.md` 记下已审区间与 deferred 清单，后续守门点读它决定审什么、不报什么：逐 task = `full`、回灌复核 = `follow-up`（只审 fix commit）、整合审 = `integration`（只报跨 task/整体/端到端/工件一致性，一次变更只跑一次）、PR 复审 = `follow-up`（只审修复补丁）。**读不到水位线一律回退全量审**——它只能缩小已覆盖部分的范围，不能放过未审代码。
-- **`code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
+- **所有权即隔离**：同一 wave 内各切片 `owns` 不相交（lint 校验），并行零冲突；门禁 G6 对 `owns` 之外的写入 DENY，执行体撞上不绕过，记入 `failed` 继续做能做的部分。
+- **评审离关键路径**：门禁绿的切片立即起 `code-reviewer`（不 await），不拖慢下一 wave；不重跑测试套件，只读 `gate-report.md` + `evidence.log`。
+- **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行（`openspec-apply-change`）。
+- **回退路径语义一致**：Workflow 不可用时主会话用 `Agent` 工具按同一 wave 并行派发，收到的仍是同样的门禁 JSON；不因回退而降低纪律。
 
-详见 `.claude/skills/openspec-subagent-apply-change/SKILL.md` 与 `.claude/agents/code-reviewer.md`。
+详见 `.claude/agents/slice-executor.md`、`.claude/agents/integrator.md`、`.claude/agents/code-reviewer.md`、`.claude/hooks/slice-gate.py`。想用旧的逐 task 阻断式守门见下文「Legacy 模式」。
 
 ---
 
@@ -222,20 +220,44 @@ cd ~/my-app
 git add openspec
 git commit -m "propose: add-user-export"
 
-# 3. 实现
+# 3. 实现（飞行模式，零问询）
 git checkout -b feat/add-user-export
 /opsx-apply add-user-export
-# step 6 选执行模式：
-#   - subagent 逐 task 守门（推荐）：每个 task 派 subagent 实现 + code-reviewer 守门，
-#     CRITICAL/HIGH 阻断、回灌修复过才勾 checkbox、通过则推进 review 水位线；
-#     末尾问一次整合审位置（本地 / 交给 pr-ship）+ verify
-#   - 串行（轻量）：主会话逐条实现，勾选 checkbox
+#   lint slices.json → 算 wave → Workflow 并行派 slice-executor（门禁绿即离路径起 code-reviewer）
+#   → 全部 wave 完成后批量修复 → final gate → 打印飞行记录
+#   （想要旧的逐 task 阻断式守门：/opsx-apply add-user-export --gate=per-task）
 
 # 4. 实现合回 main 后归档
 git checkout main && git pull
 /opsx-verify  add-user-export   # 一致性检查
 /opsx-archive add-user-export   # 移到 openspec/changes/archive/YYYY-MM-DD-*
 ```
+
+---
+
+## Legacy 模式：逐 task 守门（`--gate=per-task`）
+
+飞行模式是默认。`--gate=per-task` 仍可选回旧的**逐 task 阻断式守门**（吸收自 sdd-plus-superpowers 的 subagent-development 玩法，中文化自研、不依赖外部插件）：
+
+```
+对每个 task：
+  派 fresh 实现 subagent（走 test-driven-development：RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）
+    → 派 code-reviewer subagent 审本 task 净 diff（mode=full，CRITICAL/HIGH 阻断）
+    → 有阻断项 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 循环到清零
+    → 勾选 checkbox - [ ] → - [x] + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）
+    → 下一个 task
+全部 task 完成 → AskUserQuestion 定整合审位置（立即 ship → 交给 /pr-ship；暂不 ship → 本地跑 mode=integration；
+                单 task 的 change 恒跳过）→ /opsx-verify → 收口（不 merge 不 archive）
+```
+
+**关键约束**：
+
+- **不开 worktree**：逐 task 是串行累积（task2 依赖 task1 产出），在当前工作区。原生 `isolation: worktree` 每次派发开独立 worktree、看不到前序 task，不适用；这也让分级门禁 `intent-gate.py` 零改动生效。
+- **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行。
+- **守门靠 review 水位线分层**：这些守门点的 diff 范围是**包含关系**（单 task ⊂ 累计 ≈ PR），光靠"范围不同"避免不了重复。`review-log.md` 记下已审区间与 deferred 清单，后续守门点读它决定审什么、不报什么：逐 task = `full`、回灌复核 = `follow-up`（只审 fix commit）、整合审 = `integration`（只报跨 task/整体/端到端/工件一致性，一次变更只跑一次）、PR 复审 = `follow-up`（只审修复补丁）。**读不到水位线一律回退全量审**——它只能缩小已覆盖部分的范围，不能放过未审代码。
+- **`code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
+
+**为什么不再是默认**：2026-09-10 对 5 个跑该模式的会话做归因，每 task 链路 22–106 min，子 agent 时间里 review + fix 占 64–80%。详见 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 与 `.claude/agents/code-reviewer.md`。
 
 ---
 

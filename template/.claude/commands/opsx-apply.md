@@ -1,188 +1,70 @@
 ---
-description: Implement tasks from an OpenSpec change (Experimental)
+description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途不问；模型按角色显式路由
 ---
 
-Implement tasks from an OpenSpec change.
+飞行模式跑完一次 apply：选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
-**Input**: Optionally specify a change name (e.g., `/opsx-apply add-auth`). Append `--no-confirm` to skip the step 6 confirmation gate and go straight to the serial implementation path (used by `/opsx-bulk-apply` subagents; subagents cannot nest, so the per-task gatekeeper path is never taken under `--no-confirm`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**：可选指定 change 名（如 `/opsx-apply add-auth`）。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 跳过飞行模式，转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令 step 3–7 不适用）。
 
-**两种执行模式**：step 6 让用户在「**subagent 逐 task 守门**」（推荐中级+；转调 `openspec-subagent-apply-change` skill，每个 task 实现完即派 `code-reviewer` 守门）与「**串行（轻量）**」（主会话逐 task 串行写，即 step 7）之间选择。
+**模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
+
+| 角色 | 模型 | effort | 依据 |
+|---|---|---|---|
+| slice-executor（实现 / 批量修复） | 当前会话主模型别名（`fable` / `opus` / `sonnet`，看 `/model`） | high | 必须一次做对；实测 Sonnet 执行体的 fix 子 agent 数 ≥ impl 数 |
+| code-reviewer（切片评审 / 复核） | 当前会话主模型别名 | high | 门禁判完机械项后剩下的全是难判断；离关键路径 |
+| integrator（合回 / 抽接口 / final） | `sonnet` | low | 纯机械，指令明确 |
 
 **Steps**
 
-1. **Select the change**
+1. **选 change**
+   - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
+   - 宣告：`Using change: <name>`，以及如何覆盖（`/opsx-apply <other>`）。
 
-   If a name is provided, use it. Otherwise:
-   - Infer from conversation context if the user mentioned a change
-   - Auto-select if only one active change exists
-   - If ambiguous, run `openspec list --json` to get available changes and use the **AskUserQuestion tool** to let the user select
+2. **git 纪律检查**（`openspec-git-discipline` skill）
+   - CWD 必须在本 change 的 `.worktrees/<name>/`；不在则进入（该 worktree 缺失 → 停下报告，不在主仓库工作区写实现代码）。
+   - `git status --short` 确认工件已单独 commit、工作树干净；不满足 → 停下报告，不进入下一步。
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).
-
-2. **Check status to understand the schema**
+3. **切片规划 lint**
    ```bash
-   openspec status --change "<name>" --json
+   python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
    ```
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
+   拿到 stdout 的 waves JSON。**exit 非 0（规划红）→ 停下把 stderr 点名的规则原样报告，不进入实现**。
 
-3. **Get apply instructions**
-
+4. **记录批准事件并提交飞行记录**
    ```bash
-   openspec instructions apply --change "<name>" --json
+   python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name>
+   git add openspec/changes/<name>/timeline.md && git commit -m "chore(flight): approve"
    ```
+   飞行记录文件（timeline.md / gate-report.md / evidence.log）由 hook 自动追加，**起飞前必须已提交**，否则 integrator 合回并行切片时会因工作区脏被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，含启动时间）。
 
-   This returns:
-   - `contextFiles`: artifact ID -> array of concrete file paths (varies by schema)
-   - Progress (total, complete, remaining)
-   - Task list with status
-   - Dynamic instruction based on current state
+5. **启动切片工作流**
+   - 先确定当前会话模型别名 `<main>`（`/model` 显示的：`fable` / `opus` / `sonnet`）。
+   - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change: "<name>", changeDir: "openspec/changes/<name>", hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves: <step3 的 waves>, useAgentTypes: true, expectHead: "<git rev-parse --short=10 HEAD>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
+   - 同时传 `deps: <slices.json 里每片的 deps 映射>`，依赖已 blocked 的切片脚本不再派发。
+   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`、`effort: high`（同 wave 多切片各自 `isolation: worktree`；prompt 首行带 `expectHead` 第零步基分支校验），回报只收其原样 JSON；**门禁红则以其 `failed` 重派同一切片一次**，仍红记 blocked，依赖它的切片直接记 blocked；每个 wave 跑完派一个 `integrator`（`model: "sonnet"`、`effort: low`）先提交飞行记录、合回、逐片 `slice-gate.py record` 写回门禁结论；评审用 `code-reviewer`（`model: "<main>"`、`effort: high`）并行派发（`run_in_background` 语义：不等它完成再继续）；全部 wave 跑完后对阻断 finding 做一次批量修复，再跑一次 final。
+   - 两条路径最终都产出同一份 JSON：`{change, models, efforts, slices: [...], blocked: [...], blocking: [...], deferred: [...], fix, final}`（完整字段见 `.claude/workflows/opsx-apply.js` 的 `return`）。
 
-   **Handle states:**
-   - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx-continue`
-   - If `state: "all_done"`: congratulate, suggest archive
-   - Otherwise: proceed to implementation
+6. **收口分解**
+   收到工作流 JSON 后：
+   ```bash
+   python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
+   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir>
+   python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
+   ```
+   打印 session-decompose 与 timeline report 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；把工作流返回的 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`（供 `/pr-ship` 把未自动修的 MEDIUM/LOW 带进 PR 正文）；删除 `openspec/changes/<name>/.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 `slice-gate.py final`），然后把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）；飞行记录文件单独 `chore(flight)` commit。
 
-4. **Read context files**
+7. **不问，直接进入 `/pr-ship`**
+   final 全绿且无 blocked 切片 → 直接调用 `/pr-ship`。
+   final 未绿或有 blocked 切片 → 仍调用 `/pr-ship`，让它以 **draft** 建 PR，并在 PR 描述里列出未过门禁的切片与失败项。
 
-   Read every file path listed under `contextFiles` from the apply instructions output.
-   The files depend on the schema being used:
-   - **spec-driven**: proposal, specs, design, tasks
-   - Other schemas: follow the contextFiles from CLI output
-
-5. **Show current progress**
-
-   Display:
-   - Schema being used
-   - Progress: "N/M tasks complete"
-   - Remaining tasks overview
-   - Dynamic instruction from CLI
-
-6. **MANDATORY: confirm with user before implementation**
-
-   Before touching any code, you MUST stop and ask the user.
-
-   **Skip this step entirely when EITHER** condition holds:
-   - The invocation includes the `--no-confirm` flag, OR
-   - You were dispatched as a delegated subagent from a bulk-apply parent (e.g., `/opsx-bulk-apply`), which already collected one batch-level confirmation.
-
-   Otherwise:
-
-   Show a short preview:
-   - Change name and schema
-   - Progress: "N/M tasks complete, K remaining"
-   - First 3 pending task titles (titles only, no implementation detail)
-   - High-level scope: which capabilities or files will be touched (one line)
-
-   Then call the **AskUserQuestion tool** with:
-   - question: `确认开始 apply <name> 吗？选择执行模式：`
-   - header: `开始 apply`
-   - options:
-     - `subagent 逐 task 守门（推荐 · 中级+）` — 转调 `openspec-subagent-apply-change` skill：每个 task 派 fresh subagent 实现（强制 TDD）并**在当前分支产生一个本地 commit**（不 push / 不 merge），完成即派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox。守门结论写入 `review-log.md`（review 水位线），供后续 `/pr-ship` 与 `/opsx-verify` 判断已审范围、不再重复全量审；整合审位置在收口时由你选（本地 / 交给 `/pr-ship`）。**不进入下面的 step 7 串行循环。**（选此项即视为同意逐 task 本地 commit——见 `openspec-git-discipline` carve-out。）
-     - `串行（轻量）` — proceed to step 7（主会话逐 task 串行写，今日行为）
-     - `先看完整 tasks` — print the full task list, then re-ask this question
-     - `取消` — stop immediately, do not change any file
-
-   Guardrails:
-   - Do NOT enter any implementation path without an explicit confirmation answer.
-   - 选 `subagent 逐 task 守门` → 立即转用 `openspec-subagent-apply-change` skill 承载后续全部流程，不再走本命令 step 7。
-   - 选 `串行（轻量）` → 走 step 7。
-   - If the user picks `取消`, exit and report no changes were made.
-   - **`--no-confirm` 一律走串行（step 7）**：bulk-apply 派发的子 agent 用此 flag，且 subagent 不能再嵌套 subagent，所以子 agent 内不触发逐 task 守门路径。
-
-7. **Implement tasks — 串行模式 (loop until done or blocked)**
-
-   > 仅当用户选了"串行（轻量）"或传了 `--no-confirm` 时执行本步。选了"subagent 逐 task 守门"则跳过本步，全部交给 `openspec-subagent-apply-change`。
-
-   For each pending task:
-   - Show which task is being worked on
-   - Make the code changes required
-   - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
-   - Continue to next task
-
-   **Pause if:**
-   - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts
-   - Error or blocker encountered → report and wait for guidance
-   - User interrupts
-
-8. **On completion or pause, show status**
-
-   Display:
-   - Tasks completed this session
-   - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
-   - If paused: explain why and wait for guidance
-
-**Output During Implementation**
-
-```
-## Implementing: <change-name> (schema: <schema-name>)
-
-Working on task 3/7: <task description>
-[...implementation happening...]
-✓ Task complete
-
-Working on task 4/7: <task description>
-[...implementation happening...]
-✓ Task complete
-```
-
-**Output On Completion**
-
-```
-## Implementation Complete
-
-**Change:** <change-name>
-**Schema:** <schema-name>
-**Progress:** 7/7 tasks complete ✓
-
-### Completed This Session
-- [x] Task 1
-- [x] Task 2
-...
-
-All tasks complete! You can archive this change with `/opsx-archive`.
-```
-
-**Output On Pause (Issue Encountered)**
-
-```
-## Implementation Paused
-
-**Change:** <change-name>
-**Schema:** <schema-name>
-**Progress:** 4/7 tasks complete
-
-### Issue Encountered
-<description of the issue>
-
-**Options:**
-1. <option 1>
-2. <option 2>
-3. Other approach
-
-What would you like to do?
-```
+**暂停例外（仅这四种，其余一律直接往下走，不问）**
+- spec 自相矛盾
+- 需要破坏性操作（如需要用户显式授权的 merge / push / delete）
+- 测试环境本身坏（verify 在改动前就不可运行）
+- 同一门禁项连续 2 次红
 
 **Guardrails**
-- Always pause for explicit user confirmation in step 6 before any code change (except delegated bulk-apply subagent runs)
-- step 6 选「subagent 逐 task 守门」→ 转 `openspec-subagent-apply-change`（逐 task 实现 + 守门 + 写 review 水位线）；选「串行」或 `--no-confirm` → step 7
-- 串行模式**不产生** `review-log.md`：后续 `/pr-ship` 与 `/opsx-verify` 读不到水位线时按全量审处理，行为与既有一致
-- Keep going through tasks until done or blocked
-- Always read context files before starting (from the apply instructions output)
-- If task is ambiguous, pause and ask before implementing
-- If implementation reveals issues, pause and suggest artifact updates
-- Keep code changes minimal and scoped to each task
-- Update task checkbox immediately after completing each task
-- Pause on errors, blockers, or unclear requirements - don't guess
-- Use contextFiles from CLI output, don't assume specific file names
-
-**Fluid Workflow Integration**
-
-This skill supports the "actions on a change" model:
-
-- **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly
+- 启动到 `/pr-ship` 之间不出现 AskUserQuestion（四种暂停例外走「停下报告」，不是问询）。
+- 模型按角色显式路由；派发时不得省略 `model`；收口报告必须打印各角色实际模型。
+- `--gate=per-task` 是唯一非飞行路径，转给 legacy skill 承载，本命令步骤 3–7 不适用于该分支。
+- 不自动 merge / push / 删 worktree。

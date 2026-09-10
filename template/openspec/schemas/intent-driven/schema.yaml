@@ -177,6 +177,19 @@ artifacts:
 
 
       Good design docs explain the "why" behind technical decisions.
+
+
+      **触发器**（命中任一条才需要写实质设计内容，其余情况跳过）：
+
+      - 跨模块 / 新架构模式
+
+      - 新外部依赖或显著的数据模型变更
+
+      - 安全、性能或迁移复杂度
+
+
+      未命中任何触发器时，design.md 全部内容就是一行**跳过声明**：`跳过：<未命中理由>`。
+      不要在跳过声明之外再补充空洞的模板小节（Context/Goals/... 留空不写）。
     requires:
       - proposal
   - id: adr
@@ -256,35 +269,72 @@ artifacts:
       - design
   - id: tasks
     generates: tasks.md
-    description: Implementation checklist with trackable tasks
+    description: Implementation checklist broken into small, independently-gated slices
     template: tasks.md
     instruction: >
-      Create the task list that breaks down the implementation work.
+      Create the task list as a small number of independently verifiable
+      **slices** — not a flat checkbox list. This produces three artifacts
+      plus one generated file:
 
 
-      **IMPORTANT: Follow the template below exactly.** The apply phase parses
-      checkbox format to track progress. Tasks not using `- [ ]` won't be
-      tracked.
+      1. `slices.json` at the change root: `{gate: {...}, slices: [{id,
+      title, packet, owns: [...], deps: [...], verify, scenarios: [...]},
+      ...], scenario_tests: {"<capability>#<scenario-id>":
+      "<test-file>::<test-func>"}}`. Each slice's `owns` is the list of file
+      globs it exclusively writes; `deps` names slices it depends on;
+      `verify` is a single runnable command that decides pass/fail for that
+      slice alone.
 
 
-      Guidelines:
+      2. `slices/<S>.md` — one packet per slice: what it does, the exact
+      `owns` file paths, an interface summary of any slice it depends on, and
+      its `verify` command.
 
-      - Group related tasks under ## numbered headings.
 
-      - Each task MUST be a checkbox: `- [ ] X.Y Task description`.
+      3. Scenario skeletons: for every scenario in the delta specs, add one
+      `xfail(strict=True)` (or the language-equivalent strict-xfail) test
+      function in the test file owned by the slice that implements it. Write
+      the Given/When/Then comment block first, then real assertions (not
+      `pass`) — the executing slice removes the `xfail` mark to "unlock" the
+      scenario.
 
-      - Tasks should be small enough to complete in one session.
 
-      - Order tasks by dependency (what must be done first?).
+      4. `tasks.md` is **generated from `slices.json`**, not hand-written:
+      one checkbox line per slice, `- [ ] S<n> <title>`, each line carrying
+      `deps:` and `verify:` suffixes (see `templates/tasks.md` for the exact
+      format).
 
-      - If implementation changes behaviour specs, include a task to run
-      `openspec validate <change> --type change --strict` before archive.
+
+      **Slicing rules**（由 `slice-gate.py lint` 校验；1–9 片、DAG 深度 ≤ 3、同 wave
+      owns 不相交、每片 owns ≤ 12 条、每片 verify 非空）:
+
+      - 1–9 slices total.
+
+      - The `deps` graph is acyclic; DAG depth ≤ 3 (Kahn-layer count).
+
+      - Within the same wave (topological layer), no two slices' `owns` globs
+      may overlap.
+
+      - Each slice's `owns` has at most 12 entries.
+
+      - Every slice has a non-empty `verify` command.
+
+
+      After writing `slices.json`, run
+      `python3 .claude/hooks/slice-gate.py lint --change-dir <dir>` and fix
+      `slices.json` until it passes before generating `tasks.md` from it.
+
+
+      **IMPORTANT**: The apply phase parses `slices.json` and the generated
+      `tasks.md` checkbox format to track progress; tasks not represented
+      there won't be tracked.
 
 
       Reference specs for what to build, design for how to build it, and
       <repo>/openspec/adr/ for durable architectural commitments to honor.
 
-      Each task should be verifiable - you know when it's done.
+      Each slice should be independently verifiable via its own `verify`
+      command.
     requires:
       - specs
       - adr
