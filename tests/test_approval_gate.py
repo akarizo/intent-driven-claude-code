@@ -1,10 +1,8 @@
 """起飞前的人类批准门禁（scenario: takeoff-approval#*）。
-骨架：xfail(strict) 直到 S4 实现；执行体去掉标记即解锁。"""
+S4 已实现，骨架标记已去。"""
 import json
 import os
 from datetime import datetime, timezone
-
-import pytest
 
 from conftest import ROOT, run_hook
 
@@ -41,7 +39,6 @@ APPLY_CMD = ("<command-message>opsx-apply</command-message> "
              "<command-name>/opsx-apply</command-name> <command-args>demo</command-args>")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
 def test_approval_gate_accepts_human_command(tmp_path):
     # Given: 人类自己发出的 /opsx-apply（晚于计划工件 mtime），以及另一份只说短批准词的转录
     d = change_dir(tmp_path)
@@ -59,7 +56,6 @@ def test_approval_gate_accepts_human_command(tmp_path):
     assert "起飞" in p2.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
 def test_approval_gate_rejects_self_start(tmp_path):
     # Given: 最近的人类消息只是继续规划类指令，既无 /opsx-apply 调用也无批准词
     d = change_dir(tmp_path)
@@ -78,7 +74,6 @@ def test_approval_gate_rejects_self_start(tmp_path):
     assert "spec.html" in p.stderr and "/opsx-apply" in p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
 def test_approval_gate_requires_fresh_approval(tmp_path):
     # Given: 批准发生在 08:58，而计划工件在 09:30 又被改过
     d = change_dir(tmp_path, plan_iso="2026-09-10T09:30:00Z")
@@ -92,7 +87,6 @@ def test_approval_gate_requires_fresh_approval(tmp_path):
     assert "重新批准" in p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
 def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
     # Given: 一次指向该 change 的 Workflow 派发；转录里没有批准 / 有批准两种情况
     d = change_dir(tmp_path)
@@ -113,7 +107,6 @@ def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
     assert p2.returncode == 0 and p2.stdout.strip() == ""
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
 def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
     # Given: 一次与飞行无关的派发，以及一次转录不可读的飞行派发
     d = change_dir(tmp_path)
@@ -131,7 +124,6 @@ def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
     assert p2.returncode == 0 and p2.stdout.strip() == ""
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：propose 收尾尚未改成硬交接")
 def test_propose_ends_with_handoff():
     # Given: /opsx-propose 命令与 openspec-propose skill
     cmd = (CMD / "opsx-propose.md").read_text(encoding="utf-8")

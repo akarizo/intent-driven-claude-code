@@ -9,6 +9,15 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/intent-gate.py\""
           }
         ]
+      },
+      {
+        "matcher": "Workflow|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/takeoff-gate.py\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

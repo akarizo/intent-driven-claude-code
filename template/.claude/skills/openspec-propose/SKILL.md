@@ -9,7 +9,7 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
-一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板；运行 `/opsx-apply` 即视为批准。
+一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板，然后硬交接给人类：本 skill 到此结束，起飞由人类自己发出 `/opsx-apply`（`takeoff-gate.py` 机械校验这条批准）。
 
 **REQUIRED SUB-SKILL：** 建 change 前先用 `openspec-git-discipline` 的 **Worktree Isolation** 节 —— 本 change 的一切产物落在它自己的 `.worktrees/<name>/` worktree 内，主仓库工作区不落产物。
 
@@ -80,11 +80,15 @@ metadata:
    ```bash
    openspec status --change "<name>"
    ```
-   提示用户把工件单独 commit；说明打开 spec.html 看飞行计划，运行 `/opsx-apply` 即批准。
+   然后**硬交接**（三件事缺一不可）：
+
+   1. 打印 `spec.html` 的**绝对路径**（`openspec/changes/<name>/spec.html`，用 `pwd` 拼成绝对路径再打印），请人类打开审阅飞行计划。
+   2. 明确一行：**本 skill 到此结束。不得在同一轮继续 `/opsx-apply`；起飞需要你自己发出 `/opsx-apply <name>`（`takeoff-gate.py` 会在转录里核验这条人类批准 + 计划新鲜度，模型自证无效）。**
+   3. 提示用户把工件单独 commit（artifacts-only commit）。
 
 **Output**
 
-完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、下一步提示 "Run `/opsx-apply` to start implementing."
+完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、下一步提示：spec.html 绝对路径 + 「请你自己发出 `/opsx-apply <name>` 起飞」（本 skill 不代跑）。
 
 **Artifact Creation Guidelines**
 
