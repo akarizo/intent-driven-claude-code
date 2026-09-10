@@ -6,7 +6,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 支持 **GitHub（gh）** 与 **GitLab（glab）** 两个平台，按 `origin` URL 自动判断。
 
-**Input**：可选指定 target branch（默认 `main`）。例如 `/pr-ship develop`。飞行模式收口调用本命令时，若门禁 `final` 未绿或有 blocked 切片，本命令改以 **draft** 建 PR，并在正文列出未过门禁的切片与失败项。
+**Input**：可选指定 target branch（默认 `main`）。例如 `/pr-ship develop`。飞行模式收口调用本命令时，draft / ready 由 `slice-gate.py ship` 机械裁决（建 PR 前裁一次、自动修复收尾再裁一次，双向转换），本命令不自行判断。
 
 **Steps**
 
@@ -85,8 +85,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
      ## 测试计划
      - [ ] <验证项 1>
      ```
-   - 门禁未全绿 / 有 blocked 切片 → 正文追加一段「## 飞行门禁未全绿」，列出问题切片与失败项。
-   - `openspec/changes/<name>/review-findings.json` 存在（飞行收口写入的 `{blocking, deferred, fix}`）→ 正文追加一段「## 切片评审（未自动修的 MEDIUM/LOW）」逐条列出 `文件:行号 — 摘要 — 修法`，让人类 reviewer 看得见 AI 放过了什么。
+   - 飞行模式（`openspec/changes/<name>/slices.json` 存在）→ 跑机械裁决并把段落原样贴进正文：
+     ```bash
+     python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name> --markdown   # 退出 0 = ready，1 = draft
+     ```
+     输出非空时追加到正文（不 ready 时是「## 飞行门禁未全绿」+ reasons；有 blocked 切片时附「### 飞行中记 blocked 的切片」并标 `gate` / `infra`）。不要自己改写或删减 reasons。
+   - `openspec/changes/<name>/review-findings.json` 存在（飞行收口写入的 `{blocked, blocking, deferred, fix}`）→ 正文追加一段「## 切片评审（未自动修的 MEDIUM/LOW）」逐条列出 `文件:行号 — 摘要 — 修法`，让人类 reviewer 看得见 AI 放过了什么。
 
    起草完直接用于创建 PR，不再逐项确认。
 
@@ -99,8 +103,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
      EOF
      )"
      ```
-     门禁未全绿 → 加 `--draft`。
-   - GitLab: `glab mr create --target-branch <target> --source-branch <branch> --title "<标题>" --description "..."`（同上，加 `--draft`）。
+     step 6 的 `slice-gate.py ship` 退出码为 1 → 加 `--draft`；非飞行模式（无 slices.json）→ 不加。
+   - GitLab: `glab mr create --target-branch <target> --source-branch <branch> --title "<标题>" --description "..."`（同上，`ship` 退出 1 时加 `--draft`）。
 
    抓取返回的 PR/MR URL 与编号，并记飞行事件：
    ```bash
@@ -165,6 +169,14 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
     - 复核仍有 CRITICAL/HIGH 且已跑满 2 轮 → 停下交人，列出仍阻断的 finding。
     - MEDIUM/LOW：只写进评论，不自动修，不占用轮次。
 
+    **收尾复裁（飞行模式必做，双向转换）**：把本命令评审仍未闭环的 CRITICAL/HIGH 写回 `review-findings.json.blocking`（闭环了就写空数组），有修复 commit 时先重跑 `python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<name>` 让 final 行对齐新 HEAD，再跑：
+    ```bash
+    python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>
+    ```
+    - 退出 0 且 PR 当前是 draft → 转 ready：`gh pr ready <num>`（GitLab：`glab mr update <num> --ready`），然后 `python3 .claude/hooks/timeline.py record pr-ready --change-dir openspec/changes/<name> --note "<PR URL>"`。
+    - 退出 1 且 PR 当前是 ready → 退回 draft：`gh pr ready --undo <num>`（GitLab：`glab mr update <num> --draft`），然后 `python3 .claude/hooks/timeline.py record pr-draft --change-dir openspec/changes/<name> --note "<reasons>"`，并把 `ship --markdown` 的段落追加为一条 PR 评论。
+    - 其余情况不动 PR 状态。裁决完再 `git push` 飞行记录（timeline / gate-report / review-findings）。
+
 11. **收尾**
 
     打印 Output Summary。可选一次 **AskUserQuestion**：问用户是否要人工再看一遍再合并；不问也可以直接结束——默认直接结束，并给出 `gh pr merge <num> --squash --delete-branch` / `glab mr merge <num>` 供用户自己在终端跑（不代用户合并）。
@@ -176,6 +188,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 **PR/MR**: <URL>
 **target**: <target-branch>
+**PR 状态**: ready / draft（`slice-gate.py ship` 裁决；draft 时附 reasons）
 **commit 数**: N
 **review 轮数**: M
 **已自动修复**: X 条 CRITICAL/HIGH

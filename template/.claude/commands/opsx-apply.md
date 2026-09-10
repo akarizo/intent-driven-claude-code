@@ -51,11 +51,14 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
    python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir>
    python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
    ```
-   打印 session-decompose 与 timeline report 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；把工作流返回的 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`（供 `/pr-ship` 把未自动修的 MEDIUM/LOW 带进 PR 正文）；删除 `openspec/changes/<name>/.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 `slice-gate.py final`），然后把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）；飞行记录文件单独 `chore(flight)` commit。
+   打印 session-decompose 与 timeline report 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；把工作流返回的 `{blocked, blocking, deferred, fix}` 原样写入 `openspec/changes/<name>/review-findings.json`（`blocked` 条目带 `kind: gate | infra`，供 `/pr-ship` 进 PR 正文作说明；`blocking` 是 `ship` 裁决依据之一）；删除 `openspec/changes/<name>/.flight`；然后跑机械裁决：
+   ```bash
+   python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>    # 退出 0 ready / 1 draft；reasons 列出为何不 ready
+   ```
+   `ship` 只读 `gate-report.md`（每切片最新行 + final 行是否 ok 且对齐 HEAD）与 `review-findings.json.blocking`，不看工作流的 blocked 列表。reasons 里出现 `final 过期` → 重跑 `slice-gate.py final` 再 `ship`。把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）；飞行记录文件单独 `chore(flight)` commit。
 
 7. **不问，直接进入 `/pr-ship`**
-   final 全绿且无 blocked 切片 → 直接调用 `/pr-ship`。
-   final 未绿或有 blocked 切片 → 仍调用 `/pr-ship`，让它以 **draft** 建 PR，并在 PR 描述里列出未过门禁的切片与失败项。
+   无论 `ship` 结果如何都调用 `/pr-ship`；它会自己再跑一次 `ship` 决定以 draft 还是 ready 建 PR，并把 `ship --markdown` 的段落贴进正文。主会话不自行判断 draft。
 
 **暂停例外（仅这四种，其余一律直接往下走，不问）**
 - spec 自相矛盾
