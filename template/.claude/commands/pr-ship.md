@@ -111,10 +111,11 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 8. **呼叫干净的 code-reviewer subagent 评审 diff（唯一模式：full）**
 
    ```bash
-   git rev-parse HEAD    # 记为 REVIEW_HEAD_1
+   git rev-parse HEAD                        # 记为 REVIEW_HEAD_1
+   python3 .claude/hooks/session-model.py    # stdout: opus|sonnet|haiku|fable，记为 <main>；exit 3 = 判定不出
    ```
 
-   用 **Agent 工具**启一个 `subagent_type=code-reviewer`、`model: "<main>"`（当前会话主模型别名，看 `/model`；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
+   用 **Agent 工具**启一个 `subagent_type=code-reviewer`、`model: "<main>"`（`<main>` = `python3 .claude/hooks/session-model.py` 的输出，禁模型自述；判定不出则**停下报告**，让用户显式给出别名后重跑；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
 
    ```
    背景: review GitHub/GitLab 上的 PR/MR #<num>。
@@ -152,7 +153,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 10. **CRITICAL/HIGH 自动修复（至多 2 轮，不问询）**
 
-    - 有 CRITICAL/HIGH → 主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`）走 **`follow-up` 模式**复核：
+    - 有 CRITICAL/HIGH → 主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
       ```
       背景: 复核 PR/MR #<num> 的修复补丁。
       评审模式: follow-up
