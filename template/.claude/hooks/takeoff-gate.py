@@ -43,7 +43,9 @@ NON_HUMAN_MARKERS = (
 )
 APPLY_CMD_RE = re.compile(r"<command-name>\s*/?(opsx-apply|opsx-bulk-apply)\b", re.IGNORECASE)
 APPROVE_WORD_RE = re.compile(r"批准|起飞|授权|approve|go ahead", re.IGNORECASE)
-CHANGE_PATH_RE = re.compile(r"[^\s\"',]*openspec/changes/[A-Za-z0-9._-]+")
+# 只吃路径字符：prompt 里常写成 「切片包：`template/openspec/changes/<name>`」，
+# 宽前缀会把反引号 / 全角冒号 / 中文一起吞进来，拼出的路径必不存在 → 静默 fail-open
+CHANGE_PATH_RE = re.compile(r"/?(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+")
 
 
 def parse_ts(value):
@@ -222,10 +224,18 @@ def find_change_dir(payload):
     if not match:
         return None
     raw = match.group(0)
-    if not os.path.isabs(raw):
-        raw = os.path.join(payload.get("cwd") or os.getcwd(), raw)
-    raw = os.path.abspath(raw)
-    return raw if os.path.isdir(raw) else None
+    cwd = payload.get("cwd") or os.getcwd()
+    if os.path.isabs(raw):
+        candidates = [raw]
+    else:  # prompt 常多带仓库名/上级目录：逐段剥掉最前面的片段重试
+        parts = raw.split("/")
+        head = parts.index("openspec")
+        candidates = ["/".join(parts[i:]) for i in range(head + 1)]
+    for cand in candidates:
+        path = os.path.abspath(cand if os.path.isabs(cand) else os.path.join(cwd, cand))
+        if os.path.isdir(path):
+            return path
+    return None
 
 
 def locate_hook(payload):

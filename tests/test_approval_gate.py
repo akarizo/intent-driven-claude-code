@@ -24,9 +24,9 @@ def transcript(path, rows):
     return path
 
 
-def change_dir(tmp_path, plan_iso="2026-09-10T08:00:00Z"):
+def change_dir(tmp_path, plan_iso="2026-09-10T08:00:00Z", under=""):
     """建一个最小 change 工件目录，并把计划工件的 mtime 钉在 plan_iso。"""
-    d = tmp_path / "openspec" / "changes" / "demo"
+    d = tmp_path.joinpath(*([under] if under else []), "openspec", "changes", "demo")
     (d / "specs" / "cap").mkdir(parents=True)
     for rel in ("proposal.md", "design.md", "tasks.md", "slices.json", "spec.html", "specs/cap/spec.md"):
         (d / rel).write_text("x", encoding="utf-8")
@@ -105,6 +105,30 @@ def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
     assert hook_out["permissionDecision"] == "deny"
     assert "spec.html" in hook_out["permissionDecisionReason"] and "/opsx-apply" in hook_out["permissionDecisionReason"]
     assert p2.returncode == 0 and p2.stdout.strip() == ""
+
+
+def test_takeoff_hook_denies_prompt_path_wrapped_in_backticks(tmp_path):
+    # Given: 未批准的转录，与两种真实 prompt 形状的派发——① 中文全角冒号紧邻 + 反引号包住的相对路径
+    #        ② 前面多带一段仓库名的路径（cwd 下需剥掉最前面的片段才是真目录）
+    d = change_dir(tmp_path)
+    deep = change_dir(tmp_path, under="template")
+    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
+    quoted = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+              "tool_input": {"subagent_type": "slice-executor",
+                             "prompt": "切片包：`openspec/changes/demo/slices/S1.md`，按 TDD 执行"}}
+    prefixed = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+                "tool_input": {"subagent_type": "slice-executor",
+                               "prompt": "读 idcc/template/openspec/changes/demo/slices/S1.md 再开工"}}
+
+    # When: 以 hook 模式分别运行
+    p1 = run_hook("takeoff-gate", stdin=json.dumps(quoted))
+    p2 = run_hook("takeoff-gate", stdin=json.dumps(prefixed))
+
+    # Then: 两种形状都识别出 change 目录并 deny，reason 点名各自的目录（不再静默 fail-open）
+    r1 = json.loads(p1.stdout)["hookSpecificOutput"]
+    r2 = json.loads(p2.stdout)["hookSpecificOutput"]
+    assert r1["permissionDecision"] == "deny" and str(d) in r1["permissionDecisionReason"]
+    assert r2["permissionDecision"] == "deny" and str(deep) in r2["permissionDecisionReason"]
 
 
 def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
