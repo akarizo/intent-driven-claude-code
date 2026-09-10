@@ -55,7 +55,7 @@ Rule: 别名归一后比对；不一致即铁律违规，红着退出
 - **GIVEN** 一个 Workflow 转录目录，其中某 `Implement` 阶段 agent 的实际模型为 `claude-sonnet-5`，而期望路由 `{"executor": "opus", "reviewer": "opus", "integrator": "sonnet"}`
 - **WHEN** 运行 `session-decompose.py --workflow <dir> --expect-models <该 JSON>`
 - **THEN** 输出逐条列出不符项（标签 · 阶段 · 期望别名 · 实际 id），退出码非 0
-- **AND** `/opsx-apply` 收口遇非 0 时在收口报告点名不符的 agent，并让 `/pr-ship` 以 draft 建 PR（与 final 未绿同处置）
+- **AND** `/opsx-apply` 收口遇非 0 时在收口报告点名不符的 agent，并把它追加进 `review-findings.json.blocking`，由 `slice-gate.py ship` 机械判成 draft（与 final 未绿同处置，主会话不自判）
 
 #### Scenario: route-audit-passes-on-match
 - **GIVEN** 各 agent 实际模型与期望路由一致（`claude-opus-5[1m]` 与 `claude-opus-5` 都归一为 `opus`）

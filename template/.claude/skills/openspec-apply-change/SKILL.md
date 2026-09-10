@@ -71,10 +71,10 @@ metadata:
    python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir> --expect-models '<.flight 里的 models>'
    python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
    ```
-   `--expect-models` 机械对账：非 0 → 铁律 11 违规，收口报告点名不符的 agent，并让 `/pr-ship` 以 draft 建 PR（与 final 未绿同处置）。打印飞行记录（含各 agent 实际模型）；把 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`；删除 `.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 final）；把门禁绿的切片在 `tasks.md` 里勾选；飞行记录文件单独 `chore(flight)` commit。
+   `--expect-models` 机械对账：非 0 → 铁律 11 违规，收口报告点名不符的 agent，并把它作为一条 `severity: HIGH` 追加进 `review-findings.json.blocking`，由 `ship` 机械判 draft。打印飞行记录（含各 agent 实际模型）；把 `{blocked, blocking, deferred, fix}` 原样写入 `openspec/changes/<name>/review-findings.json`（`blocked` 带 `kind: gate | infra`）；删除 `.flight`；跑 `python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>`（只读 gate-report.md 每切片最新行 + final 对齐 HEAD + blocking；退出 0 ready / 1 draft；`final 过期` → 重跑 final 再 ship）；把门禁绿的切片在 `tasks.md` 里勾选；飞行记录文件单独 `chore(flight)` commit。
 
 6. **不问，直接进入 `/pr-ship`**
-   final 未绿 / 有 blocked 切片 / 模型对账非 0 → `/pr-ship` 以 draft 建 PR 并列出未过门禁项与路由不符的 agent；否则正常建 PR。
+   无论 `ship` 结果如何都调用；`/pr-ship` 自己再跑 `ship` 决定 draft / ready 并把 `ship --markdown` 段落贴进正文。主会话不自判 draft。
 
 **暂停例外（仅这四种）**：spec 自相矛盾 · 需要破坏性操作 · 测试环境本身坏 · 同一门禁项连续 2 次红。
 
