@@ -1,8 +1,5 @@
-"""spec_html.py 脚本渲染（scenario: executable-specs#spec-html-renders-artifacts / spec-html-flight-block）。
-骨架：xfail(strict) 直到 S4 实现；执行体去掉标记即解锁。"""
+"""spec_html.py 脚本渲染（scenario: executable-specs#spec-html-renders-artifacts / spec-html-flight-block）。"""
 import json
-
-import pytest
 
 from conftest import run_hook, write
 
@@ -70,7 +67,6 @@ def render(change, out):
     return run_hook("spec_html", "--change-dir", str(change), "--out", str(out), "--now", NOW)
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#spec-html-renders-artifacts")
 def test_spec_html_renders_artifacts(tmp_path):
     # Given: 一个 change 目录含 proposal.md、specs/data-export/spec.md、design.md（含 mermaid 块）、tasks.md（一勾一未勾）
     change = artifacts(tmp_path / "openspec" / "changes" / "add-export")
@@ -89,7 +85,6 @@ def test_spec_html_renders_artifacts(tmp_path):
     assert "仅当 capabilities 涉及" in html
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#spec-html-flight-block")
 def test_spec_html_flight_block(tmp_path):
     # Given: change 目录含 slices.json（2 片，S2 依赖 S1，各有 scenario 映射）、timeline.md（approve 事件）、一个 xfail 骨架与一个已解锁的测试
     root = tmp_path
@@ -121,7 +116,6 @@ def test_spec_html_flight_block(tmp_path):
     assert "approve" in html
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#spec-html-renders-artifacts")
 def test_spec_html_idempotent(tmp_path):
     # Given: 同一份工件
     change = artifacts(tmp_path / "openspec" / "changes" / "add-export")

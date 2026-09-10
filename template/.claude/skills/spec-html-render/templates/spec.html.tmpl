@@ -588,6 +588,47 @@ body.offline .diagram-fallback { display: block; }
 }
 #tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
 
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
 /* Placeholders (rendered as-is when block is not filled) */
 .placeholder {
   padding: var(--space-3) var(--space-4);
@@ -648,6 +689,7 @@ footer {
       <li><a href="#diagrams">关键图示</a></li>
       <li><a href="#mockups">原型示意</a></li>
       <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
       <li><a href="#tasks">落地任务</a></li>
     </ol>
   </aside>
@@ -716,8 +758,15 @@ footer {
       <!-- /block:adrs -->
     </section>
 
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+      <p class="placeholder">待 slices.json 渲染（由 /opsx-apply 拆分切片后自动出现）。</p>
+      <!-- /block:flight -->
+    </section>
+
     <section id="tasks">
-      <h2><span class="eyebrow">Tasks · 09</span>落地任务</h2>
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
       <!-- block:tasks -->
       <p class="placeholder">待 tasks.md 渲染。</p>
       <!-- /block:tasks -->
