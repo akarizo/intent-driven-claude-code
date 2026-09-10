@@ -622,9 +622,10 @@ def cmd_ship(args):
             reasons.append("final 红：%s" % final["failed"])
         elif final["commit"] != head[:10]:
             reasons.append("final 过期：记录 %s，HEAD %s" % (final["commit"], head[:10]))
-        blocking = findings.get("blocking") or []
-        if blocking:
-            reasons.append("%d 条 CRITICAL/HIGH 评审未闭环" % len(blocking))
+    # 铁律 4：CRITICAL/HIGH 未闭环不得非 draft —— 与是否飞行模式无关，无条件检查
+    blocking = findings.get("blocking") or []
+    if blocking:
+        reasons.append("%d 条 CRITICAL/HIGH 评审未闭环" % len(blocking))
     blocked = findings.get("blocked") or []
     result = {"ready": not reasons, "commit": head, "reasons": reasons, "blocked": blocked}
     timeline_record(args.change_dir, "ship", "ready" if result["ready"] else "draft: " + "; ".join(reasons))

@@ -156,6 +156,21 @@ def test_ship_ready_without_plan(git_repo):
     assert p.returncode == 0
 
 
+def test_ship_blocks_open_findings_without_plan(git_repo):
+    """scenario: ship-verdict#阻断 finding 未闭环判 draft（非飞行模式变体，铁律 4 与 slices.json 无关）"""
+    # Given: change 目录没有 slices.json，但 review-findings.json 的 blocking 含 1 条
+    change = ship_repo(git_repo, plan=False, slice_verdict=None, final_verdict=None,
+                       findings={"blocked": [], "blocking": [{"severity": "CRITICAL"}], "deferred": [], "fix": None})
+
+    # When: 运行 ship
+    p = ship(git_repo, change)
+
+    # Then: ready 为 false 且退出码 1
+    out = json.loads(p.stdout)
+    assert out["ready"] is False, out
+    assert p.returncode == 1
+
+
 def test_ship_markdown_lists_reasons_and_blocked(git_repo):
     """scenario: ship-verdict#draft 时输出 reasons 段落"""
     # Given: S1 红 + 1 条阻断 finding（两条 reasons），blocked 含一条 gate 条目

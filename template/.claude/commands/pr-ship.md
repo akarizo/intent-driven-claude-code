@@ -169,7 +169,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
     - 复核仍有 CRITICAL/HIGH 且已跑满 2 轮 → 停下交人，列出仍阻断的 finding。
     - MEDIUM/LOW：只写进评论，不自动修，不占用轮次。
 
-    **收尾复裁（飞行模式必做，双向转换）**：把本命令评审仍未闭环的 CRITICAL/HIGH 写回 `review-findings.json.blocking`（闭环了就写空数组），有修复 commit 时先重跑 `python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<name>` 让 final 行对齐新 HEAD，再跑：
+    **收尾复裁（飞行模式必做，双向转换）**：只更新 `review-findings.json` 的 `blocking` 字段为本命令评审仍未闭环的 CRITICAL/HIGH（闭环了就写 `[]`），`blocked` / `deferred` / `fix` 三个字段原样保留不动，有修复 commit 时先重跑 `python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<name>` 让 final 行对齐新 HEAD，再跑：
     ```bash
     python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>
     ```
