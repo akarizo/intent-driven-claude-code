@@ -20,3 +20,5 @@
 2026-09-10T12:09:37Z	final	ok
 2026-09-10T12:12:56Z	final	ok
 2026-09-10T12:12:56Z	ship	draft: 5 条 CRITICAL/HIGH 评审未闭环
+2026-09-10T12:14:03Z	final	ok
+2026-09-10T12:14:03Z	ship	ready
