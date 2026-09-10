@@ -11,43 +11,7 @@
     "integrator": "low"
   },
   "run_id": "wf_c0d32b66-478",
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "tests/test_template_docs.py",
-      "line": 153,
-      "summary": "scenario takeoff-approval#apply-checks-approval-gate 的断言被截错锚点：head = cmd[: cmd.index(\"启动切片工作流\")]，首个匹配出现在 opsx-apply.md 第 5 行的流程摘要句里，所以 head 只是 frontmatter + 摘要段。断言 takeoff-gate.py/spec.html in head、AskUserQuestion not in head 全部由摘要句满足——step 0「批准自检」整块缺失也可能让测试保持绿，等于该 scenario 没有被真正验收（违反铁律 2：规格即验收）。",
-      "fix": "把切点改到 Steps 的 step 1 处，例如 head = cmd[: cmd.index(\"1. **选 change**\")]，并补一条顺序断言 cmd.index(\"takeoff-gate.py\") < cmd.index(\"1. **选 change**\")（当前实现仍能通过），确保断言落在 step 0 实体而非摘要句上。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
-      "line": 210,
-      "summary": "角色映射只认 workflowPhase，把 wave integrator 误判成 executor：opsx-apply.js:141 的 `integrate:w<i>` agent 在 phase('Implement') 块内派发且未覆盖 phase，实际模型是 models.integrator(sonnet)，PHASE_ROLE['Implement']='executor' 期望 opus → 正确路由的飞行被判 ❌ 并 exit 3（实测输出 `❌ integrate:w1 · Implement · 期望 opus · 实际 claude-sonnet-5`），/opsx-apply 会据此误报铁律 11 违规并强制 draft PR",
-      "fix": "改用 meta 的 agentType 作主键（真实 meta 实测含 agentType：slice-executor→executor · code-reviewer→reviewer · integrator→integrator），phase 仅作 agentType 缺失时的兜底：workflow_agents 的元组追加 meta.get('agentType')，audit_routes 先查 AGENT_ROLE 再回落 PHASE_ROLE"
-    },
-    {
-      "severity": "HIGH",
-      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
-      "line": 275,
-      "summary": "零覆盖仍打绿：--workflow 指错/为空目录、meta.json 缺失(phase 退化为 '-')、或某角色根本没出现在 journal（如 reviewer 若被嵌套派发）时，audit_routes 返回 bad=[] 且 seen={}，仍打印 `路由对账：✅ 一致（）` 并 exit 0（实测已复现），与本 change fail-closed 的设计初衷相反，是收口门禁的假绿口子",
-      "fix": "对账后做覆盖校验：若 set(expect) - set(seen) 非空（或 agents 为空），逐条打印 `❌ 未采样到角色 <role>（期望 <alias>）` 并 return EXIT_ROUTE_MISMATCH；仅当所有 expect 角色都被实际采样且一致时才打印 ✅"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/hooks/takeoff-gate.py",
-      "line": 46,
-      "summary": "CHANGE_PATH_RE 前缀类 [^\\s\"',]* 过宽：真实派发 prompt 里路径常写成 `template/openspec/changes/<name>`（反引号）或「切片包：template/openspec/changes/<name>」（全角冒号紧邻），实测抓到的是 '`template/openspec/changes/demo' / '切片包：template/openspec/changes/demo'，os.path.isdir 必假 → find_change_dir 返回 None → hook 静默 fail-open，PreToolUse 永不 deny，D9 强制点在最常见的真实形状下失效。现有测试只喂 JSON 引号包住的干净绝对路径，故绿而不真。",
-      "fix": "把前缀限制为路径字符类，例如 CHANGE_PATH_RE = re.compile(r\"(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+\")；并在 find_change_dir 里对拼出的路径做一次兜底：若非目录，逐段剥掉最前面的路径片段重试，仍非目录才返回 None。同时在 tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch 增加一个 prompt 形状用例（路径包在反引号内、且前面紧跟中文），锁住这条行为。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/hooks/takeoff-gate.py",
-      "line": 258,
-      "summary": "main() 用 `\"--change-dir\" in argv` 精确匹配判定 CLI 模式，等号写法 --change-dir=DIR 落不进该分支 → 进 hook 模式读 stdin → 空 stdin 触发 json.loads 异常 → except 返回 0。实测 `takeoff-gate.py --change-dir=<dir> < /dev/null` 输出为空且 exit=0，按契约（exit 0 = 批准成立）会被 /opsx-apply step 0 读成「已批准」，构成无批准的静默放行；命令行由模型现写，等号写法完全可能出现。",
-      "fix": "改判定为 `if any(a == \"--change-dir\" or a.startswith(\"--change-dir=\") for a in argv):`（或更彻底：`if argv:` 一律走 argparse，未知参数由 argparse 以非 0 退出，方向 fail-closed）；另在 run_hook 前判空 stdin，空输入直接返回 0 但不与 CLI 语义混用。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "MEDIUM",
@@ -181,6 +145,54 @@
       "line": 77,
       "summary": "`row.get(\"userType\") not in (None, \"external\")` 把缺失 userType 的条目也当人类消息，而 design D7 与切片事实基线的判据是 userType == \"external\"。当前靠 isMeta/isSidechain/tool_result/marker 兜底尚未见漏，但对未来新增的非人类 user 行形状放宽了口子（需进一步确认是否为兼容旧转录的有意选择）。",
       "fix": "要么收紧为 `row.get(\"userType\") != \"external\"` 直接排除，要么在该行加一句注释说明「兼容早期转录无该字段」的实测依据，避免后续读者误以为是笔误。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/session-decompose.py",
+      "line": 276,
+      "summary": "load_alias_of() 返回 None 时只 ⚠ 一行然后 exit 0，路由对账被静默跳过却报绿，与本 change「判不出就红」方向相反",
+      "fix": "alias_of 缺失时打印原因并返回 EXIT_ROUTE_MISMATCH（或新增专用退出码）",
+      "source": "PR #29 review round 1"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 64,
+      "summary": "回退路径（Workflow 不可用 → 并行 Agent 派发）没有 journal 目录，--expect-models 强制要 --workflow，收口对账在该路径上缺席，命令文本也没写降级口径",
+      "fix": "支持 --subagents <dir> 作对账来源，或在命令与 skill 明写「回退路径对账不可判定 → 按 draft 处置」",
+      "source": "PR #29 review round 1"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_template_docs.py",
+      "line": 131,
+      "summary": "两个 scenario 的 AND 子句无断言：.flight 的 approval 字段、raw / source 字段被删掉测试照样绿",
+      "fix": "补 assert '\"approval\"' in cmd 与 assert '\"raw\"' in cmd and '\"source\"' in cmd",
+      "source": "PR #29 review round 1"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 73,
+      "summary": "需进一步确认：模型经 SlashCommand 工具发出 /opsx-apply 时转录行的形状未取到样本；若落成 userType=external 的 user 行，模型就能自己造出批准",
+      "fix": "用一次真实 SlashCommand 调用抓该行字段，按实测加守卫并补 scenario；若不可伪造则把结论写进 design D7",
+      "source": "PR #29 review round 1"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 194,
+      "summary": "CLI 模式 verdict() 抛异常（IO / 权限 / 目录并发删除）无兜底，会 traceback + exit 1，违反自己声明的 exit 3 契约",
+      "fix": "try/except OSError 包住并走同一条 stderr 提示 + return EXIT_NO_APPROVAL",
+      "source": "PR #29 review round 1"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 152,
+      "summary": "plan_mtime 返回 None 时新鲜度校验整段跳过，任意历史批准都算数；hook 的剥前缀兜底可能命中同名却无计划工件的目录",
+      "fix": "plan_at is None 时在 CLI 侧点名「该目录无计划工件，新鲜度不可判定」，别与「新鲜」混为一谈",
+      "source": "PR #29 review round 1"
     }
   ],
   "fix": {
@@ -193,5 +205,82 @@
       "timeline.py record 后 template/openspec/changes/mechanical-takeoff-gates/{timeline.md,gate-report.md} 有未提交改动（工件由主会话处理，未自行提交）"
     ],
     "summary": "5 条 CRITICAL/HIGH 全部闭环，逐条 fix: commit（前 3 条在本次任务早前轮次已落）。10e2510 test_apply_checks_approval_gate 切点从「启动切片工作流」改到 step 0 实体（0. **批准自检 → 1. **选 change**），并加顺序断言 takeoff-gate.py 早于 step 1；b9e880b session-decompose 路由对账改以 meta.agentType 为主键（AGENT_ROLE），phase 仅兜底，wave integrator 不再被误判 executor；77d1b86 audit_routes 返回 missing，零覆盖逐条打印「未采样到角色」并 exit 3，不再假绿；4b8d3a7 CHANGE_PATH_RE 前缀收紧为 /?(?:[A-Za-z0-9._~-]+/)*，find_change_dir 增加逐段剥前缀兜底，反引号/中文前缀与多带仓库名的 prompt 形状都能定位并 deny（新增 test_takeoff_hook_denies_prompt_path_wrapped_in_backticks，先红后绿）；c0c25c6 main() 判定从 \"--change-dir\" in argv 改为 if argv 一律走 argparse（fail-closed），--change-dir=DIR 等号写法不再退化成空 stdin 静默 exit 0（新增 test_takeoff_cli_honors_equals_form_change_dir，先红后绿）。断言改动申报：test_apply_checks_approval_gate 的切点与断言按 finding 1 重写，原断言由 opsx-apply.md 第 5 行流程摘要句即可满足，等于该 scenario 未被真正验收。全量 python3 -m pytest -q tests 105 passed，hooks compileall 通过，final gate scenario 16/16。"
-  }
+  },
+  "fixed": [
+    {
+      "severity": "HIGH",
+      "file": "tests/test_template_docs.py",
+      "line": 153,
+      "summary": "scenario takeoff-approval#apply-checks-approval-gate 的断言被截错锚点：head = cmd[: cmd.index(\"启动切片工作流\")]，首个匹配出现在 opsx-apply.md 第 5 行的流程摘要句里，所以 head 只是 frontmatter + 摘要段。断言 takeoff-gate.py/spec.html in head、AskUserQuestion not in head 全部由摘要句满足——step 0「批准自检」整块缺失也可能让测试保持绿，等于该 scenario 没有被真正验收（违反铁律 2：规格即验收）。",
+      "fix": "把切点改到 Steps 的 step 1 处，例如 head = cmd[: cmd.index(\"1. **选 change**\")]，并补一条顺序断言 cmd.index(\"takeoff-gate.py\") < cmd.index(\"1. **选 change**\")（当前实现仍能通过），确保断言落在 step 0 实体而非摘要句上。",
+      "status": "fixed",
+      "fix_commit": "10e2510",
+      "verified_by": "PR #29 code-reviewer full review（抽查五条闭环点，判定均已闭环）"
+    },
+    {
+      "severity": "HIGH",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 210,
+      "summary": "角色映射只认 workflowPhase，把 wave integrator 误判成 executor：opsx-apply.js:141 的 `integrate:w<i>` agent 在 phase('Implement') 块内派发且未覆盖 phase，实际模型是 models.integrator(sonnet)，PHASE_ROLE['Implement']='executor' 期望 opus → 正确路由的飞行被判 ❌ 并 exit 3（实测输出 `❌ integrate:w1 · Implement · 期望 opus · 实际 claude-sonnet-5`），/opsx-apply 会据此误报铁律 11 违规并强制 draft PR",
+      "fix": "改用 meta 的 agentType 作主键（真实 meta 实测含 agentType：slice-executor→executor · code-reviewer→reviewer · integrator→integrator），phase 仅作 agentType 缺失时的兜底：workflow_agents 的元组追加 meta.get('agentType')，audit_routes 先查 AGENT_ROLE 再回落 PHASE_ROLE",
+      "status": "fixed",
+      "fix_commit": "b9e880b",
+      "verified_by": "PR #29 code-reviewer full review（抽查五条闭环点，判定均已闭环）"
+    },
+    {
+      "severity": "HIGH",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 275,
+      "summary": "零覆盖仍打绿：--workflow 指错/为空目录、meta.json 缺失(phase 退化为 '-')、或某角色根本没出现在 journal（如 reviewer 若被嵌套派发）时，audit_routes 返回 bad=[] 且 seen={}，仍打印 `路由对账：✅ 一致（）` 并 exit 0（实测已复现），与本 change fail-closed 的设计初衷相反，是收口门禁的假绿口子",
+      "fix": "对账后做覆盖校验：若 set(expect) - set(seen) 非空（或 agents 为空），逐条打印 `❌ 未采样到角色 <role>（期望 <alias>）` 并 return EXIT_ROUTE_MISMATCH；仅当所有 expect 角色都被实际采样且一致时才打印 ✅",
+      "status": "fixed",
+      "fix_commit": "77d1b86",
+      "verified_by": "PR #29 code-reviewer full review（抽查五条闭环点，判定均已闭环）"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 46,
+      "summary": "CHANGE_PATH_RE 前缀类 [^\\s\"',]* 过宽：真实派发 prompt 里路径常写成 `template/openspec/changes/<name>`（反引号）或「切片包：template/openspec/changes/<name>」（全角冒号紧邻），实测抓到的是 '`template/openspec/changes/demo' / '切片包：template/openspec/changes/demo'，os.path.isdir 必假 → find_change_dir 返回 None → hook 静默 fail-open，PreToolUse 永不 deny，D9 强制点在最常见的真实形状下失效。现有测试只喂 JSON 引号包住的干净绝对路径，故绿而不真。",
+      "fix": "把前缀限制为路径字符类，例如 CHANGE_PATH_RE = re.compile(r\"(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+\")；并在 find_change_dir 里对拼出的路径做一次兜底：若非目录，逐段剥掉最前面的路径片段重试，仍非目录才返回 None。同时在 tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch 增加一个 prompt 形状用例（路径包在反引号内、且前面紧跟中文），锁住这条行为。",
+      "status": "fixed",
+      "fix_commit": "4b8d3a7",
+      "verified_by": "PR #29 code-reviewer full review（抽查五条闭环点，判定均已闭环）"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 258,
+      "summary": "main() 用 `\"--change-dir\" in argv` 精确匹配判定 CLI 模式，等号写法 --change-dir=DIR 落不进该分支 → 进 hook 模式读 stdin → 空 stdin 触发 json.loads 异常 → except 返回 0。实测 `takeoff-gate.py --change-dir=<dir> < /dev/null` 输出为空且 exit=0，按契约（exit 0 = 批准成立）会被 /opsx-apply step 0 读成「已批准」，构成无批准的静默放行；命令行由模型现写，等号写法完全可能出现。",
+      "fix": "改判定为 `if any(a == \"--change-dir\" or a.startswith(\"--change-dir=\") for a in argv):`（或更彻底：`if argv:` 一律走 argparse，未知参数由 argparse 以非 0 退出，方向 fail-closed）；另在 run_hook 前判空 stdin，空输入直接返回 0 但不与 CLI 语义混用。",
+      "status": "fixed",
+      "fix_commit": "c0c25c6",
+      "verified_by": "PR #29 code-reviewer full review（抽查五条闭环点，判定均已闭环）"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 35,
+      "summary": "门禁会拦住自家 /pr-ship 的 code-reviewer 派发：tasks.md 在新鲜度锚点里（收口勾选即让批准过期），且触发判据「tool_input 出现 change 路径」比 spec 的「命中飞行派发」宽",
+      "fix": "PLAN_FILES 去掉 tasks.md；新增 is_takeoff_dispatch()（Workflow 带 args.changeDir / Agent·Task 派 slice-executor·integrator 才判定）；补 2 条 scenario 与测试",
+      "status": "fixed",
+      "fix_commit": "d350b11 · c29f529",
+      "source": "PR #29 review round 1",
+      "verified_by": "PR #29 follow-up review：两条复现路径均判定已闭环，主路径强制点未削弱（结论 ✅ 通过）"
+    }
+  ],
+  "reviews": [
+    {
+      "round": 1,
+      "mode": "full",
+      "verdict": "阻断（1 HIGH）",
+      "scope": "PR #29 全量 diff"
+    },
+    {
+      "round": 2,
+      "mode": "follow-up",
+      "verdict": "通过",
+      "scope": "03b4161..d350b11"
+    }
+  ]
 }
