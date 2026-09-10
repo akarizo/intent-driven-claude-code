@@ -18,7 +18,7 @@ Rule: 人类消息 + 新鲜度，两者缺一即不起飞
 - **AND** stderr 说明需要人类显式批准，并给出 `spec.html` 路径与补救方式
 
 #### Scenario: approval-gate-requires-fresh-approval
-- **GIVEN** 批准消息的时间**早于**计划工件（`proposal.md` · `design.md` · `tasks.md` · `slices.json` · `specs/**/spec.md`）的最大 mtime——即计划在批准之后又被改过
+- **GIVEN** 批准消息的时间**早于**计划工件（`proposal.md` · `design.md` · `slices.json` · `specs/**/spec.md`；`tasks.md` 的勾选是执行记账，不算计划改动）的最大 mtime——即计划在批准之后又被改过
 - **WHEN** 运行判定
 - **THEN** 退出码非 0，stderr 点名"计划在批准之后改过，需重新批准"
 
@@ -37,6 +37,18 @@ Rule: 命中飞行派发才判定，其余一律放行
 - **GIVEN** 一次与飞行无关的派发（`tool_input` 里不含 `openspec/changes/<name>`，如普通 Explore 子 agent）
 - **WHEN** 把该 JSON 喂给 hook
 - **THEN** 静默放行；脚本自身异常（转录不可读等）同样放行——hook 不锁死派发能力
+
+#### Scenario: hook-allows-review-dispatch
+- **GIVEN** 一次 `/pr-ship` 的 `code-reviewer` 派发，prompt 里提到了该 change 的 `gate-report.md` 路径，而转录里没有任何批准
+- **WHEN** 把该 JSON 喂给 hook
+- **THEN** 静默放行——只有起飞类派发（`Workflow` 带 `args.changeDir` / `Agent` 派 `slice-executor`·`integrator`）才判定
+- **AND** 否则本门禁会掐断铁律 4 要求的独立评审
+
+#### Scenario: tasks-tick-keeps-approval
+- **GIVEN** 批准成立后，收口把 `tasks.md` 里门禁绿的切片勾成 `- [x]`（mtime 变新）
+- **WHEN** 随后再有起飞类派发
+- **THEN** 仍然放行——勾选是执行记账不是计划变更
+- **AND** 改动真正的计划工件（如 `slices.json`）后同一派发被 deny，新鲜度规则本身不放松
 
 ### Requirement: 规划收尾硬交接，起飞前先自检
 `/opsx-propose` SHALL 在收尾把 `spec.html` 交给人并声明本轮结束；`/opsx-apply` SHALL 在 step 0 自跑批准自检并在未批准时停下报告。

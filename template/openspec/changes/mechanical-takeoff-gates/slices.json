@@ -76,7 +76,9 @@
         "takeoff-approval#approval-gate-requires-fresh-approval",
         "takeoff-approval#takeoff-hook-denies-unapproved-dispatch",
         "takeoff-approval#takeoff-hook-ignores-unrelated-dispatch",
-        "takeoff-approval#propose-ends-with-handoff"
+        "takeoff-approval#propose-ends-with-handoff",
+        "takeoff-approval#hook-allows-review-dispatch",
+        "takeoff-approval#tasks-tick-keeps-approval"
       ],
       "owns": [
         "template/.claude/hooks/takeoff-gate.py",
@@ -108,6 +110,8 @@
     "takeoff-approval#approval-gate-requires-fresh-approval": "tests/test_approval_gate.py::test_approval_gate_requires_fresh_approval",
     "takeoff-approval#takeoff-hook-denies-unapproved-dispatch": "tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch",
     "takeoff-approval#takeoff-hook-ignores-unrelated-dispatch": "tests/test_approval_gate.py::test_takeoff_hook_ignores_unrelated_dispatch",
-    "takeoff-approval#propose-ends-with-handoff": "tests/test_approval_gate.py::test_propose_ends_with_handoff"
+    "takeoff-approval#propose-ends-with-handoff": "tests/test_approval_gate.py::test_propose_ends_with_handoff",
+    "takeoff-approval#hook-allows-review-dispatch": "tests/test_approval_gate.py::test_takeoff_hook_allows_reviewer_dispatch",
+    "takeoff-approval#tasks-tick-keeps-approval": "tests/test_approval_gate.py::test_tasks_tick_does_not_expire_approval"
   }
 }

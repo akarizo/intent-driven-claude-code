@@ -25,7 +25,7 @@ flowchart TB
 flowchart TB
   H["人类消息<br/>/opsx-apply 或 批准词"] --> T["会话转录 jsonl"]
   T --> G["takeoff-gate.py<br/>（PreToolUse · Workflow/Agent）"]
-  PL["计划工件 mtime<br/>proposal/design/specs/tasks/slices"] --> G
+  PL["计划工件 mtime<br/>proposal/design/specs/slices（不含 tasks）"] --> G
   G -->|无证据 / 证据过期| DENY["deny：把 spec.html 交给人<br/>不派发"]
   G -->|证据成立| M["session-model.py<br/>读最后一条主循环 assistant"]
   M -->|exit 3| STOP["停下报告：需 --model=&lt;alias&gt;"]
@@ -82,14 +82,20 @@ hooks 文件名含连字符不能直接 `import`；`session-decompose.py` 以 `i
 
 ### D8 新鲜度锚点：计划工件的 mtime
 
-批准必须**晚于计划工件最后一次改动**（`proposal.md` · `design.md` · `tasks.md` · `slices.json` · `specs/**/spec.md` 的最大 mtime），否则"改完计划再拿旧批准起飞"就能绕过。
+批准必须**晚于计划工件最后一次改动**（`proposal.md` · `design.md` · `slices.json` · `specs/**/spec.md` 的最大 mtime），否则"改完计划再拿旧批准起飞"就能绕过。
+
+⚠ **`tasks.md` 不算计划工件**（PR #29 评审实测）：收口要把门禁绿的切片勾成 `- [x]`，若把它算进锚点，勾一下就让批准过期——同一次飞行的收口与 `/pr-ship` 会被自家门禁拦住。勾选是执行记账，不是计划变更。
 
 - 不用 git commit 时间：真实流程里工件常在人说完 `/opsx-apply` 之后才被 artifacts-only commit，用 commit 时间会**误判**（批准早于 commit）。
 - 已知局限：`git checkout` / 重建 worktree 会刷新 mtime → 需要人再批准一次。方向是 fail-closed，可接受；命令的 deny 文案里写清楚怎么办。
 
 ### D9 强制点：PreToolUse hook（模型绕不过）+ 命令内显式调用（给人看的理由）
 
-hook `takeoff-gate.py` 匹配 `Workflow|Agent|Task`，只在 `tool_input` 里出现 `openspec/changes/<name>`（Workflow 的 `args.changeDir` / Agent prompt 里的切片包路径）时才判定，其余一律放行——**匹配到才 fail-closed，匹配不到 fail-open**，不影响任何无关派发。deny 走 `permissionDecision: deny`，reason 里给 `spec.html` 绝对路径与"请人类显式 `/opsx-apply`"。
+hook `takeoff-gate.py` 只判定**起飞类派发**：`Workflow` 且 `args.changeDir` 存在，或 `Agent`/`Task` 且 `subagent_type` 是 `slice-executor` / `integrator`；再要求 `tool_input` 里能定位到 `openspec/changes/<name>`。其余一律放行——**命中才 fail-closed，命中不到 fail-open**。
+
+⚠ 判据必须窄到"起飞"（PR #29 评审实测）：早先按"tool_input 里出现 change 路径"判定，会把 `/pr-ship` 的 `code-reviewer` 派发（prompt 里带 `gate-report.md` 路径）也拦掉——等于本 change 亲手掐断铁律 4 的独立评审。强制点并不因此变松：一次飞行的第一个动作必是 Workflow 或 `slice-executor` 派发。
+
+**威胁模型**：本门禁防的是"模型自证式起飞"与流程漂移，**不防**拥有写文件能力的对抗性伪造（转录是普通文件，能跑 Bash 就能往里追加一行假的人类消息）。deny 走 `permissionDecision: deny`，reason 里给 `spec.html` 绝对路径与"请人类显式 `/opsx-apply`"。
 
 命令 step 0 另外显式跑一次同一脚本：hook 的 deny 文案是给模型看的，step 0 的输出是给人看的；两者判据同源，不会打架。
 
@@ -145,4 +151,4 @@ python3 .claude/hooks/takeoff-gate.py --change-dir DIR [--session PATH]     # �
 | 转录 JSONL 字段改名 | 两个脚本都 fail-closed 报错，不静默放行；测试用固定 fixture 锁字段 |
 | 批准词误判（人说"别起飞"含"起飞") | 令牌匹配限定在**整条消息 ≤ 40 字**或命令调用；否则只认 `/opsx-apply` 调用 |
 | `git checkout` 刷新 mtime → 误拦 | deny 文案给出补救：人再说一句批准即可 |
-| hook 影响无关 Agent 派发 | 只在 tool_input 命中 `openspec/changes/<name>` 时判定，其余放行 |
+| hook 影响无关 Agent 派发 | 只判定起飞类派发（Workflow 带 `args.changeDir` / Agent 派 `slice-executor`·`integrator`）且能定位到 change 目录；评审 · 探索 · 通用派发一律放行 |

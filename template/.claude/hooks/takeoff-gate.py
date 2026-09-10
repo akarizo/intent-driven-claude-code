@@ -8,7 +8,7 @@
 #     exit 3  无批准 / 批准早于计划最后改动；stderr 给 spec.html 绝对路径与补救方式
 #
 # hook 模式（无 --change-dir，从 stdin 收 PreToolUse JSON）：
-#   1. tool_name 非 Workflow/Agent/Task            → 静默放行
+#   1. 非起飞类派发（Workflow 带 args.changeDir / Agent·Task 派 slice-executor·integrator 之外）→ 静默放行
 #   2. tool_input 里找不到 openspec/changes/<name> → 静默放行（fail-open，不碰无关派发）
 #   3. 定位不到 / 读不了转录                        → 静默放行（坏门禁不锁死派发）
 #   4. 判定不成立                                   → permissionDecision=deny，reason 含 spec.html 与 /opsx-apply
@@ -19,7 +19,8 @@
 #              且不含 <local-command-stdout> / <task-notification> / [Request interrupted by user] /
 #              <bash-input> / <bash-stdout> / compact 续写注入等非人类形状。
 #   批准     = 含 <command-name>/opsx-apply（或 /opsx-bulk-apply）；或整条 ≤ 40 字且含批准词。
-#   新鲜度   = 该消息时间 ≥ 计划工件最大 mtime（proposal/design/tasks/slices.json/specs/**/spec.md）。
+#   新鲜度   = 该消息时间 ≥ 计划工件最大 mtime（proposal/design/slices.json/specs/**/spec.md）。
+#              tasks.md 不算计划工件：收口勾选 `- [x]` 是执行记账，勾一下就让批准过期会把自家收口拦死。
 #   多条候选取最新一条。
 # 只读，不改任何文件。兼容 Python 3.8+，只用标准库。
 import argparse
@@ -32,7 +33,9 @@ from datetime import datetime, timezone
 
 EXIT_NO_APPROVAL = 3
 DISPATCH_TOOLS = ("Workflow", "Agent", "Task")
-PLAN_FILES = ("proposal.md", "design.md", "tasks.md", "slices.json")
+# 起飞类 subagent：评审 / 探索类派发即使 prompt 提到 change 目录也不判定，否则铁律 4 的独立评审会被自家门禁拦死
+TAKEOFF_AGENTS = ("slice-executor", "integrator")
+PLAN_FILES = ("proposal.md", "design.md", "slices.json")
 SUMMARY_LIMIT = 40
 WORD_LIMIT = 40
 
@@ -247,10 +250,28 @@ def locate_hook(payload):
     return locate_by_sid((payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip())
 
 
+def is_takeoff_dispatch(payload):
+    """只有起飞类派发才判定：Workflow 带 args.changeDir，或 Agent/Task 派 slice-executor / integrator。
+    强制点仍然完整——一次飞行的第一个动作必是这两者之一；评审 / 探索 / 通用派发一律放行。"""
+    tool = payload.get("tool_name")
+    if tool not in DISPATCH_TOOLS:
+        return False
+    inp = payload.get("tool_input") or {}
+    if tool == "Workflow":
+        args = inp.get("args")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except ValueError:
+                args = {}
+        return bool(isinstance(args, dict) and args.get("changeDir"))
+    return (inp.get("subagent_type") or "") in TAKEOFF_AGENTS
+
+
 def run_hook(raw):
     payload = json.loads(raw)
-    if payload.get("tool_name") not in DISPATCH_TOOLS:
-        return 0
+    if not is_takeoff_dispatch(payload):
+        return 0  # 非起飞类派发：fail-open
     change_dir = find_change_dir(payload)
     if not change_dir:
         return 0  # 与飞行无关的派发：fail-open

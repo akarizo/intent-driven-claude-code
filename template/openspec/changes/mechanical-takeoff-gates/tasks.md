@@ -16,4 +16,4 @@
 
 ## S4 起飞批准门禁 · deps: S1 · verify: `python3 -m pytest -q tests/test_approval_gate.py`
 
-- [x] S4 `template/.claude/hooks/takeoff-gate.py`（CLI 模式判定人类批准证据 + 新鲜度；stdin 模式作 PreToolUse hook，命中 `openspec/changes/<name>` 的 Workflow / Agent 派发才判定，未批准 deny，异常放行）+ `hooks.json` 注册 + `/opsx-propose` 与 `openspec-propose` 硬交接收尾；scenarios：approval-gate-accepts-human-command · approval-gate-rejects-self-start · approval-gate-requires-fresh-approval · takeoff-hook-denies-unapproved-dispatch · takeoff-hook-ignores-unrelated-dispatch · propose-ends-with-handoff
+- [x] S4 `template/.claude/hooks/takeoff-gate.py`（CLI 模式判定人类批准证据 + 新鲜度；stdin 模式作 PreToolUse hook，命中 `openspec/changes/<name>` 的 Workflow / Agent 派发才判定，未批准 deny，异常放行）+ `hooks.json` 注册 + `/opsx-propose` 与 `openspec-propose` 硬交接收尾；scenarios：approval-gate-accepts-human-command · approval-gate-rejects-self-start · approval-gate-requires-fresh-approval · takeoff-hook-denies-unapproved-dispatch · takeoff-hook-ignores-unrelated-dispatch · hook-allows-review-dispatch · tasks-tick-keeps-approval · propose-ends-with-handoff

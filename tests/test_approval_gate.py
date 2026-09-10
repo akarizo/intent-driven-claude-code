@@ -178,3 +178,37 @@ def test_propose_ends_with_handoff():
         assert "本命令到此结束" in t or "本 skill 到此结束" in t
         assert "/opsx-apply" in t and "takeoff-gate" in t
         assert "即视为批准" not in t
+
+
+def test_takeoff_hook_allows_reviewer_dispatch(tmp_path):
+    # Given: 转录里没有任何批准，一次 /pr-ship 的 code-reviewer 派发在 prompt 里提到了该 change 目录
+    d = change_dir(tmp_path)
+    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
+    reviewer = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+                "tool_input": {"subagent_type": "code-reviewer",
+                               "prompt": "参考 openspec/changes/demo/gate-report.md 审这次 PR 的 diff"}}
+
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=json.dumps(reviewer))
+
+    # Then: 评审派发不是起飞派发，一律放行——否则铁律 4 的独立评审在装了 hook 的下游会被自家门禁拦死
+    assert p.returncode == 0 and p.stdout.strip() == "", p.stdout
+
+
+def test_tasks_tick_does_not_expire_approval(tmp_path):
+    # Given: 批准成立后，收口把 tasks.md 的 `- [ ]` 勾成 `- [x]`（mtime 变成现在），随后仍有起飞类派发
+    d = change_dir(tmp_path)
+    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    os.utime(d / "tasks.md", None)
+    dispatch = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(okay),
+                "tool_input": {"subagent_type": "slice-executor",
+                               "prompt": "切片包：`openspec/changes/demo/slices/S1.md`"}}
+
+    # When: 先在勾选后派发一次，再把真正的计划工件 slices.json 改新后派发一次
+    after_tick = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
+    os.utime(d / "slices.json", None)
+    after_replan = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
+
+    # Then: 勾选是执行记账不算改计划（放行）；真改了计划才算批准过期（deny）——新鲜度规则本身不能松
+    assert after_tick.returncode == 0 and after_tick.stdout.strip() == "", after_tick.stdout
+    assert json.loads(after_replan.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
