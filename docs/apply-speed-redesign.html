@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>意图审批 · /opsx-apply 一小时架构（第 3 版）</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --font-display: ui-serif, "Iowan Old Style", "Songti SC", Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sp-1: .3rem; --sp-2: .6rem; --sp-3: 1rem; --sp-4: 1.5rem; --sp-5: 2.25rem; --sp-6: 3.25rem;
+  --r-sm: 5px; --r-md: 10px; --r-lg: 18px;
+  --tap: cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root, [data-theme="light"] {
+  --bg: #f7f5ef; --surface: #ffffff; --surface-2: #efece3; --surface-3: #e6e2d5;
+  --fg: #15161a; --fg-muted: #5b5e68; --border: #d9d4c3; --border-strong: #1a1b20;
+  --accent: #1d4ed8; --accent-soft: #dbeafe;
+  --ok: #15803d; --ok-soft: #dcfce7; --warn: #b45309; --warn-soft: #fef3c7;
+  --bad: #b91c1c; --bad-soft: #fee2e2;
+  --shadow: 0 6px 24px -8px rgba(20,21,26,.16);
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0f13; --surface: #16181d; --surface-2: #1d2027; --surface-3: #23262e;
+    --fg: #f3f1e8; --fg-muted: #9a9ea9; --border: #2b2f37; --border-strong: #f3f1e8;
+    --accent: #60a5fa; --accent-soft: rgba(96,165,250,.18);
+    --ok: #4ade80; --ok-soft: rgba(74,222,128,.16); --warn: #fbbf24; --warn-soft: rgba(251,191,36,.16);
+    --bad: #f87171; --bad-soft: rgba(248,113,113,.18);
+    --shadow: 0 8px 30px -10px rgba(0,0,0,.6); --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+[data-theme="dark"] {
+  --bg: #0e0f13; --surface: #16181d; --surface-2: #1d2027; --surface-3: #23262e;
+  --fg: #f3f1e8; --fg-muted: #9a9ea9; --border: #2b2f37; --border-strong: #f3f1e8;
+  --accent: #60a5fa; --accent-soft: rgba(96,165,250,.18);
+  --ok: #4ade80; --ok-soft: rgba(74,222,128,.16); --warn: #fbbf24; --warn-soft: rgba(251,191,36,.16);
+  --bad: #f87171; --bad-soft: rgba(248,113,113,.18);
+  --shadow: 0 8px 30px -10px rgba(0,0,0,.6); --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); line-height: 1.6; font-size: 16px; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: var(--sp-5) var(--sp-4) var(--sp-6); }
+header.hero { margin-bottom: var(--sp-5); }
+.kicker { display: inline-flex; align-items: center; gap: .5em; font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 100px; padding: .3em .9em; margin-bottom: var(--sp-3); }
+.kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+h1 { font-family: var(--font-display); font-size: clamp(1.9rem, 1.2rem + 3vw, 3rem); line-height: 1.1; margin: 0 0 var(--sp-3); letter-spacing: -.01em; }
+.lede { font-size: 1.12rem; color: var(--fg-muted); max-width: 70ch; margin: 0 0 var(--sp-3); }
+section { margin-top: var(--sp-5); }
+h2 { font-family: var(--font-display); font-size: 1.5rem; margin: 0 0 var(--sp-3); display: flex; align-items: baseline; gap: .55em; letter-spacing: -.01em; }
+h2 .n { font-family: var(--font-mono); font-size: .85rem; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: .05em .5em; }
+h3 { font-size: 1.05rem; margin: var(--sp-4) 0 var(--sp-2); }
+p { margin: 0 0 var(--sp-2); }
+code { font-family: var(--font-mono); font-size: .86em; background: var(--surface-2); padding: .12em .4em; border-radius: var(--r-sm); border: 1px solid var(--border); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+.card + .card { margin-top: var(--sp-3); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+@media (max-width: 820px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+.split { border-left: 3px solid var(--border); padding-left: var(--sp-3); }
+.split.bad { border-color: var(--bad); } .split.ok { border-color: var(--ok); } .split.warn { border-color: var(--warn); } .split.acc { border-color: var(--accent); }
+.split .tag { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: .3em; }
+.split.bad .tag { color: var(--bad); } .split.ok .tag { color: var(--ok); } .split.warn .tag { color: var(--warn); } .split.acc .tag { color: var(--accent); }
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+.diagram .caption { font-size: .82rem; color: var(--fg-muted); margin-top: var(--sp-2); font-family: var(--font-mono); }
+.diagram .mermaid { min-height: 60px; }
+.diagram-fallback { display: none; font-family: var(--font-mono); font-size: .8rem; line-height: 1.45; margin: 0; white-space: pre; }
+body.offline .mermaid { display: none; } body.offline .diagram-fallback { display: block; }
+pre.ascii, pre.code { font-family: var(--font-mono); font-size: .78rem; line-height: 1.5; margin: 0; white-space: pre; color: var(--fg); overflow-x: auto; }
+pre.code { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-3); }
+pre .m { color: var(--fg-muted); } pre .a { color: var(--accent); font-weight: 600; } pre .g { color: var(--ok); font-weight: 600; } pre .r { color: var(--bad); font-weight: 600; } pre .w { color: var(--warn); font-weight: 600; }
+.tbl { width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+th, td { text-align: left; padding: .55em .75em; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-muted); font-weight: 700; }
+tbody tr:hover { background: var(--surface-2); }
+td.num, th.num { text-align: right; font-family: var(--font-mono); font-size: .82rem; white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: .7rem; font-weight: 700; padding: .12em .55em; border-radius: 100px; letter-spacing: .03em; white-space: nowrap; }
+.pill.new { background: var(--ok-soft); color: var(--ok); } .pill.mod { background: var(--warn-soft); color: var(--warn); } .pill.del { background: var(--bad-soft); color: var(--bad); } .pill.core { background: var(--accent-soft); color: var(--accent); }
+.pill.meas { background: var(--ok-soft); color: var(--ok); } .pill.est { background: var(--warn-soft); color: var(--warn); }
+ul.clean { margin: var(--sp-2) 0; padding-left: 1.2em; } ul.clean li { margin-bottom: .4em; }
+.callout { border-radius: var(--r-md); padding: var(--sp-3); border: 1px solid; margin-top: var(--sp-3); font-size: .92rem; }
+.callout.warn { background: var(--warn-soft); border-color: var(--warn); } .callout.info { background: var(--accent-soft); border-color: var(--accent); }
+.callout.bad { background: var(--bad-soft); border-color: var(--bad); } .callout.ok { background: var(--ok-soft); border-color: var(--ok); }
+.callout .h { font-weight: 700; display: block; margin-bottom: .3em; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-3); }
+@media (max-width: 820px) { .stats { grid-template-columns: 1fr 1fr; } }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-3); }
+.stat .v { font-family: var(--font-display); font-size: 1.8rem; line-height: 1; letter-spacing: -.02em; }
+.stat .v small { font-size: .85rem; color: var(--fg-muted); font-family: var(--font-body); }
+.stat .k { font-size: .78rem; color: var(--fg-muted); margin-top: .4em; }
+.stat.bad .v { color: var(--bad); } .stat.ok .v { color: var(--ok); } .stat.acc .v { color: var(--accent); }
+/* budget ladder */
+.ladder { display: grid; gap: .45em; }
+.rung { display: grid; grid-template-columns: 170px 1fr 80px; gap: var(--sp-2); align-items: center; font-size: .84rem; }
+.rung .track { height: 14px; background: var(--surface-2); border-radius: 100px; overflow: hidden; border: 1px solid var(--border); position: relative; }
+.rung .fill { height: 100%; border-radius: 100px; background: var(--accent); }
+.rung .fill.par { background: repeating-linear-gradient(45deg, var(--accent) 0 6px, var(--accent-soft) 6px 12px); }
+.rung .fill.ok { background: var(--ok); } .rung .fill.warn { background: var(--warn); }
+.rung .val { font-family: var(--font-mono); font-size: .78rem; color: var(--fg-muted); text-align: right; }
+@media (max-width: 640px) { .rung { grid-template-columns: 1fr; } .rung .val { text-align: left; } }
+/* mock */
+.mock { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-lg); padding: var(--sp-3); box-shadow: var(--shadow); font-size: .88rem; }
+.mock .mhead { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: .5em; margin-bottom: .7em; flex-wrap: wrap; gap: .5em; }
+.mock .mhead b { font-family: var(--font-display); font-size: 1.05rem; }
+.lanes { display: grid; grid-template-columns: 90px 1fr; gap: .4em .8em; align-items: center; }
+.lane-l { font-family: var(--font-mono); font-size: .74rem; color: var(--fg-muted); }
+.lane { display: flex; gap: .5em; flex-wrap: wrap; }
+.slice { border: 1px solid var(--border); border-radius: var(--r-sm); padding: .25em .6em; background: var(--surface-2); font-family: var(--font-mono); font-size: .76rem; }
+.slice.done { border-color: var(--ok); background: var(--ok-soft); } .slice.run { border-color: var(--accent); background: var(--accent-soft); } .slice.rev { border-color: var(--warn); background: var(--warn-soft); }
+.gate { border-radius: var(--r-sm); padding: .25em .6em; font-family: var(--font-mono); font-size: .72rem; border: 1px dashed var(--border-strong); }
+.mbtn { display: inline-block; border-radius: var(--r-md); padding: .45em .9em; font-weight: 600; font-size: .85rem; border: 1px solid var(--border-strong); background: var(--fg); color: var(--bg); }
+.mbtn.ghost { background: transparent; color: var(--fg); }
+/* decisions */
+.dq { padding: var(--sp-3) 0; border-bottom: 1px dashed var(--border); } .dq:last-child { border-bottom: none; }
+.dq .q { font-weight: 700; margin-bottom: .4em; } .dq .q .id { font-family: var(--font-mono); color: var(--accent); margin-right: .5em; }
+.dq label { display: block; padding: .35em .6em; border-radius: var(--r-sm); cursor: pointer; } .dq label:hover { background: var(--surface-2); }
+.dq input { margin-right: .5em; }
+.dq .rec { font-family: var(--font-mono); font-size: .68rem; color: var(--ok); border: 1px solid var(--ok); border-radius: 100px; padding: .05em .5em; margin-left: .4em; }
+.dq .why { font-size: .82rem; color: var(--fg-muted); margin: .2em 0 0 1.9em; }
+textarea { width: 100%; min-height: 90px; font-family: var(--font-body); font-size: .92rem; padding: .7em; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); color: var(--fg); }
+.exportbar { position: sticky; bottom: 0; margin-top: var(--sp-6); display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.exportbar .lbl { font-size: .85rem; color: var(--fg-muted); margin-right: auto; }
+button.btn { font-family: var(--font-body); font-size: .9rem; font-weight: 600; cursor: pointer; border-radius: var(--r-md); padding: .6em 1.1em; border: 1px solid var(--border-strong); background: var(--fg); color: var(--bg); transition: transform var(--tap), opacity .15s; }
+button.btn.ghost { background: transparent; color: var(--fg); } button.btn:hover { transform: translateY(-1px); } button.btn:active { transform: translateY(0); }
+.footnote { font-size: .8rem; color: var(--fg-muted); margin-top: var(--sp-3); }
+.toast { position: fixed; right: 1rem; bottom: 6rem; background: var(--fg); color: var(--bg); padding: .6em 1em; border-radius: var(--r-md); font-size: .85rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>意图审批 · 规划阶段 · 2026-09-10 · 第 3 版（目标 apply ≈ 1 小时）</div>
+  <h1>/opsx-apply 一小时架构：把 apply 变成一次「飞行」</h1>
+  <p class="lede">第 2 版实测证明：慢在逐 task 的 review→fix 循环（子 agent 时间 64–80%）、冷启动轮次、主会话上下文膨胀，与等人无关。本版不再修补现有流程，而是从「1 小时」这个预算反推每个环节的硬上限，重建 apply：<b>规格可执行 · 切片有所有权 · 调度用确定性脚本 · 执行体带预算 · 评审离开关键路径</b>。模板的能力原则一条不丢，多条反而变硬。</p>
+  <div class="stats">
+    <div class="stat bad"><div class="v">8–22h <small>今日工作时间</small></div><div class="k">每 task 22–106 min × 9–22 个 task，串行；等子 agent 占 63–82%（实测，5 会话）</div></div>
+    <div class="stat acc"><div class="v">≈ 47 min <small>新架构关键路径</small></div><div class="k">5 切片 · DAG 深度 3 · 评审并行；按实测分量与预算上限推算，见 §2</div></div>
+    <div class="stat ok"><div class="v">0 <small>中途问询</small></div><div class="k">Workflow 运行期无人工输入是设计事实，不是纪律；失败走结构化分支</div></div>
+    <div class="stat ok"><div class="v">≤ 100k <small>任一执行体上下文</small></div><div class="k">切片包 ≤ 25k 起步、maxTurns 40 封顶；主会话 ≤ 60k 只收 JSON</div></div>
+  </div>
+</header>
+
+<!-- ============ 0 原则 ============ -->
+<section id="s0">
+  <h2><span class="n">0</span>不丢的能力原则（先立边界）</h2>
+  <div class="card">
+    <div class="tbl"><table>
+      <thead><tr><th>模板原则</th><th>第 3 版如何保留</th><th>是否变硬</th></tr></thead>
+      <tbody>
+        <tr><td><b>先意图后代码</b>：proposal → specs → design → adr → tasks</td><td>全部保留；specs 从「可读」升级为「可执行」（每个 Gherkin scenario 对应一个待通过的测试骨架），tasks 升级为「切片 + 所有权 + DAG」</td><td><span class="pill new">变硬</span></td></tr>
+        <tr><td><b>TDD</b>：没有先失败的测试就没有生产代码</td><td>scenario 测试骨架在批准时就存在且失败，RED 由构造保证；执行体仍先写单测再实现；证据由 hook 留痕</td><td><span class="pill new">变硬</span></td></tr>
+        <tr><td><b>独立评审</b>：不带主会话立场的 reviewer</td><td>保留 code-reviewer，改为每切片并行评审（离关键路径）+ 一次批量修复 + 收口整合检查；不再逐 task 阻断循环</td><td><span class="pill core">等价</span></td></tr>
+        <tr><td><b>门禁</b>：无工件不写源码</td><td>保留 intent-gate；新增切片所有权检查（执行体只能写自己声明的文件）与 worktree 定根修复</td><td><span class="pill new">变硬</span></td></tr>
+        <tr><td><b>Git 纪律</b>：每 change 一间 worktree，不自动 merge / push main</td><td>保留；wave 内并行切片各用临时 worktree，由 integrator 合回 change 分支（本地、可 reset）；PR 仍是 feature 分支</td><td><span class="pill core">等价</span></td></tr>
+        <tr><td><b>ADR 不可改</b>、spec.html 审批、PR 闭环、verify / archive、CLAUDE.md 记忆层</td><td>不动；verify 的三维检查机械化并入门禁与收口检查；spec.html 改脚本渲染并增加飞行计划</td><td><span class="pill core">等价</span></td></tr>
+        <tr><td><b>人类审批</b></td><td>两处：批准飞行计划（= 运行 <code>/opsx-apply</code>）与 PR review；merge 永远是人</td><td><span class="pill core">等价</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ 1 物理学 ============ -->
+<section id="s1">
+  <h2><span class="n">1</span>一小时的物理学：从预算反推上限</h2>
+  <div class="grid-2">
+    <div class="card split acc">
+      <span class="tag">不可约分量（实测下限）</span>
+      <ul class="clean">
+        <li><b>每轮模型延迟</b>：上下文 &lt;100k 时约 5–7s，100–200k 时 7–11s，&gt;400k 时 23–41s。→ 上下文是延迟的一阶变量。</li>
+        <li><b>一个小切片的实现</b>：low-code-opt 会话里无回灌时均 6.3 min / 42 轮；大切片 12–28 min / 60–84 轮。→ 轮次是第二变量。</li>
+        <li><b>测试</b>：多数仓库单次秒级；个别仓库全量 &gt;5 min。→ 全量只跑一次，切片只跑子集。</li>
+        <li><b>一次独立评审</b>：不重跑测试时 5–8 min（实测 review 里模型时间 4–8 min，其余是自己跑测试和轮询）。</li>
+      </ul>
+    </div>
+    <div class="card split bad">
+      <span class="tag">今日的乘数（实测）</span>
+      <ul class="clean">
+        <li>r = 1.3–3.1：每 task 的 review→fix 轮数（fix 子 agent 数 ≥ impl 数）。</li>
+        <li>冷启动 + 一命令一轮：实现类 42–84 轮，工具执行不到 1 min。</li>
+        <li>回报 4.5k 字符 × 30–100 次灌回主会话 → 619–847k 上下文。</li>
+        <li>完全串行：子 agent 区间并集 = 累加。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:var(--sp-3)">
+    <h3 style="margin-top:0">预算阶梯（中等变更 = 5 切片 · DAG 深度 3 · ~500 行）</h3>
+    <div class="ladder">
+      <div class="rung"><span>启动（读 slices.json、起 workflow）</span><div class="track"><div class="fill" style="width:2%"></div></div><span class="val">≤ 1 min</span></div>
+      <div class="rung"><span>wave 1：S1 ∥ S2</span><div class="track"><div class="fill par" style="width:17%"></div></div><span class="val">≤ 8 min</span></div>
+      <div class="rung"><span>集成 wave 1（合回 + 抽接口）</span><div class="track"><div class="fill ok" style="width:2%"></div></div><span class="val">≤ 1 min</span></div>
+      <div class="rung"><span>wave 2：S3（评审 S1/S2 并行进行）</span><div class="track"><div class="fill" style="width:17%"></div></div><span class="val">≤ 8 min</span></div>
+      <div class="rung"><span>wave 3：S4 ∥ S5（评审 S3 并行）</span><div class="track"><div class="fill par" style="width:17%"></div></div><span class="val">≤ 8 min</span></div>
+      <div class="rung"><span>评审 S4/S5 收尾（唯一在路径上的评审）</span><div class="track"><div class="fill warn" style="width:13%"></div></div><span class="val">≤ 6 min</span></div>
+      <div class="rung"><span>批量修复 CRITICAL/HIGH（一轮）</span><div class="track"><div class="fill warn" style="width:17%"></div></div><span class="val">≤ 8 min</span></div>
+      <div class="rung"><span>全量门禁 + 整合检查</span><div class="track"><div class="fill ok" style="width:9%"></div></div><span class="val">≤ 4 min</span></div>
+      <div class="rung"><span>PR 打开（主会话 pr-ship）</span><div class="track"><div class="fill" style="width:6%"></div></div><span class="val">≤ 3 min</span></div>
+      <div class="rung"><span><b>关键路径合计</b></span><div class="track"><div class="fill ok" style="width:100%"></div></div><span class="val"><b>≈ 47 min</b></span></div>
+    </div>
+    <p class="footnote">条纹 = wave 内并行。每一级都有硬上限与执行者：切片 ≤ 40 轮由 agent 定义的 <code>maxTurns</code> 封顶；切片包 ≤ 25k 由规划器生成时校验；wave 数 ≤ 3 由 tasks lint 校验；评审不在路径上由脚本结构保证；修复只一轮由脚本保证。超预算的切片不是「再修一轮」，而是「标记 blocked，继续其它切片，收口报告」。</p>
+  </div>
+
+  <div class="diagram" style="margin-top:var(--sp-3)">
+    <div class="mermaid">
+gantt
+    title 一次 apply 的飞行（分钟，示意）
+    dateFormat HH:mm
+    axisFormat %H:%M
+    section 执行体
+    启动 workflow           :a0, 00:00, 00:01
+    S1 数据模型             :a1, 00:01, 00:09
+    S2 CSV 序列化           :a2, 00:01, 00:08
+    集成 w1                 :a3, 00:09, 00:10
+    S3 POST 接口            :a4, 00:10, 00:18
+    S4 GET 接口             :a5, 00:18, 00:25
+    S5 CLI                  :a6, 00:18, 00:26
+    集成 w3                 :a7, 00:26, 00:27
+    section 评审（离路径）
+    review S1 S2            :r1, 00:09, 00:15
+    review S3               :r2, 00:18, 00:24
+    review S4 S5            :r3, 00:27, 00:33
+    section 收口
+    批量修复                :f1, 00:33, 00:41
+    全量门禁 + 整合检查      :f2, 00:41, 00:45
+    pr-ship                 :f3, 00:45, 00:48
+    </div>
+    <pre class="diagram-fallback">
+00:00 启动 workflow
+00:01 ┃ S1 ━━━━━━━━┫ S2 ━━━━━━━┫          ← wave 1 并行（各自临时 worktree）
+00:09 ┃ 集成 w1 ┫  review S1/S2 ━━━━━┫     ← 评审并行，不阻塞
+00:10 ┃ S3 ━━━━━━━━┫
+00:18 ┃ S4 ━━━━━━━┫ S5 ━━━━━━━━┫  review S3 ━━━━━┫
+00:26 ┃ 集成 w3 ┫  review S4/S5 ━━━━━━┫      ← 唯一在路径上的评审
+00:33 ┃ 批量修复 ━━━━━━━━┫
+00:41 ┃ 全量门禁 + 整合检查 ━━━━┫
+00:45 ┃ pr-ship ━━━┫  → 00:48 PR 打开
+    </pre>
+    <div class="caption">图 1 · 甘特示意。评审只在最后一个 wave 之后进入关键路径；修复一次批量做。</div>
+  </div>
+</section>
+
+<!-- ============ 2 架构 ============ -->
+<section id="s2">
+  <h2><span class="n">2</span>六个结构性改变</h2>
+
+  <div class="card">
+    <h3 style="margin-top:0">① 规格可执行：scenario → 测试骨架，批准即批准验收测试</h3>
+    <div class="grid-2">
+      <div>
+        <p>tasks 阶段（design 之后）为每个 Gherkin scenario 生成一个测试骨架：GWT 三段注释来自 scenario 原文，断言按 THEN 写出，整体标记为待通过（<code>xfail(strict)</code> / <code>test.todo</code>）。spec.html 把「scenario ↔ 测试文件:函数」映射表摆给人看；批准飞行计划 = 批准验收测试。</p>
+        <p><b>apply 的完成判据从此是机械的</b>：全部 scenario 测试由 xfail 变 pass、无遗留 todo。</p>
+      </div>
+      <div class="split ok">
+        <span class="tag">删掉了什么</span>
+        <ul class="clean">
+          <li>reviewer 的「spec compliance」核对（1:1 映射由构造保证）</li>
+          <li>verify 的 scenario 覆盖抽查</li>
+          <li>贴 RED 证据（骨架在实现前必失败）</li>
+          <li>执行体读全部 spec 的成本（只读自己的 scenario）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">② 切片有所有权：tasks.md 升级为 slices.json</h3>
+    <div class="grid-2">
+      <div>
+<pre class="code">{
+  "change": "add-user-export",
+  "gate": { "test": "pytest -q", "lint": "ruff check .", "full_suite_sec": 95 },
+  "slices": [
+    { "id": "S1", "title": "导出任务数据模型",
+      "scenarios": ["data-export#1", "data-export#2"],
+      "owns": ["app/models/export_job.py", "migrations/0042_*.py", "tests/test_export_model.py"],
+      "deps": [], "verify": "pytest -q tests/test_export_model.py" },
+    { "id": "S3", "title": "POST /v1/exports",
+      "scenarios": ["data-export#4"],
+      "owns": ["app/api/exports.py", "tests/test_api_exports.py"],
+      "deps": ["S1", "S2"], "verify": "pytest -q tests/test_api_exports.py" }
+  ]
+}</pre>
+      </div>
+      <div class="split ok">
+        <span class="tag">它带来的机械保证</span>
+        <ul class="clean">
+          <li><b>并行安全</b>：同 wave 内切片 <code>owns</code> 不相交（规划 lint 校验），临时 worktree 合回零冲突。</li>
+          <li><b>范围控制</b>：intent-gate 新增所有权检查，执行体写 <code>owns</code> 之外的文件直接 DENY，零 token 防「顺手改进」。</li>
+          <li><b>切片大小</b>：3–7 片、DAG 深度 ≤ 3、每片 ≤ 6 个文件；超了规划器必须再切。</li>
+          <li><b>向后兼容</b>：tasks.md 由 slices.json 生成（保留 <code>- [ ]</code> 供门禁与 openspec CLI）。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">③ 切片包（slice packet）：冷启动没关系，冷得小才行</h3>
+    <div class="grid-2">
+      <div>
+        <p>实测的 42–84 轮里，大量轮次是执行体自己重读 spec / design / 代码、再拼命令。改为规划器一次生成 <code>slices/S3.md</code>：本切片 scenario 原文、测试骨架路径、<code>owns</code> 清单、design 里标注给 S3 的段落、<code>verify</code> 命令、依赖切片的<b>公开接口摘要</b>（integrator 在每个 wave 合回后用 <code>cx symbols</code> 抽出写进 <code>slices/_interfaces.md</code>）。</p>
+        <p>执行体 prompt 只有一句：「按 slices/S3.md 实现 S3，收尾跑门禁并返回 JSON」。起步上下文 ≤ 25k，主会话不再手写 5k 字符 prompt。</p>
+      </div>
+      <div class="split ok">
+        <span class="tag">执行体纪律（写进 agent 定义，不靠主会话转述）</span>
+        <ul class="clean">
+          <li>一轮多动作：并行发出全部 Read；测试与实现能一起写就一起写；<code>verify</code> 与 lint 一条 Bash。</li>
+          <li>不加 <code>cd &amp;&amp;</code> 前缀（cwd 已是 worktree）；不为一行脚本先 <code>cat &gt;</code> 再执行。</li>
+          <li><code>maxTurns: 40</code>、<code>model: inherit</code>、<code>permissionMode: acceptEdits</code>；到顶即返回「partial」而非硬撑。</li>
+          <li>只回 JSON：<code>{slice, ok, commit, failed[], summary≤300字}</code>。不写报告。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">④ 调度用确定性脚本：<code>.claude/workflows/opsx-apply.js</code></h3>
+    <p>编排从「主会话逐个派发、逐个读回报」改为 Claude Code 原生 Workflow：脚本持有 DAG 与循环，agent 输出留在脚本变量里，主会话只收最终 JSON；运行在后台、<code>/workflows</code> 可视、可续跑。模板把它作为命名工作流随 <code>install.sh</code> 下发，<code>/opsx-apply</code> 命令读 slices.json 算出 wave 后以 <code>args</code> 调用。</p>
+<pre class="code">export const meta = {
+  name: 'opsx-apply',
+  description: '按 slices.json 逐 wave 并行实现，切片门禁，评审离关键路径，一次批量修复',
+  phases: [{ title: 'Implement' }, { title: 'Review' }, { title: 'Fix' }, { title: 'Finalize' }],
+}
+const { change, waves } = args                        <span class="m">// /opsx-apply 读 slices.json 推导 waves 后传入</span>
+const GATE = { type: 'object', required: ['slice', 'ok', 'commit', 'failed'],
+  properties: { slice: { type: 'string' }, ok: { type: 'boolean' }, commit: { type: 'string' },
+                failed: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } } }
+const FINDINGS = { type: 'object', required: ['findings'], properties: { findings: { type: 'array', items: {
+  type: 'object', required: ['severity', 'file', 'line', 'summary', 'fix'],
+  properties: { severity: { enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] }, file: { type: 'string' },
+                line: { type: 'integer' }, summary: { type: 'string' }, fix: { type: 'string' } } } } } }
+
+const reviews = [], results = []                      <span class="m">// 评审只发起不 await：离开关键路径</span>
+for (const [i, wave] of waves.entries()) {
+  phase('Implement')
+  const iso = wave.length &gt; 1 ? 'worktree' : undefined <span class="m">// 单切片 wave 直接在 change worktree 里做</span>
+  const done = await parallel(wave.map(s =&gt; () =&gt;
+    agent(`按 openspec/changes/${change}/slices/${s}.md 实现切片 ${s}；收尾运行 python3 .claude/hooks/slice-gate.py ${s} 并原样返回其 JSON。`,
+          { label: s, agentType: 'slice-executor', isolation: iso, schema: GATE })
+      .then(r =&gt; (r &amp;&amp; !r.ok)                          <span class="m">// 门禁红：同切片只重试一次，仍红即 blocked</span>
+        ? agent(`切片 ${s} 门禁未过：${JSON.stringify(r.failed)}。只修门禁项，重跑门禁并返回 JSON。`,
+                { label: `${s}:retry`, agentType: 'slice-executor', isolation: iso, schema: GATE })
+        : r)))
+  results.push(...done.filter(Boolean))
+  if (wave.length &gt; 1)
+    await agent(`把切片 ${wave.join(', ')} 的 commit 合回 change 分支（文件所有权不相交，应无冲突），用 cx symbols 刷新 slices/_interfaces.md。`,
+                { label: `integrate:w${i + 1}`, agentType: 'integrator', effort: 'low' })
+  for (const s of wave)
+    reviews.push(agent(`评审切片 ${s} 的 commit（git show），输入：slices/${s}.md + gate-report；不重跑测试。`,
+                       { label: `review:${s}`, agentType: 'code-reviewer', phase: 'Review', schema: FINDINGS }))
+}
+phase('Fix')
+const blocking = (await Promise.all(reviews)).filter(Boolean).flatMap(r =&gt; r.findings)
+  .filter(f =&gt; f.severity === 'CRITICAL' || f.severity === 'HIGH')
+if (blocking.length)
+  await agent(`一次性修复以下 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit，末尾跑全量门禁：${JSON.stringify(blocking)}`,
+              { label: 'fix', agentType: 'slice-executor', schema: GATE })
+phase('Finalize')
+const final = await agent(`跑全量门禁（全部测试 + lint + scenario↔test 映射全部 pass）并返回 JSON。`,
+                          { label: 'final-gate', agentType: 'integrator', effort: 'low', schema: GATE })
+return { slices: results, blocking, final }</pre>
+    <div class="grid-2" style="margin-top:var(--sp-3)">
+      <div class="split ok">
+        <span class="tag">为什么它对应「1 小时」</span>
+        <ul class="clean">
+          <li>wave 内 <code>parallel</code>，wave 间按 DAG；评审 <code>push</code> 不 <code>await</code>，到 Fix 才汇合。</li>
+          <li>失败是数据不是对话：门禁 JSON 决定重试 / blocked，评审 JSON 决定修什么；无人可问，也无需问。</li>
+          <li>主会话只收返回的 JSON（几百字），上下文回到几十 k。</li>
+          <li>脚本可读、可 diff、可续跑；每次 apply 的编排完全一致，度量才可比。</li>
+        </ul>
+      </div>
+      <div class="split warn">
+        <span class="tag">回退路径（Workflow 不可用时）</span>
+        <p>Pro 计划需在 <code>/config</code> 打开 Dynamic workflows；组织可禁用。<code>/opsx-apply</code> 检测到不可用时走同一套 slices.json / 切片包 / 门禁，只是 wave 由主会话用 <code>Agent</code> 工具并行派发、回报同样只收 JSON。语义一致，只是主会话多几轮。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">⑤ 评审离开关键路径 + 一次批量修复</h3>
+    <div class="grid-2">
+      <div>
+        <p>reviewer 仍是干净、只读、不带主会话立场的 <code>code-reviewer</code>，但：每切片一个，随 wave 完成即发起，与下一 wave 并行；输入是切片包 + 门禁报告 + evidence.log，<b>禁止重跑测试与轮询</b>；输出结构化 findings。所有 CRITICAL/HIGH 汇总后一个执行体一次修完（逐条 commit），再跑全量门禁。MEDIUM/LOW 贴 PR 评论。</p>
+      </div>
+      <div class="split ok">
+        <span class="tag">与今日对比（实测）</span>
+        <ul class="clean">
+          <li>今日：每 task review 6–33 min × (1.3–3.1 轮) 全在路径上。</li>
+          <li>新：路径上只有最后一个 wave 的评审 ≤ 6 min + 一轮修复 ≤ 8 min。</li>
+          <li>「全量一次」的独立性由收口整合检查补：scenario↔test 全 pass + 跨切片一致性由 final-gate 的 reviewer 抽查（可选，见 D3）。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">⑥ 度量内建：每次 apply 自带飞行记录</h3>
+    <p>Workflow 的 <code>journal.jsonl</code> + 子 agent 转录 + hook 写的 <code>timeline.md</code>，收口时由 <code>session-decompose.py</code>（本页 §1 用的三份脚本合一）打印：批准→PR 用时 · 每切片轮次与 wall · 评审是否在路径上 · 门禁红次数 · 主会话峰值上下文。spec.html 的飞行计划区读它渲染。目标不是写在文档里，是每次跑完打印出来和 47 分钟比。</p>
+  </div>
+</section>
+
+<!-- ============ 3 角色与文件 ============ -->
+<section id="s3">
+  <h2><span class="n">3</span>角色清单与全生命周期</h2>
+  <div class="card">
+    <div class="tbl"><table>
+      <thead><tr><th>角色 / 文件</th><th>模型 · 预算</th><th>职责</th></tr></thead>
+      <tbody>
+        <tr><td><code>.claude/agents/slice-executor.md</code> <span class="pill new">新增</span></td><td>inherit · maxTurns 40 · acceptEdits</td><td>按切片包实现（TDD、一轮多动作、只写 owns 内文件）、跑 slice-gate、返回 JSON</td></tr>
+        <tr><td><code>.claude/agents/code-reviewer.md</code> <span class="pill mod">修改</span></td><td>inherit · effort high</td><td>只读；输入切片包 + 门禁报告 + evidence；禁重跑测试；输出结构化 findings</td></tr>
+        <tr><td><code>.claude/agents/integrator.md</code> <span class="pill new">新增</span></td><td>sonnet · effort low</td><td>合回 wave 分支、抽公开接口、跑全量门禁、写 timeline</td></tr>
+        <tr><td><code>.claude/workflows/opsx-apply.js</code> <span class="pill new">新增</span></td><td>—</td><td>§2 ④ 的调度脚本；随模板下发，<code>args</code> 传 change 与 waves</td></tr>
+        <tr><td><code>.claude/hooks/slice-gate.py</code> <span class="pill new">新增</span></td><td>零 token</td><td>G1 verify · G2 子集测试/lint/typecheck · G3 源码-测试配对 · G4 GWT 正则 · G5 RED 先于 GREEN（软）· G6 所有权 · G7 scenario 骨架状态</td></tr>
+        <tr><td><code>.claude/hooks/test-evidence.py</code> · <code>timeline.py</code> · <code>session-decompose.py</code> <span class="pill new">新增</span></td><td>零 token</td><td>PostToolUse(Bash, <code>if: "Bash(pytest *)"</code>) 留痕；事件时间线；收口分解</td></tr>
+        <tr><td><code>.claude/hooks/spec_html.py</code> <span class="pill new">新增</span></td><td>零 token</td><td>确定性渲染 spec.html，新增「飞行计划」区（切片 / wave / 所有权 / scenario↔test 映射 / 实时状态）</td></tr>
+        <tr><td><code>.claude/hooks/intent-gate.py</code> <span class="pill mod">修改</span></td><td>零 token</td><td>worktree 定根修复；切片所有权 DENY（读 worktree 内 <code>.openspec-slice</code> 标记）</td></tr>
+        <tr><td><code>.claude/hooks/hooks.json</code> · <code>settings.json</code> <span class="pill mod">修改</span></td><td>—</td><td>注册新 hook；<code>Stop</code> hook 在门禁红时 block；<code>worktree.baseRef: "head"</code>；env 默认 sonnet 保留、禁 <code>_FORCE</code>；建议 allow 规则含测试/lint 命令（避免 workflow 被权限提示暂停）</td></tr>
+        <tr><td><code>schemas/intent-driven/schema.yaml</code> + templates <span class="pill mod">修改</span></td><td>—</td><td>tasks 产出 slices.json + 切片包 + scenario 测试骨架；specs/design/adr 按触发器条件必需</td></tr>
+        <tr><td><code>commands/opsx-propose.md</code> · <code>opsx-apply.md</code> · <code>pr-ship.md</code> · <code>opsx-verify.md</code> <span class="pill mod">修改</span></td><td>—</td><td>propose 一次成稿 + 基线门禁（记录全量测试耗时）+ 脚本渲染；apply 读 slices.json → 起 workflow（或回退）→ 收 JSON → pr-ship；verify 并入门禁与收口</td></tr>
+        <tr><td><code>skills/openspec-subagent-apply-change</code> · review-log <span class="pill del">降级</span></td><td>—</td><td>移入 <code>skills/legacy/</code>，<code>--gate=per-task</code> 可选，文档附实测成本</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="diagram" style="margin-top:var(--sp-3)">
+    <div class="mermaid">
+flowchart LR
+    E["/opsx-explore<br/>（可选）"] --> P["/opsx-propose 一次成稿<br/>proposal · specs · design · adr<br/>+ slices.json · 切片包<br/>+ scenario 测试骨架<br/>+ 基线门禁 · spec.html(脚本)"]
+    P --> H1{{"人：看飞行计划<br/>运行 /opsx-apply = 批准"}}
+    H1 --> W["Workflow opsx-apply.js<br/>wave 并行 · 门禁 · 评审离路径<br/>批量修复 · 全量门禁"]
+    W --> S["/pr-ship 自动<br/>push · PR · 评论(findings + 门禁 + timeline)"]
+    S --> H2{{"人：PR review · merge"}}
+    H2 --> A["/opsx-archive"]
+    style H1 fill:#dbeafe,stroke:#1d4ed8
+    style H2 fill:#dbeafe,stroke:#1d4ed8
+    style W fill:#dcfce7,stroke:#15803d
+    </div>
+    <pre class="diagram-fallback">
+/opsx-explore(可选) → /opsx-propose 一次成稿（工件 + slices.json + 切片包 + scenario 测试骨架 + 基线门禁 + spec.html）
+  → [人: 看飞行计划, 运行 /opsx-apply = 批准]
+  → Workflow opsx-apply.js（wave 并行 · 门禁 · 评审离路径 · 批量修复 · 全量门禁）
+  → /pr-ship 自动（push · PR · 评论）→ [人: PR review · merge] → /opsx-archive
+    </pre>
+    <div class="caption">图 2 · 全生命周期。人只在两处出现；apply 是一次后台飞行。</div>
+  </div>
+
+  <h3>原型示意 · spec.html「飞行计划」区（脚本渲染，实时读 timeline）</h3>
+  <div class="mock">
+    <div class="mhead"><b>add-user-export · 飞行计划</b><span class="pill core">5 切片 · 3 wave · 预算 47 min · 基线全量测试 95s</span></div>
+    <div class="lanes">
+      <span class="lane-l">wave 1</span><div class="lane"><span class="slice done">S1 数据模型 ✓ 8.2min · 27 轮</span><span class="slice done">S2 CSV ✓ 6.9min · 21 轮</span><span class="gate">gate ✓</span><span class="slice rev">review S1/S2 · 并行中</span></div>
+      <span class="lane-l">wave 2</span><div class="lane"><span class="slice run">S3 POST /v1/exports · 运行中 · 14 轮</span></div>
+      <span class="lane-l">wave 3</span><div class="lane"><span class="slice">S4 GET /:id</span><span class="slice">S5 CLI</span></div>
+      <span class="lane-l">scenario</span><div class="lane"><span class="pill new">data-export#1 pass</span><span class="pill new">#2 pass</span><span class="pill mod">#3 xfail</span><span class="pill mod">#4 xfail</span><span class="pill mod">#5 xfail</span></div>
+      <span class="lane-l">所有权</span><div class="lane"><span class="pill core">S1 app/models/export_job.py</span><span class="pill core">S2 app/export/csv.py</span><span class="pill core">S3 app/api/exports.py</span></div>
+    </div>
+    <div style="margin-top:.8em; display:flex; gap:.6em; flex-wrap:wrap; align-items:center">
+      <span class="mbtn">批准并起飞 = 在会话里运行 /opsx-apply add-user-export</span>
+      <span class="mbtn ghost">要改：回对话说「S3 拆两片 / S5 所有权加 cli/main.py」</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 已核实 ============ -->
+<section id="s4">
+  <h2><span class="n">4</span>地基核实（官方文档 · 2026-09-10 · 本机 Claude Code 2.1.267）</h2>
+  <div class="callout ok"><span class="h">Workflow（code.claude.com/docs/en/workflows）</span>
+    付费计划通用（Pro 需 <code>/config</code> 打开）；脚本为纯 JS：<code>agent()</code>（<code>label / phase / schema / model / effort / isolation:'worktree' / agentType</code>）、<code>parallel()</code>、<code>pipeline()</code>、<code>phase()</code>、<code>log()</code>、<code>args</code>、<code>workflow()</code>；<b>无中途人工输入</b>（只有权限提示能暂停）；脚本本身无 shell / 文件访问，全部由 agent 执行；并发 ≤ 16；可保存到项目 <code>.claude/workflows/</code> 作为 <code>/&lt;name&gt;</code> 命令随仓库分发，也可打进插件；<code>args</code> 以结构化 JSON 传入；bypass 模式不弹确认，其它模式可「不再询问」；agent 与主会话共享权限规则，<b>需提前 allow 测试/lint 命令</b>；同 run 内同类 agent 共享 prompt cache；可续跑。
+  </div>
+  <div class="callout ok"><span class="h">Subagent / Hooks / Worktree（sub-agents.md · hooks.md · worktrees.md）</span>
+    agent 定义支持 <code>model / permissionMode / maxTurns / tools / skills / hooks / isolation / effort</code>；模型顺序自 v2.1.251：参数 &gt; frontmatter &gt; env &gt; 主会话（本会话实测一致），强制需 <code>_FORCE=1</code>；<code>Stop</code> 支持 <code>decision: "block"</code>；PostToolUse 有 <code>tool_response</code>，hook 定义支持 <code>if: "Bash(pytest *)"</code> 与 <code>async</code>；子 agent worktree 默认从默认分支分叉，<code>worktree.baseRef: "head"</code> 才从当前 HEAD 分叉（wave 并行的前提）。
+  </div>
+  <div class="callout warn"><span class="h">待实证（自举时第一批验证项）</span>
+    ① Workflow 里 <code>isolation: 'worktree'</code> 是否遵守 <code>worktree.baseRef: "head"</code>（文档写在 subagent 章节，未单列 workflow）；② integrator 用 commit SHA 合回是否零冲突（所有权不相交时应当如此）；③ <code>maxTurns</code> 到顶返回 partial 时 <code>schema</code> 输出如何表现；④ 权限提示在 bypass 之外的模式下会不会让 wave 卡住（需 allow 规则）。这四项都在自举的第一个 wave 里就能验掉。
+  </div>
+</section>
+
+<!-- ============ 5 风险 ============ -->
+<section id="s5">
+  <h2><span class="n">5</span>风险与取舍</h2>
+  <div class="grid-2">
+    <div class="card split warn">
+      <span class="tag">风险</span>
+      <ul class="clean">
+        <li><b>规划器写不好切片</b>（所有权漏文件、DAG 太深）→ 执行体被所有权 DENY 或 wave 数超 3。缓解：规划 lint 当场报；DENY 时执行体返回 <code>failed: ["ownership: path"]</code>，主会话把该文件加进 owns 重跑该切片，不是绕过。</li>
+        <li><b>验收测试写早了</b>（design 之后接口仍变）。缓解：骨架只锁 THEN 的可观测结果，不锁内部签名；执行体可改骨架但必须在 JSON 里申报，reviewer 核对申报。</li>
+        <li><b>一次批量修复漏修</b>。缓解：final-gate 必须全绿；未绿则 PR 以 draft 打开并列出 blocked 项，人决定。</li>
+        <li><b>Workflow 与权限提示</b>：非 bypass 模式下一条未 allow 的测试命令就会让 wave 停在提示上。缓解：install 时把 gate 命令写进项目 allow 规则；apply 启动前自检。</li>
+        <li><b>token 上升</b>：执行体与 reviewer 用主模型、并行度提高。对照：冷启动从 30–100 次降到 ≈ 8 次，回报不灌主上下文；用 timeline 与账单对账一轮再定。</li>
+      </ul>
+    </div>
+    <div class="card split ok">
+      <span class="tag">明确不做</span>
+      <ul class="clean">
+        <li>不自动 merge、不推 main、不删 change worktree。wave 临时 worktree 由运行时清理。</li>
+        <li>不放松 intent-gate；只加所有权与修定根。</li>
+        <li>不改 ADR 不可改、不改 openspec 归档契约。</li>
+        <li>不用 <code>ultracode</code> 会话级开关（每个任务都起 workflow 太重）；只让 <code>/opsx-apply</code> 命令调用命名工作流。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6 决策 ============ -->
+<section id="s6">
+  <h2><span class="n">6</span>需要你拍板的 10 项</h2>
+  <div class="card" id="decisions">
+
+    <div class="dq" data-id="D1">
+      <div class="q"><span class="id">D1</span>调度引擎</div>
+      <label><input type="radio" name="D1" value="A" checked>A · 命名 Workflow <code>opsx-apply.js</code> 为主；不可用时回退主会话 Agent 并行派发<span class="rec">推荐</span></label>
+      <div class="why">确定性、后台、回报不进主上下文、可续跑；语义与回退路径一致。</div>
+      <label><input type="radio" name="D1" value="B">B · 只用主会话 Agent 工具并行派发（不引入 Workflow）</label>
+      <label><input type="radio" name="D1" value="C">C · 保留主会话逐个派发</label>
+    </div>
+
+    <div class="dq" data-id="D2">
+      <div class="q"><span class="id">D2</span>可执行规格</div>
+      <label><input type="radio" name="D2" value="A" checked>A · tasks 阶段生成 scenario 测试骨架（xfail），spec.html 展示映射并随飞行计划一起批准<span class="rec">推荐</span></label>
+      <div class="why">完成判据机械化；删掉 spec compliance 评审、scenario 覆盖抽查、RED 证据。</div>
+      <label><input type="radio" name="D2" value="B">B · 不生成骨架，执行体按 scenario 自己写测试，收口检查映射</label>
+    </div>
+
+    <div class="dq" data-id="D3">
+      <div class="q"><span class="id">D3</span>评审形态</div>
+      <label><input type="radio" name="D3" value="A" checked>A · 每切片评审并行离路径 + 一次批量修复 + final-gate 机械整合检查<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D3" value="B">B · A 再加末尾一个 reviewer 看全量 diff（多 ≈ 6 min）</label>
+      <div class="why">更接近「一双眼睛看全量」的原教旨，代价是路径上多一段。</div>
+      <label><input type="radio" name="D3" value="C">C · 只在末尾一次全量评审，不做每切片评审</label>
+    </div>
+
+    <div class="dq" data-id="D4">
+      <div class="q"><span class="id">D4</span>切片纪律</div>
+      <label><input type="radio" name="D4" value="A" checked>A · 3–7 片、DAG 深度 ≤ 3、所有权不相交、每片 ≤ 6 文件、maxTurns 40；超预算 = blocked 不硬撑<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D4" value="B">B · 只限片数与轮次，不做所有权 DENY（仅 lint 警告）</label>
+    </div>
+
+    <div class="dq" data-id="D5">
+      <div class="q"><span class="id">D5</span>模型路由</div>
+      <label><input type="radio" name="D5" value="A" checked>A · executor / reviewer <code>inherit</code> 主模型；integrator / 渲染 sonnet 低 effort<span class="rec">推荐</span></label>
+      <div class="why">1 小时目标靠一次做对；实测 Sonnet 执行体一次通过率低是回灌循环的来源之一。</div>
+      <label><input type="radio" name="D5" value="B">B · executor sonnet、reviewer inherit</label>
+    </div>
+
+    <div class="dq" data-id="D6">
+      <div class="q"><span class="id">D6</span>人类闸门</div>
+      <label><input type="radio" name="D6" value="A" checked>A · 两处：批准飞行计划（= 运行 /opsx-apply）+ PR review；apply 期零问询、不收口<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D6" value="B">B · 三处：PR 打开前再确认一次</label>
+    </div>
+
+    <div class="dq" data-id="D7">
+      <div class="q"><span class="id">D7</span>工件策略</div>
+      <label><input type="radio" name="D7" value="A" checked>A · proposal + tasks(slices.json + 切片包 + 骨架) 必需；specs / design / adr 按显式触发器<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D7" value="B">B · 保持 5 工件强制，一次成稿</label>
+    </div>
+
+    <div class="dq" data-id="D8">
+      <div class="q"><span class="id">D8</span>spec.html 渲染</div>
+      <label><input type="radio" name="D8" value="A" checked>A · python 脚本确定性渲染（零 token），含飞行计划实时区<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D8" value="B">B · 维持模型渲染</label>
+    </div>
+
+    <div class="dq" data-id="D9">
+      <div class="q"><span class="id">D9</span>落地方式</div>
+      <label><input type="radio" name="D9" value="A" checked>A · 一个 change 自举：先 hooks + agents + workflow（wave 1），再用它跑完命令 / schema / 文档，收口打印第一份飞行记录<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D9" value="B">B · 两个 change：先执行层，再规划 / 交付层</label>
+    </div>
+
+    <div class="dq" data-id="D10">
+      <div class="q"><span class="id">D10</span>旧的逐 task 守门模式</div>
+      <label><input type="radio" name="D10" value="A" checked>A · 移入 skills/legacy/，<code>--gate=per-task</code> 可选，文档附实测成本<span class="rec">推荐</span></label>
+      <label><input type="radio" name="D10" value="B">B · 直接删除</label>
+    </div>
+
+    <h3>补充意见（可空）</h3>
+    <textarea id="notes" placeholder="例如：切片上限改 8；wave 并行先不做；骨架只生成不 xfail；reviewer 允许抽查跑 1 次测试……"></textarea>
+  </div>
+  <p class="footnote">拍板后：建 change <code>.worktrees/apply-flight/</code>，按 D9 自举。第一个 wave 就把 §4 的四个待实证项验掉。</p>
+</section>
+
+<!-- ============ 导出 ============ -->
+<div class="exportbar">
+  <span class="lbl">审阅完？导出你的决策贴回对话，或直接回我「全按推荐 / D3 选 B …」。</span>
+  <button class="btn ghost" onclick="allRecommended()">全部选推荐</button>
+  <button class="btn ghost" onclick="copyMd()">复制决策为 Markdown</button>
+  <button class="btn" onclick="downloadMd()">下载决策 .md</button>
+  <button class="btn ghost" onclick="window.print()">打印 / 存 PDF</button>
+</div>
+<div class="toast" id="toast">已复制</div>
+
+</div>
+
+<script>
+function collect() {
+  var lines = ['# 决策导出 · /opsx-apply 一小时架构（第 3 版）', '', '日期：' + new Date().toISOString().slice(0,10), ''];
+  document.querySelectorAll('#decisions .dq').forEach(function (dq) {
+    var id = dq.getAttribute('data-id');
+    var q = dq.querySelector('.q').textContent.replace(id, '').trim();
+    var sel = dq.querySelector('input[type=radio]:checked');
+    var label = sel ? sel.parentElement.textContent.replace('推荐', '').trim() : '（未选）';
+    lines.push('- **' + id + ' ' + q + '**：' + label);
+  });
+  var notes = document.getElementById('notes').value.trim();
+  lines.push('', '## 补充意见', notes || '（无）');
+  return lines.join('\n');
+}
+function toast(msg) {
+  var t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(function () { t.classList.remove('show'); }, 1400);
+}
+function copyMd() {
+  var md = collect();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(md).then(function () { toast('已复制到剪贴板'); }, function () { fallbackCopy(md); });
+  } else { fallbackCopy(md); }
+}
+function fallbackCopy(md) {
+  var ta = document.createElement('textarea'); ta.value = md; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('已复制到剪贴板'); } catch (e) { toast('复制失败，请用下载'); }
+  document.body.removeChild(ta);
+}
+function downloadMd() {
+  var blob = new Blob([collect()], { type: 'text/markdown;charset=utf-8' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'apply-flight-decisions.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+}
+function allRecommended() {
+  document.querySelectorAll('#decisions .dq').forEach(function (dq) {
+    var first = dq.querySelector('input[type=radio][value=A]'); if (first) first.checked = true;
+  });
+  toast('已全部选推荐项');
+}
+</script>
+
+<script type="module">
+  // Mermaid：startOnLoad 必须 false + 显式 run()；失败或 10s 超时降级为 ASCII
+  const degrade = (e) => { document.body.classList.add('offline'); console.warn('[apply-flight] Mermaid 降级', e); };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mod.default.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default', fontFamily: 'var(--font-body)' });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) { clearTimeout(timer); degrade(e); }
+</script>
+</body>
+</html>
