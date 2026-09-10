@@ -22,3 +22,6 @@
 2026-09-10T12:12:56Z	ship	draft: 5 条 CRITICAL/HIGH 评审未闭环
 2026-09-10T12:14:03Z	final	ok
 2026-09-10T12:14:03Z	ship	ready
+2026-09-10T12:14:36Z	ship	draft: final 过期：记录 f193e22959，HEAD f2b36db998
+2026-09-10T12:15:16Z	final	ok
+2026-09-10T12:15:16Z	ship	ready
