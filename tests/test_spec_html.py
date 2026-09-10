@@ -127,3 +127,38 @@ def test_spec_html_idempotent(tmp_path):
 
     # Then: 两次输出字节级一致
     assert a.read_bytes() == b.read_bytes()
+
+
+def test_spec_html_flight_multiline_decorator(tmp_path):
+    # Given: change 目录含 slices.json（单片，scenario 映射到测试函数），该测试函数用跨行 xfail 装饰器
+    #        （装饰器调用跨多行，而不是单行 @pytest.mark.xfail(...)）
+    root = tmp_path
+    change = artifacts(root / "openspec" / "changes" / "add-export")
+    write(change / "slices.json", json.dumps({
+        "version": 1, "change": "add-export", "gate": {"test": "pytest -q"},
+        "slices": [
+            {"id": "S1", "title": "数据模型", "scenarios": ["data-export#csv-export-succeeds"], "owns": ["app/models/export.py", "tests/test_export.py"], "deps": [], "verify": "pytest -q tests/test_export.py"},
+        ],
+        "scenario_tests": {"data-export#csv-export-succeeds": "tests/test_export.py::test_csv"},
+    }, ensure_ascii=False))
+    write(root / "tests" / "test_export.py",
+          "import pytest\n\n"
+          "@pytest.mark.xfail(\n"
+          "    strict=True,\n"
+          "    reason='pending',\n"
+          ")\n"
+          "def test_csv():\n"
+          "    # Given: x\n"
+          "    # When: y\n"
+          "    # Then: z\n"
+          "    assert False\n")
+    out = tmp_path / "spec.html"
+
+    # When: 渲染
+    p = render(change, out)
+
+    # Then: 跨行装饰器仍要被识别为 xfail —— scenario 状态是 pending，不能因装饰器折行就误判成 unlocked
+    assert p.returncode == 0, p.stderr
+    html = out.read_text(encoding="utf-8")
+    assert '<span class="chip" data-state="pending">pending</span>' in html
+    assert '<span class="chip" data-state="unlocked">unlocked</span>' not in html

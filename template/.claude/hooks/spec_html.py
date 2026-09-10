@@ -11,6 +11,7 @@
 # 幂等：同输入 + 同 --now（或 SPEC_HTML_NOW）两次渲染字节级一致。
 # 兼容 Python 3.8+，只用标准库。
 import argparse
+import ast
 import html
 import json
 import os
@@ -406,6 +407,19 @@ def find_def_line(lines, func):
     return None
 
 
+def decorator_source(source, func):
+    """按 AST 取函数 func 完整的 decorator_list 源文本（支持跨行装饰器调用）；解析失败返回 None。"""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+            segs = [ast.get_source_segment(source, d) for d in node.decorator_list]
+            return "\n".join(s for s in segs if s)
+    return None
+
+
 def scenario_flight_status(root, rel, func):
     path = os.path.join(root, rel)
     if not os.path.isfile(path):
@@ -415,10 +429,15 @@ def scenario_flight_status(root, rel, func):
     if not os.path.isfile(path):
         return "missing"
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = f.read().splitlines()
+        source = f.read()
+    lines = source.splitlines()
     idx = find_def_line(lines, func)
     if idx is None:
         return "missing"
+    if rel.endswith(".py"):
+        dec_src = decorator_source(source, func)
+        if dec_src is not None:
+            return "pending" if MARK_RE.search(dec_src) else "unlocked"
     k, marked = idx - 1, False
     while k >= 0 and lines[k].strip().startswith("@"):
         if MARK_RE.search(lines[k]):
