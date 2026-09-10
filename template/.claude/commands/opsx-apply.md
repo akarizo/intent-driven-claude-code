@@ -1,10 +1,18 @@
 ---
-description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途不问
+description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途不问；模型按角色显式路由
 ---
 
-飞行模式跑完一次 apply：选 change → git 纪律检查 → 切片规划 lint → 记录批准事件 → 启动切片工作流（不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解 → 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
+飞行模式跑完一次 apply：选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **Input**：可选指定 change 名（如 `/opsx-apply add-auth`）。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 跳过飞行模式，转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令 step 3–7 不适用）。
+
+**模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
+
+| 角色 | 模型 | effort | 依据 |
+|---|---|---|---|
+| slice-executor（实现 / 批量修复） | 当前会话主模型别名（`fable` / `opus` / `sonnet`，看 `/model`） | high | 必须一次做对；实测 Sonnet 执行体的 fix 子 agent 数 ≥ impl 数 |
+| code-reviewer（切片评审 / 复核） | 当前会话主模型别名 | high | 门禁判完机械项后剩下的全是难判断；离关键路径 |
+| integrator（合回 / 抽接口 / final） | `sonnet` | low | 纯机械，指令明确 |
 
 **Steps**
 
@@ -22,24 +30,26 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
    ```
    拿到 stdout 的 waves JSON。**exit 非 0（规划红）→ 停下把 stderr 点名的规则原样报告，不进入实现**。
 
-4. **记录批准事件 · 开飞行标记**
+4. **记录批准事件并提交飞行记录**
    ```bash
    python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name>
+   git add openspec/changes/<name>/timeline.md && git commit -m "chore(flight): approve"
    ```
-   写 `openspec/changes/<name>/.flight`（JSON，含启动时间）。
+   飞行记录文件（timeline.md / gate-report.md / evidence.log）由 hook 自动追加，**起飞前必须已提交**，否则 integrator 合回并行切片时会因工作区脏被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，含启动时间）。
 
 5. **启动切片工作流**
-   - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change: "<name>", changeDir: "openspec/changes/<name>", hooksDir: ".claude/hooks", waves: <step3 的 waves>, useAgentTypes: true}`。
-   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`（同 wave 多切片各自 `isolation: worktree`），回报只收其原样 JSON；每个 wave 跑完派一个 `integrator` 合回；评审用 `code-reviewer` 并行派发（`run_in_background` 语义：不等它完成再继续）；全部 wave 跑完后对阻断 finding 做一次批量修复，再跑一次 final。
-   - 两条路径最终都产出同一份 JSON：`{slices: [...], blocking: [...], final: {...}}`。
+   - 先确定当前会话模型别名 `<main>`（`/model` 显示的：`fable` / `opus` / `sonnet`）。
+   - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change: "<name>", changeDir: "openspec/changes/<name>", hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves: <step3 的 waves>, useAgentTypes: true, expectHead: "<git rev-parse --short=10 HEAD>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
+   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`（同 wave 多切片各自 `isolation: worktree`），回报只收其原样 JSON；每个 wave 跑完派一个 `integrator`（`model: "sonnet"`）合回；评审用 `code-reviewer`（`model: "<main>"`）并行派发（`run_in_background` 语义：不等它完成再继续）；全部 wave 跑完后对阻断 finding 做一次批量修复，再跑一次 final。
+   - 两条路径最终都产出同一份 JSON：`{change, models, efforts, slices: [...], blocked: [...], blocking: [...], deferred: [...], fix, final}`（完整字段见 `.claude/workflows/opsx-apply.js` 的 `return`）。
 
 6. **收口分解**
    收到工作流 JSON 后：
    ```bash
    python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
-   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新>
+   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir>
    ```
-   打印 session-decompose 输出的飞行记录；删除 `openspec/changes/<name>/.flight`；把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）。
+   打印 session-decompose 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；删除 `openspec/changes/<name>/.flight`；把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）。
 
 7. **不问，直接进入 `/pr-ship`**
    final 全绿且无 blocked 切片 → 直接调用 `/pr-ship`。
@@ -53,5 +63,6 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
 
 **Guardrails**
 - 启动到 `/pr-ship` 之间不出现 AskUserQuestion（四种暂停例外走「停下报告」，不是问询）。
+- 模型按角色显式路由；派发时不得省略 `model`；收口报告必须打印各角色实际模型。
 - `--gate=per-task` 是唯一非飞行路径，转给 legacy skill 承载，本命令步骤 3–7 不适用于该分支。
 - 不自动 merge / push / 删 worktree。

@@ -62,7 +62,7 @@ def read_text(path):
 
 
 def esc(s):
-    return html.escape(s or "", quote=False)
+    return html.escape(s or "", quote=True)
 
 
 def inline_md(text):

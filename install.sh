@@ -431,9 +431,9 @@ cat <<EOF
     · 全仓扫描  python3 .claude/hooks/claudemd-lint.py
     · 预算中性  python3 .claude/hooks/claudemd-lint.py --diff-gate --base HEAD --msg-file <f>
     · pre-commit / commit-msg 片段见 .claude/claudemd-standard.md §13b
-  - 17 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render、openspec-subagent-apply-change）
-  - 1 个 agent 见 .claude/agents/（code-reviewer：逐 task 守门 + /pr-ship 评审共用）
-  - apply 两模式：中级+ 推荐「subagent 逐 task 守门」(openspec-subagent-apply-change)，每个 task 实现完即派 code-reviewer 守门(CRITICAL/HIGH 阻断)；轻量退回串行
+  - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render；legacy/ 下 1 个旧的逐 task 守门 skill）
+  - 3 个 agent 见 .claude/agents/（slice-executor / integrator / code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型，integrator = sonnet）
+  - apply 默认飞行模式（slices.json 切片 + wave 并行 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-commit·/claudemd-distill·claudemd-lint 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/

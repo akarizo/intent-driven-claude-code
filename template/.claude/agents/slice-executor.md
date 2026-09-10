@@ -3,6 +3,7 @@ name: slice-executor
 description: 飞行模式的切片执行体：按 openspec/changes/<change>/slices/<S>.md 切片包实现一个切片（TDD、一轮多动作、只写 owns 内文件），收尾跑 slice-gate 并把门禁 JSON 原样返回。由 opsx-apply 工作流或 /opsx-apply 回退路径派发，不要手工调用。
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: inherit
+effort: high
 permissionMode: acceptEdits
 maxTurns: 40
 skills:

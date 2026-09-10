@@ -31,6 +31,7 @@
 8. 度量必打印：apply 收口打印飞行记录，无数据不称提速。
 9. 零 token 优先：能脚本 / hook 判定的不交给模型。
 10. 回退必存在：机制失效时回退路径语义一致。
+11. 模型显式路由：执行体 / 评审员 = 会话主模型 high，机械角色 = sonnet low；派发不留空 `model`；收口打印各角色实际模型。
 
 ## 记忆分流（写 CLAUDE.md 前必读）
 权威全文 `.claude/claudemd-standard.md`；`/claudemd-commit` 沉淀、`/claudemd-distill` 重排、`claudemd-lint` 拦截。
@@ -43,11 +44,13 @@
 - **预算按字节**：根 ≤8KB（不含本注入段）/ 子 ≤16KB / 叶 ≤6KB / 单行 ≤200B。超线**当场**减（加一减一），禁推给以后。
 - ⚠ 指针写 `` `@path` ``（反引号内）**不会被加载**，是死记号；裸 `@path` 才是 launch 急切导入 —— 写指针别带 `@`。
 
-## Model 路由（省 token）
-> Claude Code v2.1.251 起 subagent 模型解析优先级 = Task 显式 `model` 参数 > agent frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` env > 继承主会话。env 只是**默认值**，不再必然优先于参数与 frontmatter；需强制统一时才设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（模板不设）。Fork 出的子会话恒随主会话模型，不受 env 影响。
+## Model 路由（按角色显式声明）
+> Claude Code v2.1.251 起 subagent 模型解析顺序 = 调用时 `model` 参数 > agent frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` env > 主会话（来源：code.claude.com/docs/en/sub-agents "Choose a model"，2026-09-10 核实）。env 只是**默认值**；需强制统一才设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（模板不设）。fork 恒随主会话模型。
 
-- **确需 Opus 级子任务**（复杂重构 · 架构决策 · 难 bug 根因 · 跨大量文件语义综合）：**主会话直接做**（推荐），或在 Task / agent 定义里显式传 `model`。
-- **主会话自查**：低推理命令（`/spec-html` `/opsx-explore` `/opsx-sync` `/claudemd-commit`）先手动 `/model sonnet`——env 管不到主会话。
+- **飞行角色**：slice-executor / code-reviewer = 会话主模型 + effort high；integrator 等机械角色 = sonnet + effort low。`/opsx-apply` 以 `args.models` 显式传入，脚本缺参即拒绝起飞。
+- **任何 Agent 派发不得省略 `model`**：留空就落到 env 默认，这正是 2026-09-10 实测「实现 / 评审 / 修复全在 Sonnet」的成因。
+- **确需主模型级子任务**（复杂重构 · 架构决策 · 难 bug 根因）：主会话直接做，或派发时显式 `model: <主模型别名>`。
+- **主会话自查**：低推理命令（`/opsx-explore` `/opsx-sync` `/claudemd-commit`）先手动 `/model sonnet`——env 管不到主会话。
 
 ## 上下文纪律
 > `[1m]` 长上下文失去 200k autocompact 兜底 → 闸门全靠人工。

@@ -36,9 +36,10 @@
 - 选择：1–9 片（中等变更建议 3–7）、DAG 深度 ≤ 3、同 wave 所有权不相交、每片 owns ≤ 12 条（glob 计一条）、`maxTurns: 40`；超预算即 blocked 并继续其它切片。
 - 理由：所有权不相交是并行零冲突与范围控制的机械保证；轮次封顶阻止马拉松。
 
-### D5 模型路由
-- 选择：`slice-executor` / `code-reviewer` `model: inherit`；`integrator` sonnet + effort low；模板 `settings.json` 保留 env 默认 sonnet，禁设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`。
-- 理由：v2.1.251 起参数与 frontmatter 高于 env；一次做对比省 token 更省时间。
+### D5 模型路由（按角色显式声明，铁律）
+- 选择：`slice-executor` / `code-reviewer` = 会话主模型 + effort high；`integrator` / final-gate = sonnet + effort low；`/opsx-apply` 以 `args.models` 显式传入，脚本缺参即拒绝起飞（`throw`），每个 `agent()` 调用都带 `model` 与 `effort`；agent frontmatter 同步声明（`inherit` / `sonnet`）作为注册路径的第二道保险；收口飞行记录打印各 agent 实际模型与路由表对账。模板 `settings.json` 保留 env 默认 sonnet 只作未声明派发的安全网，禁设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`。
+- 备选：只靠 frontmatter `inherit`（agent 定义未注册时失效——本 change 自举 wave 3 实测：9 个 agent 全落 Sonnet）；只靠 env（把执行体也钉在低档模型）。
+- 理由：错误的放大系数决定模型档位——执行体与评审员的错误会变成 fix 轮与漏审，机械角色的错误门禁会抓。v2.1.251 起参数 > frontmatter > env，显式参数是唯一在两条路径下都成立的通道。
 
 ### D6 门禁定根与所有权
 - 选择：`intent-gate.py` 从目标文件向上找最近含 `openspec/` 的目录定根；根目录存在 `.openspec-slice` 标记时，对 owns 之外的源码写入 DENY。

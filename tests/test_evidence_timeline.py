@@ -150,6 +150,26 @@ FIXTURE = [
 ]
 
 
+def test_session_decompose_prints_workflow_models(tmp_path):
+    # Given: 一个 workflow journal 目录，含一个 agent 转录（assistant 消息 model 为 claude-sonnet-5）与其 meta.json（description "S4"）
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    (wf / "agent-a1.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"type": "assistant", "timestamp": "2026-09-10T10:00:00Z", "requestId": "r1", "message": {"model": "claude-sonnet-5", "usage": {}, "content": [{"type": "text", "text": "x"}]}},
+        {"type": "assistant", "timestamp": "2026-09-10T10:03:00Z", "requestId": "r2", "message": {"model": "claude-sonnet-5", "usage": {}, "content": [{"type": "text", "text": "y"}]}},
+    ]) + "\n", encoding="utf-8")
+    (wf / "agent-a1.meta.json").write_text(json.dumps({"description": "S4", "workflowPhase": "Implement"}), encoding="utf-8")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 运行 session-decompose.py --session --workflow <dir>
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf))
+
+    # Then: 输出的工作流 agent 表含标签 S4 与实际模型 claude-sonnet-5
+    assert p.returncode == 0, p.stderr
+    assert "S4" in p.stdout and "claude-sonnet-5" in p.stdout
+
+
 def test_session_decompose_runs(tmp_path):
     # Given: 一个含人类消息、Agent 派发、异步结果、task-notification、收尾 assistant 的最小转录 fixture
     path = tmp_path / "sess.jsonl"

@@ -142,7 +142,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
    签名固定贴在末尾：
    ```
-   — reviewed by Claude Code (code-reviewer subagent), 2026-05-28
+   — reviewed by Claude Code (code-reviewer subagent), <YYYY-MM-DD>（当天日期）
    ```
 
 10. **CRITICAL/HIGH 自动修复（至多 2 轮，不问询）**

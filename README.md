@@ -219,6 +219,17 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - 把 `slice-gate.py` 与项目测试命令加进 `.claude/settings.json` 的 allow 规则，否则每个切片起步都会被权限提示打断并行
 - Workflow 不可用（未开通 / `disableWorkflows`）时自动回退为主会话 `Agent` 并行派发，语义一致
 
+#### 模型路由（按角色显式声明，铁律）
+
+| 角色 | 模型 | effort | 为什么 |
+| --- | --- | --- | --- |
+| slice-executor（实现 / 批量修复） | 会话主模型 | high | 必须一次做对；实测 Sonnet 执行体 fix 子 agent 数 ≥ impl 数 |
+| code-reviewer（评审 / 复核） | 会话主模型 | high | 门禁判完机械项，剩下全是难判断；离关键路径 |
+| integrator / final-gate | sonnet | low | 纯机械 |
+| 渲染 / 分解 / 时间线 | 零 token 脚本 | — | 不用模型 |
+
+解析顺序自 Claude Code v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，env 只是默认值。`/opsx-apply` 把路由表以 `args.models` 显式传给工作流，脚本缺参即拒绝起飞；收口飞行记录打印各 agent 实际模型与路由表对账——2026-09-10 的自举 wave 3 就是因为回退路径没显式传 `model`，九个 agent 全落到了 Sonnet。
+
 > 想用旧的逐 task 阻断式守门？`/opsx-apply --gate=per-task` 走 legacy 路径，见下文「Legacy 模式」。
 
 ### 阶段 3 · 知识沉淀（PR 前）

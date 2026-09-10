@@ -160,10 +160,36 @@ def fmt_h(sec):
     return "%.2fh" % (sec / 3600) if sec >= 3600 else "%.1fmin" % (sec / 60)
 
 
+def workflow_agents(wf_dir):
+    """读 Workflow journal 目录里每个 agent 的标签 / 实际模型 / 轮次 / wall，供收口对账路由表。"""
+    out = []
+    for sp in sorted(glob.glob(os.path.join(wf_dir, "agent-*.jsonl"))):
+        rows = load(sp)
+        if not rows:
+            continue
+        model, reqs = None, set()
+        for r in rows:
+            if r.get("type") != "assistant":
+                continue
+            m = r.get("message") or {}
+            model = model or m.get("model")
+            reqs.add(r.get("requestId") or m.get("id"))
+        meta = {}
+        try:
+            with open(sp[:-6] + ".meta.json", "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            pass
+        wall = (ts(rows[-1]["timestamp"]) - ts(rows[0]["timestamp"])).total_seconds()
+        out.append((meta.get("description") or os.path.basename(sp)[6:14], meta.get("workflowPhase") or "-", model or "?", len(reqs), wall))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="session-decompose：会话 wall-clock 归因")
     ap.add_argument("--session", required=True, help="主转录 .jsonl 路径")
     ap.add_argument("--subagents", help="子 agent 转录目录（缺省：<session 同名目录>/subagents）")
+    ap.add_argument("--workflow", help="Workflow 运行的 Transcript dir（含 agent-*.jsonl 与 .meta.json），打印各 agent 实际模型")
     args = ap.parse_args()
     rows = load(args.session)
     if not rows:
@@ -188,6 +214,13 @@ def main():
                 print("  %-6s n=%2d  均 wall %6.1fmin  均轮 %5.1f" % (role, len(xs), sum(w for w, _ in xs) / len(xs) / 60, sum(t for _, t in xs) / len(xs)))
     else:
         print("子 agent 转录目录不存在：%s" % sub_dir)
+    if args.workflow:
+        agents = workflow_agents(args.workflow)
+        print("Workflow agent %d 个（标签 · 阶段 · 实际模型 · 轮次 · wall）：" % len(agents))
+        for label, phase, model, turns, wall in agents:
+            print("  %-16s %-10s %-20s %4d  %s" % (label, phase, model, turns, fmt_h(wall)))
+        models = Counter(m for _, _, m, _, _ in agents)
+        print("  模型分布：%s" % dict(models))
 
 
 if __name__ == "__main__":

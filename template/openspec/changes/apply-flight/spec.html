@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+apply-flight · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+apply-flight
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/executable-specs</span><span class="chip" data-state="done">specs/flight-apply</span><span class="chip" data-state="done">specs/slice-gate</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement"><code>/opsx-apply</code> 的「逐 task 守门」模式把一个中等变更拖到 12–24h。2026-09-10 对本机 5 个正在跑该模式的会话（约 100h wall clock、283 个子 agent 转录）做逐段归因：等子 agent占工作时间 63–82%，子 agent 时间里 review + fix 占 64–80%（真正的实现只占 20–36%），fix 子 agent 数 ≥ impl 数（1.3–3.1×），每 task 链路 22–106 min；实现类子 agent 42–84 轮而工具执行不到 1 分钟；主会话上下文峰值 619–847k，&gt;400k 时每轮延迟是 100–200k 时的 3–4 倍。等人只是过夜空档，不是工作期内的机制。</p><p class="why-body">目标：<strong>一个中等变更（约 5 切片 / 500 行）从批准到 PR 打开 ≈ 1 小时</strong>，且模板的能力原则一条不丢。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>规格可执行</strong>：tasks 阶段为每个 Gherkin scenario 生成待通过的测试骨架（<code>xfail(strict)</code>），批准 spec.html 即批准验收测试；apply 完成判据 = 全部 scenario 测试由 xfail 变 pass。</li><li><strong>切片有所有权</strong>：tasks.md 由 <code>slices.json</code> 生成。每片声明 <code>owns</code> / <code>deps</code> / <code>verify</code> / <code>scenarios</code>；同 wave 内所有权不相交（lint 校验）；门禁对 <code>owns</code> 之外的写入 DENY。</li><li><strong>切片包</strong>：规划器一次生成 <code>slices/&lt;S&gt;.md</code>（scenario 原文、骨架路径、owns、design 摘录、verify、依赖切片接口摘要），执行体起步上下文 ≤ 25k。</li><li><strong>调度用确定性脚本</strong>：新增命名工作流 <code>.claude/workflows/opsx-apply.js</code>（wave 内并行、切片门禁、评审离关键路径、一次批量修复、全量门禁）；Workflow 不可用时 <code>/opsx-apply</code> 回退为主会话 <code>Agent</code> 并行派发，语义一致。</li><li><strong>机械门禁</strong> <code>slice-gate.py</code>（lint / waves / start / gate / final / baseline）+ <code>test-evidence.py</code>（hook 留痕测试运行）+ <code>timeline.py</code>（飞行记录）+ <code>stop-gate.py</code>（切片未过门禁不许收口）+ <code>session-decompose.py</code>（收口分解，与本 change 的实测同法）。</li><li><strong>spec.html 改脚本渲染</strong> <code>spec_html.py</code>，新增「飞行计划」区（切片 / wave / 所有权 / scenario↔test 映射 / 实时状态）。</li><li><strong>执行体与评审员成为 agent 定义</strong>：<code>slice-executor</code>（inherit · maxTurns 40 · acceptEdits · 一轮多动作 · 只回 JSON）、<code>integrator</code>（sonnet · 合回 wave · 抽接口 · 全量门禁）、<code>code-reviewer</code>（保留 full / follow-up，禁重跑测试，结构化 findings）。</li><li><strong>删除</strong>：逐 task 阻断式守门作为默认、review 水位线簿记、整合审位置问询、apply 模式问询、pr-ship 逐步 Accept、模型渲染 HTML。旧模式移入 <code>skills/legacy/</code>，<code>--gate=per-task</code> 可选。</li><li><strong>修 bug</strong>：<code>intent-gate.py</code> 按目标文件向上找最近 <code>openspec/</code> 定根（会话从主仓库根 <code>cd</code> 进 worktree 后写源码不再被误拒）。</li><li><strong>修正过期表述</strong>：<code>CLAUDE_CODE_SUBAGENT_MODEL</code> 自 Claude Code v2.1.251 起只是默认值（参数 &gt; frontmatter &gt; env），snippet / README 同步。</li><li><strong>铁律落 CLAUDE.md</strong>：本仓库根 <code>CLAUDE.md</code> 与模板 <code>CLAUDE.md.snippet</code> 各写一段「铁律」，加速手段不得破坏。</li></ul><div class="impact"><span class="tag"><strong>新增</strong>：<code>template/.claude/hooks/{slice-gate,test-evidence,timeline,stop-gate,session-decompose,spec_html}.py</code>、<code>template/.claude/agents/{slice-executor,integrator}.md</code>、<code>template/.claude/workflows/opsx-apply.js</code>、<code>tests/</code>（本仓库自身的 pytest，不下发）。</span><span class="tag"><strong>修改</strong>：<code>intent-gate.py</code>、<code>hooks.json</code>、<code>settings.json</code>、<code>code-reviewer.md</code>、<code>opsx-{propose,apply,continue,verify}.md</code> 与对应 skill、<code>pr-ship.md</code>、<code>spec-html.md</code> 与 <code>spec-html-render</code> skill 及模板、<code>schema.yaml</code> 与 templates、<code>openspec-git-discipline</code> skill（临时切片 worktree carve-out）、<code>CLAUDE.md.snippet</code>、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>、<code>install.sh</code>（确认 agents / workflows 目录随升级刷新）、本仓库根 <code>CLAUDE.md</code>。</span><span class="tag"><strong>降级</strong>：<code>skills/openspec-subagent-apply-change</code> → <code>skills/legacy/</code>。</span><span class="tag"><strong>不影响</strong>：ADR 不可改原则、openspec 归档契约（<code>### Requirement</code> / <code>#### Scenario</code> 层级）、<code>/opsx-archive</code>、<code>/opsx-sync</code>、<code>/opsx-bulk-apply</code>、<code>/claudemd-*</code>、<code>claudemd-lint</code>。</span><span class="tag"><strong>依赖</strong>：Claude Code ≥ 2.1.251（模型解析顺序）与 Workflow 可用（付费计划；Pro 需在 <code>/config</code> 打开）；不可用时自动回退。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>slice-gate</h4><p>切片规划的 lint（片数 / DAG 深度 / 所有权不相交 / verify 必填）、切片门禁 G1–G7 的判定与 JSON 契约、门禁的 worktree 定根与所有权 DENY、测试运行留痕、收口阻断。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>flight-apply</h4><p>apply 作为一次「飞行」的编排契约——wave 并行、门禁红重试一次否则 blocked、评审离关键路径、一次批量修复、全量门禁、零问询、回退路径；执行体 / 评审员 / 集成员的 agent 契约；飞行记录与收口分解。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>executable-specs</h4><p>scenario → 测试骨架的生成与映射、tasks 产出 slices.json 与切片包、spec.html 飞行计划区的脚本渲染、铁律在 CLAUDE.md 的落地。</p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>executable-specs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 规格可执行</p><p>tasks 工件 SHALL 产出 slices.json、切片包与每个 scenario 的测试骨架。
+Feature: scenario → 测试骨架 → 切片
+Rule: 批准 spec.html 即批准验收测试；apply 完成判据是机械的</p><div class="scenario"><p class="scenario-name">Scenario: schema-tasks-produce-slices</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/openspec/schemas/intent-driven/schema.yaml</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取 tasks 工件的 instruction</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>要求产出 <code>slices.json</code>（含 gate / slices[owns, deps, verify, scenarios] / scenario_tests）、<code>slices/&lt;S&gt;.md</code> 切片包、每个 scenario 一个 <code>xfail(strict)</code> 测试骨架放在所属切片 owns 的测试文件内，以及由 slices.json 生成的 <code>tasks.md</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>切片规则写明：1–9 片、DAG 深度 ≤ 3、同 wave 所有权不相交、每片 owns ≤ 12 条</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: propose-command-triggers</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-propose.md</code> 与 <code>skills/openspec-propose/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>一次读取全部工件 instructions、一次写出全部工件，再一次 <code>openspec status</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>含触发器表：行为变化 → specs；架构 / 新依赖 / 数据模型 → design；长期决策 → adr；未命中者写入带理由的跳过声明</span></li><li><span class="step-key" data-kw="AND">AND</span><span>含基线门禁步骤 <code>slice-gate.py baseline</code>（记录全量测试耗时）与 <code>spec_html.py</code> 渲染步骤</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: spec.html 脚本渲染</p><p>spec.html SHALL 由脚本确定性渲染，且 MUST NOT 由模型逐字生成。
+Feature: 零 token 渲染审批面板</p><div class="scenario"><p class="scenario-name">Scenario: spec-html-renders-artifacts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个 change 目录含 proposal.md、specs/*/spec.md、design.md、tasks.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>spec_html.py --change-dir &lt;dir&gt; --out &lt;file&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出文件的 why / specs / tasks 块含对应内容（Requirement / Scenario / GIVEN 关键字与任务勾选状态），未提供的块保留占位</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: spec-html-flight-block</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change 目录含 slices.json 与 timeline.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>渲染</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出含「飞行计划」区：每个切片 id 与标题、wave 分组、owns、scenario 映射与状态、已记录的时间事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 铁律落地</p><p>本仓库根 CLAUDE.md 与模板 snippet SHALL 各含一段铁律，任何提速手段 MUST NOT 破坏其中任一条。
+Feature: 加速不得破坏能力原则</p><div class="scenario"><p class="scenario-name">Scenario: claudemd-iron-rules</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本仓库根 <code>CLAUDE.md</code> 与 <code>template/CLAUDE.md.snippet</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两者各含一段「铁律」，覆盖：先意图后代码 · 规格即验收 · TDD 与 hook 留痕 · 独立评审必有 · 门禁只加严不绕过 · Git 边界与 ADR 不可改 · 两处人类审批 · 度量必打印 · 零 token 优先 · 回退路径必存在</span></li><li><span class="step-key" data-kw="AND">AND</span><span>本仓库根 <code>CLAUDE.md</code> 另含仓库自身纪律：命令与 skill 同改、<code>openspec schema validate</code> 绿、pytest 绿、无假名谚文</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: docs-updated</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>、<code>template/CLAUDE.md.snippet</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>不再把「逐 task 守门」「review 水位线」描述为默认机制（仅在 legacy 段提及）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>描述飞行流程：slices.json、切片包、门禁、workflow、评审离路径、飞行记录</span></li><li><span class="step-key" data-kw="AND">AND</span><span>模型路由段写明 v2.1.251 起的解析顺序，不再声称 env 压过一切</span></li></ul></div></div></div><div class="spec-card"><h3>flight-apply <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: apply 作为一次飞行</p><p><code>/opsx-apply</code> SHALL 在批准到 PR 打开之间不发起任何问询，并 SHALL 用确定性脚本按 wave 并行派发切片。
+Feature: /opsx-apply 的编排契约
+Rule: 批准到 PR 打开之间零问询；失败是数据不是对话</p><div class="scenario"><p class="scenario-name">Scenario: workflow-script-valid</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/workflows/opsx-apply.js</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>静态检查该脚本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一条语句是纯字面量 <code>export const meta</code>，<code>name</code> 为 <code>opsx-apply</code>，<code>phases</code> 含 Implement / Review / Fix / Finalize</span></li><li><span class="step-key" data-kw="AND">AND</span><span>wave 内用 <code>parallel</code> 派发切片，评审 agent 只 push 不 await，直到 Fix 阶段才 <code>Promise.all</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>node --check</code> 通过</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: apply-command-zero-prompts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读其步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>步骤顺序为：选 change → git 纪律检查 → <code>slice-gate.py lint</code> 得 waves → 记录 approve 事件 → 启动命名工作流 <code>opsx-apply</code>（不可用时回退 Agent 并行派发）→ 收 JSON → 收口分解 → 直接进入 <code>/pr-ship</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>启动到 pr-ship 之间不出现 AskUserQuestion</span></li><li><span class="step-key" data-kw="AND">AND</span><span>保留 <code>--gate=per-task</code> 旗标指向 <code>skills/legacy/</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: pr-ship-single-review</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/pr-ship.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读其步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>commit 文案、PR 正文、逐 finding 处置、是否复审四处不再问询，AskUserQuestion 至多出现在收尾一次</span></li><li><span class="step-key" data-kw="AND">AND</span><span>评审 subagent 的输入包含 gate-report.md 与 evidence.log，并声明不重跑测试</span></li><li><span class="step-key" data-kw="AND">AND</span><span>CRITICAL/HIGH 自动修复至多 2 轮后停下交人</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: legacy-mode-optional</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>安装后的 <code>.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>用户以 <code>--gate=per-task</code> 调用 <code>/opsx-apply</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>命令转到该 legacy skill，其余情况不加载它</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 执行体 / 集成员 / 评审员契约</p><p>执行纪律 SHALL 写在 agent 定义里，主会话 MUST NOT 以 prompt 转述替代。
+Feature: agent 定义承载纪律，不靠主会话转述</p><div class="scenario"><p class="scenario-name">Scenario: executor-agent-contract</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/slice-executor.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取 frontmatter 与正文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>frontmatter 含 <code>model: inherit</code>、<code>maxTurns: 40</code>、<code>permissionMode: acceptEdits</code>，tools 含 Read / Edit / Write / Bash</span></li><li><span class="step-key" data-kw="AND">AND</span><span>正文要求：先 <code>slice-gate.py start</code>，只写 owns 内文件，一轮多动作，不加 <code>cd &amp;&amp;</code> 前缀，收尾运行 gate 并原样返回其 JSON，不写报告</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: reviewer-no-rerun</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/code-reviewer.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取正文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>只保留 <code>full</code> 与 <code>follow-up</code> 两种模式，删除 <code>integration</code> 与水位线段</span></li><li><span class="step-key" data-kw="AND">AND</span><span>铁律含「不重跑测试套件、不轮询，以门禁报告与 evidence.log 为准，至多 1 次定向抽查」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>支持在 prompt 要求时输出结构化 findings（severity / file / line / summary / fix）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 飞行记录</p><p>每次 apply SHALL 记录时间事件，并 SHALL 能打印批准到 PR 打开的用时。
+Feature: 每次 apply 自带度量</p><div class="scenario"><p class="scenario-name">Scenario: timeline-report</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>timeline.md</code> 含 <code>approve</code> 与 <code>pr-open</code> 事件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>timeline.py report --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>打印批准到 PR 打开的分钟数</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: session-decompose-runs</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个最小的会话转录 fixture（含 assistant / tool_result / task-notification 条目）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>session-decompose.py --session &lt;path&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>打印等子 agent / 模型生成 / 工具执行 / 等人四类归因与子 agent 数</span></li></ul></div></div></div><div class="spec-card"><h3>slice-gate <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 切片规划 lint</p><p>系统 SHALL 在起飞前校验 slices.json，并对不合法的规划返回非零退出码。
+Feature: slices.json 规划校验
+Rule: 规划不合法就不能起飞；同一 wave 内的切片所有权必须不相交</p><div class="scenario"><p class="scenario-name">Scenario: lint-accepts-valid-plan</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份 slices.json 含 6 个切片，deps 无环且深度为 3，同一 wave 内 owns 两两不相交，每片 verify 非空</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py lint --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>标准输出打印 waves JSON：<code>[[&quot;S1&quot;,&quot;S2&quot;],[&quot;S3&quot;],[&quot;S4&quot;,&quot;S5&quot;,&quot;S6&quot;]]</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: lint-rejects-overlap</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两个无依赖关系（同一 wave）的切片在 owns 中声明了同一路径</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 lint</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码非 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>错误信息同时点名两个切片 id 与重叠路径</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: lint-rejects-depth</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>deps 链深度为 4，或切片数超过 9，或某片 owns 条目超过 12</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 lint</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码非 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>错误信息点名被违反的规则名（depth / count / owns）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 切片门禁</p><p>门禁 SHALL 以 JSON 契约 <code>{slice, ok, commit, failed[], warnings[], summary}</code> 输出结论，并 SHALL 把每次结论追加到 gate-report.md。
+Feature: 每切片零 token 门禁
+Rule: 门禁输出 JSON 契约 <code>{slice, ok, commit, failed[], warnings[], summary}</code> 并追加 gate-report.md</p><div class="scenario"><p class="scenario-name">Scenario: gate-pass-json</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片已 <code>start</code>（存在 <code>.openspec-slice</code> 标记，记录 base commit），verify 命令通过，改动的源文件在同区间有配对测试文件改动，测试函数含按序的 Given / When / Then 注释，改动全部在 owns 内，scenario 骨架已去掉 xfail 标记</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py gate &lt;S&gt; --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>标准输出是一个 JSON，<code>ok</code> 为 true，<code>failed</code> 为空数组，<code>commit</code> 为当前 HEAD</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>&lt;dir&gt;/gate-report.md</code> 追加一行含切片 id、结论与时间</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>.openspec-slice</code> 标记被移除</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: gate-ownership-violation</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片已 start，区间内有 commit 改动了 owns 之外的源文件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ok</code> 为 false</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>failed</code> 含一项以 <code>G6</code> 开头并点名该路径</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: gate-missing-gwt</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>区间内改动的测试文件里有一个测试函数缺少 <code>Then:</code> 注释</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ok</code> 为 false</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>failed</code> 含一项以 <code>G4</code> 开头并点名该函数</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: final-gate-reports-scenarios</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>slices.json 的 <code>scenario_tests</code> 把每个 scenario 映射到 <code>path::function</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py final --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出 JSON 含 <code>scenarios.total</code> 与 <code>scenarios.passed</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>ok</code> 为 true 当且仅当全量测试、lint 与全部 scenario 都通过</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: intent-gate 定根与所有权</p><p>门禁 SHALL 按目标文件向上查找最近的 <code>openspec/</code> 目录定根，并 SHALL 在切片进行中拒绝 owns 之外的源码写入。
+Feature: PreToolUse 门禁在 worktree 与切片场景下的判定</p><div class="scenario"><p class="scenario-name">Scenario: intent-gate-worktree-root</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>会话的 <code>CLAUDE_PROJECT_DIR</code> 是主仓库根，活跃 change 只存在于 <code>.worktrees/x/openspec/changes/</code> 内</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对 <code>.worktrees/x/src/a.py</code> 发起 Write</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁按目标文件向上找到最近的 <code>openspec/</code> 定根并放行</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: intent-gate-ownership-deny</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>根目录存在 <code>.openspec-slice</code> 标记指向切片 S1，S1 的 owns 不含 <code>src/other.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对 <code>src/other.py</code> 发起 Write</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁返回 deny，理由点名切片 id 与该路径</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 测试运行留痕与收口阻断</p><p>系统 SHALL 由 hook 记录每次测试运行的结果，并 SHALL 在切片门禁未绿时阻止会话收口。
+Feature: hook 留痕代替模型自述</p><div class="scenario"><p class="scenario-name">Scenario: evidence-log-records-test-runs</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一条 PostToolUse（或 PostToolUseFailure）的 Bash 事件，命令匹配测试运行器，且根目录有 <code>.openspec-slice</code> 标记</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>test-evidence.py</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>&lt;change&gt;/evidence.log</code> 追加一行含时间、切片 id、PASS 或 FAIL、命令</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: stop-hook-blocks-red-flight</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>根目录存在 <code>.openspec-slice</code> 标记（切片已 start 且门禁未绿）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>Stop 或 SubagentStop 事件触发 <code>stop-gate.py</code>，且 <code>stop_hook_active</code> 为 false</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出 <code>{&quot;decision&quot;:&quot;block&quot;,&quot;reason&quot;:...}</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>当 <code>stop_hook_active</code> 为 true 时不输出 block</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>现状（2026-09-10 实测，5 个工作流会话）：<code>/opsx-apply</code> 逐 task 守门 = 冷启动实现 subagent → 冷启动 reviewer → 冷启动修复 → follow-up，串行；每 task 22–106 min；review + fix 占子 agent 时间 64–80%；主会话把 4.5k 字符回报全量灌回上下文，峰值 619–847k。审批页 <code>docs/apply-speed-redesign.html</code>（第 3 版）记录了归因与方案。</p><p>现行 in-force ADR：<code>DRAFT-review-orchestration-watermark</code>（水位线增量模型）、<code>DRAFT-model-routing-defaults-for-template</code>。前者的前提是「多层评审必然存在、需去重」；本 change 把评审层减到一层（并行、离路径），水位线失去对象，故新 ADR 明确 supersede 它。后者关于 env 默认 sonnet 的决定保留，但其「env 压过一切」的事实陈述已被 Claude Code v2.1.251 改变，文档同步修正，不动 ADR。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals:</strong> - 中等变更（约 5 切片）批准 → PR 打开的关键路径 ≈ 1 小时，且每次 apply 打印飞行记录可对照。 - 模板能力原则一条不丢；规格、TDD、门禁三条变硬。 - Workflow 不可用时有语义一致的回退。</p><p><strong>Non-Goals:</strong> - 不改 openspec 归档契约、不改 ADR 不可改原则、不自动 merge / push main。 - 不引入 <code>ultracode</code> 会话级开关。 - 不做跨仓库的 CI 集成（timeline 只落本地 markdown）。</p></div><div class="design-block"><h3>Decisions</h3><details><summary>选择</summary><p><code>.claude/workflows/opsx-apply.js</code> 作为默认调度器；<code>/opsx-apply</code> 读 slices.json、算 waves、以 <code>args</code> 启动；检测到 Workflow 不可用（<code>disableWorkflows</code> / 命令不存在）时，主会话按同一 waves 用 <code>Agent</code> 工具并行派发同一批 agentType，回报同样只收 JSON。</p></details><details><summary>备选</summary><p>主会话逐个派发（现状，串行且上下文膨胀）；<code>ultracode</code>（每个任务都起 workflow，过重）。</p></details><details><summary>理由</summary><p>脚本持有 DAG 与循环，输出留在脚本变量，主会话只收最终 JSON；无中途人工输入是运行时事实；可续跑、可 diff。</p></details><details><summary>选择</summary><p>每个 scenario 一个 <code>pytest.mark.xfail(strict=True)</code>（或 <code>test.todo</code>）骨架，放在所属切片 owns 的测试文件内；<code>slices.json.scenario_tests</code> 记录映射；G7 检查标记已去且 G1 通过。</p></details><details><summary>备选</summary><p>执行体自己写测试，收口再核对映射（映射易漂移，RED 无法由构造保证）。</p></details><details><summary>理由</summary><p>完成判据机械化，删掉 spec compliance 评审与 RED 证据。</p></details><details><summary>选择</summary><p>评审 agent 在切片门禁绿后立即发起，不 await；Fix 阶段汇总 CRITICAL/HIGH 一次修复；final gate 机械检查 scenario 全 pass；reviewer 禁止重跑测试套件。</p></details><details><summary>备选</summary><p>末尾一次全量评审（路径上多 6 min）；保留逐 task 阻断（实测最大乘数）。</p></details><details><summary>选择</summary><p>1–9 片（中等变更建议 3–7）、DAG 深度 ≤ 3、同 wave 所有权不相交、每片 owns ≤ 12 条（glob 计一条）、<code>maxTurns: 40</code>；超预算即 blocked 并继续其它切片。</p></details><details><summary>理由</summary><p>所有权不相交是并行零冲突与范围控制的机械保证；轮次封顶阻止马拉松。</p></details><details><summary>选择</summary><p><code>slice-executor</code> / <code>code-reviewer</code> = 会话主模型 + effort high；<code>integrator</code> / final-gate = sonnet + effort low；<code>/opsx-apply</code> 以 <code>args.models</code> 显式传入，脚本缺参即拒绝起飞（<code>throw</code>），每个 <code>agent()</code> 调用都带 <code>model</code> 与 <code>effort</code>；agent frontmatter 同步声明（<code>inherit</code> / <code>sonnet</code>）作为注册路径的第二道保险；收口飞行记录打印各 agent 实际模型与路由表对账。模板 <code>settings.json</code> 保留 env 默认 sonnet 只作未声明派发的安全网，禁设 <code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE</code>。</p></details><details><summary>备选</summary><p>只靠 frontmatter <code>inherit</code>（agent 定义未注册时失效——本 change 自举 wave 3 实测：9 个 agent 全落 Sonnet）；只靠 env（把执行体也钉在低档模型）。</p></details><details><summary>理由</summary><p>错误的放大系数决定模型档位——执行体与评审员的错误会变成 fix 轮与漏审，机械角色的错误门禁会抓。v2.1.251 起参数 &gt; frontmatter &gt; env，显式参数是唯一在两条路径下都成立的通道。</p></details><details><summary>选择</summary><p><code>intent-gate.py</code> 从目标文件向上找最近含 <code>openspec/</code> 的目录定根；根目录存在 <code>.openspec-slice</code> 标记时，对 owns 之外的源码写入 DENY。</p></details><details><summary>理由</summary><p>worktree 纪律（PR #22）之后 change 只存在于 worktree；所有权 DENY 零 token 防止顺手改进与并行冲突。</p></details><details><summary>选择</summary><p>schema 的 <code>requires</code> 不改（openspec 兼容）；<code>opsx-propose</code> 按触发器决定 design / adr 写实质内容还是「跳过声明」；specs 保持必需（行为规格是本模板的核心）。</p></details><details><summary>理由</summary><p>保持 <code>openspec status</code> 完整与归档契约不变，同时省掉无意义的工件填充。</p></details><details><summary>选择</summary><p><code>spec_html.py</code> 确定性渲染，沿用 <code>spec.html.tmpl</code> 的 block 契约，新增 <code>block:flight</code>；skill 与命令退化为一行调用。</p></details><details><summary>理由</summary><p>渲染是纯输出，模型逐字写 1000 行 HTML 没有信息增益。</p></details><details><summary>选择</summary><p><code>timeline.py</code> 记录 approve / slice-start / gate / review / fix / final / pr-open；<code>session-decompose.py</code> 收口打印归因；<code>/opsx-apply</code> 收口报告固定含批准→PR 用时、子 agent 数、门禁红次数、主会话峰值上下文。</p></details><details><summary>选择</summary><p>本仓库根 <code>CLAUDE.md</code> 写「仓库铁律」（模板能力原则 + 本仓库开发纪律）；<code>CLAUDE.md.snippet</code> 写下发给用户项目的铁律段；实现完成后派独立 reviewer 按铁律审 diff。</p></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary>[规划器切片质量差</summary><p>所有权漏文件 / DAG 太深] → lint 当场报；执行体遇 DENY 返回 <code>failed: [&quot;G6 ownership: path&quot;]</code>，主会话把该文件加入 owns 后重跑该切片，不绕过。</p></details><details><summary>[验收骨架写早了，design 后接口仍变] → 骨架只锁 THEN 的可观测结果；执行体可改骨架但须在 JSON <code>summary</code> 申报，reviewer 核对。</summary></details><details><summary>[一次批量修复漏修] → final gate 必须全绿；否则 PR 以 draft 打开并列 blocked 项。</summary></details><details><summary>[Workflow 的临时 worktree 从默认分支分叉] → 模板 <code>settings.json</code> 设 <code>worktree.baseRef: &quot;head&quot;</code>；本 change wave 3 实证。</summary></details><details><summary>[非 bypass 模式下权限提示让 wave 停住] → 安装说明要求把 gate 命令加入 allow 规则；<code>/opsx-apply</code> 启动前自检。</summary></details><details><summary>[token 上升] → 冷启动从 30–100 次降到约 8 次，回报不灌主上下文；以 timeline 对账一轮再定。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><p>1. 本 change 自举：wave 1（S1 门禁核心 + S2 留痕 / 时间线 / 收口）与 wave 2（S3 agents + workflow）由主会话按 TDD 直接实现；wave 3（S4 渲染器 / S5 命令与 schema / S6 文档与铁律）用新 workflow 跑，验证 §4 待实证项。 2. 旧模式 <code>openspec-subagent-apply-change</code> 移入 <code>skills/legacy/</code>，<code>--gate=per-task</code> 可选；<code>review-log.md</code> 不再生成，已有的由 legacy 路径读取。 3. <code>install.sh --upgrade</code> 刷新 <code>.claude/</code>（含 agents / workflows / hooks）；用户项目需要在 allow 规则加入测试命令。 4. 回滚：删除 <code>.claude/workflows/opsx-apply.js</code> 与新 hooks 注册即回到主会话派发；legacy skill 仍在。</p></div><div class="design-block"><h3>Open Questions</h3><ul><li>Workflow 内 <code>isolation: &#x27;worktree&#x27;</code> 是否遵守 <code>worktree.baseRef: &quot;head&quot;</code>（文档写在 subagent 章节）——wave 3 实证。</li><li><code>maxTurns</code> 到顶返回 partial 时 <code>schema</code> 输出如何表现——wave 3 实证。</li><li>建议 supersede <code>DRAFT-review-orchestration-watermark</code>：多层评审去重的前提已不存在（本 change 的 adr 步骤处理）。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+      <p class="placeholder">design.md 含关键 Mermaid 流程图时自动填入；否则保留占位。</p>
+      <!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>门禁核心：slice-gate.py 与 intent-gate 定根 / 所有权</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>template/.claude/hooks/intent-gate.py<br>tests/conftest.py<br>tests/test_slice_gate.py<br>tests/test_intent_gate.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py tests/test_intent_gate.py</code></td></tr><tr><td class="mono">S2</td><td>留痕与飞行记录：test-evidence / timeline / stop-gate / session-decompose + hooks 注册</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/test-evidence.py<br>template/.claude/hooks/timeline.py<br>template/.claude/hooks/stop-gate.py<br>template/.claude/hooks/session-decompose.py<br>template/.claude/hooks/hooks.json<br>template/.claude/settings.json<br>tests/test_evidence_timeline.py</td><td><code>python3 -m pytest -q tests/test_evidence_timeline.py</code></td></tr><tr><td class="mono">S3</td><td>执行体 / 集成员 / 评审员 agent 定义与 opsx-apply 工作流脚本</td><td>wave 2</td><td>S1, S2</td><td>template/.claude/agents/slice-executor.md<br>template/.claude/agents/integrator.md<br>template/.claude/agents/code-reviewer.md<br>template/.claude/workflows/opsx-apply.js<br>tests/test_agents_workflow.py</td><td><code>python3 -m pytest -q tests/test_agents_workflow.py</code></td></tr><tr><td class="mono">S4</td><td>spec_html.py 脚本渲染器 + 飞行计划区 + spec-html 命令与 skill 退化为一行调用</td><td>wave 3</td><td>S3</td><td>template/.claude/hooks/spec_html.py<br>template/.claude/skills/spec-html-render/**<br>template/.claude/commands/spec-html.md<br>tests/test_spec_html.py</td><td><code>python3 -m pytest -q tests/test_spec_html.py</code></td></tr><tr><td class="mono">S5</td><td>命令与 skill 改写（propose / apply / continue / verify / new / pr-ship / git-discipline）+ schema 与 templates</td><td>wave 3</td><td>S3</td><td>template/.claude/commands/opsx-*.md<br>template/.claude/commands/pr-ship.md<br>template/.claude/skills/openspec-propose/SKILL.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>template/.claude/skills/openspec-continue-change/SKILL.md<br>template/.claude/skills/openspec-verify-change/SKILL.md<br>template/.claude/skills/openspec-new-change/SKILL.md<br>template/.claude/skills/openspec-git-discipline/SKILL.md<br>template/openspec/schemas/intent-driven/**<br>tests/test_template_docs.py</td><td><code>python3 -m pytest -q tests/test_template_docs.py</code></td></tr><tr><td class="mono">S6</td><td>文档与铁律：README / WORKFLOW_zh / CLAUDE.md.snippet / 仓库根 CLAUDE.md / legacy 迁移 / install.sh</td><td>wave 3</td><td>S3</td><td>README.md<br>docs/WORKFLOW_zh.md<br>template/CLAUDE.md.snippet<br>CLAUDE.md<br>template/.claude/skills/openspec-subagent-apply-change/**<br>template/.claude/skills/legacy/**<br>install.sh<br>tests/test_docs_iron_rules.py</td><td><code>python3 -m pytest -q tests/test_docs_iron_rules.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>slice-gate#lint-accepts-valid-plan</td><td><code>tests/test_slice_gate.py::test_lint_accepts_valid_plan</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#lint-rejects-overlap</td><td><code>tests/test_slice_gate.py::test_lint_rejects_overlap</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#lint-rejects-depth</td><td><code>tests/test_slice_gate.py::test_lint_rejects_depth</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#gate-pass-json</td><td><code>tests/test_slice_gate.py::test_gate_pass_json</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#gate-ownership-violation</td><td><code>tests/test_slice_gate.py::test_gate_ownership_violation</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#gate-missing-gwt</td><td><code>tests/test_slice_gate.py::test_gate_missing_gwt</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#final-gate-reports-scenarios</td><td><code>tests/test_slice_gate.py::test_final_gate_reports_scenarios</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#intent-gate-worktree-root</td><td><code>tests/test_intent_gate.py::test_intent_gate_worktree_root</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#intent-gate-ownership-deny</td><td><code>tests/test_intent_gate.py::test_intent_gate_ownership_deny</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#evidence-log-records-test-runs</td><td><code>tests/test_evidence_timeline.py::test_evidence_log_records_test_runs</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>slice-gate#stop-hook-blocks-red-flight</td><td><code>tests/test_evidence_timeline.py::test_stop_hook_blocks_red_flight</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-apply#timeline-report</td><td><code>tests/test_evidence_timeline.py::test_timeline_report</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-apply#session-decompose-runs</td><td><code>tests/test_evidence_timeline.py::test_session_decompose_runs</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-apply#workflow-script-valid</td><td><code>tests/test_agents_workflow.py::test_workflow_script_valid</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-apply#executor-agent-contract</td><td><code>tests/test_agents_workflow.py::test_executor_agent_contract</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-apply#reviewer-no-rerun</td><td><code>tests/test_agents_workflow.py::test_reviewer_no_rerun</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>executable-specs#spec-html-renders-artifacts</td><td><code>tests/test_spec_html.py::test_spec_html_renders_artifacts</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>executable-specs#spec-html-flight-block</td><td><code>tests/test_spec_html.py::test_spec_html_flight_block</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-apply#apply-command-zero-prompts</td><td><code>tests/test_template_docs.py::test_apply_command_zero_prompts</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-apply#pr-ship-single-review</td><td><code>tests/test_template_docs.py::test_pr_ship_single_review</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>executable-specs#schema-tasks-produce-slices</td><td><code>tests/test_template_docs.py::test_schema_tasks_produce_slices</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>executable-specs#propose-command-triggers</td><td><code>tests/test_template_docs.py::test_propose_command_triggers</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-apply#legacy-mode-optional</td><td><code>tests/test_docs_iron_rules.py::test_legacy_mode_optional</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>executable-specs#claudemd-iron-rules</td><td><code>tests/test_docs_iron_rules.py::test_claudemd_iron_rules</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>executable-specs#docs-updated</td><td><code>tests/test_docs_iron_rules.py::test_docs_updated</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-09-10T02:45:56Z</td><td>slice-start</td><td>S1</td></tr><tr><td class="mono">2026-09-10T02:45:58Z</td><td>gate</td><td>S1 red</td></tr><tr><td class="mono">2026-09-10T02:46:41Z</td><td>gate</td><td>S1 red</td></tr><tr><td class="mono">2026-09-10T02:47:29Z</td><td>gate</td><td>S1 ok</td></tr><tr><td class="mono">2026-09-10T02:47:55Z</td><td>slice-start</td><td>S2</td></tr><tr><td class="mono">2026-09-10T02:50:23Z</td><td>gate</td><td>S2 ok</td></tr><tr><td class="mono">2026-09-10T02:50:39Z</td><td>slice-start</td><td>S3</td></tr><tr><td class="mono">2026-09-10T02:53:40Z</td><td>gate</td><td>S3 red</td></tr><tr><td class="mono">2026-09-10T02:56:55Z</td><td>gate</td><td>S3 ok</td></tr><tr><td class="mono">2026-09-10T02:57:54Z</td><td>approve</td><td>wave 3 (S4,S5,S6) 交给 opsx-apply workflow</td></tr><tr><td class="mono">2026-09-10T03:34:35Z</td><td>final</td><td>red</td></tr><tr><td class="mono">2026-09-10T03:35:27Z</td><td>final</td><td>red</td></tr><tr><td class="mono">2026-09-10T03:35:29Z</td><td>apply-done</td><td>blocked=1 blocking=3</td></tr><tr><td class="mono">2026-09-10T03:02:14Z</td><td>slice-start</td><td>S6</td></tr><tr><td class="mono">2026-09-10T03:36:07Z</td><td>final</td><td>ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>S1 门禁核心 · deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_intent_gate.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S1 <code>slice-gate.py</code>（lint / waves / start / gate / final / baseline，JSON 契约）+ <code>intent-gate.py</code> 向上定根与所有权 DENY；scenarios：lint-accepts-valid-plan · lint-rejects-overlap · lint-rejects-depth · gate-pass-json · gate-ownership-violation · gate-missing-gwt · final-gate-reports-scenarios · intent-gate-worktree-root · intent-gate-ownership-deny</span></li></ul></details><details class="task-group" open><summary>S2 留痕与飞行记录 · deps: - · verify: `python3 -m pytest -q tests/test_evidence_timeline.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S2 <code>test-evidence.py</code> / <code>timeline.py</code> / <code>stop-gate.py</code> / <code>session-decompose.py</code> + <code>hooks.json</code> 注册 + <code>settings.json</code>（<code>worktree.baseRef: head</code>）；scenarios：evidence-log-records-test-runs · stop-hook-blocks-red-flight · timeline-report · session-decompose-runs</span></li></ul></details><details class="task-group" open><summary>S3 agent 定义与工作流脚本 · deps: S1, S2 · verify: `python3 -m pytest -q tests/test_agents_workflow.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S3 <code>agents/slice-executor.md</code> · <code>agents/integrator.md</code> · <code>agents/code-reviewer.md</code>（只留 full / follow-up，禁重跑测试，结构化 findings）· <code>workflows/opsx-apply.js</code>；scenarios：workflow-script-valid · executor-agent-contract · reviewer-no-rerun</span></li></ul></details><details class="task-group" open><summary>S4 spec.html 脚本渲染 · deps: S3（自举顺序：交给新 workflow 跑）· verify: `python3 -m pytest -q tests/test_spec_html.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S4 <code>hooks/spec_html.py</code>（沿用 block 契约 + 新增 <code>block:flight</code>）· 模板加飞行计划区 · <code>spec-html-render</code> skill 与 <code>/spec-html</code> 退化为一行调用；scenarios：spec-html-renders-artifacts · spec-html-flight-block</span></li></ul></details><details class="task-group" open><summary>S5 命令 / skill / schema · deps: S3 · verify: `python3 -m pytest -q tests/test_template_docs.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S5 <code>opsx-propose</code>（一次成稿 · 触发器 · slices.json + 切片包 + 骨架 · baseline · 脚本渲染）· <code>opsx-apply</code>（lint → waves → Workflow / 回退 → 收 JSON → 收口分解 → pr-ship；<code>--gate=per-task</code>）· <code>opsx-continue</code> / <code>opsx-verify</code> / <code>opsx-new</code> · <code>pr-ship</code>（去五处问询 · 单次评审 · ≤2 轮自动修）· <code>openspec-git-discipline</code>（临时切片 worktree carve-out）· <code>schema.yaml</code> + templates（tasks 产出 slices.json / 切片包 / 骨架）；scenarios：apply-command-zero-prompts · pr-ship-single-review · schema-tasks-produce-slices · propose-command-triggers</span></li></ul></details><details class="task-group" open><summary>S6 文档与铁律 · deps: S3 · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S6 <code>README.md</code> · <code>docs/WORKFLOW_zh.md</code> · <code>template/CLAUDE.md.snippet</code>（铁律段 + 模型路由修正）· 仓库根 <code>CLAUDE.md</code>（仓库铁律）· <code>openspec-subagent-apply-change</code> → <code>skills/legacy/</code> · <code>install.sh</code> 确认 agents / workflows 随升级刷新；scenarios：legacy-mode-optional · claudemd-iron-rules · docs-updated</span></li></ul></details><details class="task-group" open><summary>收口补充（自举后一次性修复）</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>模型按角色显式路由：<code>opsx-apply.js</code> 必填 <code>args.models</code>、每个 <code>agent()</code> 带 <code>model</code> / <code>effort</code>；<code>/opsx-apply</code> 命令与 skill 传路由表；两处 CLAUDE.md 铁律 11；README / WORKFLOW 路由表；<code>session-decompose.py --workflow</code> 打印各 agent 实际模型；integrator 合回前先提交飞行记录；<code>/opsx-apply</code> 起飞前提交 approve 记录</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-09-10 04:00 · 章节 8 · 图示 0 · 任务 7
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

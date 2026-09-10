@@ -3,7 +3,7 @@ import re
 
 from conftest import ROOT
 
-IRON = ["先意图后代码", "规格即验收", "TDD", "独立评审", "门禁", "Git 边界", "两处", "度量", "零 token", "回退"]
+IRON = ["先意图后代码", "规格即验收", "TDD", "独立评审", "门禁", "Git 边界", "两处", "度量", "零 token", "回退", "显式路由"]
 
 
 def read(rel):

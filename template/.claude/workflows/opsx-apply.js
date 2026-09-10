@@ -1,11 +1,16 @@
 // opsx-apply · 飞行模式的确定性调度脚本（Claude Code 命名工作流）
 // 由 /opsx-apply 命令以 args 启动：
-//   { change, changeDir, hooksDir, waves, useAgentTypes }
+//   { change, changeDir, hooksDir, agentsDir, waves, useAgentTypes, expectHead, models, efforts }
 //   change        change 名，如 "add-user-export"
 //   changeDir     相对仓库根，如 "openspec/changes/add-user-export"
 //   hooksDir      相对仓库根，如 ".claude/hooks"
+//   agentsDir     相对仓库根，如 ".claude/agents"（agent 定义未注册时让默认 subagent 先读定义）
 //   waves         slice-gate.py waves 的输出，如 [["S1","S2"],["S3"],["S4","S5"]]
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
+//   expectHead    可选，change 分支最新 commit 前缀；执行体第零步校验自己的 worktree 基分支
+//   models        必填：{ executor, reviewer, integrator }，按角色显式路由（铁律：不得留空让 env 默认兜底）
+//                 executor / reviewer = 会话主模型别名（如 "opus" / "fable"）；integrator = 低档模型（"sonnet"）
+//   efforts       可选：{ executor: "high", reviewer: "high", integrator: "low" }
 // 结构：wave 内 parallel 派发切片 → 门禁红重试一次 → 多切片 wave 由 integrator 合回 →
 //       评审只 push 不 await（离关键路径）→ Fix 阶段汇总 CRITICAL/HIGH 一次批量修复 → Finalize 全量门禁。
 // 不用时间戳与随机数（运行时为可续跑而禁止它们），脚本本身不碰文件系统，全部由 agent 执行。
@@ -23,6 +28,16 @@ export const meta = {
 
 const { change, changeDir, hooksDir, waves, useAgentTypes } = args
 const agentsDir = args.agentsDir || '.claude/agents'
+const expectHead = args.expectHead || null
+
+// ---- 模型路由（铁律：按角色显式声明，缺一即拒绝起飞）
+const models = args.models || {}
+for (const role of ['executor', 'reviewer', 'integrator']) {
+  if (!models[role]) throw new Error(`args.models.${role} 缺失：模型必须按角色显式路由（executor/reviewer = 会话主模型，integrator = sonnet），不能留空让 CLAUDE_CODE_SUBAGENT_MODEL 默认兜底`)
+}
+const efforts = Object.assign({ executor: 'high', reviewer: 'high', integrator: 'low' }, args.efforts || {})
+log(`模型路由：executor=${models.executor}/${efforts.executor} · reviewer=${models.reviewer}/${efforts.reviewer} · integrator=${models.integrator}/${efforts.integrator}`)
+
 const typed = (name) => (useAgentTypes === false ? {} : { agentType: name })
 // agent 定义未注册（useAgentTypes=false）时，纪律仍以定义文件为准：让默认 subagent 先读它再干活
 const rules = (name) => (useAgentTypes === false ? `先 Read ${agentsDir}/${name}.md，严格按它的纪律执行（它就是你的角色定义）。\n` : '')
@@ -62,7 +77,6 @@ const FINDINGS = {
   },
 }
 
-const expectHead = args.expectHead || null
 const executorPrompt = (s, retryOf) => [
   rules('slice-executor') + `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
   expectHead
@@ -94,9 +108,9 @@ for (const [i, wave] of waves.entries()) {
   log(`wave ${i + 1}/${waves.length}: ${wave.join(', ')}`)
   const iso = wave.length > 1 ? 'worktree' : undefined
   const done = await parallel(wave.map((s) => () =>
-    agent(executorPrompt(s), { label: s, isolation: iso, schema: GATE, ...typed('slice-executor') })
+    agent(executorPrompt(s), { label: s, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
       .then((r) => (r && !r.ok)
-        ? agent(executorPrompt(s, r), { label: `${s}:retry`, isolation: iso, schema: GATE, ...typed('slice-executor') })
+        ? agent(executorPrompt(s, r), { label: `${s}:retry`, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
         : r)))
   for (const [k, r] of done.entries()) {
     const s = wave[k]
@@ -108,14 +122,15 @@ for (const [i, wave] of waves.entries()) {
   if (iso && merged.length) {
     const shas = merged.map((s) => done[wave.indexOf(s)].commit)
     const integ = await agent(
-      rules('integrator') + `把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（按 agent 定义第 1 项，冲突则 abort 并返回 ok:false）。` +
+      rules('integrator') + `按 agent 定义第 0 项先把 ${changeDir} 内未提交的飞行记录文件（timeline.md / gate-report.md / evidence.log）提交掉；` +
+      `再按第 1 项把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（冲突则 abort 并返回 ok:false）。` +
       `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`。返回 JSON。`,
-      { label: `integrate:w${i + 1}`, effort: 'low', schema: GATE, ...typed('integrator') })
+      { label: `integrate:w${i + 1}`, schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
     if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
   }
   for (const s of merged) {
     const gate = done[wave.indexOf(s)]
-    reviews.push(agent(reviewPrompt(s, gate), { label: `review:${s}`, phase: 'Review', schema: FINDINGS, ...typed('code-reviewer') }))
+    reviews.push(agent(reviewPrompt(s, gate), { label: `review:${s}`, phase: 'Review', schema: FINDINGS, model: models.reviewer, effort: efforts.reviewer, ...typed('code-reviewer') }))
   }
 }
 
@@ -131,13 +146,13 @@ if (blocking.length) {
     `先运行 \`python3 ${hooksDir}/slice-gate.py start fix --change-dir ${changeDir}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start）。`,
     `finding 清单：${JSON.stringify(blocking)}`,
     `每条修复都要有先失败的测试；修完运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
-  ].join('\n'), { label: 'fix', schema: GATE, ...typed('slice-executor') })
+  ].join('\n'), { label: 'fix', schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
 }
 
 phase('Finalize')
 const final = await agent(
-  rules('integrator') + `按 agent 定义第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
+  rules('integrator') + `按 agent 定义第 0 项先提交 ${changeDir} 内未提交的飞行记录文件，再按第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
   `再 \`python3 ${hooksDir}/timeline.py record apply-done --change-dir ${changeDir} --note "blocked=${blocked.length} blocking=${blocking.length}"\`。返回 final 的 JSON。`,
-  { label: 'final-gate', effort: 'low', schema: GATE, ...typed('integrator') })
+  { label: 'final-gate', schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
 
-return { change, slices: results, blocked, blocking, deferred, fix, final }
+return { change, models, efforts, slices: results, blocked, blocking, deferred, fix, final }
