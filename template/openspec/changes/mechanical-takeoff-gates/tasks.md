@@ -4,16 +4,16 @@
 
 ## S1 判定脚本 · deps: - · verify: `python3 -m pytest -q tests/test_session_model.py`
 
-- [ ] S1 `template/.claude/hooks/session-model.py`：`CLAUDE_CODE_SESSION_ID` → glob 转录 → 最后一条主循环 assistant 的 `message.model` → 别名（子串归一，`[1m]` 归基座）；`--session` / `--json`；判定不出一律 exit 3 + stderr 点名，绝不给默认值；公开 `alias_of()` 与 `find_transcript()` 供 S2 / S4 复用；scenarios：session-model-resolves-alias · session-model-latest-wins · session-model-skips-sidechain · session-model-fails-closed
+- [x] S1 `template/.claude/hooks/session-model.py`：`CLAUDE_CODE_SESSION_ID` → glob 转录 → 最后一条主循环 assistant 的 `message.model` → 别名（子串归一，`[1m]` 归基座）；`--session` / `--json`；判定不出一律 exit 3 + stderr 点名，绝不给默认值；公开 `alias_of()` 与 `find_transcript()` 供 S2 / S4 复用；scenarios：session-model-resolves-alias · session-model-latest-wins · session-model-skips-sidechain · session-model-fails-closed
 
 ## S2 收口路由对账 · deps: S1 · verify: `python3 -m pytest -q tests/test_evidence_timeline.py`
 
-- [ ] S2 `session-decompose.py` 增 `--expect-models <json>`：以 `importlib` 载 `alias_of` 归一各 agent 实际模型，按阶段映射角色（Implement/Fix→executor · Review→reviewer · Finalize→integrator）逐条对账；不符 → ❌ 行并 exit 3；不传该参数行为不变；scenarios：route-audit-flags-mismatch · route-audit-passes-on-match
+- [x] S2 `session-decompose.py` 增 `--expect-models <json>`：以 `importlib` 载 `alias_of` 归一各 agent 实际模型，按阶段映射角色（Implement/Fix→executor · Review→reviewer · Finalize→integrator）逐条对账；不符 → ❌ 行并 exit 3；不传该参数行为不变；scenarios：route-audit-flags-mismatch · route-audit-passes-on-match
 
 ## S3 接线与文档 · deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py`
 
-- [ ] S3 `/opsx-apply` 命令与 `openspec-apply-change` skill 同改（step 0 跑 `takeoff-gate.py` · `<main>` 取自 `session-model.py` · 失败停飞 · `--model=` 覆盖 · `.flight` 记 approval + 路由 · 收口带 `--expect-models`）；`/pr-ship` 两处评审派发同源；README / `docs/WORKFLOW_zh.md` / `template/CLAUDE.md.snippet` / 仓库根 `CLAUDE.md`（铁律 7 / 11 各加"判据不得由模型自证"）/ `install.sh`；scenarios：apply-resolves-main-model · pr-ship-resolves-main-model · docs-state-mechanical-resolution · apply-checks-approval-gate
+- [x] S3 `/opsx-apply` 命令与 `openspec-apply-change` skill 同改（step 0 跑 `takeoff-gate.py` · `<main>` 取自 `session-model.py` · 失败停飞 · `--model=` 覆盖 · `.flight` 记 approval + 路由 · 收口带 `--expect-models`）；`/pr-ship` 两处评审派发同源；README / `docs/WORKFLOW_zh.md` / `template/CLAUDE.md.snippet` / 仓库根 `CLAUDE.md`（铁律 7 / 11 各加"判据不得由模型自证"）/ `install.sh`；scenarios：apply-resolves-main-model · pr-ship-resolves-main-model · docs-state-mechanical-resolution · apply-checks-approval-gate
 
 ## S4 起飞批准门禁 · deps: S1 · verify: `python3 -m pytest -q tests/test_approval_gate.py`
 
-- [ ] S4 `template/.claude/hooks/takeoff-gate.py`（CLI 模式判定人类批准证据 + 新鲜度；stdin 模式作 PreToolUse hook，命中 `openspec/changes/<name>` 的 Workflow / Agent 派发才判定，未批准 deny，异常放行）+ `hooks.json` 注册 + `/opsx-propose` 与 `openspec-propose` 硬交接收尾；scenarios：approval-gate-accepts-human-command · approval-gate-rejects-self-start · approval-gate-requires-fresh-approval · takeoff-hook-denies-unapproved-dispatch · takeoff-hook-ignores-unrelated-dispatch · propose-ends-with-handoff
+- [x] S4 `template/.claude/hooks/takeoff-gate.py`（CLI 模式判定人类批准证据 + 新鲜度；stdin 模式作 PreToolUse hook，命中 `openspec/changes/<name>` 的 Workflow / Agent 派发才判定，未批准 deny，异常放行）+ `hooks.json` 注册 + `/opsx-propose` 与 `openspec-propose` 硬交接收尾；scenarios：approval-gate-accepts-human-command · approval-gate-rejects-self-start · approval-gate-requires-fresh-approval · takeoff-hook-denies-unapproved-dispatch · takeoff-hook-ignores-unrelated-dispatch · propose-ends-with-handoff

@@ -1,0 +1,197 @@
+{
+  "change": "mechanical-takeoff-gates",
+  "models": {
+    "executor": "opus",
+    "reviewer": "opus",
+    "integrator": "sonnet"
+  },
+  "efforts": {
+    "executor": "high",
+    "reviewer": "high",
+    "integrator": "low"
+  },
+  "run_id": "wf_c0d32b66-478",
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "tests/test_template_docs.py",
+      "line": 153,
+      "summary": "scenario takeoff-approval#apply-checks-approval-gate 的断言被截错锚点：head = cmd[: cmd.index(\"启动切片工作流\")]，首个匹配出现在 opsx-apply.md 第 5 行的流程摘要句里，所以 head 只是 frontmatter + 摘要段。断言 takeoff-gate.py/spec.html in head、AskUserQuestion not in head 全部由摘要句满足——step 0「批准自检」整块缺失也可能让测试保持绿，等于该 scenario 没有被真正验收（违反铁律 2：规格即验收）。",
+      "fix": "把切点改到 Steps 的 step 1 处，例如 head = cmd[: cmd.index(\"1. **选 change**\")]，并补一条顺序断言 cmd.index(\"takeoff-gate.py\") < cmd.index(\"1. **选 change**\")（当前实现仍能通过），确保断言落在 step 0 实体而非摘要句上。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 210,
+      "summary": "角色映射只认 workflowPhase，把 wave integrator 误判成 executor：opsx-apply.js:141 的 `integrate:w<i>` agent 在 phase('Implement') 块内派发且未覆盖 phase，实际模型是 models.integrator(sonnet)，PHASE_ROLE['Implement']='executor' 期望 opus → 正确路由的飞行被判 ❌ 并 exit 3（实测输出 `❌ integrate:w1 · Implement · 期望 opus · 实际 claude-sonnet-5`），/opsx-apply 会据此误报铁律 11 违规并强制 draft PR",
+      "fix": "改用 meta 的 agentType 作主键（真实 meta 实测含 agentType：slice-executor→executor · code-reviewer→reviewer · integrator→integrator），phase 仅作 agentType 缺失时的兜底：workflow_agents 的元组追加 meta.get('agentType')，audit_routes 先查 AGENT_ROLE 再回落 PHASE_ROLE"
+    },
+    {
+      "severity": "HIGH",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 275,
+      "summary": "零覆盖仍打绿：--workflow 指错/为空目录、meta.json 缺失(phase 退化为 '-')、或某角色根本没出现在 journal（如 reviewer 若被嵌套派发）时，audit_routes 返回 bad=[] 且 seen={}，仍打印 `路由对账：✅ 一致（）` 并 exit 0（实测已复现），与本 change fail-closed 的设计初衷相反，是收口门禁的假绿口子",
+      "fix": "对账后做覆盖校验：若 set(expect) - set(seen) 非空（或 agents 为空），逐条打印 `❌ 未采样到角色 <role>（期望 <alias>）` 并 return EXIT_ROUTE_MISMATCH；仅当所有 expect 角色都被实际采样且一致时才打印 ✅"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 46,
+      "summary": "CHANGE_PATH_RE 前缀类 [^\\s\"',]* 过宽：真实派发 prompt 里路径常写成 `template/openspec/changes/<name>`（反引号）或「切片包：template/openspec/changes/<name>」（全角冒号紧邻），实测抓到的是 '`template/openspec/changes/demo' / '切片包：template/openspec/changes/demo'，os.path.isdir 必假 → find_change_dir 返回 None → hook 静默 fail-open，PreToolUse 永不 deny，D9 强制点在最常见的真实形状下失效。现有测试只喂 JSON 引号包住的干净绝对路径，故绿而不真。",
+      "fix": "把前缀限制为路径字符类，例如 CHANGE_PATH_RE = re.compile(r\"(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+\")；并在 find_change_dir 里对拼出的路径做一次兜底：若非目录，逐段剥掉最前面的路径片段重试，仍非目录才返回 None。同时在 tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch 增加一个 prompt 形状用例（路径包在反引号内、且前面紧跟中文），锁住这条行为。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 258,
+      "summary": "main() 用 `\"--change-dir\" in argv` 精确匹配判定 CLI 模式，等号写法 --change-dir=DIR 落不进该分支 → 进 hook 模式读 stdin → 空 stdin 触发 json.loads 异常 → except 返回 0。实测 `takeoff-gate.py --change-dir=<dir> < /dev/null` 输出为空且 exit=0，按契约（exit 0 = 批准成立）会被 /opsx-apply step 0 读成「已批准」，构成无批准的静默放行；命令行由模型现写，等号写法完全可能出现。",
+      "fix": "改判定为 `if any(a == \"--change-dir\" or a.startswith(\"--change-dir=\") for a in argv):`（或更彻底：`if argv:` 一律走 argparse，未知参数由 argparse 以非 0 退出，方向 fail-closed）；另在 run_hook 前判空 stdin，空输入直接返回 0 但不与 CLI 语义混用。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/session-model.py",
+      "line": 59,
+      "summary": "整份转录一次性读入内存再 splitlines：本机真实主会话转录最大 72MB（~/.claude/projects 实测），会产生数百 MB 瞬时内存与可感知延迟，而实际只需要末尾的少数几行；起飞与每次 pr-ship 派发都要跑一次。",
+      "fix": "改成从文件尾部倒着读：seek 到末尾按 64KB~1MB 分块反向读、按行反向扫描，命中第一条合格 assistant 即返回；扫到文件头仍无命中再返回 None。行为与现在完全等价，无需改契约与测试。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/session-model.py",
+      "line": 48,
+      "summary": "CLAUDE_CODE_SESSION_ID 未校验、未转义就插进 glob 模式。若该值含 glob 元字符（* ? [ ]）或异常内容，会匹配到**别的会话**的转录并静默给出错误别名——这是 fail-open 到错误答案，与本 change「判定不出就报错、绝不给默认值」的核心约束相反。",
+      "fix": "glob 前先校验 sid 形状（如 re.fullmatch(r'[A-Za-z0-9_-]{8,}', sid)，不合则 fail(\"CLAUDE_CODE_SESSION_ID 形状非法：…\")），并用 glob.escape(sid) 拼模式；另可在 hits 多于 1 条时直接 fail 而非按 mtime 取最新，避免同名 sid 跨 slug 的歧义静默择一。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_session_model.py",
+      "line": 78,
+      "summary": "env 定位分支（CLAUDE_CODE_SESSION_ID → glob ~/.claude/projects/*/<sid>.jsonl）只测了空值失败态，没有任何成功用例；而这正是 /opsx-apply 与 /pr-ship 实际调用的路径（--session 只有测试在用）。glob 模式写错、mtime 排序反了、source 字段值不对，测试都发现不了。",
+      "fix": "利用 run_hook 已支持的 env 覆盖：在 tmp_path 下造 <tmp>/.claude/projects/slug/<sid>.jsonl，以 env={\"HOME\": str(tmp_path), \"CLAUDE_CODE_SESSION_ID\": sid} 运行（脚本用 os.path.expanduser(\"~\") ，POSIX 下认 HOME），断言 alias 正确且 --json 的 source == \"env:CLAUDE_CODE_SESSION_ID\"。无需改生产代码。因 scenario 表已固定，建议同步在 specs/model-routing/spec.md 的 resolves-alias scenario 补一条 AND 或新增 scenario，保持规格↔测试映射不漂移。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/openspec/changes/mechanical-takeoff-gates/evidence.log",
+      "line": 1,
+      "summary": "需进一步确认：prompt 称本切片的测试留痕在 evidence.log，但该文件在 worktree 内不存在（find 全仓无 evidence*.log），且 worktree 只有 .claude/settings.json、没有 .claude/hooks/，test-evidence.py 无从触发。结果是铁律 3（TDD 留痕、不接受自述）对 S1 的 RED→GREEN 顺序没有任何机械证据可核。门禁 JSON 判 ok 我不推翻，只记录证据缺口。",
+      "fix": "确认 worktree 是否需要安装/软链 template/.claude/hooks 与对应 hooks.json 才能产生留痕；若 apply 流程本就期望 worktree 内有 hook，则补装并在切片门禁里增加「evidence.log 存在且含本切片 verify 命令」的机械检查，避免留痕静默缺失仍判绿。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/session-model.py",
+      "line": 49,
+      "summary": "sorted(..., key=os.path.getmtime) 在 glob 与 stat 之间文件被删/权限变化时会抛 OSError，以 traceback + exit 1 结束，违反「exit 3 + stderr 一行原因」的契约输出形状。",
+      "fix": "用 try/except OSError 包住排序（或 key 用带兜底的 lambda 返回 -1），异常时走 fail(\"转录候选不可读：…\")。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/session-model.py",
+      "line": 28,
+      "summary": "alias_of 用无锚点子串匹配且按 ALIASES 元组顺序先到先得：形如 k3-opus-clone 的第三方 id 会被映射成 opus，而 spec 的意图是第三方 id 必须 fail-closed。当前写法与 slice 包第 30 行「小写后按子串命中」一致，故不算偏离规格，只是规则本身偏宽。",
+      "fix": "如后续要收紧，改为先要求 id 以 claude- 开头（或匹配 r'claude-(opus|sonnet|haiku|fable)\\b'），再做别名归一；同时在 spec 的映射规则处同步措辞，避免实现与规格漂移。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 44,
+      "summary": "step 4 指示把 takeoff-gate.py stdout 原文（含人类原话摘要，S4 契约为「<ISO 时间> · <人类原话摘要 ≤40 字>」）直接内插进双引号 shell 命令 --note \"<批准证据>\"。人类原话里的双引号会截断参数、反引号 / $( ) 会被 shell 命令替换执行，原话里的制表符还会破坏 timeline.md 的 TSV 列。同一处 skill 文件（SKILL.md step 3）有同样写法。",
+      "fix": "改为单引号包裹并明确「证据文本先剥掉引号 / 反引号 / $ / 制表符再传」，或把证据写入临时文件由 timeline.py 读取；两份文件（命令与 skill）同改。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "README.md",
+      "line": 235,
+      "summary": "把「PreToolUse hook 拦未获批准的飞行派发」写成既成事实（docs/WORKFLOW_zh.md:181、install.sh:438 同样表述），但 S4 切片包明确写着「PreToolUse 是否对 Workflow 工具触发未经实测」，且该 hook 设计为 fail-open（定位不到转录 / 脚本异常即放行）。文档对防线强度过度承诺，读者会误以为 Workflow 路径已被 hook 覆盖。",
+      "fix": "三处各加限定：「Agent / Task 派发已覆盖；Workflow 工具是否触发 PreToolUse 待实测，该路径靠 /opsx-apply step 0 显式自检兜底；定位不到会话转录时 fail-open 放行」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/pr-ship.md",
+      "line": 118,
+      "summary": "<main> 的人工覆盖通道在 apply → pr-ship 交接处断裂：opsx-apply 支持 --model=<alias> 覆盖（opsx-apply.md:54），但 step 7 调用 /pr-ship 时未透传，pr-ship 会重新跑 session-model.py；主模型是第三方 / 自定义 id 的场景下必然再次 exit 3，导致全部切片与门禁跑完后卡在建 PR 前。而 pr-ship 只说「让用户显式给出别名后重跑」，却没有任何可用入口（无 --model= 旗标定义）。",
+      "fix": "给 /pr-ship 定义 --model=<alias> 入参（语义与 opsx-apply 一致：优先于脚本判定），并在 opsx-apply step 7 说明「起飞时用过 --model= 覆盖则调用 /pr-ship 时原样透传」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_template_docs.py",
+      "line": 90,
+      "summary": "命令↔skill 漂移门禁的 hook 正则仍是 (slice-gate|spec_html|timeline|session-decompose)\\.py，未纳入本次接线引入的 takeoff-gate.py 与 session-model.py。本切片新增的两条机械契约因此不受「命令与同名 skill 同改，禁漂移」的门禁保护，后续单改一侧不会被发现。",
+      "fix": "正则扩为 r\"(slice-gate\\.py|spec_html\\.py|timeline\\.py|session-decompose\\.py|takeoff-gate\\.py|session-model\\.py)\"；当前两份文件都提到这两个脚本，改后仍绿。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 21,
+      "summary": "step 0 说「先按 step 1 的规则定出 <name>（有参数直接用参数）」，但 Input 段本次新增了 --model=<alias> 旗标（且既有 --gate=per-task）。「有参数直接用参数」会把 /opsx-apply --model=opus 里的 --model=opus 当成 change 名，导致 takeoff-gate.py --change-dir openspec/changes/--model=opus 必然非 0 而停飞；另外 step 0 前向引用 step 1 的歧义分支（含 AskUserQuestion）也未说明如何回到 step 0。skill 的 step 0 有同样问题。",
+      "fix": "step 0 补一句「先剥离 --model= / --gate= 等旗标，剩余位置参数才是 <name>；名字仍歧义时先执行 step 1 的选择再回到 step 0 做批准自检」，命令与 skill 同改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "CLAUDE.md",
+      "line": 20,
+      "summary": "铁律 11 为压缩字节把「任何派发不得留空 model 让 CLAUDE_CODE_SUBAGENT_MODEL 默认兜底」缩成「派发不留空 model」，压缩后全文件不再出现 CLAUDE_CODE_SUBAGENT_MODEL，禁令失去了「为什么」的锚点（该 env 名正是 2026-09-10 wave 3 九个 agent 全落 Sonnet 的成因）。",
+      "fix": "在同等字节内保留 env 名，例如「派发不留空 `model`（留空落 `CLAUDE_CODE_SUBAGENT_MODEL` 默认）、模板禁 `_FORCE`」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 232,
+      "summary": "--expect-models 只校验「是合法 JSON」不校验「是 role→alias 的 dict」：传 '[\"executor\"]' 或 '5' 时在 audit_routes 抛 TypeError 裸栈退出 1（实测复现），与设计的 exit 3 语义混淆，且给用户的是 traceback 而非 ap.error 提示",
+      "fix": "json.loads 之后加类型校验：`if not isinstance(expect, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in expect.items()): ap.error('--expect-models 需为 {角色: 别名} 的 JSON 对象')`"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/tests/test_evidence_timeline.py",
+      "line": 230,
+      "summary": "测试断言弱于契约，会把崩溃当成功：契约与 slices/S2.md 明确 exit 3，测试只断言 returncode != 0，任何异常退出（如上一条 TypeError 的 exit 1）也算绿；第 231 行的 `'opus' in p.stdout` 也近似恒真（Review 行本就含 claude-opus-5），并未验证 ❌ 行的字段完整性",
+      "fix": "改断言 `p.returncode == 3`，并断言完整片段 `'❌' in p.stdout` 与 `'期望 opus · 实际 claude-sonnet-5' in p.stdout`；骨架断言的这次收紧需在执行体 summary 里申报"
+    },
+    {
+      "severity": "LOW",
+      "file": "/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/mechanical-takeoff-gates/template/.claude/hooks/session-decompose.py",
+      "line": 282,
+      "summary": "BrokenPipeError 兜底会把新引入的 exit 3 吞成 exit 0：`session-decompose.py ... --expect-models ... | head` 之类的管道用法下，不符路由也返回 0（不符项打印在末尾，恰是最易被截断的位置）",
+      "fix": "把返回码先算出来再退出，BrokenPipe 分支保留非 0：`code = 0; try: code = main() or 0; except BrokenPipeError: pass; sys.exit(code)`，或在 BrokenPipe 分支用已记录的 code 而非硬编码 0"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 109,
+      "summary": "口头批准判据只做「≤40 字 + 命中批准词」，没有否定词护栏。人类打「先别起飞」「不要起飞，等我看完」「暂缓，别批准」都 ≤40 字且含批准词，会被判成批准 —— 恰好把「制止起飞」读成「同意起飞」，方向与铁律 7 相反。",
+      "fix": "在 approval_of 的口头分支加否定守卫：若批准词前后邻近窗口命中 `别|不要|不能|暂缓|先等|还没|再等|don't|do not|not yet|hold`，则不算批准（返回 None）；并补一个 scenario 级用例覆盖「先别起飞」判为未批准。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 158,
+      "summary": "批准未与目标 change 绑定：APPLY_CMD_RE 只认 <command-name>/opsx-apply，<command-args> 被 summarize 用来展示却在 verdict 里丢弃。同一会话里人类批准了 change A 后，指向 change B 的派发同样通过（只要 B 的计划工件 mtime 早于该批准），等于一次批准放行任意 change。切片包写「（可带该 change 名）」，未强制匹配，故门禁不算违规，但削弱了门禁语义。",
+      "fix": "在 verdict 里对「命令」型批准做定向校验：解析 <command-args>，若非空且不含 os.path.basename(os.path.normpath(change_dir))，则不计入该 change 的批准候选（args 为空仍按当前语义通过，口头批准不变）；并加一条用例：/opsx-apply other 不放行 demo。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 126,
+      "summary": "latest_approval 用 fh.read().splitlines() 把整份转录读进内存再逐行 json.loads。长会话转录可达数十 MB，且每次命中飞行的 Workflow/Agent/Task 派发都会重跑一次，PreToolUse 是同步阻塞路径。",
+      "fix": "改成 `for line in fh:` 流式迭代（逻辑不变，无需一次性驻留），可选再加一个体积上限保护。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 77,
+      "summary": "`row.get(\"userType\") not in (None, \"external\")` 把缺失 userType 的条目也当人类消息，而 design D7 与切片事实基线的判据是 userType == \"external\"。当前靠 isMeta/isSidechain/tool_result/marker 兜底尚未见漏，但对未来新增的非人类 user 行形状放宽了口子（需进一步确认是否为兼容旧转录的有意选择）。",
+      "fix": "要么收紧为 `row.get(\"userType\") != \"external\"` 直接排除，要么在该行加一句注释说明「兼容早期转录无该字段」的实测依据，避免后续读者误以为是笔误。"
+    }
+  ],
+  "fix": {
+    "slice": "final",
+    "ok": true,
+    "commit": "c0c25c679b1853937c6689ac75bede1a5bcc97f2",
+    "failed": [],
+    "warnings": [
+      "slice-gate.py start fix 被拒（fix 不在 slices.json 中，exit 2），按指令跳过 start",
+      "timeline.py record 后 template/openspec/changes/mechanical-takeoff-gates/{timeline.md,gate-report.md} 有未提交改动（工件由主会话处理，未自行提交）"
+    ],
+    "summary": "5 条 CRITICAL/HIGH 全部闭环，逐条 fix: commit（前 3 条在本次任务早前轮次已落）。10e2510 test_apply_checks_approval_gate 切点从「启动切片工作流」改到 step 0 实体（0. **批准自检 → 1. **选 change**），并加顺序断言 takeoff-gate.py 早于 step 1；b9e880b session-decompose 路由对账改以 meta.agentType 为主键（AGENT_ROLE），phase 仅兜底，wave integrator 不再被误判 executor；77d1b86 audit_routes 返回 missing，零覆盖逐条打印「未采样到角色」并 exit 3，不再假绿；4b8d3a7 CHANGE_PATH_RE 前缀收紧为 /?(?:[A-Za-z0-9._~-]+/)*，find_change_dir 增加逐段剥前缀兜底，反引号/中文前缀与多带仓库名的 prompt 形状都能定位并 deny（新增 test_takeoff_hook_denies_prompt_path_wrapped_in_backticks，先红后绿）；c0c25c6 main() 判定从 \"--change-dir\" in argv 改为 if argv 一律走 argparse（fail-closed），--change-dir=DIR 等号写法不再退化成空 stdin 静默 exit 0（新增 test_takeoff_cli_honors_equals_form_change_dir，先红后绿）。断言改动申报：test_apply_checks_approval_gate 的切点与断言按 finding 1 重写，原断言由 opsx-apply.md 第 5 行流程摘要句即可满足，等于该 scenario 未被真正验收。全量 python3 -m pytest -q tests 105 passed，hooks compileall 通过，final gate scenario 16/16。"
+  }
+}

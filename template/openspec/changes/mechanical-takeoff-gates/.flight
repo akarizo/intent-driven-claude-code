@@ -1,8 +1,0 @@
-{
-  "started": "2026-09-10T09:45:00Z",
-  "approval": {"at": "2026-09-10T09:43:29Z", "quote": "起飞"},
-  "models": {"executor": "opus", "reviewer": "opus", "integrator": "sonnet"},
-  "efforts": {"executor": "high", "reviewer": "high", "integrator": "low"},
-  "raw": "claude-opus-5",
-  "source": "transcript(手工按本 change 的 D1/D7 判据读，session-model.py 待 S1 实现)"
-}
