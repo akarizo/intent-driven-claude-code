@@ -194,3 +194,62 @@ def test_session_decompose_runs(tmp_path):
     assert p.returncode == 0, p.stderr
     assert "等子 agent" in p.stdout and "模型生成" in p.stdout
     assert "派发 1" in p.stdout
+
+
+# ---------------------------------------------------------------- 路由对账（scenario: model-routing#route-audit-*）
+# 骨架：xfail(strict) 直到 S2 实现；执行体去掉标记即解锁。
+import pytest  # noqa: E402
+
+
+def wf_agent(wf, name, model, phase, label):
+    """在 workflow journal 目录里造一个 agent 转录 + meta。"""
+    (wf / ("agent-%s.jsonl" % name)).write_text("\n".join(json.dumps(r) for r in [
+        {"type": "assistant", "timestamp": "2026-09-10T10:00:00Z", "requestId": "r1",
+         "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "x"}]}},
+        {"type": "assistant", "timestamp": "2026-09-10T10:03:00Z", "requestId": "r2",
+         "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "y"}]}},
+    ]) + "\n", encoding="utf-8")
+    (wf / ("agent-%s.meta.json" % name)).write_text(
+        json.dumps({"description": label, "workflowPhase": phase}), encoding="utf-8")
+
+
+ROUTE = json.dumps({"executor": "opus", "reviewer": "opus", "integrator": "sonnet"})
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：session-decompose 尚无 --expect-models")
+def test_route_audit_flags_mismatch(tmp_path):
+    # Given: 一个 workflow journal，Implement 阶段的 agent 实际跑在 claude-sonnet-5，而路由表要求 executor=opus
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    wf_agent(wf, "a1", "claude-sonnet-5", "Implement", "S1")
+    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带 --expect-models 运行收口分解
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+
+    # Then: 非 0 退出，输出逐条列出不符项（标签 · 阶段 · 期望别名 · 实际 id）
+    assert p.returncode != 0, p.stdout
+    assert "S1" in p.stdout and "opus" in p.stdout and "claude-sonnet-5" in p.stdout
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：session-decompose 尚无 --expect-models")
+def test_route_audit_passes_on_match(tmp_path):
+    # Given: 各 agent 实际模型与路由表一致（[1m] 变体也应归一为 opus）
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    wf_agent(wf, "a1", "claude-opus-5[1m]", "Implement", "S1")
+    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
+    wf_agent(wf, "a3", "claude-sonnet-5", "Finalize", "final")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带 --expect-models 运行，再不带参数运行一次
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+    plain = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf))
+
+    # Then: 一致时退出码 0 并打印对账结论；不传参时行为与既有一致（只打印，退出码 0）
+    assert p.returncode == 0, p.stderr
+    assert "对账" in p.stdout
+    assert plain.returncode == 0 and "claude-opus-5" in plain.stdout

@@ -108,3 +108,55 @@ def test_git_discipline_wave_parallel_carveout():
     assert "integrator" in section
     assert "运行时" in section
     assert "不 push" in section
+
+
+# ---------------------------------------------------------------- 起飞判据（scenario: model-routing#apply-resolves-main-model /
+# pr-ship-resolves-main-model, takeoff-approval#apply-checks-approval-gate）。骨架：xfail(strict) 直到 S3 实现。
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：命令仍让模型自述主模型")
+def test_apply_resolves_main_model():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 检查两份文件里 <main> 的来源与失败处置
+    texts = [cmd, skill]
+
+    # Then: <main> 取自 session-model.py；判定失败停下报告并提示 --model=；.flight 记录路由与来源；收口带 --expect-models；不再有"看 /model"式自述
+    for t in texts:
+        assert "session-model.py" in t
+        assert "看 `/model`" not in t
+        assert "--expect-models" in t
+    assert "--model=" in cmd and "停下报告" in cmd
+    assert ".flight" in cmd and '"models"' in cmd
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：pr-ship 仍让模型自述主模型")
+def test_pr_ship_resolves_main_model():
+    # Given: /pr-ship 命令
+    text = read(CMD / "pr-ship.md")
+
+    # When: 检查两处 code-reviewer 派发的 <main> 来源
+    asks = text.count('model: "<main>"')
+
+    # Then: 两处仍显式带 model；<main> 注明取自 session-model.py；不再有"看 /model"式自述
+    assert asks >= 2, asks
+    assert "session-model.py" in text
+    assert "看 `/model`" not in text
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：apply 尚无 step 0 批准自检")
+def test_apply_checks_approval_gate():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 检查起飞前的批准自检与 approve 事件写法
+    head = cmd[: cmd.index("启动切片工作流")]
+
+    # Then: 起飞前跑 takeoff-gate.py，非 0 停下报告并交出 spec.html；approve 事件带人类批准证据；两份文件一致
+    assert "takeoff-gate.py" in head and "spec.html" in head
+    assert "takeoff-gate.py" in skill
+    assert "record approve" in cmd and "批准证据" in cmd
+    assert "AskUserQuestion" not in head

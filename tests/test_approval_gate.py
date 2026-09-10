@@ -1,0 +1,148 @@
+"""起飞前的人类批准门禁（scenario: takeoff-approval#*）。
+骨架：xfail(strict) 直到 S4 实现；执行体去掉标记即解锁。"""
+import json
+import os
+from datetime import datetime, timezone
+
+import pytest
+
+from conftest import ROOT, run_hook
+
+CMD = ROOT / "template" / ".claude" / "commands"
+SKILLS = ROOT / "template" / ".claude" / "skills"
+
+
+def epoch(iso):
+    return datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+
+
+def human(text, ts):
+    return {"type": "user", "isSidechain": False, "isMeta": False, "userType": "external",
+            "timestamp": ts, "message": {"role": "user", "content": text}}
+
+
+def transcript(path, rows):
+    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def change_dir(tmp_path, plan_iso="2026-09-10T08:00:00Z"):
+    """建一个最小 change 工件目录，并把计划工件的 mtime 钉在 plan_iso。"""
+    d = tmp_path / "openspec" / "changes" / "demo"
+    (d / "specs" / "cap").mkdir(parents=True)
+    for rel in ("proposal.md", "design.md", "tasks.md", "slices.json", "spec.html", "specs/cap/spec.md"):
+        (d / rel).write_text("x", encoding="utf-8")
+    for rel in ("proposal.md", "design.md", "tasks.md", "slices.json", "specs/cap/spec.md"):
+        os.utime(d / rel, (epoch(plan_iso), epoch(plan_iso)))
+    return d
+
+
+APPLY_CMD = ("<command-message>opsx-apply</command-message> "
+             "<command-name>/opsx-apply</command-name> <command-args>demo</command-args>")
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
+def test_approval_gate_accepts_human_command(tmp_path):
+    # Given: 人类自己发出的 /opsx-apply（晚于计划工件 mtime），以及另一份只说短批准词的转录
+    d = change_dir(tmp_path)
+    typed = transcript(tmp_path / "typed.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    worded = transcript(tmp_path / "worded.jsonl", [human("不相等，起飞", "2026-09-10T09:06:33Z")])
+
+    # When: 分别以 --session 运行门禁
+    p1 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(typed))
+    p2 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(worded))
+
+    # Then: 都判为批准成立（退出码 0），stdout 打印带时间戳的批准证据
+    assert p1.returncode == 0, p1.stderr
+    assert "2026-09-10T08:58:04Z" in p1.stdout
+    assert p2.returncode == 0, p2.stderr
+    assert "起飞" in p2.stdout
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
+def test_approval_gate_rejects_self_start(tmp_path):
+    # Given: 最近的人类消息只是继续规划类指令，既无 /opsx-apply 调用也无批准词
+    d = change_dir(tmp_path)
+    sess = transcript(tmp_path / "sess.jsonl", [
+        human("<command-message>opsx-propose</command-message> <command-name>/opsx-propose</command-name> "
+              "<command-args>修复这个问题</command-args>", "2026-09-10T07:38:07Z"),
+        human("继续上述任务的规划", "2026-09-10T08:30:00Z"),
+    ])
+
+    # When: 运行门禁
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
+
+    # Then: 非 0 退出，stdout 不给"已批准"结论，stderr 说明需人类显式批准并给出 spec.html 路径
+    assert p.returncode != 0, p.stdout
+    assert "批准" not in p.stdout
+    assert "spec.html" in p.stderr and "/opsx-apply" in p.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
+def test_approval_gate_requires_fresh_approval(tmp_path):
+    # Given: 批准发生在 08:58，而计划工件在 09:30 又被改过
+    d = change_dir(tmp_path, plan_iso="2026-09-10T09:30:00Z")
+    sess = transcript(tmp_path / "sess.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+
+    # When: 运行门禁
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
+
+    # Then: 非 0 退出，stderr 点名计划在批准之后改过、需重新批准
+    assert p.returncode != 0, p.stdout
+    assert "重新批准" in p.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
+def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
+    # Given: 一次指向该 change 的 Workflow 派发；转录里没有批准 / 有批准两种情况
+    d = change_dir(tmp_path)
+    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
+    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    payload = {"tool_name": "Workflow", "cwd": str(tmp_path),
+               "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
+
+    # When: 以 hook 模式（stdin 收 PreToolUse JSON）分别运行
+    p1 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(none)}))
+    p2 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(okay)}))
+
+    # Then: 未批准时输出 permissionDecision=deny 且 reason 含 spec.html 与显式 /opsx-apply 指引；已批准时静默放行
+    out = json.loads(p1.stdout)
+    hook_out = out["hookSpecificOutput"]
+    assert hook_out["permissionDecision"] == "deny"
+    assert "spec.html" in hook_out["permissionDecisionReason"] and "/opsx-apply" in hook_out["permissionDecisionReason"]
+    assert p2.returncode == 0 and p2.stdout.strip() == ""
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：takeoff-gate.py 尚不存在")
+def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
+    # Given: 一次与飞行无关的派发，以及一次转录不可读的飞行派发
+    d = change_dir(tmp_path)
+    unrelated = {"tool_name": "Agent", "cwd": str(tmp_path),
+                 "tool_input": {"subagent_type": "Explore", "prompt": "找一下登录逻辑在哪"}}
+    broken = {"tool_name": "Workflow", "cwd": str(tmp_path), "transcript_path": str(tmp_path / "nope.jsonl"),
+              "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
+
+    # When: 以 hook 模式运行两者
+    p1 = run_hook("takeoff-gate", stdin=json.dumps(unrelated))
+    p2 = run_hook("takeoff-gate", stdin=json.dumps(broken))
+
+    # Then: 都静默放行（无输出、退出码 0）——坏门禁不锁死派发能力
+    assert p1.returncode == 0 and p1.stdout.strip() == ""
+    assert p2.returncode == 0 and p2.stdout.strip() == ""
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：propose 收尾尚未改成硬交接")
+def test_propose_ends_with_handoff():
+    # Given: /opsx-propose 命令与 openspec-propose skill
+    cmd = (CMD / "opsx-propose.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-propose" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 阅读两者的收尾步骤
+    texts = [cmd, skill]
+
+    # Then: 都要求打印 spec.html 绝对路径并声明本轮结束、起飞需人类显式 /opsx-apply；不再有"运行 /opsx-apply 即视为批准"
+    for t in texts:
+        assert "绝对路径" in t and "spec.html" in t
+        assert "本命令到此结束" in t or "本 skill 到此结束" in t
+        assert "/opsx-apply" in t and "takeoff-gate" in t
+        assert "即视为批准" not in t
