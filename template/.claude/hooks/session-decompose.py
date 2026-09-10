@@ -19,7 +19,9 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-# 阶段 → 路由角色（其他阶段不参与对账，只打印）
+# agentType → 路由角色（主键：wave integrator 在 Implement 阶段派发，只看阶段会误判成 executor）
+AGENT_ROLE = {"slice-executor": "executor", "code-reviewer": "reviewer", "integrator": "integrator"}
+# 阶段 → 路由角色（兜底：useAgentTypes=false 的回退路径下 meta 无 agentType）
 PHASE_ROLE = {"Implement": "executor", "Fix": "executor", "Review": "reviewer", "Finalize": "integrator"}
 ROLE_ORDER = ("executor", "reviewer", "integrator")
 EXIT_ROUTE_MISMATCH = 3
@@ -187,7 +189,8 @@ def workflow_agents(wf_dir):
         except (OSError, ValueError):
             pass
         wall = (ts(rows[-1]["timestamp"]) - ts(rows[0]["timestamp"])).total_seconds()
-        out.append((meta.get("description") or os.path.basename(sp)[6:14], meta.get("workflowPhase") or "-", model or "?", len(reqs), wall))
+        out.append((meta.get("description") or os.path.basename(sp)[6:14], meta.get("workflowPhase") or "-",
+                    model or "?", len(reqs), wall, meta.get("agentType")))
     return out
 
 
@@ -204,10 +207,10 @@ def load_alias_of():
 
 
 def audit_routes(agents, expect, alias_of):
-    """按阶段→角色比对别名（比别名不比原始 id）；返回 (不符项, 已对账角色→期望别名)。"""
+    """按 agentType→角色（缺失才退回阶段）比对别名（比别名不比原始 id）；返回 (不符项, 已对账角色→期望别名)。"""
     bad, seen = [], {}
-    for label, phase, model, _turns, _wall in agents:
-        role = PHASE_ROLE.get(phase)
+    for label, phase, model, _turns, _wall, atype in agents:
+        role = AGENT_ROLE.get(atype) or PHASE_ROLE.get(phase)
         if role is None or role not in expect:
             continue
         want, got = expect[role], alias_of(model)
@@ -258,9 +261,9 @@ def main():
     if args.workflow:
         agents = workflow_agents(args.workflow)
         print("Workflow agent %d 个（标签 · 阶段 · 实际模型 · 轮次 · wall）：" % len(agents))
-        for label, phase, model, turns, wall in agents:
+        for label, phase, model, turns, wall, _atype in agents:
             print("  %-16s %-10s %-20s %4d  %s" % (label, phase, model, turns, fmt_h(wall)))
-        models = Counter(m for _, _, m, _, _ in agents)
+        models = Counter(a[2] for a in agents)
         print("  模型分布：%s" % dict(models))
         if expect is not None:
             alias_of = load_alias_of()

@@ -199,16 +199,18 @@ def test_session_decompose_runs(tmp_path):
 # ---------------------------------------------------------------- 路由对账（scenario: model-routing#route-audit-*）
 
 
-def wf_agent(wf, name, model, phase, label):
-    """在 workflow journal 目录里造一个 agent 转录 + meta。"""
+def wf_agent(wf, name, model, phase, label, agent_type=None):
+    """在 workflow journal 目录里造一个 agent 转录 + meta（agent_type 对应真实 meta 的 agentType）。"""
     (wf / ("agent-%s.jsonl" % name)).write_text("\n".join(json.dumps(r) for r in [
         {"type": "assistant", "timestamp": "2026-09-10T10:00:00Z", "requestId": "r1",
          "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "x"}]}},
         {"type": "assistant", "timestamp": "2026-09-10T10:03:00Z", "requestId": "r2",
          "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "y"}]}},
     ]) + "\n", encoding="utf-8")
-    (wf / ("agent-%s.meta.json" % name)).write_text(
-        json.dumps({"description": label, "workflowPhase": phase}), encoding="utf-8")
+    meta = {"description": label, "workflowPhase": phase}
+    if agent_type:
+        meta["agentType"] = agent_type
+    (wf / ("agent-%s.meta.json" % name)).write_text(json.dumps(meta), encoding="utf-8")
 
 
 ROUTE = json.dumps({"executor": "opus", "reviewer": "opus", "integrator": "sonnet"})
@@ -249,3 +251,24 @@ def test_route_audit_passes_on_match(tmp_path):
     assert p.returncode == 0, p.stderr
     assert "对账" in p.stdout
     assert plain.returncode == 0 and "claude-opus-5" in plain.stdout
+
+
+def test_route_audit_keys_on_agent_type_not_phase(tmp_path):
+    # Given: wave integrator（meta agentType=integrator、workflowPhase=Implement、实际 claude-sonnet-5）
+    #        与同阶段的 slice-executor（claude-opus-5）、Review 的 code-reviewer（claude-opus-5）
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1", agent_type="slice-executor")
+    wf_agent(wf, "a2", "claude-sonnet-5", "Implement", "integrate:w1", agent_type="integrator")
+    wf_agent(wf, "a3", "claude-opus-5", "Review", "review:S1", agent_type="code-reviewer")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带路由表运行收口对账
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+
+    # Then: 退出码 0，不把 integrate:w1 判成 executor 不符，对账结论把 integrator 记成 sonnet
+    assert p.returncode == 0, p.stdout
+    assert "integrate:w1" not in p.stdout.split("路由对账")[-1] and "❌" not in p.stdout
+    assert "integrator=sonnet" in p.stdout
+
