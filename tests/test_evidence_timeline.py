@@ -197,8 +197,6 @@ def test_session_decompose_runs(tmp_path):
 
 
 # ---------------------------------------------------------------- 路由对账（scenario: model-routing#route-audit-*）
-# 骨架：xfail(strict) 直到 S2 实现；执行体去掉标记即解锁。
-import pytest  # noqa: E402
 
 
 def wf_agent(wf, name, model, phase, label):
@@ -216,7 +214,6 @@ def wf_agent(wf, name, model, phase, label):
 ROUTE = json.dumps({"executor": "opus", "reviewer": "opus", "integrator": "sonnet"})
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：session-decompose 尚无 --expect-models")
 def test_route_audit_flags_mismatch(tmp_path):
     # Given: 一个 workflow journal，Implement 阶段的 agent 实际跑在 claude-sonnet-5，而路由表要求 executor=opus
     wf = tmp_path / "wf"
@@ -234,7 +231,6 @@ def test_route_audit_flags_mismatch(tmp_path):
     assert "S1" in p.stdout and "opus" in p.stdout and "claude-sonnet-5" in p.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：session-decompose 尚无 --expect-models")
 def test_route_audit_passes_on_match(tmp_path):
     # Given: 各 agent 实际模型与路由表一致（[1m] 变体也应归一为 opus）
     wf = tmp_path / "wf"
