@@ -149,11 +149,13 @@ def test_apply_checks_approval_gate():
     cmd = read(CMD / "opsx-apply.md")
     skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
 
-    # When: 检查起飞前的批准自检与 approve 事件写法
-    head = cmd[: cmd.index("启动切片工作流")]
+    # When: 切出 step 0「批准自检」实体（step 1「选 change」之前），而非开头的流程摘要句
+    assert "0. **批准自检" in cmd, "step 0 批准自检整块缺失"
+    step0 = cmd[cmd.index("0. **批准自检"): cmd.index("1. **选 change**")]
 
-    # Then: 起飞前跑 takeoff-gate.py，非 0 停下报告并交出 spec.html；approve 事件带人类批准证据；两份文件一致
-    assert "takeoff-gate.py" in head and "spec.html" in head
+    # Then: step 0 内实跑 takeoff-gate.py --change-dir 并交出 spec.html、不问询；门禁调用早于 step 1；skill 一致；approve 事件带批准证据
+    assert "takeoff-gate.py --change-dir" in step0 and "spec.html" in step0
+    assert "AskUserQuestion" not in step0
+    assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
     assert "takeoff-gate.py" in skill
     assert "record approve" in cmd and "批准证据" in cmd
-    assert "AskUserQuestion" not in head
