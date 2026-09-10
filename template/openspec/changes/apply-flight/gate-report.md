@@ -15,3 +15,4 @@
 | 2026-09-10T03:35:27Z | final | red | 91aae1c8f5 | G7 scenario: flight-apply#legacy-mode-optional → tests/test_docs_iron_rules.py::test_legacy_mode_optional 仍标记 xfail/skip; G7 scenario: executable-specs#claudemd-iron-rules → tests/test_docs_iron_rules.py::test_claudemd_iron_rules 仍标记 xfail/skip; G7 scenario: executable-specs#docs-updated → tests/test_docs_iron_rules.py::test_docs_updated 仍标记 xfail/skip | - |
 | 2026-09-10T03:36:07Z | final | ok | 232d409add | - | - |
 | 2026-09-10T04:02:25Z | final | ok | 1b545f0f03 | - | - |
+| 2026-09-10T04:19:57Z | final | ok | 6fa42a71da | - | - |
