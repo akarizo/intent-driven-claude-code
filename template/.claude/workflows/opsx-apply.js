@@ -8,7 +8,7 @@
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
 // 结构：wave 内 parallel 派发切片 → 门禁红重试一次 → 多切片 wave 由 integrator 合回 →
 //       评审只 push 不 await（离关键路径）→ Fix 阶段汇总 CRITICAL/HIGH 一次批量修复 → Finalize 全量门禁。
-// 禁用 Date.now() / Math.random()（可续跑），脚本本身不碰文件系统，全部由 agent 执行。
+// 不用时间戳与随机数（运行时为可续跑而禁止它们），脚本本身不碰文件系统，全部由 agent 执行。
 export const meta = {
   name: 'opsx-apply',
   description: '按 slices.json 逐 wave 并行实现切片；每切片机械门禁；评审离关键路径；一次批量修复；全量门禁',
@@ -22,7 +22,10 @@ export const meta = {
 }
 
 const { change, changeDir, hooksDir, waves, useAgentTypes } = args
+const agentsDir = args.agentsDir || '.claude/agents'
 const typed = (name) => (useAgentTypes === false ? {} : { agentType: name })
+// agent 定义未注册（useAgentTypes=false）时，纪律仍以定义文件为准：让默认 subagent 先读它再干活
+const rules = (name) => (useAgentTypes === false ? `先 Read ${agentsDir}/${name}.md，严格按它的纪律执行（它就是你的角色定义）。\n` : '')
 const gateCmd = (s) => `python3 ${hooksDir}/slice-gate.py gate ${s} --change-dir ${changeDir}`
 const startCmd = (s) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}`
 
@@ -60,7 +63,7 @@ const FINDINGS = {
 }
 
 const executorPrompt = (s, retryOf) => [
-  `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
+  rules('slice-executor') + `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
   `切片包：${changeDir}/slices/${s}.md（scenario、owns、verify、接口摘要都在里面，先读它）。`,
   `第一步运行 \`${startCmd(s)}\`。`,
   retryOf
@@ -70,7 +73,7 @@ const executorPrompt = (s, retryOf) => [
 ].join('\n')
 
 const reviewPrompt = (s, gate) => [
-  `评审模式：full。审 OpenSpec change \`${change}\` 切片 ${s} 的实现 commit：\`git show ${gate.commit}\`。`,
+  rules('code-reviewer') + `评审模式：full。审 OpenSpec change \`${change}\` 切片 ${s} 的实现 commit：\`git show ${gate.commit}\`。`,
   `切片包（scenario 与约束）：${changeDir}/slices/${s}.md。`,
   `门禁 JSON（已机械判定 verify / 配对 / GWT / 所有权 / scenario 状态，不要重报）：${JSON.stringify(gate)}。`,
   `evidence：${changeDir}/evidence.log（本切片的测试运行留痕，可 grep）。`,
@@ -101,7 +104,7 @@ for (const [i, wave] of waves.entries()) {
   if (iso && merged.length) {
     const shas = merged.map((s) => done[wave.indexOf(s)].commit)
     const integ = await agent(
-      `把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（按 agent 定义第 1 项，冲突则 abort 并返回 ok:false）。` +
+      rules('integrator') + `把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（按 agent 定义第 1 项，冲突则 abort 并返回 ok:false）。` +
       `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`。返回 JSON。`,
       { label: `integrate:w${i + 1}`, effort: 'low', schema: GATE, ...typed('integrator') })
     if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
@@ -120,7 +123,7 @@ log(`评审 finding：阻断 ${blocking.length}，非阻断 ${deferred.length}`)
 let fix = null
 if (blocking.length) {
   fix = await agent([
-    `你在仓库根。一次性修复 OpenSpec change \`${change}\` 评审挡下的 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit（fix: 前缀），不 push。`,
+    rules('slice-executor') + `你在仓库根。一次性修复 OpenSpec change \`${change}\` 评审挡下的 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit（fix: 前缀），不 push。`,
     `先运行 \`python3 ${hooksDir}/slice-gate.py start fix --change-dir ${changeDir}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start）。`,
     `finding 清单：${JSON.stringify(blocking)}`,
     `每条修复都要有先失败的测试；修完运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
@@ -129,7 +132,7 @@ if (blocking.length) {
 
 phase('Finalize')
 const final = await agent(
-  `按 agent 定义第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
+  rules('integrator') + `按 agent 定义第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
   `再 \`python3 ${hooksDir}/timeline.py record apply-done --change-dir ${changeDir} --note "blocked=${blocked.length} blocking=${blocking.length}"\`。返回 final 的 JSON。`,
   { label: 'final-gate', effort: 'low', schema: GATE, ...typed('integrator') })
 
