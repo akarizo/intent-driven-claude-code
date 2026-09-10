@@ -85,12 +85,14 @@ Continue working on a change by creating the next artifact.
 
 3.5 **刷新审批面板 HTML**
 
-   按 `.claude/skills/spec-html-render/SKILL.md` 的流程**全量**重渲 `openspec/changes/<name>/spec.html`，把已存在工件 + in-force ADR 一并纳入。
+   ```bash
+   python3 .claude/hooks/spec_html.py --change-dir openspec/changes/<name>
+   ```
+   全量重渲 `openspec/changes/<name>/spec.html`，把已存在工件 + in-force ADR 一并纳入。
 
-   - 只要至少有 1 个 artifact 已完成就跑；artifact = 0 由 skill 自身跳过
+   - 只要至少有 1 个 artifact 已完成就跑；artifact = 0 时脚本自身跳过
    - 这是强制步骤，**每次 continue 创建工件后都要跑**；不提供关闭开关
    - 失败不阻塞主流程：捕获异常后只 warn 一行，继续 step 4
-   - 一次 Write 整文件，已存在则覆盖
 
 4. **After creating an artifact, show progress**
    ```bash
@@ -116,8 +118,8 @@ Common artifact patterns:
 - **proposal.md**: Ask user about the change if not clear. Fill in Why, What Changes, Capabilities, Impact.
   - The Capabilities section is critical - each capability listed will need a spec file.
 - **specs/<capability>/spec.md**: Create one spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
-- **design.md**: Document technical decisions, architecture, and implementation approach.
-- **tasks.md**: Break down implementation into checkboxed tasks.
+- **design.md**: Document technical decisions, architecture, and implementation approach（未命中触发器则只写一行跳过声明）。
+- **tasks.md**: 由 `slices.json` 生成的切片格式任务清单——先写 `slices.json`（结构见 schema 的 tasks instruction）与每个切片的 `slices/<S>.md` 切片包、每个 scenario 一个 `xfail(strict)` 测试骨架（放进所属切片 owns 的测试文件），再生成 `tasks.md`；随后跑 `python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>`，红则修 `slices.json` 直到绿。
 
 For other schemas, follow the `instruction` field from the CLI output.
 

@@ -16,7 +16,6 @@ def read(path):
     return path.read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: flight-apply#apply-command-zero-prompts")
 def test_apply_command_zero_prompts():
     # Given: template/.claude/commands/opsx-apply.md
     text = read(CMD / "opsx-apply.md")
@@ -34,7 +33,6 @@ def test_apply_command_zero_prompts():
     assert "水位线" not in text and "整合审" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: flight-apply#pr-ship-single-review")
 def test_pr_ship_single_review():
     # Given: template/.claude/commands/pr-ship.md
     text = read(CMD / "pr-ship.md")
@@ -49,7 +47,6 @@ def test_pr_ship_single_review():
     assert "水位线" not in text and "review-log" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#schema-tasks-produce-slices")
 def test_schema_tasks_produce_slices():
     # Given: template/openspec/schemas/intent-driven/schema.yaml 与 templates/tasks.md
     schema = read(SCHEMA / "schema.yaml")
@@ -65,7 +62,6 @@ def test_schema_tasks_produce_slices():
     assert "deps:" in tmpl and "verify:" in tmpl
 
 
-@pytest.mark.xfail(strict=True, reason="scenario pending: executable-specs#propose-command-triggers")
 def test_propose_command_triggers():
     # Given: opsx-propose.md 与 openspec-propose/SKILL.md
     cmd = read(CMD / "opsx-propose.md")

@@ -1,180 +1,66 @@
 ---
-description: Verify implementation matches change artifacts before archiving
+description: 跑门禁 final、打印 scenario 映射状态、做一次简短 coherence 检查，给出可否 archive 的结论
 ---
 
-Verify that an implementation matches the change artifacts (specs, tasks, design).
+跑一次门禁 `final`（全量 test/lint/typecheck + 全部 scenario 状态）、对照 `slices.json` 打印每条 scenario 的映射状态、再做一次简短 coherence 检查（实现是否遵循 design 的关键决策），综合给出可否 archive 的结论。
 
-**Input**: Optionally specify a change name after `/opsx-verify` (e.g., `/opsx-verify add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**：可选指定 change 名（如 `/opsx-verify add-auth`）。留空时若能从会话上下文推断，或只有一个活跃 change，就直接用；仍歧义才用 **AskUserQuestion tool** 让用户选。
 
 **Steps**
 
-1. **If no change name provided, prompt for selection**
+1. **选 change（可推断则用，不必每次都问）**
+   - 有参数用参数；能从上下文推断则用；只有一个活跃 change → 自动选。
+   - 仍歧义 → `openspec list --json` + **AskUserQuestion** 让用户选（只在这一种情况下才问）。
 
-   Run `openspec list --json` to get available changes. Use the **AskUserQuestion tool** to let the user select.
-
-   Show changes that have implementation tasks (tasks artifact exists).
-   Include the schema used for each change if available.
-   Mark changes with incomplete tasks as "(In Progress)".
-
-   **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
-
-2. **Check status to understand the schema**
+2. **跑门禁 final**
    ```bash
-   openspec status --change "<name>" --json
+   python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<name>
    ```
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - Which artifacts exist for this change
+   拿到 JSON：全量 test/lint/typecheck 结果 + `scenarios{total, passed}`。
 
-3. **Get the change directory and load artifacts**
+3. **打印 scenario 映射状态**
+   对照 `openspec/changes/<name>/slices.json` 的 `scenario_tests`，逐条列出每个 scenario 的当前状态：
+   - `pending`：测试骨架仍标 `xfail`/`skip`
+   - `unlocked`：骨架标记已去掉，但门禁记录里还没见过它 pass
+   - `passed`：`gate-report.md` 里该切片曾以 ok 收尾
 
-   ```bash
-   openspec instructions apply --change "<name>" --json
-   ```
+   全部 `passed` 才算完整覆盖；否则列出未覆盖的 scenario id。
 
-   This returns the change directory and `contextFiles` (artifact ID -> array of concrete file paths). Read all available artifacts from `contextFiles`.
+4. **简短 coherence 检查**（design 决策是否被遵循）
+   - `design.md` 存在 → 抽取其 Decisions 小节列出的关键决策，逐条快速核对实现是否遵循；只报有明显背离的条目，不吹毛求疵。
+   - `design.md` 不存在（触发器未命中的跳过声明）→ 跳过本项，注明「design.md 为跳过声明，无实质决策可核对」。
 
-4. **Initialize verification report structure**
-
-   Create a report structure with three dimensions:
-   - **Completeness**: Track tasks and spec coverage
-   - **Correctness**: Track requirement implementation and scenario coverage
-   - **Coherence**: Track design adherence and pattern consistency
-
-   Each dimension can have CRITICAL, WARNING, or SUGGESTION issues.
-
-5. **Verify Completeness**
-
-   **Task Completion**:
-   - If `contextFiles.tasks` exists, read every file path in it
-   - Parse checkboxes: `- [ ]` (incomplete) vs `- [x]` (complete)
-   - Count complete vs total tasks
-   - If incomplete tasks exist:
-     - Add CRITICAL issue for each incomplete task
-     - Recommendation: "Complete task: <description>" or "Mark as done if already implemented"
-
-   **Spec Coverage**:
-   - If delta specs exist in `openspec/changes/<name>/specs/`:
-     - Extract all requirements (marked with "### Requirement:")
-     - For each requirement:
-       - Search codebase for keywords related to the requirement
-       - Assess if implementation likely exists
-     - If requirements appear unimplemented:
-       - Add CRITICAL issue: "Requirement not found: <requirement name>"
-       - Recommendation: "Implement requirement X: <description>"
-
-6. **Verify Correctness**
-
-   **Requirement Implementation Mapping**:
-   - For each requirement from delta specs:
-     - Search codebase for implementation evidence
-     - If found, note file paths and line ranges
-     - Assess if implementation matches requirement intent
-     - If divergence detected:
-       - Add WARNING: "Implementation may diverge from spec: <details>"
-       - Recommendation: "Review <file>:<lines> against requirement X"
-
-   **Scenario Coverage**:
-   - For each scenario in delta specs (marked with "#### Scenario:"):
-     - Check if conditions are handled in code
-     - Check if tests exist covering the scenario
-     - If scenario appears uncovered:
-       - Add WARNING: "Scenario not covered: <scenario name>"
-       - Recommendation: "Add test or implementation for scenario: <description>"
-
-   **Test Discipline Check (TDD/BDD)**:
-
-   **先判断这个 change 走没走过逐 task 守门**——读 `openspec/changes/<name>/review-log.md`（review 水位线）：
-
-   - **水位线存在且 `REVIEWED_UPTO` 覆盖全部 task → 降级为存在性检查**：
-     - 每个新增/修改的生产源文件确认存在配对的测试文件
-     - 抽 **1 例**测试函数确认三段 `Given:` / `When:` / `Then:` 中文注释存在
-     - 缺配对测试文件、或抽样那例连三段注释都没有 → Add CRITICAL（守门本不该放过，出现即说明守门失效）
-     - 报告注明：「GWT 细节与 5 个反模式的判定已由逐 task 守门（按 HIGH 阻断）覆盖，此处不重复抽查」
-   - **读不到 `review-log.md`（串行 apply / 手工实现）→ 完整抽查**：
-     - 每个新增/修改的生产源文件确认存在配对的测试文件
-     - 抽样若干测试函数，逐一核对：三段 `Given:` 中文注释 / When 只触发一个被测动作 / Then 注释与断言一一对应 /
-       不触犯 `testing-anti-patterns.md` 的 5 个反模式
-     - 违反任一条 → Add CRITICAL: "TDD/BDD discipline violation in <file>:<test_name>"，
-       Recommendation: "按 `.claude/skills/test-driven-development/SKILL.md` 重写该测试"
-
-   > 本段与 `.claude/skills/openspec-verify-change/SKILL.md` 的 Test Discipline Check 是**同一份判据**，改一处必须同步另一处。
-
-7. **Verify Coherence**
-
-   **Design Adherence**:
-   - If `contextFiles.design` exists:
-     - Extract key decisions (look for sections like "Decision:", "Approach:", "Architecture:")
-     - Verify implementation follows those decisions
-     - If contradiction detected:
-       - Add WARNING: "Design decision not followed: <decision>"
-       - Recommendation: "Update implementation or revise design.md to match reality"
-   - If no design.md: Skip design adherence check, note "No design.md to verify against"
-
-   **Code Pattern Consistency**:
-   - Review new code for consistency with project patterns
-   - Check file naming, directory structure, coding style
-   - If significant deviations found:
-     - Add SUGGESTION: "Code pattern deviation: <details>"
-     - Recommendation: "Consider following project pattern: <example>"
-
-8. **Generate Verification Report**
-
-   **Summary Scorecard**:
-   ```
-   ## Verification Report: <change-name>
-
-   ### Summary
-   | Dimension       | Status                          |
-   |-----------------|---------------------------------|
-   | Completeness    | X/Y tasks, N reqs               |
-   | Correctness     | M/N reqs covered                |
-   | Test Discipline | 完整抽查 / 已降级（守门已覆盖 <区间>） |
-   | Coherence       | Followed/Issues                 |
-   ```
-
-   **Issues by Priority**:
-
-   1. **CRITICAL** (Must fix before archive):
-      - Incomplete tasks
-      - Missing requirement implementations
-      - Each with specific, actionable recommendation
-
-   2. **WARNING** (Should fix):
-      - Spec/design divergences
-      - Missing scenario coverage
-      - Each with specific recommendation
-
-   3. **SUGGESTION** (Nice to fix):
-      - Pattern inconsistencies
-      - Minor improvements
-      - Each with specific recommendation
-
-   **Final Assessment**:
-   - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
-   - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
-   - If all clear: "All checks passed. Ready for archive."
-
-**Verification Heuristics**
-
-- **Completeness**: Focus on objective checklist items (checkboxes, requirements list)
-- **Correctness**: Use keyword search, file path analysis, reasonable inference - don't require perfect certainty
-- **Coherence**: Look for glaring inconsistencies, don't nitpick style
-- **False Positives**: When uncertain, prefer SUGGESTION over WARNING, WARNING over CRITICAL
-- **Actionability**: Every issue must have a specific recommendation with file/line references where applicable
-
-**Graceful Degradation**
-
-- If only tasks.md exists: verify task completion only, skip spec/design checks
-- If tasks + specs exist: verify completeness and correctness, skip design
-- If full artifacts: verify all three dimensions
-- Always note which checks were skipped and why
+5. **给出结论**
+   - final 全绿 + 全部 scenario `passed` + 无 coherence 背离 → `Ready for archive`。
+   - 否则列出阻塞项（final 的 `failed` 数组 / 未 `passed` 的 scenario / coherence 背离），每条给具体修复建议（文件 / 行号）。
 
 **Output Format**
 
-Use clear markdown with:
-- Table for summary scorecard
-- Grouped lists for issues (CRITICAL/WARNING/SUGGESTION)
-- Code references in format: `file.ts:123`
-- Specific, actionable recommendations
-- No vague suggestions like "consider reviewing"
+```
+## Verify Report: <change-name>
+
+### 门禁 final
+| 维度 | 结果 |
+|---|---|
+| test | ok/failed |
+| lint | ok/failed |
+| typecheck | ok/failed |
+| scenarios | X/Y passed |
+
+### scenario 映射
+| scenario | 状态 |
+|---|---|
+| <id> | pending/unlocked/passed |
+
+### coherence
+<背离列表，或 "design 决策均被遵循" / "design.md 为跳过声明">
+
+### 结论
+Ready for archive / 需要先修 <N> 项：
+- <文件:行号> — <问题> — <修复建议>
+```
+
+**Guardrails**
+- 能推断 change 就不问；只有真正歧义才用 AskUserQuestion。
+- final 是唯一判据来源：不重复手工搜关键字猜实现是否存在，`slice-gate.py final` 已经跑了真实测试。
+- coherence 检查只挑明显背离，不因为风格差异就报 issue。
