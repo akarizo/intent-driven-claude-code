@@ -171,7 +171,7 @@ slice-gate.py lint（校验 slices.json：片数 1–9 / DAG 深度 ≤ 3 / 同 
     → 收尾跑 slice-gate.py gate（G1 verify / G2 lint·typecheck / G3 源码配对测试 / G4 GWT / G5 RED 先于 GREEN 留痕 / G6 所有权 / G7 scenario 已转 pass）
     → 门禁红重试一次，仍红则该切片 blocked、其余切片继续；门禁绿立即离路径起 code-reviewer（不阻塞下一 wave）
   全部 wave 完成 → integrator 合回并跑一次批量修复（汇总 CRITICAL/HIGH）→ slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）
-  → session-decompose.py 收口分解 → timeline.py record 打印飞行记录 → 转 /pr-ship
+  → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录 → 转 /pr-ship
 ```
 
 **Workflow 前置条件**：需要付费计划（Pro 要在 `/config` 里手动打开 Workflow）；把 `slice-gate.py` 与测试命令加进项目 `.claude/settings.json` 的 allow 规则，否则每个切片起步都会被权限提示打断并行。

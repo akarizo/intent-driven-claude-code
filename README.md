@@ -188,7 +188,7 @@ slice-gate.py lint（校验 slices.json）→ 算 wave
     → 门禁红重试一次，仍红则该切片 blocked、其余切片照常推进
     → 门禁绿的切片立即离路径起 code-reviewer（不阻塞下一 wave 开工）
   全部 wave 完成 → 汇总 CRITICAL/HIGH 一次批量修复 → slice-gate.py final（全量测试 + 全部 scenario 转 pass）
-  → session-decompose.py 收口分解 → timeline.py record 打印飞行记录（批准→PR 用时 / 子 agent 数 / 门禁红次数 / 峰值上下文）
+  → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
   → 转 /pr-ship
 ```
 

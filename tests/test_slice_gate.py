@@ -142,7 +142,8 @@ def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None):
     write(git_repo / "tests" / "test_mod.py", test_body)
     if extra_file:
         write(git_repo / extra_file, "x = 1\n")
-    commit_all(git_repo, "S1")
+    git(git_repo, "add", "src", "tests")  # 执行体纪律：只 add owns 内文件，不裹飞行记录
+    git(git_repo, "commit", "-q", "-m", "S1")
     return change
 
 
@@ -200,6 +201,99 @@ def test_gate_warns_uncommitted_with_full_path(git_repo):
     out = json.loads(p.stdout)
     assert out["ok"] is True, out
     assert any("src/mod.py" in w and "rc/mod.py" not in w.replace("src/mod.py", "") for w in out["warnings"]), out["warnings"]
+
+
+def test_record_appends_gate_row_idempotently(git_repo):
+    # Given: 一份切片门禁 JSON（S1 ok，commit 为某 SHA）
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [], "summary": "通过"})
+
+    # When: 用 slice-gate.py record --json 记录两次
+    run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0，gate-report.md 里该 slice+commit 只有一行（幂等），timeline 记了 gate 事件
+    assert p.returncode == 0, p.stderr
+    rows = [l for l in (change / "gate-report.md").read_text(encoding="utf-8").splitlines() if "abc1234def" in l]
+    assert len(rows) == 1
+    assert "gate\tS1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
+
+
+def test_gate_flags_committed_flight_records(git_repo):
+    # Given: 已 start 的切片 S1，区间内的 commit 把 change 目录内的 timeline.md 一起提交了（执行体不该提交飞行记录）
+    change = gate_repo(git_repo)
+    write(change / "timeline.md", "<!-- timeline -->\n2026-09-10T00:00:00Z\tslice-start\tS1\n")
+    commit_all(git_repo, "S1 with flight record")
+
+    # When: 运行 gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: ok 为 false，failed 含一项以 G6 开头并点名 timeline.md 属飞行记录
+    out = json.loads(p.stdout)
+    assert out["ok"] is False
+    assert any(f.startswith("G6") and "timeline.md" in f for f in out["failed"]), out["failed"]
+
+
+MULTILINE_XFAIL_TEST = '''
+import sys, pathlib
+import pytest
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from src.mod import add
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="pending",
+)
+def test_mod_adds():
+    # Given: 两个整数 1 与 2
+    a, b = 1, 2
+    # When: 调用 add
+    result = add(a, b)
+    # Then: 返回 4（故意错，让 xfail 成立）
+    assert result == 4
+'''
+
+
+def test_final_detects_multiline_xfail(git_repo):
+    # Given: scenario 骨架的 xfail 装饰器跨多行（def 的上一行是右括号）
+    change = gate_repo(git_repo, test_body=MULTILINE_XFAIL_TEST)
+
+    # When: 运行 slice-gate.py final
+    p = run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: ok 为 false，failed 含 G7 且点名「仍标记 xfail/skip」
+    out = json.loads(p.stdout)
+    assert out["ok"] is False
+    assert any(f.startswith("G7") and "xfail" in f for f in out["failed"]), out["failed"]
+
+
+def test_gate_g5_fails_when_evidence_has_no_rows_for_slice(git_repo):
+    # Given: change 目录已有 evidence.log（hooks 在工作），但里面没有本切片 S1 的任何测试运行行
+    change = gate_repo(git_repo)
+    write(change / "evidence.log", "2026-09-10T00:00:00Z\tS9\tPASS\tpytest -q\n")
+
+    # When: 运行 gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: ok 为 false，failed 含 G5
+    out = json.loads(p.stdout)
+    assert out["ok"] is False
+    assert any(f.startswith("G5") for f in out["failed"]), out["failed"]
+
+
+def test_gate_g5_warns_when_hooks_missing(git_repo):
+    # Given: change 目录没有 evidence.log（hooks 未安装）
+    change = gate_repo(git_repo)
+
+    # When: 运行 gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 仍通过，但 JSON 标 hooks_missing 为 true 且 warnings 含 G5
+    out = json.loads(p.stdout)
+    assert out["ok"] is True, out
+    assert out.get("hooks_missing") is True
+    assert any(w.startswith("G5") for w in out["warnings"])
 
 
 def test_final_gate_reports_scenarios(git_repo):

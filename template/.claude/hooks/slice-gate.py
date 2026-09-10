@@ -5,7 +5,9 @@
 #   lint     --change-dir DIR                 校验 slices.json；stdout 打印 waves JSON；违规 exit 2 并在 stderr 点名规则
 #   waves    --change-dir DIR                 只打印 waves JSON
 #   start    S --change-dir DIR               在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base=HEAD / started）
-#   gate     S --change-dir DIR [--base REF]  跑 G1–G7；stdout 打印 JSON；追加 gate-report.md；ok 时删标记
+#   gate     S --change-dir DIR [--base REF]  跑 G1–G7；stdout 打印 JSON；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
+#   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
+#                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
 #   final    --change-dir DIR                 全量 test / lint / typecheck + 全部 scenario 状态
 #   baseline --change-dir DIR                 跑一次全量测试，把耗时写回 slices.json.gate.full_suite_sec
 #
@@ -181,20 +183,35 @@ def append_report(change_dir, result):
         pass
 
 
-def evidence_red_before_green(change_dir, slice_id):
+def evidence_state(change_dir, slice_id):
+    """返回 'missing_file' | 'no_rows' | 'red_first' | 'no_red'。"""
     path = os.path.join(change_dir, EVIDENCE)
     if not os.path.isfile(path):
-        return None
+        return "missing_file"
     rows = []
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             parts = line.rstrip("\n").split("\t")
             if len(parts) >= 3 and parts[1] == slice_id:
                 rows.append(parts[2])
-    if not rows or "PASS" not in rows:
-        return None
+    if not rows:
+        return "no_rows"
+    if "PASS" not in rows:
+        return "no_red"
     last_pass = max(i for i, r in enumerate(rows) if r == "PASS")
-    return any(r == "FAIL" for r in rows[:last_pass])
+    return "red_first" if any(r == "FAIL" for r in rows[:last_pass]) else "no_red"
+
+
+def report_has_row(change_dir, slice_id, commit):
+    path = os.path.join(change_dir, REPORT)
+    if not os.path.isfile(path):
+        return False
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            cols = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cols) >= 4 and cols[1] == slice_id and cols[3] == (commit or "")[:10]:
+                return True
+    return False
 
 
 # ---------------------------------------------------------------- 文件分类与检查
@@ -295,14 +312,37 @@ def _test_bodies(rel, lines):
             yield m.group(1), "\n".join(lines[k:end])
 
 
-def ownership_violations(files, owns, change_rel):
+FLIGHT_RECORDS = (TIMELINE, REPORT, EVIDENCE)
+
+
+def ownership_violations(files, owns, change_rel, committed=()):
     out = []
+    prefix = change_rel.rstrip("/") + "/"
     for f in sorted(files):
-        if f == MARKER or f.startswith(change_rel.rstrip("/") + "/"):
+        if f == MARKER:
+            continue
+        if f.startswith(prefix):
+            # 飞行记录由 hook 追加、由 integrator / 主会话单独提交；执行体把它们裹进切片 commit 会在合回时冲突
+            if f in committed and f[len(prefix):] in FLIGHT_RECORDS:
+                out.append("G6 flight-record: %s 属飞行记录，执行体不得提交（由 integrator 单独 commit）" % f)
             continue
         if not any(glob_match(f, o) for o in owns):
             out.append("G6 ownership: %s 不在 owns 内" % f)
     return out
+
+
+def _py_decorators(source, func):
+    """用 AST 取函数 func 的完整装饰器源文本（支持跨行）；解析失败或找不到返回 None。"""
+    import ast
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+            segs = [ast.get_source_segment(source, d) or "" for d in node.decorator_list]
+            return "\n".join(segs)
+    return None
 
 
 def scenario_status(root, data, slice_ids=None):
@@ -324,7 +364,8 @@ def scenario_status(root, data, slice_ids=None):
             violations.append("G7 scenario: %s → %s 文件不存在" % (sid, rel))
             continue
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
+            source = f.read()
+        lines = source.splitlines()
         hit = None
         for i, line in enumerate(lines):
             if re.match(r"^\s*(?:async\s+)?def\s+%s\s*\(" % re.escape(func), line) or (
@@ -334,11 +375,16 @@ def scenario_status(root, data, slice_ids=None):
         if hit is None:
             violations.append("G7 scenario: %s → %s 未定义" % (sid, target))
             continue
-        k, marked = hit - 1, False
-        while k >= 0 and lines[k].strip().startswith("@"):
-            if MARK_RE.search(lines[k]):
-                marked = True
-            k -= 1
+        marked = False
+        decos = _py_decorators(source, func) if rel.endswith(".py") else None
+        if decos is not None:
+            marked = bool(MARK_RE.search(decos))  # AST 取完整 decorator_list，跨行装饰器也能识别
+        else:
+            k = hit - 1
+            while k >= 0 and lines[k].strip().startswith("@"):
+                if MARK_RE.search(lines[k]):
+                    marked = True
+                k -= 1
         if marked:
             violations.append("G7 scenario: %s → %s 仍标记 xfail/skip" % (sid, target))
             continue
@@ -430,27 +476,62 @@ def cmd_gate(args):
     if source and not tests:
         failed.append("G3 pairing: 改了源码 %s 但区间内没有测试文件改动" % ", ".join(sorted(source)[:6]))
     failed.extend(gwt_violations(root, tests))
-    red_first = evidence_red_before_green(args.change_dir, args.slice)
-    if red_first is False:
+    ev = evidence_state(args.change_dir, args.slice)
+    hooks_missing = ev == "missing_file"
+    if ev == "missing_file":
+        warnings.append("G5 evidence: 无 evidence.log（test-evidence hook 未安装或未触发），本切片留痕无法核对")
+    elif ev == "no_rows":
+        failed.append("G5 evidence: evidence.log 无本切片 %s 的测试运行记录（hook 在工作却没跑过测试）" % args.slice)
+    elif ev == "no_red":
         warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
-    elif red_first is None:
-        warnings.append("G5 evidence: 无本切片的测试运行留痕")
-    failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel))
+    failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel, committed))
     v7, _, _ = scenario_status(root, data, {args.slice})
     failed.extend(v7)
 
     result = {"slice": args.slice, "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
-              "failed": failed, "warnings": warnings,
+              "failed": failed, "warnings": warnings, "hooks_missing": hooks_missing,
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
     append_report(args.change_dir, result)
     timeline_record(args.change_dir, "gate", "%s %s" % (args.slice, "ok" if result["ok"] else "red"))
-    if result["ok"] and marker is not None:
-        try:
-            os.remove(os.path.join(root, MARKER))
-        except OSError:
-            pass
+    if marker is not None:
+        if result["ok"]:
+            try:
+                os.remove(os.path.join(root, MARKER))
+            except OSError:
+                pass
+        else:
+            # 记红次数：连续 2 次红执行体按纪律停下上报，stop-gate 据此不再强制续跑
+            marker["red_count"] = int(marker.get("red_count") or 0) + 1
+            try:
+                with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
+                    json.dump(marker, f, ensure_ascii=False)
+            except OSError:
+                pass
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
+
+
+def cmd_record(args):
+    """integrator 把（在临时 worktree 里跑出的）切片门禁 JSON 幂等写回 change 分支的 gate-report.md / timeline.md。"""
+    if args.json:
+        try:
+            result = json.loads(args.json)
+        except ValueError as e:
+            die("--json 不是合法 JSON：%s" % e)
+    else:
+        if not (args.slice and args.commit):
+            die("record 需要 --json，或 --slice 与 --commit（可选 --ok/--red --failed --warnings）")
+        result = {"slice": args.slice, "ok": not args.red, "commit": args.commit,
+                  "failed": [x for x in (args.failed or "").split(";") if x.strip()],
+                  "warnings": [x for x in (args.warnings or "").split(";") if x.strip()]}
+    result.setdefault("failed", [])
+    result.setdefault("warnings", [])
+    if report_has_row(args.change_dir, result.get("slice", ""), result.get("commit", "")):
+        print(json.dumps({"recorded": False, "reason": "already recorded"}, ensure_ascii=False))
+        return
+    append_report(args.change_dir, result)
+    timeline_record(args.change_dir, "gate", "%s %s" % (result.get("slice"), "ok" if result.get("ok") else "red"))
+    print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 
 
 def cmd_final(args):
@@ -513,8 +594,17 @@ def main():
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base")
+    p = sub.add_parser("record", help="把切片门禁 JSON 幂等写回 gate-report.md / timeline.md（integrator 合回并行切片时用）")
+    p.add_argument("--change-dir", required=True)
+    p.add_argument("--json")
+    p.add_argument("--slice")
+    p.add_argument("--commit")
+    p.add_argument("--red", action="store_true")
+    p.add_argument("--failed")
+    p.add_argument("--warnings")
     args = ap.parse_args()
-    {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "final": cmd_final, "baseline": cmd_baseline}[args.cmd](args)
+    {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
+     "final": cmd_final, "baseline": cmd_baseline}[args.cmd](args)
 
 
 if __name__ == "__main__":

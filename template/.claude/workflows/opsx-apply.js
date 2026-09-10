@@ -8,6 +8,7 @@
 //   waves         slice-gate.py waves 的输出，如 [["S1","S2"],["S3"],["S4","S5"]]
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
 //   expectHead    可选，change 分支最新 commit 前缀；执行体第零步校验自己的 worktree 基分支
+//   deps          可选，{ S3: ["S1","S2"], ... }（来自 slices.json）；依赖已 blocked 的切片直接记 blocked，不白跑
 //   models        必填：{ executor, reviewer, integrator }，按角色显式路由（铁律：不得留空让 env 默认兜底）
 //                 executor / reviewer = 会话主模型别名（如 "opus" / "fable"）；integrator = 低档模型（"sonnet"）
 //   efforts       可选：{ executor: "high", reviewer: "high", integrator: "low" }
@@ -29,6 +30,7 @@ export const meta = {
 const { change, changeDir, hooksDir, waves, useAgentTypes } = args
 const agentsDir = args.agentsDir || '.claude/agents'
 const expectHead = args.expectHead || null
+const deps = args.deps || {}   // 可选：{ S3: ["S1","S2"], ... }；依赖已 blocked 的切片不再派发，直接记 blocked
 
 // ---- 模型路由（铁律：按角色显式声明，缺一即拒绝起飞）
 const models = args.models || {}
@@ -103,9 +105,14 @@ const reviews = []
 const results = []
 const blocked = []
 
-for (const [i, wave] of waves.entries()) {
+for (const [i, allWave] of waves.entries()) {
   phase('Implement')
-  log(`wave ${i + 1}/${waves.length}: ${wave.join(', ')}`)
+  const blockedIds = new Set(blocked.map((b) => b.slice))
+  const skipped = allWave.filter((s) => (deps[s] || []).some((d) => blockedIds.has(d)))
+  for (const s of skipped) blocked.push({ slice: s, reason: `依赖已 blocked：${(deps[s] || []).filter((d) => blockedIds.has(d)).join(', ')}` })
+  const wave = allWave.filter((s) => !skipped.includes(s))
+  log(`wave ${i + 1}/${waves.length}: ${wave.join(', ') || '(全部因依赖 blocked 跳过)'}`)
+  if (!wave.length) continue
   const iso = wave.length > 1 ? 'worktree' : undefined
   const done = await parallel(wave.map((s) => () =>
     agent(executorPrompt(s), { label: s, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
@@ -121,10 +128,16 @@ for (const [i, wave] of waves.entries()) {
   const merged = wave.filter((s, k) => done[k] && done[k].ok)
   if (iso && merged.length) {
     const shas = merged.map((s) => done[wave.indexOf(s)].commit)
+    // 临时 worktree 里跑出的门禁结论不会随 commit 进分支，由 integrator 用 record 幂等写回
+    const recordCmds = merged.map((s) => {
+      const g = done[wave.indexOf(s)]
+      return `python3 ${hooksDir}/slice-gate.py record --change-dir ${changeDir} --slice ${s} --commit ${g.commit}${g.ok ? '' : ' --red'}`
+    })
     const integ = await agent(
       rules('integrator') + `按 agent 定义第 0 项先把 ${changeDir} 内未提交的飞行记录文件（timeline.md / gate-report.md / evidence.log）提交掉；` +
       `再按第 1 项把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（冲突则 abort 并返回 ok:false）。` +
-      `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`。返回 JSON。`,
+      `合回后逐条运行（把临时 worktree 里的门禁结论写回分支）：\n${recordCmds.join('\n')}\n` +
+      `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`，最后再按第 0 项把飞行记录提交。返回 JSON。`,
       { label: `integrate:w${i + 1}`, schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
     if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
   }
@@ -145,14 +158,17 @@ if (blocking.length) {
     rules('slice-executor') + `你在仓库根。一次性修复 OpenSpec change \`${change}\` 评审挡下的 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit（fix: 前缀），不 push。`,
     `先运行 \`python3 ${hooksDir}/slice-gate.py start fix --change-dir ${changeDir}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start）。`,
     `finding 清单：${JSON.stringify(blocking)}`,
-    `每条修复都要有先失败的测试；修完运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
+    `每条修复都要有先失败的测试；修完 \`python3 ${hooksDir}/timeline.py record fix --change-dir ${changeDir} --note "blocking=${blocking.length}"\`，` +
+    `再运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
   ].join('\n'), { label: 'fix', schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
 }
 
 phase('Finalize')
 const final = await agent(
-  rules('integrator') + `按 agent 定义第 0 项先提交 ${changeDir} 内未提交的飞行记录文件，再按第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
-  `再 \`python3 ${hooksDir}/timeline.py record apply-done --change-dir ${changeDir} --note "blocked=${blocked.length} blocking=${blocking.length}"\`。返回 final 的 JSON。`,
+  rules('integrator') + `按 agent 定义第 0 项先提交 ${changeDir} 内未提交的飞行记录文件；` +
+  `\`python3 ${hooksDir}/timeline.py record review --change-dir ${changeDir} --note "findings=${findings.length} blocking=${blocking.length} deferred=${deferred.length}"\`；` +
+  `再按第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
+  `再 \`python3 ${hooksDir}/timeline.py record apply-done --change-dir ${changeDir} --note "blocked=${blocked.length} blocking=${blocking.length}"\`，最后按第 0 项再提交一次飞行记录。返回 final 的 JSON。`,
   { label: 'final-gate', schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
 
 return { change, models, efforts, slices: results, blocked, blocking, deferred, fix, final }

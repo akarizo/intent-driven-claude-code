@@ -50,6 +50,18 @@ def test_intent_gate_ownership_deny(tmp_path):
     assert "S1" in reason and "src/other.py" in reason
 
 
+def test_intent_gate_stale_marker_requires_apply_context(tmp_path):
+    # Given: 存在指向 S1 的 .openspec-slice 标记，但 change 的 tasks.md 已全部勾选（apply 上下文不再成立，标记是陈旧的）
+    root = ownership_root(tmp_path)
+    write(root / "openspec" / "changes" / "c" / "tasks.md", "- [x] S1 x\n")
+
+    # When: 对 owns 内的 src/a.py 发起 Write
+    p = run_hook("intent-gate", stdin=payload(root / "src" / "a.py", root), env={"CLAUDE_PROJECT_DIR": str(root)})
+
+    # Then: 门禁不放行（陈旧标记不能成为永久旁路）
+    assert '"deny"' in p.stdout, p.stdout
+
+
 def test_intent_gate_ownership_allows_owned_file(tmp_path):
     # Given: 同上的 .openspec-slice 标记，S1 的 owns 含 src/a.py
     root = ownership_root(tmp_path)

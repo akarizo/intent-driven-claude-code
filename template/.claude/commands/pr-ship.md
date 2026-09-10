@@ -86,6 +86,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
      - [ ] <验证项 1>
      ```
    - 门禁未全绿 / 有 blocked 切片 → 正文追加一段「## 飞行门禁未全绿」，列出问题切片与失败项。
+   - `openspec/changes/<name>/review-findings.json` 存在（飞行收口写入的 `{blocking, deferred, fix}`）→ 正文追加一段「## 切片评审（未自动修的 MEDIUM/LOW）」逐条列出 `文件:行号 — 摘要 — 修法`，让人类 reviewer 看得见 AI 放过了什么。
 
    起草完直接用于创建 PR，不再逐项确认。
 
@@ -101,7 +102,11 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
      门禁未全绿 → 加 `--draft`。
    - GitLab: `glab mr create --target-branch <target> --source-branch <branch> --title "<标题>" --description "..."`（同上，加 `--draft`）。
 
-   抓取返回的 PR/MR URL 与编号。
+   抓取返回的 PR/MR URL 与编号，并记飞行事件：
+   ```bash
+   python3 .claude/hooks/timeline.py record pr-open --change-dir openspec/changes/<name> --note "<PR URL>"
+   python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>    # 打印批准 → PR 打开用时
+   ```
 
 8. **呼叫干净的 code-reviewer subagent 评审 diff（唯一模式：full）**
 
@@ -109,7 +114,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    git rev-parse HEAD    # 记为 REVIEW_HEAD_1
    ```
 
-   用 **Agent 工具**启一个 `subagent_type=code-reviewer`。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
+   用 **Agent 工具**启一个 `subagent_type=code-reviewer`、`model: "<main>"`（当前会话主模型别名，看 `/model`；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
 
    ```
    背景: review GitHub/GitLab 上的 PR/MR #<num>。
@@ -147,7 +152,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 10. **CRITICAL/HIGH 自动修复（至多 2 轮，不问询）**
 
-    - 有 CRITICAL/HIGH → 主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer` 走 **`follow-up` 模式**复核：
+    - 有 CRITICAL/HIGH → 主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`）走 **`follow-up` 模式**复核：
       ```
       背景: 复核 PR/MR #<num> 的修复补丁。
       评审模式: follow-up

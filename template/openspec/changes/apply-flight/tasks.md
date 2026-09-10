@@ -1,5 +1,6 @@
 > 本文件由 `slices.json` 生成（本 change 首次以切片格式规划）。切片规则：1–9 片 · DAG 深度 ≤ 3 · 同 wave 所有权不相交 · 每片 owns ≤ 12 条 · 每片一个 commit · 门禁绿才勾选。
 > 本仓库自身纪律：Python 脚本 TDD（先写失败测试）；测试函数首行 `# Given:` 三段中文注释；`python3 -m pytest -q tests` 全绿；`openspec schema validate intent-driven` 绿。
+> 自举说明：S1–S3 的 scenario 骨架无法在 tasks 阶段生成（骨架要调用的门禁脚本正是 S1 的产物），故与实现同 commit，先红后绿在会话内完成；S4–S6 的骨架按 D2 在起飞前单独提交（556a2dd）。
 
 ## S1 门禁核心 · deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_intent_gate.py`
 

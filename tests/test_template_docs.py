@@ -45,6 +45,8 @@ def test_pr_ship_single_review():
     assert "gate-report.md" in text and "evidence.log" in text and "不重跑测试" in text
     assert re.search(r"(至多|最多|≤)\s*2\s*轮", text)
     assert "水位线" not in text and "review-log" not in text
+    assert text.count('model: "<main>"') >= 2, "code-reviewer 派发（首审与复核）都必须显式带 model"
+    assert "timeline.py record pr-open" in text and "review-findings.json" in text
 
 
 def test_schema_tasks_produce_slices():

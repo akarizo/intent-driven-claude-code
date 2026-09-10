@@ -33,6 +33,8 @@ def main():
         return
     with open(marker, "r", encoding="utf-8") as f:
         m = json.load(f)
+    if int(m.get("red_count") or 0) >= 2:
+        return  # 同一切片已连续 2 次红：执行体按纪律停下上报，不再强制续跑
     slice_id = m.get("slice") or "?"
     change_dir = m.get("change_dir") or "<change-dir>"
     reason = ("切片 %s 已 start 但门禁未绿，不能收口：先运行 "

@@ -5,6 +5,8 @@
 #       切片进行中（存在 .openspec-slice 标记）只允许写该切片 owns 内的文件。
 # 定根：从目标文件所在目录向上找最近含 openspec/ 的目录（会话从主仓库根 cd 进 .worktrees/<change>/ 时，
 #       change 只存在于 worktree 内，按 CLAUDE_PROJECT_DIR 定根会误拒）；找不到再回退 CLAUDE_PROJECT_DIR。
+#       前提：openspec/ 位于 git toplevel（.openspec-slice 标记写在 toplevel）。openspec/ 嵌套在子目录的仓库
+#       （如本模板仓库自身的 template/openspec/）定根与标记位置对不上，所有权检查不生效——这类仓库不受本门禁管。
 # 决策树（任一命中即放行；否则 DENY）：
 #   1. 根目录无 openspec/            → ALLOW（非 intent-driven 项目，门禁 no-op）
 #   2. 目标命中豁免名单            → ALLOW（*.md / openspec/** / .claude/** / docs/** / lockfile）
@@ -22,7 +24,8 @@ EXEMPT_DIR_PREFIX = ("openspec/", ".claude/", "docs/")
 # 仅豁免: 文档 + 生成式 lockfile/清单。通用 json/yaml/toml/ini 不再整类豁免——
 # 它们可能承载中级+ 改动(CI / k8s / IaC / schema / app 配置)，应受门禁；确属 mini 走 /opsx-mini。
 # (openspec/ 与 .claude/ 内的配置仍按目录前缀豁免。)
-EXEMPT_BASENAME = {".gitignore", ".mini-active", ".openspec-slice", "LICENSE", "LICENSE.md", "LICENSE.txt",
+# .openspec-slice 标记只由 slice-gate.py start 用 Python 写，不豁免：模型手写一个指向任意 owns 的标记应被拒
+EXEMPT_BASENAME = {".gitignore", ".mini-active", "LICENSE", "LICENSE.md", "LICENSE.txt",
                    "package-lock.json", "pnpm-lock.yaml", "go.sum"}
 EXEMPT_EXT = {".md", ".mdx", ".markdown", ".txt", ".rst", ".lock"}
 MINI_TTL = timedelta(hours=24)
@@ -254,9 +257,13 @@ def main():
     ownership = slice_ownership(root, rel_posix)
     if ownership is not None:
         slice_id, owns, owned = ownership
-        if owned:
+        if not owned:
+            deny_ownership(rel_posix, slice_id, owns)
+            return
+        # owns 内也仍要求 apply 上下文成立：gate 从未绿的陈旧标记不能成为永久旁路
+        if has_apply_context(root):
             allow()
-        deny_ownership(rel_posix, slice_id, owns)
+        deny(rel_posix)
         return
     if has_apply_context(root):
         allow()

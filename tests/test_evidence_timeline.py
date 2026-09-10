@@ -90,6 +90,18 @@ def test_stop_hook_respects_stop_hook_active(git_repo):
     assert "block" not in p.stdout
 
 
+def test_stop_hook_allows_after_two_reds(git_repo):
+    # Given: .openspec-slice 标记里 red_count 已经是 2（同一门禁项连续两次红，执行体按纪律该停下上报）
+    change = marker_repo(git_repo)
+    write(git_repo / ".openspec-slice", json.dumps({"slice": "S1", "change_dir": str(change), "base": "HEAD", "red_count": 2}))
+
+    # When: Stop 事件触发 stop-gate.py
+    p = run_hook("stop-gate", stdin=stop_event(git_repo), cwd=git_repo)
+
+    # Then: 不再 block（否则执行体会被强制续跑，违背「连续 2 次红即停」）
+    assert "block" not in p.stdout
+
+
 def test_stop_hook_silent_without_marker(git_repo):
     # Given: 根目录没有 .openspec-slice 标记
     # When: SubagentStop 事件触发 stop-gate.py

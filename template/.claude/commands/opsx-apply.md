@@ -40,7 +40,8 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
 5. **启动切片工作流**
    - 先确定当前会话模型别名 `<main>`（`/model` 显示的：`fable` / `opus` / `sonnet`）。
    - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change: "<name>", changeDir: "openspec/changes/<name>", hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves: <step3 的 waves>, useAgentTypes: true, expectHead: "<git rev-parse --short=10 HEAD>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
-   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`（同 wave 多切片各自 `isolation: worktree`），回报只收其原样 JSON；每个 wave 跑完派一个 `integrator`（`model: "sonnet"`）合回；评审用 `code-reviewer`（`model: "<main>"`）并行派发（`run_in_background` 语义：不等它完成再继续）；全部 wave 跑完后对阻断 finding 做一次批量修复，再跑一次 final。
+   - 同时传 `deps: <slices.json 里每片的 deps 映射>`，依赖已 blocked 的切片脚本不再派发。
+   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`、`effort: high`（同 wave 多切片各自 `isolation: worktree`；prompt 首行带 `expectHead` 第零步基分支校验），回报只收其原样 JSON；**门禁红则以其 `failed` 重派同一切片一次**，仍红记 blocked，依赖它的切片直接记 blocked；每个 wave 跑完派一个 `integrator`（`model: "sonnet"`、`effort: low`）先提交飞行记录、合回、逐片 `slice-gate.py record` 写回门禁结论；评审用 `code-reviewer`（`model: "<main>"`、`effort: high`）并行派发（`run_in_background` 语义：不等它完成再继续）；全部 wave 跑完后对阻断 finding 做一次批量修复，再跑一次 final。
    - 两条路径最终都产出同一份 JSON：`{change, models, efforts, slices: [...], blocked: [...], blocking: [...], deferred: [...], fix, final}`（完整字段见 `.claude/workflows/opsx-apply.js` 的 `return`）。
 
 6. **收口分解**
@@ -48,8 +49,9 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
    ```bash
    python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
    python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir>
+   python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
    ```
-   打印 session-decompose 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；删除 `openspec/changes/<name>/.flight`；把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）。
+   打印 session-decompose 与 timeline report 输出的飞行记录（含**各 agent 实际模型**，与上面的路由表对账；对不上即铁律违规，写进收口报告）；把工作流返回的 `{blocking, deferred, fix}` 写入 `openspec/changes/<name>/review-findings.json`（供 `/pr-ship` 把未自动修的 MEDIUM/LOW 带进 PR 正文）；删除 `openspec/changes/<name>/.flight`；确认 `gate-report.md` 最后一行是当前代码 HEAD 的 `final ok`（不是 → 重跑 `slice-gate.py final`），然后把门禁绿的切片在 `tasks.md` 里对应 `- [ ]` 勾成 `- [x]`（红的切片不勾）；飞行记录文件单独 `chore(flight)` commit。
 
 7. **不问，直接进入 `/pr-ship`**
    final 全绿且无 blocked 切片 → 直接调用 `/pr-ship`。

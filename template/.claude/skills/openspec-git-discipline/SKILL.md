@@ -42,7 +42,7 @@ This carve-out covers **only** per-task implementation commits inside that apply
 
 - **由运行时创建，不是 LLM 手动嵌套** —— 临时 worktree 由 Workflow/Agent 运行时在该切片执行期间创建，执行体本身不手动在 change worktree 内再开子 worktree；
 - **以 SHA 合回，不是 `merge`/`push`** —— 每个切片的本地实现 commit 由 `integrator` 以该切片 HEAD 的 SHA 合回 change 分支，不 push、不 merge 进 main；
-- **清理由运行时负责** —— integrator 合回后，该切片的临时 worktree 由运行时清理，不留给执行体或用户手动清理。
+- **清理由运行时负责（无残留改动时）** —— 临时 worktree 内没有未提交改动时由运行时自动清理；若有残留（例如 hook 追加的飞行记录），运行时会保留它，由人确认内容已由 integrator `record` 写回后，在主仓库根手动 `git worktree remove` 清理，执行体不动它。
 
 本 carve-out 只覆盖飞行 apply 工作流产生的 wave 内并行临时 worktree，不放松其它场景下「每 change 一间，禁止嵌套子 worktree」的规则，也不授权对 main 的 `push` 或 `merge`。
 
