@@ -15,9 +15,13 @@ description: 渲染/刷新 openspec/changes/<change>/spec.html 意图审批面�
    - 若用户传了参数 → 直接用
    - 若没传 → 跑 `openspec list --json`，用 **AskUserQuestion** 让用户选最近修改的 3-4 个；最新一个标 `(Recommended)`
 
-2. **调用 spec-html-render skill**
+2. **运行渲染脚本**
 
-   按 `.claude/skills/spec-html-render/SKILL.md` 的 8 步流程执行：读工件 → 读 in-force ADR → 读模板 → 替换 block → 判定 mockup → Write `openspec/changes/<change>/spec.html`。
+   ```bash
+   python3 .claude/hooks/spec_html.py --change-dir openspec/changes/<change-name>
+   ```
+
+   详见 `.claude/skills/spec-html-render/SKILL.md`。
 
 3. **输出一行汇总**
 
