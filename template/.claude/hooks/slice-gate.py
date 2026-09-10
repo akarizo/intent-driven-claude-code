@@ -234,15 +234,40 @@ def gwt_violations(root, test_files):
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
         for name, body in _test_bodies(rel, lines):
-            g, w, t = body.find("Given:"), body.find("When:"), body.find("Then:")
+            pos = {}
+            for kw in ("Given:", "When:", "Then:"):
+                m = re.search(r"(?m)^\s*(?:#|//|\*)\s*%s" % kw, body)
+                pos[kw] = m.start() if m else -1
+            g, w, t = pos["Given:"], pos["When:"], pos["Then:"]
             if min(g, w, t) < 0 or not (g < w < t):
-                missing = [k for k, i in (("Given:", g), ("When:", w), ("Then:", t)) if i < 0] or ["顺序不是 Given→When→Then"]
+                missing = [k for k, i in pos.items() if i < 0] or ["顺序不是 Given→When→Then"]
                 out.append("G4 GWT: %s::%s 缺 %s" % (rel, name, " ".join(missing)))
+    return out
+
+
+def _py_test_bodies(lines):
+    """用 AST 找 test_* 函数，避免把字符串常量里的 def 误判为测试。"""
+    import ast
+    src = "\n".join(lines)
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+            end = getattr(node, "end_lineno", None) or node.lineno
+            out.append((node.name, "\n".join(lines[node.lineno - 1:end])))
     return out
 
 
 def _test_bodies(rel, lines):
     if rel.endswith(".py"):
+        bodies = _py_test_bodies(lines)
+        if bodies is not None:
+            for item in bodies:
+                yield item
+            return
         i = 0
         while i < len(lines):
             m = PY_TEST_DEF.match(lines[i])
@@ -382,8 +407,9 @@ def cmd_gate(args):
     failed, warnings = [], []
 
     committed, uncommitted = changed_files(root, base)
-    if uncommitted:
-        warnings.append("工作树有未提交改动：%s" % ", ".join(sorted(uncommitted)[:8]))
+    stray = sorted(f for f in uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
+    if stray:
+        warnings.append("工作树有未提交改动：%s" % ", ".join(stray[:8]))
     files = committed | uncommitted
 
     rc, tail = run_cmd(sl["verify"], root)
