@@ -131,6 +131,22 @@ def test_takeoff_hook_denies_prompt_path_wrapped_in_backticks(tmp_path):
     assert r2["permissionDecision"] == "deny" and str(deep) in r2["permissionDecisionReason"]
 
 
+def test_takeoff_cli_honors_equals_form_change_dir(tmp_path):
+    # Given: 一份无批准的转录、一份有批准的转录，命令行用 --change-dir=DIR 等号写法且 stdin 为空
+    d = change_dir(tmp_path)
+    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
+    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+
+    # When: 以等号写法分别运行 CLI 模式
+    p1 = run_hook("takeoff-gate", "--change-dir=" + str(d), "--session=" + str(none))
+    p2 = run_hook("takeoff-gate", "--change-dir=" + str(d), "--session=" + str(okay))
+
+    # Then: 无批准时非 0 退出且 stderr 给补救指引；有批准时 exit 0 并打印批准证据（等号写法不得退化成静默放行）
+    assert p1.returncode != 0, p1.stdout
+    assert "spec.html" in p1.stderr
+    assert p2.returncode == 0 and "2026-09-10T08:58:04Z" in p2.stdout
+
+
 def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
     # Given: 一次与飞行无关的派发，以及一次转录不可读的飞行派发
     d = change_dir(tmp_path)

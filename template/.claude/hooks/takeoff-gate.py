@@ -265,7 +265,7 @@ def run_hook(raw):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    if "--change-dir" in argv:
+    if argv:  # 有参数一律走 CLI：等号写法也算，未知参数由 argparse 非 0 退出（fail-closed）
         parser = argparse.ArgumentParser(description="校验飞行计划的人类批准证据")
         parser.add_argument("--change-dir", required=True, help="openspec/changes/<name> 目录")
         parser.add_argument("--session", help="主会话转录 .jsonl 路径")
