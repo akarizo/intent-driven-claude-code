@@ -207,7 +207,8 @@ def load_alias_of():
 
 
 def audit_routes(agents, expect, alias_of):
-    """按 agentType→角色（缺失才退回阶段）比对别名（比别名不比原始 id）；返回 (不符项, 已对账角色→期望别名)。"""
+    """按 agentType→角色（缺失才退回阶段）比对别名（比别名不比原始 id）。
+    返回 (不符项, 已对账角色→期望别名, 未采样到的角色)——零覆盖必须红，不能当一致。"""
     bad, seen = [], {}
     for label, phase, model, _turns, _wall, atype in agents:
         role = AGENT_ROLE.get(atype) or PHASE_ROLE.get(phase)
@@ -217,7 +218,9 @@ def audit_routes(agents, expect, alias_of):
         seen[role] = want
         if got != want:
             bad.append((label, phase, want, model))
-    return bad, seen
+    ordered = [r for r in ROLE_ORDER if r in expect] + [r for r in expect if r not in ROLE_ORDER]
+    missing = [r for r in ordered if r not in seen]
+    return bad, seen, missing
 
 
 def main():
@@ -270,10 +273,12 @@ def main():
             if alias_of is None:
                 print("  ⚠ 无法加载 session-model.py 的 alias_of，路由对账跳过（只打印）")
             else:
-                bad, seen = audit_routes(agents, expect, alias_of)
-                if bad:
+                bad, seen, missing = audit_routes(agents, expect, alias_of)
+                if bad or missing:
                     for label, phase, want, model in bad:
                         print("  ❌ %s · %s · 期望 %s · 实际 %s" % (label, phase, want, model))
+                    for role in missing:
+                        print("  ❌ 未采样到角色 %s（期望 %s）——零覆盖不算一致" % (role, expect[role]))
                     return EXIT_ROUTE_MISMATCH
                 print("  路由对账：✅ 一致（%s）" % " · ".join(
                     "%s=%s" % (role, seen[role]) for role in ROLE_ORDER if role in seen))

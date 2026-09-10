@@ -272,3 +272,35 @@ def test_route_audit_keys_on_agent_type_not_phase(tmp_path):
     assert "integrate:w1" not in p.stdout.split("路由对账")[-1] and "❌" not in p.stdout
     assert "integrator=sonnet" in p.stdout
 
+def test_route_audit_fails_on_zero_coverage(tmp_path):
+    # Given: 一个空的 workflow journal 目录（--workflow 指错或该目录尚无 agent 转录）
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带路由表运行收口对账
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+
+    # Then: 非 0 退出，逐条点名三个未采样到的角色，且不打印 ✅ 一致
+    assert p.returncode != 0, p.stdout
+    assert p.stdout.count("未采样到角色") == 3
+    assert "✅" not in p.stdout
+
+
+def test_route_audit_fails_when_one_role_missing(tmp_path):
+    # Given: journal 里只有 executor 与 integrator 在阶段内被采到，reviewer 因嵌套派发根本没出现
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1", agent_type="slice-executor")
+    wf_agent(wf, "a2", "claude-sonnet-5", "Finalize", "final-gate", agent_type="integrator")
+    sess = tmp_path / "sess.jsonl"
+    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
+
+    # When: 带路由表运行收口对账
+    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
+
+    # Then: 非 0 退出，点名缺的正是 reviewer（期望 opus），不打印 ✅ 一致
+    assert p.returncode != 0, p.stdout
+    assert "未采样到角色 reviewer（期望 opus）" in p.stdout
+    assert "✅" not in p.stdout
