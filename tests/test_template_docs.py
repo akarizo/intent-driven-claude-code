@@ -159,3 +159,37 @@ def test_apply_checks_approval_gate():
     assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
     assert "takeoff-gate.py" in skill
     assert "record approve" in cmd and "批准证据" in cmd
+
+
+# ------------------------------------------------ 阶段边界与起飞确认 flag（S2 骨架，实现后去掉 xfail 标记）
+@pytest.mark.xfail(strict=True, reason="S2 未改 explore 命令与 skill；实现后去掉本标记")
+def test_explore_command_states_boundary():
+    # Given: /opsx-explore 命令与 openspec-explore skill
+    cmd = read(CMD / "opsx-explore.md")
+    skill = read(SKILLS / "openspec-explore" / "SKILL.md")
+
+    # When: 检查 Guardrails 里的三条硬边界与收尾交接措辞
+    for text in (cmd, skill):
+        # Then: 三类飞行计划工件、baseline、实现类子 agent 都写明禁止，并引导人显式 /opsx-propose
+        assert "slices.json" in text and "tasks.md" in text
+        assert "baseline" in text and "slice-executor" in text
+        assert "/opsx-propose" in text
+        # Then: 仍保留 explore 可写思考类工件的既有定位
+        assert "proposal.md" in text and "design.md" in text
+        # Then: 不再有把 explore 直接推进到飞行的措辞
+        assert "Flow into a proposal" not in text
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未改 apply 命令与 skill；实现后去掉本标记")
+def test_apply_command_documents_flag():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 检查确认 flag 的语义、归属与既有步骤是否保留
+    for text in (cmd, skill):
+        # Then: 写明 flag 拼写、不参与 change 名解析、由 UserPromptSubmit hook 强制
+        assert "--confirm-model=" in text
+        assert "change 名" in text and "UserPromptSubmit" in text
+        # Then: PR #29 的 takeoff-gate 自检与 session-model 取值原样保留
+        assert "takeoff-gate.py" in text and "session-model.py" in text

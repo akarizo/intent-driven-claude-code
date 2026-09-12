@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-gate · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-gate
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">specs</span><span class="chip" data-state="done">adr</span><span class="chip" data-state="done">tasks</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement"><code>mechanical-takeoff-gates</code>（PR #29，未合并）已把起飞前的两条判据机械化：主模型读转录判定（<code>session-model.py</code>）、人类批准由 <code>PreToolUse</code> hook 强制（<code>takeoff-gate.py</code>）。但 2026-09-12 一次真实翻车证明<strong>拦截面还差两块</strong>，而且差的正是用户每次都要用到的那两块。</p><p class="why-body"><strong>事故经过</strong>（证据：<code>~/.claude/projects/-Users-akarizo-Workspace-amc-gateway--worktrees-temp-queue-query/</code> 两份转录 + 该 change 目录文件 mtime）：</p><p class="why-body">| 本地时间 | 事件 | 证据 |
+|---|---|---|
+| 14:55 | 人切 <code>/model</code> → Fable 5.1 | 转录 c9b22e25 |
+| 14:57 | 人跑 <code>/opsx-explore &lt;需求&gt;</code> | 同上 |
+| 15:36–15:47 | <strong>explore 会话里写出全套飞行工件</strong>：proposal · design · specs · <code>tasks.md</code> · <code>slices/S1–S4.md</code> · <code>spec.html</code> · <code>slices.json</code> | 文件 mtime 全落在 explore 窗口内 |
+| 15:47:53 | <strong>explore 会话里跑了 baseline</strong>，向 <code>timeline.md</code> 记入 <code>baseline exit 101, 74.4s</code> | <code>timeline.md</code> 该行至今仍在，且是文件里<strong>唯一</strong>事件 |
+| 15:48:38 | 人手动打断工具调用 | 转录 |
+| 15:48:49 | 人质问：&quot;为何没有走 propose 然后 apply?&quot; | 转录原话 |
+| 15:51:30 | 人 <code>/clear</code> 后 <code>/model</code> → Opus 5 (1M)，<strong>手工补上本该由系统强制的模型切换</strong> | 转录 1e41231d |</p><p class="why-body"><strong>缺口 ①：explore 阶段不在任何拦截面内。</strong> <code>takeoff-gate.py</code> 只判<strong>派发</strong>（<code>Workflow</code> 带 <code>args.changeDir</code>、<code>Agent</code> 派 <code>slice-executor</code>/<code>integrator</code>）。上表里越界的两个动作——<code>Write</code> 写 <code>slices.json</code>、<code>Bash</code> 跑 <code>slice-gate.py baseline</code>——<strong>都不是派发，一条都不拦</strong>。<code>opsx-explore.md</code> 在 PR #29 里一个字未改（<code>git diff main...worktree-mechanical-takeoff-gates -- template/.claude/commands/opsx-explore.md</code> 为空），仍写着 &quot;You MAY create OpenSpec artifacts&quot; 与 &quot;Ending Discovery → Flow into a proposal&quot;。即：<strong>PR #29 全部合并后，这次事故会原样重演</strong>，只在最后派 <code>slice-executor</code> 时才吃一个 deny——人依然看不到那个停顿，只看到一个失败。</p><p class="why-body"><strong>缺口 ②：执行模型不是确认点，只是自动读数。</strong> <code>session-model.py</code> 判定成功即静默放行，只有判不出才停；<code>takeoff-gate.py</code> 见到人敲的 <code>/opsx-apply</code> 即认定批准成立。两者合起来的效果是：<strong>人在 Fable 下敲 <code>/opsx-apply</code>，整场飞行就用 Fable 跑完，全程没有任何一处让人看一眼&quot;现在是 Fable&quot;</strong>。而用户的实际工作习惯是每次起飞前都要换执行模型（上表 15:51:30 就是手工补做这件事）。铁律 11 要求&quot;模型按角色显式路由&quot;，今天显式的只有<strong>派发参数</strong>，不包括<strong>人对该路由的知情与确认</strong>。</p><p class="why-body">两个缺口是同一条原则的延伸——ADR <code>DRAFT-gate-evidence-not-self-reported</code>（判据不得由被门禁方提供）目前只覆盖了&quot;起飞那一刻&quot;，没覆盖&quot;起飞之前的整段路&quot;。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>新增 <code>template/.claude/hooks/phase-gate.py</code>（零 token 判定，两种模式）</strong>：</li><li><strong><code>PreToolUse</code> 模式</strong>：从转录取<strong>最后一条人类命令消息</strong>判定当前阶段（<code>/opsx-explore</code> → explore）。阶段为 explore 时，<code>Write</code>/<code>Edit</code> 命中飞行计划工件（<code>slices.json</code> · <code>tasks.md</code> · <code>slices/*.md</code>）→ <code>permissionDecision: deny</code>；<code>Bash</code> 命中 <code>slice-gate.py baseline</code> → deny。其余一律静默放行。</li><li><strong><code>UserPromptSubmit</code> 模式</strong>：人敲 <code>/opsx-apply</code>（或 <code>/opsx-bulk-apply</code>）时，读转录判定当前主模型别名，在 prompt 里找 <code>--confirm-model=&lt;alias&gt;</code>：缺失 → <strong>exit 2 阻断</strong>，stderr 打印 change 名 · 当前主模型 · 切片与 wave 数 · 两条出路（切模型 / 带 flag 重敲）；与实际别名不符 → exit 2 点名不符；一致 → 静默放行。</li><li><strong><code>hooks.json</code> 注册</strong>：<code>PreToolUse</code> 增 <code>Write|Edit|Bash</code> → <code>phase-gate.py</code>；<code>UserPromptSubmit</code> 增 <code>phase-gate.py</code>（<code>hooks.json</code> 是 hook 唯一真源，<code>install.sh</code> 幂等合并进目标 <code>settings.json</code>，故不改 <code>settings.json</code>）。</li><li><strong><code>/opsx-explore</code> 与 <code>openspec-explore</code> 同改</strong>：Guardrails 增明确边界——不产出飞行计划工件（<code>slices.json</code> · <code>tasks.md</code> · <code>slices/*.md</code>）、不跑 baseline、不派实现类子 agent；工件成形即打住并引导人显式 <code>/opsx-propose</code>。<code>proposal.md</code> · <code>design.md</code> · <code>specs/**</code> 仍可在 explore 内写（保留&quot;捕捉思考&quot;定位，与现有命令语义一致）。</li><li><strong><code>/opsx-apply</code> 与 <code>openspec-apply-change</code> 同改</strong>：写明 <code>--confirm-model=&lt;alias&gt;</code> 的语义与它<strong>不参与</strong> change 名解析；step 0 在 <code>takeoff-gate.py</code> 自检之外补一句该 flag 由 <code>UserPromptSubmit</code> hook 强制，命令自身不判断。</li><li><strong>铁律与文档同改</strong>：仓库根 <code>CLAUDE.md</code> · <code>template/CLAUDE.md.snippet</code> 铁律 7 补&quot;起飞前执行模型须经人确认，证据是人 prompt 里的 <code>--confirm-model=</code>&quot;；<code>README.md</code> · <code>docs/WORKFLOW_zh.md</code> 补阶段边界表。</li></ul><div class="impact"><span class="tag"><strong>代码</strong>：新增 <code>template/.claude/hooks/phase-gate.py</code>；改 <code>template/.claude/hooks/hooks.json</code>。</span><span class="tag"><strong>命令与 skill</strong>：<code>opsx-explore</code> · <code>opsx-apply</code> 及两者同名 skill。</span><span class="tag"><strong>文档与铁律</strong>：仓库根 <code>CLAUDE.md</code> · <code>template/CLAUDE.md.snippet</code> · <code>README.md</code> · <code>docs/WORKFLOW_zh.md</code>。</span><span class="tag"><strong>测试</strong>：新增 <code>tests/test_phase_gate.py</code>；扩 <code>tests/test_template_docs.py</code> · <code>tests/test_docs_iron_rules.py</code>。</span><span class="tag"><strong>对人的影响</strong>：每次 <code>/opsx-apply</code> 多敲一次命令（第一次被拦下看模型，第二次带 flag 起飞）——这是本 change 刻意买下的成本，对应用户&quot;我一般都要切换执行的模型&quot;。</span><span class="tag"><strong>基线依赖</strong>：本 change 基于 <code>worktree-mechanical-takeoff-gates</code>（PR #29）开出，与其同改 <code>hooks.json</code> · <code>opsx-apply.md</code> · <code>openspec-apply-change/SKILL.md</code>；<strong>PR #29 先合并，本 change 再合并</strong>。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><strong>phase-discipline</strong>：阶段纪律的机械边界——explore 阶段禁止产出飞行计划工件与跑 baseline，阶段判定取自转录里人类自己发出的命令消息。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><strong>takeoff-model-confirm</strong>：起飞前执行模型的显式人类确认——<code>UserPromptSubmit</code> 阻断、<code>--confirm-model=</code> 证据、与实际主模型的一致性校验。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>phase-discipline <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: explore 阶段不得产出飞行计划</p><p><code>/opsx-explore</code> 阶段 SHALL NOT 写入飞行计划工件（<code>slices.json</code> · <code>tasks.md</code> · <code>slices/*.md</code>），MUST NOT 运行 baseline；越界 SHALL 由 <code>PreToolUse</code> hook 以 <code>permissionDecision: deny</code> 拒绝，MUST NOT 依赖模型自觉打住。
+Feature: 探索就是探索，飞行计划属 propose 收口
+Rule: 阶段取自人类自己发出的命令消息，越界动作当场 deny</p><div class="scenario"><p class="scenario-name">Scenario: explore-denies-flight-plan-write</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份转录，最后一条人类命令消息是 <code>/opsx-explore</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>一次 <code>PreToolUse</code> 输入：<code>Write</code> 工具，<code>file_path</code> 指向 <code>openspec/changes/&lt;name&gt;/slices.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>把该 JSON 喂给 <code>phase-gate.py</code>（hook 模式，stdin）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>stdout 是 <code>permissionDecision: deny</code> 的 hook 输出</span></li><li><span class="step-key" data-kw="AND">AND</span><span>reason 点名当前阶段是 explore，并要求显式 <code>/opsx-propose</code> 才能落飞行计划</span></li><li><span class="step-key" data-kw="AND">AND</span><span>同一阶段下写 <code>tasks.md</code> 与 <code>slices/S1.md</code> 同样被 deny</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: explore-allows-thinking-artifacts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同一份 explore 转录</span></li><li><span class="step-key" data-kw="AND">AND</span><span>一次 <code>PreToolUse</code> 输入：<code>Write</code> 工具，<code>file_path</code> 指向 <code>openspec/changes/&lt;name&gt;/proposal.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行（无输出、退出码 0）</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>design.md</code> 与 <code>specs/&lt;cap&gt;/spec.md</code> 同样放行——explore 仍可捕捉思考</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: explore-denies-baseline</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同一份 explore 转录</span></li><li><span class="step-key" data-kw="AND">AND</span><span>一次 <code>PreToolUse</code> 输入：<code>Bash</code> 工具，<code>command</code> 为 <code>python3 .claude/hooks/slice-gate.py baseline --change-dir openspec/changes/&lt;name&gt;</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>stdout 是 <code>permissionDecision: deny</code> 的 hook 输出，reason 说明 baseline 属 propose 收口</span></li><li><span class="step-key" data-kw="AND">AND</span><span>同一阶段下不含 <code>baseline</code> 子命令的 <code>slice-gate.py lint</code> 调用被放行</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: non-explore-phase-passes</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份转录，最后一条人类命令消息是 <code>/opsx-propose</code>（或 <code>/opsx-apply</code>）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>一次写 <code>slices.json</code> 的 <code>PreToolUse</code> 输入</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行——本门禁只约束 explore 阶段</span></li><li><span class="step-key" data-kw="AND">AND</span><span>转录里没有任何 <code>/opsx-*</code> 命令消息时同样放行（判不出阶段不锁死能力）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: phase-gate-fails-open-on-error</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次 <code>PreToolUse</code> 输入，但转录路径不存在 / 内容不是合法 JSONL</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行，退出码 0——坏门禁不绑架用户，与 <code>intent-gate.py</code> · <code>takeoff-gate.py</code> 同规矩</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: explore 命令写明阶段边界</p><p><code>/opsx-explore</code> 命令与 <code>openspec-explore</code> skill SHALL 在 Guardrails 写明禁止的三件事，MUST NOT 再出现把 explore 直接推进到飞行的措辞。
+Feature: 人读得到的边界，与 hook 判据一致
+Rule: 命令文本与 hook 同改，禁漂移</p><div class="scenario"><p class="scenario-name">Scenario: explore-command-states-boundary</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-explore.md</code> 与 <code>template/.claude/skills/openspec-explore/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读 Guardrails 段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份文件都写明 explore 不产出 <code>slices.json</code> · <code>tasks.md</code> · <code>slices/*.md</code>、不跑 baseline、不派实现类子 agent</span></li><li><span class="step-key" data-kw="AND">AND</span><span>都写明工件成形后引导人显式 <code>/opsx-propose</code>，而不是在同一轮继续</span></li><li><span class="step-key" data-kw="AND">AND</span><span>仍保留 <code>proposal.md</code> · <code>design.md</code> · <code>specs/**</code> 可在 explore 内写的既有定位</span></li></ul></div></div></div><div class="spec-card"><h3>takeoff-model-confirm <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 起飞前执行模型须经人确认</p><p><code>/opsx-apply</code> SHALL 在人未确认执行模型前被 <code>UserPromptSubmit</code> hook 阻断；确认的证据 SHALL 是人自己 prompt 里的 <code>--confirm-model=&lt;alias&gt;</code>，MUST NOT 由模型代为记录或推断。
+Feature: 人看得见自己正在用哪个模型起飞
+Rule: 无 flag 不起飞；flag 与转录实测主模型必须一致</p><div class="scenario"><p class="scenario-name">Scenario: blocks-apply-without-confirm</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份转录，最后一条主循环 assistant 的 <code>message.model</code> 是 <code>claude-fable-5-1</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>一次 <code>UserPromptSubmit</code> 输入，prompt 为人敲的 <code>/opsx-apply &lt;change&gt;</code>，不含 <code>--confirm-model=</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>把该 JSON 喂给 <code>phase-gate.py</code>（stdin）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 2（阻断该 prompt）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 含 change 名、当前主模型别名 <code>fable</code>、切片数与 wave 数</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 给出两条出路：先 <code>/model</code> 切换后重敲，或带 <code>--confirm-model=fable</code> 重敲</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: accepts-matching-confirm</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同一份转录（实测主模型别名为 <code>fable</code>）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>prompt 为 <code>/opsx-apply &lt;change&gt; --confirm-model=fable</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行，退出码 0，不写任何文件——证据就在 prompt 里，转录可复核</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: rejects-mismatched-confirm</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同一份转录（实测主模型别名为 <code>fable</code>）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>prompt 为 <code>/opsx-apply &lt;change&gt; --confirm-model=opus</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 2</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 点名 flag 声称 <code>opus</code> 但实测主模型是 <code>fable</code>，要求先真的切换再重敲</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不因 flag 存在就放行——防止人以为切了而其实没切</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: confirm-required-every-takeoff</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同一个 change 上一次起飞已带 <code>--confirm-model=fable</code> 放行过</span></li><li><span class="step-key" data-kw="AND">AND</span><span>新一次 <code>/opsx-apply &lt;change&gt;</code> 的 prompt 不含 flag</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>仍然阻断——确认是每次起飞的动作，不继承历史</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: unrelated-prompt-passes</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次 <code>UserPromptSubmit</code> 输入，prompt 与 <code>/opsx-apply</code> 无关（普通提问，或 <code>/opsx-propose</code>）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行，退出码 0——本门禁只在起飞命令上生效</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: unresolvable-model-fails-open</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次 <code>/opsx-apply</code> 的 prompt，但转录定位不到 / 读不出任何 assistant 条目</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>放行，退出码 0——<code>UserPromptSubmit</code> 阻断会抹掉 prompt，环境异常时不能把人锁在门外</span></li><li><span class="step-key" data-kw="AND">AND</span><span>转录可读但模型 id 认不出别名（如第三方 id）时改为阻断，stderr 点名认不出的 id</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: apply 命令写明确认 flag 的语义</p><p><code>/opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill SHALL 写明 <code>--confirm-model=&lt;alias&gt;</code> 由 hook 强制、不参与 change 名解析。
+Feature: flag 的含义与归属写清楚，命令自身不重复判断
+Rule: 命令文本与 hook 同改，禁漂移</p><div class="scenario"><p class="scenario-name">Scenario: apply-command-documents-flag</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读 Input 与 step 0</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份文件都写明 <code>--confirm-model=&lt;alias&gt;</code> 的语义与它不参与 change 名解析</span></li><li><span class="step-key" data-kw="AND">AND</span><span>都写明该 flag 由 <code>UserPromptSubmit</code> hook 强制，命令自身不判断</span></li><li><span class="step-key" data-kw="AND">AND</span><span>既有的 <code>takeoff-gate.py</code> 自检步骤保持不变</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: iron-rule-records-confirm</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库根 <code>CLAUDE.md</code> 与 <code>template/CLAUDE.md.snippet</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读两处人类审批的铁律条目</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>都写明起飞前执行模型须经人确认，证据是人 prompt 里的 <code>--confirm-model=</code></span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p><strong>基线</strong>：本 change 从 <code>worktree-mechanical-takeoff-gates</code>（PR #29，OPEN）开出。该 PR 已落地两块机械判定——<code>session-model.py</code>（读转录末条主循环 assistant 的 <code>message.model</code> → 别名，fail-closed）与 <code>takeoff-gate.py</code>（<code>PreToolUse(Workflow|Agent|Task)</code> 校验人类批准证据 + 新鲜度）。两者的判据来源已符合 ADR <code>DRAFT-gate-evidence-not-self-reported</code>。</p><p><strong>在force的 ADR</strong>（<code>openspec/adr/</code> 全部 5 份，无 <code>Supersedes</code> 字段，故全部在force）：</p><p>| ADR | 对本设计的约束 | |---|---| | <code>DRAFT-gate-evidence-not-self-reported</code> | <strong>直接约束</strong>。真值源只认转录 / 文件系统 / git / hook 留痕；强制点放 hook；判不出时 fail-closed，hook 自身异常时 fail-open；人类审批的证据是人自己发出的消息 | | <code>DRAFT-apply-as-flight</code> | 飞行一旦开始零问询——本 change 两处拦截都在<strong>起飞之前</strong>，不违背 | | <code>DRAFT-model-routing-defaults-for-template</code> | 路由表本身不动；本 change 只加&quot;人对该路由的知情与确认&quot; | | <code>DRAFT-review-orchestration-watermark</code> · <code>DRAFT-memory-as-fifth-resident-carrier</code> | 无关 |</p><p><strong>待补的拦截面</strong>（proposal 已给事故证据）：<code>takeoff-gate.py</code> 的 matcher 是 <code>Workflow|Agent|Task</code>，只覆盖<strong>派发</strong>这一类动作。explore 阶段的越界是 <code>Write</code>（写 <code>slices.json</code>）与 <code>Bash</code>（跑 baseline），落在 matcher 之外；而执行模型在 <code>session-model.py</code> 里是<strong>自动读数</strong>，没有任何一处把它变成人的确认动作。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong> - explore 阶段的两类越界动作（写飞行计划工件、跑 baseline）当场被 hook deny。 - 每次 <code>/opsx-apply</code> 起飞前，人必须看见当前主模型并显式确认；确认证据可从转录复核。 - 判据零 token、不可由模型伪造；命令文本与 hook 判据同改，不漂移。</p><p><strong>Non-Goals</strong> - 不改 <code>takeoff-gate.py</code> / <code>session-model.py</code> 的判据与实现（PR #29 已定）。 - 不拦 explore 阶段写 <code>proposal.md</code> / <code>design.md</code> / <code>specs/**</code>（保留&quot;捕捉思考&quot;定位）。 - 不在飞行开始后增加任何问询点（铁律与 <code>DRAFT-apply-as-flight</code> 不变）。 - 不引入新的落盘状态文件。</p></div><div class="design-block"><h3>组件视图（C4 Component，虚线=本 change 新增）</h3><p>``<code> Claude Code 会话 人 ──prompt──▶ ┌──────────────────────────────────────────────┐ │  UserPromptSubmit                            │ │   ├─ intent-reminder.py   （已有·注入 rubric）│ │   └╌ phase-gate.py --mode prompt          ╌╌╌┼╌▶ exit 2 阻断 │        判据：转录末条 assistant.model         │    （无 --confirm-model） │               + prompt 里的 --confirm-model=  │ ├──────────────────────────────────────────────┤ │  PreToolUse                                  │ │   ├─ intent-gate.py    (Write|Edit)  已有     │ │   ├─ takeoff-gate.py   (Workflow|Agent|Task) │ ← PR #29 │   └╌ phase-gate.py     (Write|Edit|Bash)  ╌╌╌┼╌▶ deny │        判据：转录末条人类命令消息 → 阶段       │    （explore 越界） └──────────────────────────────────────────────┘ │ 只读 ▼ ~/.claude/projects/*/&lt;sid&gt;.jsonl（真值源） </code>``</p></div><div class="design-block"><h3>起飞时序（本 change 后）</h3><p>``<code> 人: /opsx-apply flight-gate │ ▼ UserPromptSubmit → phase-gate.py │  读转录末条 assistant.model = claude-fable-5-1 → 别名 fable │  prompt 里找 --confirm-model=  → 没有 ▼ exit 2 ⛔ prompt 被抹掉，stderr 呈现： ┌─────────────────────────────────────────────────────┐ │ ⛔ 起飞闸门 · 尚未确认执行模型                        │ │    change  flight-gate   切片 3 · waves 2            │ │    当前主模型 fable  → executor / reviewer 都用它     │ │    换模型  先 /model，再重敲                          │ │    就用它  /opsx-apply flight-gate --confirm-model=fable │ └─────────────────────────────────────────────────────┘ │ │ 人 /model 切 opus，重敲带 flag ▼ 人: /opsx-apply flight-gate --confirm-model=opus │  实测别名 opus == flag opus  → 静默放行 ▼ /opsx-apply step 0 → takeoff-gate.py（PR #29：人类批准 + 新鲜度）→ 起飞 </code>``</p></div><div class="design-block"><h3>Decisions</h3><details><summary>**备选 A</summary><p>把逻辑塞进 <code>takeoff-gate.py</code>** — 单文件承三种 hook 事件、matcher 并集变成 <code>Workflow|Agent|Task|Write|Edit|Bash</code>，每次 Write 都要跑一遍起飞批准判定，职责糊成一团。否决。</p></details><details><summary>**备选 B</summary><p>抽公共模块 <code>transcript_util.py</code>，两边共用<strong> — 更 DRY，但要改 <code>takeoff-gate.py</code>（PR #29 的文件），冲突面扩大；且两者对转录的用法不同（takeoff 需新鲜度比对，phase 只需末条命令）。</strong>本 change 选独立实现**，代价是约 40 行转录扫描与 <code>takeoff-gate.py</code> 形似；待 PR #29 合并且两者稳定后再决定是否抽取（记入 Open Questions）。</p></details><details><summary>符合 ADR</summary><p>真值源是转录，人自己发出，模型伪造不了。</p></details><details><summary>**备选</summary><p><code>UserPromptSubmit</code> 写 <code>openspec/.phase</code> 状态文件** — 多一份可变状态、多一个模型可以 <code>Write</code> 覆盖的靶子（要再加一条 <code>intent-gate</code> deny 才能护住），且 worktree 间共享时语义含混。否决。</p></details><details><summary>人在 <code>/opsx-explore</code> 之后发的普通消息（如&quot;继续&quot;）<strong>不改变阶段</strong>——只有命令消息才是阶段切换点。</summary></details><details><summary>**备选</summary><p>hook 写 <code>.flight-approval.json</code> 凭据文件** — 引入可变状态，且必须再加一条&quot;禁止模型自己 Write 该文件&quot;的 deny 才能防伪造；用 flag 则零状态、零新靶子。否决。</p></details><details><summary>不继承历史</summary><p>每次起飞都要带 flag（用户拍板&quot;每次都拦&quot;）。</p></details><details><summary>代价</summary><p>人要重敲一次命令。这是刻意成本，且正对应用户&quot;每次起飞前都要切模型&quot;的既有动作。</p></details><details><summary>依据</summary><p>现有 <code>opsx-explore.md</code> 定位是&quot;捕捉思考不算实现&quot;，全禁会推翻该定位、改动面外扩（用户已在两个选项间拍板取此）。</p></details><details><summary>派实现类子 agent 的拦截<strong>不重复实现</strong>——<code>takeoff-gate.py</code> 已覆盖（无人类批准即 deny）。</summary></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>[prompt 被抹掉，长指令丢失]</strong> → stderr 打印<strong>可直接复制的完整命令行</strong>（含 change 名与 flag）；命令文档写明第一次必被拦是设计而非故障。</summary></details><details><summary><strong>[与 PR #29 同改 <code>hooks.json</code> · <code>opsx-apply.md</code> · apply SKILL]</strong> → 本 change 基于其分支开出，语义连贯；<strong>合并顺序固定为 PR #29 先、本 change 后</strong>，写入 proposal 的 Impact。</summary></details><details><summary><strong>[<code>phase-gate.py</code> 与 <code>takeoff-gate.py</code> 有约 40 行形似的转录扫描]</strong> → 刻意接受（D1），并记入 Open Questions 待两者稳定后评估抽取。</summary></details><details><summary><strong>[阶段判定依赖 <code>&lt;command-name&gt;</code> 这一转录形状]</strong> → 与 <code>takeoff-gate.py</code> 依赖同一形状，风险已存在且同源；形状变更时两者一起 fail-open（放行），不会静默误 deny。</summary></details><details><summary><strong>[每次起飞多一次往返]</strong> → 用户明确要求（Q2 选&quot;每次都拦&quot;）；不提供跳过开关，避免开关本身成为绕过路径。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><p>1. PR #29 先合并进 <code>main</code>。 2. 本 change 预合并 <code>main</code> 后建 PR；<code>install.sh</code> 无需改动——<code>hooks.json</code> 是 hook 唯一真源，安装时幂等合并进目标 <code>settings.json</code>。 3. 已安装模板的仓库（如 <code>amc/gateway</code>）重跑 <code>install.sh</code> 即获得两道闸门。 4. <strong>回退</strong>：从 <code>hooks.json</code> 摘掉 <code>phase-gate.py</code> 两条注册即可完全停用，其余组件不受影响；命令文本中的边界描述退化为纯提醒（与本 change 之前的状态语义一致）。</p></div><div class="design-block"><h3>Open Questions</h3><ul><li><code>phase-gate.py</code> 与 <code>takeoff-gate.py</code> 的转录扫描是否抽成公共模块——待 PR #29 合并、两者各自稳定一个迭代后再评估；现在抽会扩大冲突面。</li><li><code>--confirm-model=</code> 是否需要支持 <code>--confirm-model=auto</code>（&quot;就用当前的，别问了&quot;）——本轮刻意不做，因为它会变成绕过路径；若日后人反馈往返成本过高再议。</li><li>本设计不建议修改任何在force ADR；<code>DRAFT-gate-evidence-not-self-reported</code> 的适用范围由&quot;起飞那一刻&quot;自然延伸到&quot;起飞之前的整段路&quot;，属延伸而非变更，无需 supersede。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+      <p class="placeholder">design.md 含关键 Mermaid 流程图时自动填入；否则保留占位。</p>
+      <!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>phase-gate.py：阶段越界 deny + 起飞模型确认阻断</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/phase-gate.py<br>tests/test_phase_gate.py</td><td><code>python3 -m pytest -q tests/test_phase_gate.py</code></td></tr><tr><td class="mono">S2</td><td>hooks.json 注册 + explore / apply 命令与 skill 同改</td><td>wave 2</td><td>S1</td><td>template/.claude/hooks/hooks.json<br>template/.claude/commands/opsx-explore.md<br>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-explore/SKILL.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>tests/test_template_docs.py</td><td><code>python3 -m pytest -q tests/test_template_docs.py</code></td></tr><tr><td class="mono">S3</td><td>铁律与文档：CLAUDE.md · snippet · README · WORKFLOW_zh</td><td>wave 2</td><td>S1</td><td>CLAUDE.md<br>template/CLAUDE.md.snippet<br>README.md<br>docs/WORKFLOW_zh.md<br>tests/test_docs_iron_rules.py</td><td><code>python3 -m pytest -q tests/test_docs_iron_rules.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>phase-discipline#explore-denies-flight-plan-write</td><td><code>tests/test_phase_gate.py::test_explore_denies_flight_plan_write</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>phase-discipline#explore-allows-thinking-artifacts</td><td><code>tests/test_phase_gate.py::test_explore_allows_thinking_artifacts</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>phase-discipline#explore-denies-baseline</td><td><code>tests/test_phase_gate.py::test_explore_denies_baseline</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>phase-discipline#non-explore-phase-passes</td><td><code>tests/test_phase_gate.py::test_non_explore_phase_passes</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>phase-discipline#phase-gate-fails-open-on-error</td><td><code>tests/test_phase_gate.py::test_phase_gate_fails_open_on_error</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#blocks-apply-without-confirm</td><td><code>tests/test_phase_gate.py::test_blocks_apply_without_confirm</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#accepts-matching-confirm</td><td><code>tests/test_phase_gate.py::test_accepts_matching_confirm</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#rejects-mismatched-confirm</td><td><code>tests/test_phase_gate.py::test_rejects_mismatched_confirm</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#confirm-required-every-takeoff</td><td><code>tests/test_phase_gate.py::test_confirm_required_every_takeoff</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#unrelated-prompt-passes</td><td><code>tests/test_phase_gate.py::test_unrelated_prompt_passes</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#unresolvable-model-fails-open</td><td><code>tests/test_phase_gate.py::test_unresolvable_model_fails_open</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>phase-discipline#explore-command-states-boundary</td><td><code>tests/test_template_docs.py::test_explore_command_states_boundary</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#apply-command-documents-flag</td><td><code>tests/test_template_docs.py::test_apply_command_documents_flag</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-model-confirm#iron-rule-records-confirm</td><td><code>tests/test_docs_iron_rules.py::test_iron_rule_records_confirm</code></td><td><span class="chip" data-state="missing">missing</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-09-12T08:35:29Z</td><td>baseline</td><td>exit 0, 9.0s</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 phase-gate.py：阶段越界 deny + 起飞模型确认阻断 （deps: - · verify: <code>python3 -m pytest -q tests/test_phase_gate.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 hooks.json 注册 + explore / apply 命令与 skill 同改 （deps: S1 · verify: <code>python3 -m pytest -q tests/test_template_docs.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 铁律与文档：CLAUDE.md · snippet · README · WORKFLOW_zh （deps: S1 · verify: <code>python3 -m pytest -q tests/test_docs_iron_rules.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-09-12 08:35 · 章节 8 · 图示 0 · 任务 3
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

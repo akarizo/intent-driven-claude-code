@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "change": "flight-gate",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 9.0
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "phase-gate.py：阶段越界 deny + 起飞模型确认阻断",
+      "scenarios": [
+        "phase-discipline#explore-denies-flight-plan-write",
+        "phase-discipline#explore-allows-thinking-artifacts",
+        "phase-discipline#explore-denies-baseline",
+        "phase-discipline#non-explore-phase-passes",
+        "phase-discipline#phase-gate-fails-open-on-error",
+        "takeoff-model-confirm#blocks-apply-without-confirm",
+        "takeoff-model-confirm#accepts-matching-confirm",
+        "takeoff-model-confirm#rejects-mismatched-confirm",
+        "takeoff-model-confirm#confirm-required-every-takeoff",
+        "takeoff-model-confirm#unrelated-prompt-passes",
+        "takeoff-model-confirm#unresolvable-model-fails-open"
+      ],
+      "owns": [
+        "template/.claude/hooks/phase-gate.py",
+        "tests/test_phase_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_phase_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "hooks.json 注册 + explore / apply 命令与 skill 同改",
+      "scenarios": [
+        "phase-discipline#explore-command-states-boundary",
+        "takeoff-model-confirm#apply-command-documents-flag"
+      ],
+      "owns": [
+        "template/.claude/hooks/hooks.json",
+        "template/.claude/commands/opsx-explore.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-explore/SKILL.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "tests/test_template_docs.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_template_docs.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "铁律与文档：CLAUDE.md · snippet · README · WORKFLOW_zh",
+      "scenarios": [
+        "takeoff-model-confirm#iron-rule-records-confirm"
+      ],
+      "owns": [
+        "CLAUDE.md",
+        "template/CLAUDE.md.snippet",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "tests/test_docs_iron_rules.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_docs_iron_rules.py",
+      "packet": "slices/S3.md"
+    }
+  ],
+  "scenario_tests": {
+    "phase-discipline#explore-denies-flight-plan-write": "tests/test_phase_gate.py::test_explore_denies_flight_plan_write",
+    "phase-discipline#explore-allows-thinking-artifacts": "tests/test_phase_gate.py::test_explore_allows_thinking_artifacts",
+    "phase-discipline#explore-denies-baseline": "tests/test_phase_gate.py::test_explore_denies_baseline",
+    "phase-discipline#non-explore-phase-passes": "tests/test_phase_gate.py::test_non_explore_phase_passes",
+    "phase-discipline#phase-gate-fails-open-on-error": "tests/test_phase_gate.py::test_phase_gate_fails_open_on_error",
+    "takeoff-model-confirm#blocks-apply-without-confirm": "tests/test_phase_gate.py::test_blocks_apply_without_confirm",
+    "takeoff-model-confirm#accepts-matching-confirm": "tests/test_phase_gate.py::test_accepts_matching_confirm",
+    "takeoff-model-confirm#rejects-mismatched-confirm": "tests/test_phase_gate.py::test_rejects_mismatched_confirm",
+    "takeoff-model-confirm#confirm-required-every-takeoff": "tests/test_phase_gate.py::test_confirm_required_every_takeoff",
+    "takeoff-model-confirm#unrelated-prompt-passes": "tests/test_phase_gate.py::test_unrelated_prompt_passes",
+    "takeoff-model-confirm#unresolvable-model-fails-open": "tests/test_phase_gate.py::test_unresolvable_model_fails_open",
+    "phase-discipline#explore-command-states-boundary": "tests/test_template_docs.py::test_explore_command_states_boundary",
+    "takeoff-model-confirm#apply-command-documents-flag": "tests/test_template_docs.py::test_apply_command_documents_flag",
+    "takeoff-model-confirm#iron-rule-records-confirm": "tests/test_docs_iron_rules.py::test_iron_rule_records_confirm"
+  }
+}
