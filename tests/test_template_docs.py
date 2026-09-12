@@ -193,3 +193,21 @@ def test_apply_command_documents_flag():
         assert "change 名" in text and "UserPromptSubmit" in text
         # Then: PR #29 的 takeoff-gate 自检与 session-model 取值原样保留
         assert "takeoff-gate.py" in text and "session-model.py" in text
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未改 propose 收尾；实现后去掉本标记")
+def test_propose_prints_takeoff_command():
+    # Given: /opsx-propose 命令与 openspec-propose skill
+    cmd = read(CMD / "opsx-propose.md")
+    skill = read(SKILLS / "openspec-propose" / "SKILL.md")
+
+    # When: 检查收尾硬交接是否交付一段自足的起飞指令
+    for text in (cmd, skill):
+        # Then: worktree 绝对路径 + 确认 flag 占位，人 clear 后可整段复制
+        assert "worktree" in text and "--confirm-model=" in text
+        # Then: 派发参数齐备，起飞会话不必重新推导
+        for key in ("changeDir", "hooksDir", "agentsDir", "waves", "deps", "expectHead"):
+            assert key in text, key
+        assert "rev-parse --short=10" in text
+        # Then: 既有三件事保留
+        assert "spec.html" in text and "本命令到此结束" in text and "commit" in text

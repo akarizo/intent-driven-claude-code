@@ -22,7 +22,8 @@
         "takeoff-model-confirm#rejects-mismatched-confirm",
         "takeoff-model-confirm#confirm-required-every-takeoff",
         "takeoff-model-confirm#unrelated-prompt-passes",
-        "takeoff-model-confirm#unresolvable-model-fails-open"
+        "takeoff-model-confirm#unresolvable-model-fails-open",
+        "takeoff-model-confirm#block-message-carries-worktree"
       ],
       "owns": [
         "template/.claude/hooks/phase-gate.py",
@@ -37,14 +38,17 @@
       "title": "hooks.json 注册 + explore / apply 命令与 skill 同改",
       "scenarios": [
         "phase-discipline#explore-command-states-boundary",
-        "takeoff-model-confirm#apply-command-documents-flag"
+        "takeoff-model-confirm#apply-command-documents-flag",
+        "takeoff-model-confirm#propose-prints-takeoff-command"
       ],
       "owns": [
         "template/.claude/hooks/hooks.json",
         "template/.claude/commands/opsx-explore.md",
         "template/.claude/commands/opsx-apply.md",
+        "template/.claude/commands/opsx-propose.md",
         "template/.claude/skills/openspec-explore/SKILL.md",
         "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
         "tests/test_template_docs.py"
       ],
       "deps": [
@@ -85,8 +89,10 @@
     "takeoff-model-confirm#confirm-required-every-takeoff": "tests/test_phase_gate.py::test_confirm_required_every_takeoff",
     "takeoff-model-confirm#unrelated-prompt-passes": "tests/test_phase_gate.py::test_unrelated_prompt_passes",
     "takeoff-model-confirm#unresolvable-model-fails-open": "tests/test_phase_gate.py::test_unresolvable_model_fails_open",
+    "takeoff-model-confirm#block-message-carries-worktree": "tests/test_phase_gate.py::test_block_message_carries_worktree",
     "phase-discipline#explore-command-states-boundary": "tests/test_template_docs.py::test_explore_command_states_boundary",
     "takeoff-model-confirm#apply-command-documents-flag": "tests/test_template_docs.py::test_apply_command_documents_flag",
+    "takeoff-model-confirm#propose-prints-takeoff-command": "tests/test_template_docs.py::test_propose_prints_takeoff_command",
     "takeoff-model-confirm#iron-rule-records-confirm": "tests/test_docs_iron_rules.py::test_iron_rule_records_confirm"
   }
 }

@@ -60,3 +60,21 @@ Rule: 命令文本与 hook 同改，禁漂移
 - **GIVEN** 仓库根 `CLAUDE.md` 与 `template/CLAUDE.md.snippet`
 - **WHEN** 阅读两处人类审批的铁律条目
 - **THEN** 都写明起飞前执行模型须经人确认，证据是人 prompt 里的 `--confirm-model=`
+
+### Requirement: 起飞指令自足
+交给人的起飞指令 SHALL 自足——人在 `/clear` 清空上下文、切换模型之后，不依赖任何会话记忆即可直接复制起飞。指令 MUST 包含 worktree 的**绝对路径**、change 名、确认 flag，以及派发所需的全部参数；MUST NOT 只给一句"运行 `/opsx-apply <name>`"。
+Feature: 切模型要 clear，clear 后不该再问"我在哪个目录"
+Rule: 收尾交付与阻断提示都给可直接复制的整段，不留待补全的空
+
+#### Scenario: propose-prints-takeoff-command
+- **GIVEN** `template/.claude/commands/opsx-propose.md` 与 `template/.claude/skills/openspec-propose/SKILL.md`
+- **WHEN** 阅读收尾的硬交接步骤
+- **THEN** 两份文件都要求打印一段**可直接复制的起飞指令**，其中含 worktree 绝对路径（用 `pwd` 拼）、change 名与 `--confirm-model=<alias>` 占位
+- **AND** 都要求同时打印派发参数：`changeDir` · `hooksDir` · `agentsDir` · `waves` · `deps` · `expectHead`（`git rev-parse --short=10 HEAD`），使起飞会话不必重新推导
+- **AND** 仍保留既有三件事：`spec.html` 绝对路径 · 本命令到此结束 · 工件单独 commit
+
+#### Scenario: block-message-carries-worktree
+- **GIVEN** 一次被阻断的起飞（转录实测主模型 `fable`，prompt 无 `--confirm-model=`），hook 输入的 `cwd` 位于该 change 的 worktree 内
+- **WHEN** 运行判定
+- **THEN** stderr 的补救命令含该 worktree 的**绝对路径**，人可整段复制而不必自己拼目录
+- **AND** `cwd` 不在任何 worktree 内时省略路径一项，其余照常输出（不因此阻断失败）

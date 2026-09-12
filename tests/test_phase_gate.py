@@ -230,3 +230,28 @@ def test_unresolvable_model_fails_open(tmp_path):
     assert p_none.returncode == 0, (p_none.returncode, p_none.stderr)
     assert p_k3.returncode == 2, (p_k3.returncode, p_k3.stdout, p_k3.stderr)
     assert "k3" in p_k3.stderr
+
+
+def test_block_message_carries_worktree(tmp_path):
+    # Given: change 工件位于一间 worktree 内，hook 输入的 cwd 指向该 worktree 的子目录
+    wt = tmp_path / ".worktrees" / "demo"
+    (wt / "openspec" / "changes" / "demo" / "slices").mkdir(parents=True)
+    (wt / "openspec" / "changes" / "demo" / "slices.json").write_text(json.dumps({
+        "version": 1, "change": "demo",
+        "slices": [{"id": "S1", "deps": []}, {"id": "S2", "deps": ["S1"]}],
+    }), encoding="utf-8")
+    t = transcript(tmp_path / "s.jsonl", [assistant("claude-fable-5-1")])
+
+    # When: 在该 worktree 内敲不带 flag 的 /opsx-apply
+    p = run_hook("phase-gate", stdin=prompt_payload(
+        cmd_msg("opsx-apply", "demo"), t, wt / "openspec" / "changes"))
+
+    # Then: 阻断，且补救命令带 worktree 绝对路径——clear 之后不必自己拼目录
+    assert p.returncode == 2, (p.returncode, p.stdout, p.stderr)
+    assert str(wt) in p.stderr
+    assert "--confirm-model=fable" in p.stderr
+
+    # Then: cwd 不在任何 worktree 内时省略路径一项，其余照常输出
+    p2 = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t, tmp_path))
+    assert p2.returncode == 2, (p2.returncode, p2.stdout, p2.stderr)
+    assert "--confirm-model=fable" in p2.stderr
