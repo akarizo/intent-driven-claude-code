@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime, timezone
 
+import pytest
+
 from conftest import ROOT, run_hook
 
 CMD = ROOT / "template" / ".claude" / "commands"
@@ -220,3 +222,137 @@ def test_tasks_tick_does_not_expire_approval(tmp_path):
     replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
     assert replan["permissionDecision"] == "deny"
     assert "重新批准" in replan["permissionDecisionReason"]  # deny 必须来自「过期」而不是「没批准」
+
+
+# ============================================================ S1 骨架：两段式握手（实现后去掉 xfail 标记）
+# ⚠ 本段落地后，上方 test_approval_gate_accepts_human_command 的「/opsx-apply 即批准」断言必须一并改写为
+#    「发起 → 停」；判据收紧是本 change 的刻意行为，不是回归。
+
+INITIATION = ("去 '/abs/repo/.worktrees/demo' apply demo, 授权你git提交, "
+              "完成后就pr-ship, 把pr url交付我review")
+
+
+def assistant(model, ts="2026-09-12T08:00:00Z"):
+    return {"type": "assistant", "isSidechain": False, "timestamp": ts,
+            "message": {"role": "assistant", "model": model, "content": []}}
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
+def test_initiation_is_not_approval(tmp_path):
+    # Given: 两种发起形式——一行自然语言（含"授权"二字）与 /opsx-apply 命令，都晚于计划工件
+    d = change_dir(tmp_path)
+    t_line = transcript(tmp_path / "line.jsonl", [human(INITIATION, "2026-09-12T08:58:04Z")])
+    t_cmd = transcript(tmp_path / "cmd.jsonl", [human(APPLY_CMD, "2026-09-12T08:58:04Z")])
+
+    # When: 分别判定
+    p_line = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t_line))
+    p_cmd = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t_cmd))
+
+    # Then: 都只算发起，不构成批准；两种形式判定一致
+    assert p_line.returncode != 0, p_line.stdout
+    assert p_cmd.returncode != 0, p_cmd.stdout
+    assert "已批准" not in p_line.stdout and "已批准" not in p_cmd.stdout
+
+
+def test_short_confirm_approves(tmp_path):
+    """不变量：短确认构成批准。当前实现已成立，S1 收紧判据时不得改坏（故无 xfail 标记）。"""
+    # Given: 发起之后人又发了一条短确认（≤40 字、含批准词、不含 change 名与路径）
+    d = change_dir(tmp_path)
+    t = transcript(tmp_path / "s.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        assistant("claude-opus-5", "2026-09-12T08:58:30Z"),
+        human("起飞", "2026-09-12T08:59:10Z"),
+    ])
+
+    # When: 判定
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t))
+
+    # Then: 批准成立，stdout 带确认时间戳与原话摘要
+    assert p.returncode == 0, p.stderr
+    assert "2026-09-12T08:59:10Z" in p.stdout and "起飞" in p.stdout
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未落停下信息；实现后去掉本标记")
+def test_block_message_shows_model_and_scale(tmp_path):
+    # Given: 最后一条人类消息是发起，转录末条主循环 assistant 是 fable，slices.json 为 3 片 / 2 wave
+    d = change_dir(tmp_path)
+    (d / "slices.json").write_text(json.dumps({
+        "version": 1, "change": "demo",
+        "slices": [{"id": "S1", "deps": []}, {"id": "S2", "deps": ["S1"]}, {"id": "S3", "deps": ["S1"]}],
+    }), encoding="utf-8")
+    t = transcript(tmp_path / "s.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        assistant("claude-fable-5-1", "2026-09-12T08:58:30Z"),
+    ])
+
+    # When: 判定
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t))
+
+    # Then: 停下，并一次给全人做判断所需：主模型别名 · 规模 · 绝对路径 · 补救指引
+    assert p.returncode != 0
+    assert "fable" in p.stderr
+    assert "3" in p.stderr and "2" in p.stderr          # 3 片 · 2 wave
+    assert str(d) in p.stderr or str(tmp_path) in p.stderr  # worktree 绝对路径
+    assert "spec.html" in p.stderr
+    assert "起飞" in p.stderr and "/model" in p.stderr   # 确认与换模型两条出路
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
+def test_confirm_must_follow_initiation(tmp_path):
+    # Given: 短确认出现在发起之前（上一轮遗留），以及确认之后计划又被改动的两种转录
+    d = change_dir(tmp_path)
+    stale = transcript(tmp_path / "stale.jsonl", [
+        human("起飞", "2026-09-12T08:00:00Z"),
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+    ])
+    fresh = transcript(tmp_path / "fresh.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        human("起飞", "2026-09-12T08:59:10Z"),
+    ])
+
+    # When: 先判遗留确认；再把计划工件改新后判本来成立的那份
+    p_stale = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(stale))
+    os.utime(d / "slices.json", None)
+    p_replan = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(fresh))
+
+    # Then: 确认不继承历史；计划改后批准过期，理由点名需重新批准
+    assert p_stale.returncode != 0, p_stale.stdout
+    assert p_replan.returncode != 0, p_replan.stdout
+    assert "重新批准" in p_replan.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未落 fail-closed 主模型判定；实现后去掉本标记")
+def test_unresolvable_model_still_blocks(tmp_path):
+    # Given: 最后一条是发起，但模型 id 认不出别名；以及完全没有 assistant 条目的转录
+    d = change_dir(tmp_path)
+    # ⚠ 转录文件名刻意不含 "k3"：否则 stderr 里的 session 路径会让断言假阳性
+    t_k3 = transcript(tmp_path / "third-party.jsonl", [human(INITIATION, "2026-09-12T08:58:04Z"),
+                                                       assistant("k3", "2026-09-12T08:58:30Z")])
+    t_none = transcript(tmp_path / "no-assistant.jsonl", [human(INITIATION, "2026-09-12T08:58:04Z")])
+
+    # When: 分别判定
+    p_k3 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t_k3))
+    p_none = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t_none))
+
+    # Then: 都停下；认不出的原始 id 要被点名——判不出主模型不许起飞
+    assert p_k3.returncode != 0 and "k3" in p_k3.stderr
+    assert p_none.returncode != 0
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
+def test_hook_denies_dispatch_without_confirm(tmp_path):
+    # Given: 转录里只有发起、没有短确认，来一次起飞类派发
+    d = change_dir(tmp_path)
+    t = transcript(tmp_path / "s.jsonl", [human(INITIATION, "2026-09-12T08:58:04Z"),
+                                          assistant("claude-fable-5-1", "2026-09-12T08:58:30Z")])
+    dispatch = {"tool_name": "Workflow", "cwd": str(tmp_path), "transcript_path": str(t),
+                "tool_input": {"args": {"changeDir": str(d)}}}
+
+    # When: 喂给 hook 模式
+    p = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
+
+    # Then: deny，且 reason 与 CLI 停下信息同源（含主模型别名与补救指引）
+    out = json.loads(p.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+    assert "fable" in out["permissionDecisionReason"]
+    assert "起飞" in out["permissionDecisionReason"]

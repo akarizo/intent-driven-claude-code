@@ -180,34 +180,35 @@ def test_explore_command_states_boundary():
         assert "Flow into a proposal" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未改 apply 命令与 skill；实现后去掉本标记")
-def test_apply_command_documents_flag():
+@pytest.mark.xfail(strict=True, reason="S3 未改 apply 命令与 skill；实现后去掉本标记")
+def test_apply_command_documents_handshake():
     # Given: /opsx-apply 命令与 openspec-apply-change skill
     cmd = read(CMD / "opsx-apply.md")
     skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
 
-    # When: 检查确认 flag 的语义、归属与既有步骤是否保留
+    # When: 检查 step 0 是否写明两段式握手与参数机械推导
     for text in (cmd, skill):
-        # Then: 写明 flag 拼写、不参与 change 名解析、由 UserPromptSubmit hook 强制
-        assert "--confirm-model=" in text
-        assert "change 名" in text and "UserPromptSubmit" in text
-        # Then: PR #29 的 takeoff-gate 自检与 session-model 取值原样保留
-        assert "takeoff-gate.py" in text and "session-model.py" in text
+        # Then: 发起 ≠ 批准，停下等人一句短确认
+        assert "发起" in text and "确认" in text
+        # Then: 派发参数的机械来源写清楚，不要求人提供
+        for src in ("slice-gate.py lint", "rev-parse --short=10", "session-model.py"):
+            assert src in text, src
+        # Then: 该停顿由 takeoff-gate.py 强制
+        assert "takeoff-gate.py" in text
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未改 propose 收尾；实现后去掉本标记")
+@pytest.mark.xfail(strict=True, reason="S3 未改 propose 收尾；实现后去掉本标记")
 def test_propose_prints_takeoff_command():
     # Given: /opsx-propose 命令与 openspec-propose skill
     cmd = read(CMD / "opsx-propose.md")
     skill = read(SKILLS / "openspec-propose" / "SKILL.md")
 
-    # When: 检查收尾硬交接是否交付一段自足的起飞指令
+    # When: 检查收尾硬交接是否交付一行自足的起飞指令
     for text in (cmd, skill):
-        # Then: worktree 绝对路径 + 确认 flag 占位，人 clear 后可整段复制
-        assert "worktree" in text and "--confirm-model=" in text
-        # Then: 派发参数齐备，起飞会话不必重新推导
-        for key in ("changeDir", "hooksDir", "agentsDir", "waves", "deps", "expectHead"):
-            assert key in text, key
-        assert "rev-parse --short=10" in text
+        # Then: 一行式含 worktree 绝对路径 + change 名 + 授权语，人 clear 后可直接复制
+        assert "worktree" in text and "pwd" in text
+        assert "apply" in text and "授权" in text and "pr-ship" in text
+        # Then: 明确禁止把派发参数列进那一行让人复制
+        assert "expectHead" in text and "不得" in text
         # Then: 既有三件事保留
         assert "spec.html" in text and "本命令到此结束" in text and "commit" in text

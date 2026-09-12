@@ -79,15 +79,15 @@ def test_docs_state_mechanical_resolution():
 
 
 # ---------------------------------------------- 起飞模型确认入铁律（S3 骨架，实现后去掉 xfail 标记）
-@pytest.mark.xfail(strict=True, reason="S3 未改铁律与文档；实现后去掉本标记")
-def test_iron_rule_records_confirm():
+@pytest.mark.xfail(strict=True, reason="S4 未改铁律与文档；实现后去掉本标记")
+def test_iron_rule_records_handshake():
     # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
     root = read("CLAUDE.md")
     snippet = read("template/CLAUDE.md.snippet")
 
     # When: 检查"两处人类审批"那一条的措辞
     for text in (root, snippet):
-        # Then: 写明起飞前执行模型须经人确认，证据是人 prompt 里的 --confirm-model=
-        assert "--confirm-model=" in text
+        # Then: 写明起飞为两段式握手——发起 ≠ 批准，批准是发起之后人自己发出的短确认
+        assert "发起" in text and "批准" in text
         # Then: PR #29 已加的"判据不得由模型自证"保留，不被本次改写覆盖
-        assert "禁自述" in text
+        assert "禁自述" in text and "takeoff-gate" in text

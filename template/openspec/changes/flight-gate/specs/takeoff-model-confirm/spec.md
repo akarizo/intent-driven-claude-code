@@ -1,80 +1,70 @@
 ## ADDED Requirements
 
-### Requirement: 起飞前执行模型须经人确认
-`/opsx-apply` SHALL 在人未确认执行模型前被 `UserPromptSubmit` hook 阻断；确认的证据 SHALL 是人自己 prompt 里的 `--confirm-model=<alias>`，MUST NOT 由模型代为记录或推断。
-Feature: 人看得见自己正在用哪个模型起飞
-Rule: 无 flag 不起飞；flag 与转录实测主模型必须一致
+### Requirement: 起飞是两段式握手，发起不等于批准
+起飞指令（一行自然语言 或 `/opsx-apply <name>`）SHALL 只构成**发起**；批准 SHALL 是发起之后另一条人类确认消息。`takeoff-gate.py` MUST NOT 再把发起消息本身当作批准，MUST NOT 接受模型代记的批准。
+Feature: 每次起飞都停一次，让人看清用哪个模型飞
+Rule: 最后一条人类消息是发起 → 停；是短确认 → 放行
 
-#### Scenario: blocks-apply-without-confirm
-- **GIVEN** 一份转录，最后一条主循环 assistant 的 `message.model` 是 `claude-fable-5-1`
-- **AND** 一次 `UserPromptSubmit` 输入，prompt 为人敲的 `/opsx-apply <change>`，不含 `--confirm-model=`
-- **WHEN** 把该 JSON 喂给 `phase-gate.py`（stdin）
-- **THEN** 退出码为 2（阻断该 prompt）
-- **AND** stderr 含 change 名、当前主模型别名 `fable`、切片数与 wave 数
-- **AND** stderr 给出两条出路：先 `/model` 切换后重敲，或带 `--confirm-model=fable` 重敲
+#### Scenario: initiation-is-not-approval
+- **GIVEN** 一份转录，最后一条人类消息是起飞发起——含 change 名、worktree 路径或 `<command-name>/opsx-apply` 之一，即使正文里带"授权"这类词
+- **WHEN** 运行 `python3 .claude/hooks/takeoff-gate.py --change-dir <dir> --session <转录>`
+- **THEN** 退出码非 0，stdout 不输出任何"已批准"结论
+- **AND** 一行自然语言发起（如 `去 '<worktree>' apply <name>, 授权你git提交, 完成后就pr-ship`）与 `/opsx-apply <name>` 命令形式**判定一致**，两边都停
 
-#### Scenario: accepts-matching-confirm
-- **GIVEN** 同一份转录（实测主模型别名为 `fable`）
-- **AND** prompt 为 `/opsx-apply <change> --confirm-model=fable`
+#### Scenario: short-confirm-approves
+- **GIVEN** 同一份转录，其后人又发了一条短确认消息（≤ 40 字、含批准词如 `起飞` / `批准` / `授权` / `approve`，且不含 change 名与 worktree 路径）
 - **WHEN** 运行判定
-- **THEN** 静默放行，退出码 0，不写任何文件——证据就在 prompt 里，转录可复核
+- **THEN** 退出码为 0，stdout 打印批准证据（时间戳 + 人类原话摘要）
+- **AND** 该确认消息必须晚于发起消息，也必须晚于计划工件的最后一次改动
 
-#### Scenario: rejects-mismatched-confirm
-- **GIVEN** 同一份转录（实测主模型别名为 `fable`）
-- **AND** prompt 为 `/opsx-apply <change> --confirm-model=opus`
+#### Scenario: block-message-shows-model-and-scale
+- **GIVEN** 一次停下的判定（最后一条人类消息是发起），转录末条主循环 assistant 的 `message.model` 为 `claude-fable-5-1`
 - **WHEN** 运行判定
-- **THEN** 退出码为 2
-- **AND** stderr 点名 flag 声称 `opus` 但实测主模型是 `fable`，要求先真的切换再重敲
-- **AND** 不因 flag 存在就放行——防止人以为切了而其实没切
+- **THEN** stderr 含当前主模型别名 `fable`，并说明 executor / reviewer 会用它
+- **AND** 含切片数与 wave 数（读 `slices.json`；读不到就省略该项，不因此失败）
+- **AND** 含该 change 的 worktree **绝对路径**与 `spec.html` 绝对路径
+- **AND** 含一句明确的补救指引：确认无误回一句 `起飞`；要换模型先 `/model` 再回
 
-#### Scenario: confirm-required-every-takeoff
-- **GIVEN** 同一个 change 上一次起飞已带 `--confirm-model=fable` 放行过
-- **AND** 新一次 `/opsx-apply <change>` 的 prompt 不含 flag
+#### Scenario: confirm-must-follow-initiation
+- **GIVEN** 一份转录，短确认消息出现在发起消息**之前**（例如上一轮起飞遗留的确认）
 - **WHEN** 运行判定
-- **THEN** 仍然阻断——确认是每次起飞的动作，不继承历史
+- **THEN** 退出码非 0——确认必须是对本次发起的回应，不继承历史
+- **AND** 确认之后计划工件又被改动时同样不成立，stderr 点名"计划在批准之后改过，需重新批准"
 
-#### Scenario: unrelated-prompt-passes
-- **GIVEN** 一次 `UserPromptSubmit` 输入，prompt 与 `/opsx-apply` 无关（普通提问，或 `/opsx-propose`）
+#### Scenario: unresolvable-model-still-blocks
+- **GIVEN** 最后一条人类消息是发起，但转录里模型 id 认不出别名（如第三方 `k3`）
 - **WHEN** 运行判定
-- **THEN** 静默放行，退出码 0——本门禁只在起飞命令上生效
+- **THEN** 退出码非 0，stderr 点名认不出的原始 id——判不出主模型就不许起飞（fail-closed）
+- **AND** 转录完全读不出 assistant 条目时同样停下并说明原因
 
-#### Scenario: unresolvable-model-fails-open
-- **GIVEN** 一次 `/opsx-apply` 的 prompt，但转录定位不到 / 读不出任何 assistant 条目
-- **WHEN** 运行判定
-- **THEN** 放行，退出码 0——`UserPromptSubmit` 阻断会抹掉 prompt，环境异常时不能把人锁在门外
-- **AND** 转录可读但模型 id 认不出别名（如第三方 id）时改为阻断，stderr 点名认不出的 id
-
-### Requirement: apply 命令写明确认 flag 的语义
-`/opsx-apply` 命令与 `openspec-apply-change` skill SHALL 写明 `--confirm-model=<alias>` 由 hook 强制、不参与 change 名解析。
-Feature: flag 的含义与归属写清楚，命令自身不重复判断
-Rule: 命令文本与 hook 同改，禁漂移
-
-#### Scenario: apply-command-documents-flag
-- **GIVEN** `template/.claude/commands/opsx-apply.md` 与 `template/.claude/skills/openspec-apply-change/SKILL.md`
-- **WHEN** 阅读 Input 与 step 0
-- **THEN** 两份文件都写明 `--confirm-model=<alias>` 的语义与它不参与 change 名解析
-- **AND** 都写明该 flag 由 `UserPromptSubmit` hook 强制，命令自身不判断
-- **AND** 既有的 `takeoff-gate.py` 自检步骤保持不变
-
-#### Scenario: iron-rule-records-confirm
-- **GIVEN** 仓库根 `CLAUDE.md` 与 `template/CLAUDE.md.snippet`
-- **WHEN** 阅读两处人类审批的铁律条目
-- **THEN** 都写明起飞前执行模型须经人确认，证据是人 prompt 里的 `--confirm-model=`
+#### Scenario: hook-denies-dispatch-without-confirm
+- **GIVEN** 一次 `PreToolUse` 输入：`Workflow` 工具、`args.changeDir` 指向该 change，而转录里只有发起、没有短确认
+- **WHEN** 把该 JSON 喂给 `takeoff-gate.py`（hook 模式，stdin）
+- **THEN** stdout 是 `permissionDecision: deny` 的 hook 输出，reason 与 CLI 模式同样含主模型别名与补救指引
+- **AND** 确认成立时静默放行；与飞行无关的派发、以及脚本自身异常一律放行
 
 ### Requirement: 起飞指令自足
-交给人的起飞指令 SHALL 自足——人在 `/clear` 清空上下文、切换模型之后，不依赖任何会话记忆即可直接复制起飞。指令 MUST 包含 worktree 的**绝对路径**、change 名、确认 flag，以及派发所需的全部参数；MUST NOT 只给一句"运行 `/opsx-apply <name>`"。
-Feature: 切模型要 clear，clear 后不该再问"我在哪个目录"
-Rule: 收尾交付与阻断提示都给可直接复制的整段，不留待补全的空
+交给人的起飞指令 SHALL 是**一行**，含 worktree 绝对路径、change 名与授权语，人在 `/clear` 清空上下文并切换模型之后可直接复制发出。派发参数（`waves` · `deps` · `expectHead` · `changeDir` · `hooksDir` · `agentsDir` · 执行体模型）MUST NOT 要求人填写或复制——它们 SHALL 由起飞会话从 `slices.json` · `git` · 仓库布局 · `session-model.py` 机械推导。
+Feature: 简单精准的一行，机械可得的东西不劳人
+Rule: 人只给意图与授权，参数系统自己算
 
 #### Scenario: propose-prints-takeoff-command
 - **GIVEN** `template/.claude/commands/opsx-propose.md` 与 `template/.claude/skills/openspec-propose/SKILL.md`
 - **WHEN** 阅读收尾的硬交接步骤
-- **THEN** 两份文件都要求打印一段**可直接复制的起飞指令**，其中含 worktree 绝对路径（用 `pwd` 拼）、change 名与 `--confirm-model=<alias>` 占位
-- **AND** 都要求同时打印派发参数：`changeDir` · `hooksDir` · `agentsDir` · `waves` · `deps` · `expectHead`（`git rev-parse --short=10 HEAD`），使起飞会话不必重新推导
+- **THEN** 两份文件都要求打印**一行**可直接复制的起飞指令，形如 `去 '<worktree 绝对路径>' apply <name>, 授权你git提交, 完成后就pr-ship, 把pr url交付我review`
+- **AND** worktree 路径要求用 `pwd` 拼成绝对路径，不得写相对路径
+- **AND** 都明确**不得**把 `waves` · `deps` · `expectHead` · `hooksDir` 等派发参数列进那一行让人复制
 - **AND** 仍保留既有三件事：`spec.html` 绝对路径 · 本命令到此结束 · 工件单独 commit
 
-#### Scenario: block-message-carries-worktree
-- **GIVEN** 一次被阻断的起飞（转录实测主模型 `fable`，prompt 无 `--confirm-model=`），hook 输入的 `cwd` 位于该 change 的 worktree 内
-- **WHEN** 运行判定
-- **THEN** stderr 的补救命令含该 worktree 的**绝对路径**，人可整段复制而不必自己拼目录
-- **AND** `cwd` 不在任何 worktree 内时省略路径一项，其余照常输出（不因此阻断失败）
+#### Scenario: apply-command-documents-handshake
+- **GIVEN** `template/.claude/commands/opsx-apply.md` 与 `template/.claude/skills/openspec-apply-change/SKILL.md`
+- **WHEN** 阅读 step 0
+- **THEN** 两份文件都写明起飞是两段式：发起只是发起，step 0 展示主模型与规模后停下，等人一句短确认
+- **AND** 都写明派发参数由本会话机械推导（`waves` 取 `slice-gate.py lint`、`deps` 取 `slices.json`、`expectHead` 取 `git rev-parse --short=10 HEAD`、`<main>` 取 `session-model.py`），不要求人提供
+- **AND** 都写明该停顿由 `takeoff-gate.py` 强制，命令自身不重复判断
+
+#### Scenario: iron-rule-records-handshake
+- **GIVEN** 仓库根 `CLAUDE.md` 与 `template/CLAUDE.md.snippet`
+- **WHEN** 阅读"两处人类审批"的铁律条目
+- **THEN** 都写明起飞为两段式握手：发起 ≠ 批准，批准是发起之后人自己发出的短确认
+- **AND** PR #29 已写入的"判据不得由模型自证"保留

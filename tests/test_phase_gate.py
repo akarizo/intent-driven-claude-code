@@ -1,6 +1,6 @@
-"""阶段纪律与起飞模型确认门禁（scenario: phase-discipline#* · takeoff-model-confirm#*）。
+"""阶段纪律门禁（scenario: phase-discipline#*）。
 
-骨架：S1 未实现前全部 xfail(strict=True)；S1 实现后去掉标记即解锁。
+骨架：S2 未实现前全部 xfail(strict=True)；S2 实现后去掉标记即解锁。
 """
 import json
 
@@ -8,19 +8,12 @@ import pytest
 
 from conftest import run_hook
 
-pytestmark = pytest.mark.xfail(strict=True, reason="S1 未实现 phase-gate.py；实现后去掉本标记")
+pytestmark = pytest.mark.xfail(strict=True, reason="S2 未实现 phase-gate.py；实现后去掉本标记")
 
-
-# ---------- 转录与 hook 载荷构造（形状同 tests/test_approval_gate.py） ----------
 
 def human(text, ts="2026-09-12T07:00:00Z"):
     return {"type": "user", "isSidechain": False, "isMeta": False, "userType": "external",
             "timestamp": ts, "message": {"role": "user", "content": text}}
-
-
-def assistant(model, ts="2026-09-12T07:01:00Z"):
-    return {"type": "assistant", "isSidechain": False, "timestamp": ts,
-            "message": {"role": "assistant", "model": model, "content": []}}
 
 
 def transcript(path, rows):
@@ -38,19 +31,10 @@ def pre_tool(tool_name, tool_input, tpath, cwd):
                        "tool_input": tool_input, "transcript_path": str(tpath), "cwd": str(cwd)})
 
 
-def prompt_payload(prompt, tpath, cwd):
-    return json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": prompt,
-                       "transcript_path": str(tpath), "cwd": str(cwd)})
-
-
 def change_dir(tmp_path, name="demo"):
-    """最小 change 目录，带一份 3 片 / 2 wave 的 slices.json 供 stderr 打印规模。"""
     d = tmp_path / "openspec" / "changes" / name
     (d / "slices").mkdir(parents=True)
-    (d / "slices.json").write_text(json.dumps({
-        "version": 1, "change": name,
-        "slices": [{"id": "S1", "deps": []}, {"id": "S2", "deps": ["S1"]}, {"id": "S3", "deps": ["S1"]}],
-    }), encoding="utf-8")
+    (d / "slices.json").write_text(json.dumps({"version": 1, "change": name, "slices": []}), encoding="utf-8")
     return d
 
 
@@ -60,8 +44,6 @@ def decision(stdout):
         return None
     return json.loads(stdout)["hookSpecificOutput"]["permissionDecision"]
 
-
-# ---------- phase-discipline ----------
 
 def test_explore_denies_flight_plan_write(tmp_path):
     # Given: 最后一条人类命令消息是 /opsx-explore
@@ -141,117 +123,3 @@ def test_phase_gate_fails_open_on_error(tmp_path):
     # Then: 一律放行——坏门禁不绑架用户
     assert p1.returncode == 0 and decision(p1.stdout) is None, p1.stdout
     assert p2.returncode == 0 and decision(p2.stdout) is None, p2.stdout
-
-
-# ---------- takeoff-model-confirm ----------
-
-def test_blocks_apply_without_confirm(tmp_path):
-    # Given: 转录末条主循环 assistant 是 fable；人敲的 /opsx-apply 不含确认 flag
-    change_dir(tmp_path)
-    t = transcript(tmp_path / "s.jsonl", [human(cmd_msg("opsx-apply", "demo")), assistant("claude-fable-5-1")])
-
-    # When: 走 UserPromptSubmit 判定
-    p = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t, tmp_path))
-
-    # Then: 退出码 2 阻断，stderr 给出 change、当前模型别名、规模与可直接复制的补救命令
-    assert p.returncode == 2, (p.returncode, p.stdout, p.stderr)
-    assert "demo" in p.stderr and "fable" in p.stderr
-    assert "--confirm-model=fable" in p.stderr
-    assert "3" in p.stderr and "2" in p.stderr  # 切片数 3 · wave 数 2
-
-
-def test_accepts_matching_confirm(tmp_path):
-    # Given: 实测主模型别名 fable，prompt 带一致的确认 flag
-    change_dir(tmp_path)
-    t = transcript(tmp_path / "s.jsonl", [assistant("claude-fable-5-1")])
-
-    # When: 走判定
-    p = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo --confirm-model=fable"), t, tmp_path))
-
-    # Then: 静默放行，且不产生任何输出（证据在 prompt 里，不落盘）
-    assert p.returncode == 0, (p.returncode, p.stderr)
-    assert p.stdout.strip() == ""
-
-
-def test_rejects_mismatched_confirm(tmp_path):
-    # Given: 实测主模型是 fable，但 flag 声称 opus
-    change_dir(tmp_path)
-    t = transcript(tmp_path / "s.jsonl", [assistant("claude-fable-5-1")])
-
-    # When: 走判定
-    p = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo --confirm-model=opus"), t, tmp_path))
-
-    # Then: 阻断并同时点名 flag 声称的与实测的两个别名
-    assert p.returncode == 2, (p.returncode, p.stdout, p.stderr)
-    assert "opus" in p.stderr and "fable" in p.stderr
-
-
-def test_confirm_required_every_takeoff(tmp_path):
-    # Given: 转录里已有一次带 flag 的历史起飞，本次 prompt 不带 flag
-    change_dir(tmp_path)
-    t = transcript(tmp_path / "s.jsonl", [
-        human(cmd_msg("opsx-apply", "demo --confirm-model=fable"), "2026-09-12T06:00:00Z"),
-        assistant("claude-fable-5-1", "2026-09-12T06:01:00Z"),
-    ])
-
-    # When: 再次起飞但不带 flag
-    p = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t, tmp_path))
-
-    # Then: 仍然阻断，并照常给出本次的补救命令——确认是每次起飞的动作，不继承历史
-    assert p.returncode == 2, (p.returncode, p.stdout, p.stderr)
-    assert "--confirm-model=fable" in p.stderr
-
-
-def test_unrelated_prompt_passes(tmp_path):
-    # Given: 与起飞无关的两种 prompt
-    change_dir(tmp_path)
-    t = transcript(tmp_path / "s.jsonl", [assistant("claude-fable-5-1")])
-
-    # When: 分别是普通提问与 /opsx-propose
-    p1 = run_hook("phase-gate", stdin=prompt_payload("帮我看看这段代码", t, tmp_path))
-    p2 = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-propose", "demo"), t, tmp_path))
-
-    # Then: 都放行——本门禁只在起飞命令上生效
-    assert p1.returncode == 0, p1.stderr
-    assert p2.returncode == 0, p2.stderr
-
-
-def test_unresolvable_model_fails_open(tmp_path):
-    # Given: 一份没有任何 assistant 条目的转录，和一份模型 id 认不出别名的转录
-    change_dir(tmp_path)
-    t_none = transcript(tmp_path / "none.jsonl", [human("hi")])
-    t_k3 = transcript(tmp_path / "k3.jsonl", [assistant("k3")])
-
-    # When: 两种情况下都敲不带 flag 的 /opsx-apply
-    p_none = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t_none, tmp_path))
-    p_k3 = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t_k3, tmp_path))
-
-    # Then: 读不出模型 → 放行（阻断会抹掉 prompt，不能把人锁在门外）；id 认不出 → 阻断并点名原始 id
-    assert p_none.returncode == 0, (p_none.returncode, p_none.stderr)
-    assert p_k3.returncode == 2, (p_k3.returncode, p_k3.stdout, p_k3.stderr)
-    assert "k3" in p_k3.stderr
-
-
-def test_block_message_carries_worktree(tmp_path):
-    # Given: change 工件位于一间 worktree 内，hook 输入的 cwd 指向该 worktree 的子目录
-    wt = tmp_path / ".worktrees" / "demo"
-    (wt / "openspec" / "changes" / "demo" / "slices").mkdir(parents=True)
-    (wt / "openspec" / "changes" / "demo" / "slices.json").write_text(json.dumps({
-        "version": 1, "change": "demo",
-        "slices": [{"id": "S1", "deps": []}, {"id": "S2", "deps": ["S1"]}],
-    }), encoding="utf-8")
-    t = transcript(tmp_path / "s.jsonl", [assistant("claude-fable-5-1")])
-
-    # When: 在该 worktree 内敲不带 flag 的 /opsx-apply
-    p = run_hook("phase-gate", stdin=prompt_payload(
-        cmd_msg("opsx-apply", "demo"), t, wt / "openspec" / "changes"))
-
-    # Then: 阻断，且补救命令带 worktree 绝对路径——clear 之后不必自己拼目录
-    assert p.returncode == 2, (p.returncode, p.stdout, p.stderr)
-    assert str(wt) in p.stderr
-    assert "--confirm-model=fable" in p.stderr
-
-    # Then: cwd 不在任何 worktree 内时省略路径一项，其余照常输出
-    p2 = run_hook("phase-gate", stdin=prompt_payload(cmd_msg("opsx-apply", "demo"), t, tmp_path))
-    assert p2.returncode == 2, (p2.returncode, p2.stdout, p2.stderr)
-    assert "--confirm-model=fable" in p2.stderr
