@@ -26,12 +26,13 @@ metadata:
 
 **Steps**
 
-0. **批准自检（起飞判据；批准由脚本校验，禁模型自证）**
+0. **批准自检（两段式起飞握手；批准由脚本校验，禁模型自证）**
+   **起飞是两段式握手：起飞指令只算「发起」，不算「批准」。** 人发出 `/opsx-apply <name>` 只是**发起**这一轮；**批准**是发起之后人再单独给的**一句短确认**——`takeoff-gate.py` 的判据是：发起之后的一条人类消息，≤ 40 字、含批准词、且不含 change 名与路径（带 change 名 / 路径的长消息算新的发起，不算确认）。两段齐了才算人类审批到位。
    先按 step 1 的规则定出 `<name>`（有参数直接用参数），再跑：
    ```bash
-   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 没有人类批准 / 批准过期
+   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 只有发起没有确认 / 批准过期
    ```
-   `exit 0` → stdout 是人类批准证据，留给 step 3 的 approve 事件。`exit ≠ 0` → **停下报告**：打印 `openspec/changes/<name>/spec.html` 的绝对路径，说明「起飞需要你自己发出 `/opsx-apply <change>`」，不进入后续步骤、不派发任何 agent。
+   `exit 0` → stdout 是人类批准证据，留给 step 3 的 approve 事件。`exit ≠ 0` → **把 stderr 那一段（主模型 · 规模 · worktree 绝对路径 · `spec.html` 绝对路径 · 补救指引）原样交给人并停下**，等人一句短确认再重跑本步；确认到手之前不进入后续步骤、不派发任何 agent。这道停顿由 `takeoff-gate.py` 强制（PreToolUse hook + 本步自检），本 skill 自身不重复判断，也不替人裁定「这句应该算批准了」。
 
 1. **选 change**
    - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
@@ -55,6 +56,7 @@ metadata:
    `<批准证据>` 用 step 0 `takeoff-gate.py` stdout 的原文，不自己编。飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，字段 `{"started","approval","models","efforts","raw","source"}`）。
 
 4. **启动切片工作流**
+   - **派发参数一律机械推导，不要求人提供**：`waves` ← step 2 `slice-gate.py lint` 的 stdout · `deps` ← `slices.json` 里每片的 `deps` · `expectHead` ← `git rev-parse --short=10 HEAD` · `changeDir` / `hooksDir` / `agentsDir` ← 仓库布局（`openspec/changes/<name>` · `.claude/hooks` · `.claude/agents`）· `<main>` ← `session-model.py`（或 `--model=` 旗标）。任何一项都不得反问人类要；推不出来按对应步骤「停下报告」。
    - 先定出会话主模型别名 `<main>`：
      ```bash
      python3 .claude/hooks/session-model.py   # stdout: opus|sonnet|haiku|fable；exit 3 = 判定不出
