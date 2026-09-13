@@ -424,6 +424,21 @@ def test_record_survives_bad_ceiling_lineno(git_repo):
     assert any("src/mod.py:7" in l and "不做溢出检查" in l for l in text.splitlines()), text
 
 
+def test_record_survives_non_iterable_ceilings(git_repo):
+    # Given: ceilings 被转写成真值非可迭代标量（回退路径由 integrator 手写 record --json，没有 JS schema 拦这层）
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": 5, "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0 不抛 TypeError；门禁行与 timeline 行都写全，不停在半写态
+    assert p.returncode == 0, p.stderr
+    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
+    assert "abc1234def" in (change / "gate-report.md").read_text(encoding="utf-8")
+
+
 def test_gate_g8_silent_without_marker(git_repo):
     # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明
     change = gate_repo(git_repo, src_body=NO_MARKER_SRC, extra_owned={"docs/note.md": "# %s 示例说明\n" % CEILING})

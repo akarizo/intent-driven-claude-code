@@ -202,8 +202,10 @@ def ceiling_rows_from_json(raw):
 
     这个字段全程由执行体的结构化输出转写，不可信。解析绝不抛异常：留痕失败不得中断飞行。
     """
+    if not isinstance(raw, (list, tuple)):
+        return []  # 非可迭代标量 / dict：整段丢掉，不让迭代自己抛 TypeError
     out = []
-    for r in raw or []:
+    for r in raw:
         if not isinstance(r, (list, tuple)) or len(r) < 4:
             continue
         try:
