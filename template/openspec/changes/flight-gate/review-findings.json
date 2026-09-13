@@ -1,0 +1,215 @@
+{
+  "change": "flight-gate",
+  "models": {
+    "executor": "opus",
+    "reviewer": "opus",
+    "integrator": "sonnet"
+  },
+  "efforts": {
+    "executor": "high",
+    "reviewer": "high",
+    "integrator": "low"
+  },
+  "run_id": "wf_35a4fa5b-b2c",
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_approval_gate.py",
+      "line": 296,
+      "summary": "block-message-shows-model-and-scale 这条 scenario 的「规模」断言写成 `assert \"3\" in p.stderr and \"2\" in p.stderr`，而 stderr 里必含时间戳 `2026-09-12T08:58:04Z`，`\"2\" in stderr` 恒真——wave 数那半句完全没被验证；`\"3\"` 也可能由 pytest tmp_path 中的数字（`pytest-123`、`...mode0` 等）偶然满足，即 scale_line 整个返回 None 时该测试仍可能通过。这是本 scenario 唯一的测试，实际没测到它声称的 Then。（该断言来自骨架、本次 commit 未改，但解锁 xfail 后它就是验收依据。）",
+      "fix": "改成对输出文本的精确断言：`assert \"3 个切片\" in p.stderr and \"2 个 wave\" in p.stderr`（与 scale_line 的格式串一致），并可另加一条「slices.json 不可读时 stderr 不含『规模：』且仍非 0 退出」的用例覆盖「读不到就省略该项」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 284,
+      "summary": "主模型的 fail-closed 只在「已经要停」的路径上生效：model_line 仅被 block_message 调用，批准成立分支（line 284 return True）从不解析主模型。于是「握手完成 + 主模型判不出（第三方 id / 无 assistant 条目）」会 exit 0 放飞，而文件头注释（line 27-28）与 model_line 文案（line 196）都宣称「判不出主模型就不许起飞（fail-closed）」，CLAUDE.md 铁律 11 也写「判不出停飞」。scenario unresolvable-model-still-blocks 的 GIVEN 只给了「最后一条是发起」，因此该测试无论 model_line 是否存在都会通过——真正的 fail-closed 语义既未实现也未被测。需确认这是否是刻意的范围裁剪（可能由派发侧 --expect-models 兜底）。",
+      "fix": "二选一并保持文案一致：① 在 verdict 的成立分支先解析主模型别名，判不出则走 block_message 停下（并补一条「确认成立但模型 id 认不出 → 仍停」的用例）；② 若刻意只在停下信息里展示模型，则把 line 27-28 与 line 196 的「判不出主模型就不许起飞」改成不宣称 fail-closed 的措辞，避免文档与行为漂移。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 202,
+      "summary": "`except BaseException` 为了兜住 last_main_model 里 fail() 的 sys.exit，但同时吞掉 KeyboardInterrupt 等控制流异常；本文件其余 fail-open 处用的都是 `except Exception`，风格不一致。",
+      "fix": "收窄为 `except (SystemExit, Exception)`（或 `except SystemExit` 与 `except Exception` 两段），保留对 sys.exit 的兜底但不吞 KeyboardInterrupt。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_approval_gate.py",
+      "line": 60,
+      "summary": "`assert \"已批准\" not in p1.stdout` 是恒真断言——生产代码任何路径都不会输出「已批准」三个字，停下时 stdout 本就是空。该断言给不出保护，真正的保护来自上一行的 returncode 检查。同一模式在 test_initiation_is_not_approval:257 也有。",
+      "fix": "改成 `assert p1.stdout.strip() == \"\"`（停下时 stdout 必须干净，不得泄出证据行），语义与门禁「批准证据只在成立时打印」一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_approval_gate.py",
+      "line": 48,
+      "summary": "test_approval_gate_accepts_human_command 现在断言的是「命令形式**不**构成批准」，函数名与行为相反；虽然有 line 232-233 的注释说明保留名字是为了归档 change 的 scenario 映射，但读测试报告的人只看得到函数名。",
+      "fix": "在该测试加一行 docstring（如「命名沿用归档映射；本用例现在断言命令形式只算发起」），或在 mechanical-takeoff-gates/slices.json 的映射更新后改名为 test_approval_gate_requires_confirm_after_command。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 108,
+      "summary": "Bash 判据用裸子串 \"slice-gate.py\" + \"baseline\"，实测误杀正当命令：explore 阶段跑 `grep -n baseline .claude/hooks/slice-gate.py` 被 deny，`slice-gate.py lint --change-dir openspec/changes/baseline-demo` 也被 deny。explore 阶段读门禁源码 / 目录名含 baseline 都很常见，误 deny 直接卡住探索。",
+      "fix": "把判据收紧成命令形状而非子串：用 `re.compile(r\"slice-gate\\.py\\s+baseline\\b\")` 的 search 替换第 108 行两个 `in` 判断；并在 tests/test_phase_gate.py::test_explore_denies_baseline 补两条放行断言（grep baseline、目录名含 baseline 的 lint）。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 125,
+      "summary": "run_hook 先解析整份转录再判动作：current_phase() 把 transcript JSONL 全量读入内存并逐行 json.loads。该 hook 挂 PreToolUse（S3 注册后覆盖 Write/Edit/Bash，即每次工具调用都触发），长会话转录可达数十 MB，而绝大多数调用最终都放行，白付解析成本。",
+      "fix": "调换顺序早退：`reason = violation(payload)`；`if not reason: return 0`；再判 `current_phase(...) != \"explore\"`。两条路径都是静默放行，行为等价。可再叠廉价预筛：current_phase 里 `if \"<command-name>\" not in line: continue` 再 json.loads。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 37,
+      "summary": "human_text() 与 NON_HUMAN_MARKERS 共约 40 行从 takeoff-gate.py 逐字复制。人类消息形状识别是两个门禁共同的判据基石，双份实现必漂移（改一处漏一处 = 门禁静默失效）。仓内已有跨文件加载先例：takeoff-gate.py:159 用 importlib 按路径加载 session-model.py。",
+      "fix": "抽单一真值：新增 template/.claude/hooks/transcript.py 承载 human_text + NON_HUMAN_MARKERS，两个门禁按路径 importlib 加载（加载失败保持 fail-open）；或 phase-gate.py 直接按路径加载 takeoff-gate.py 复用。因跨 S1/S2 所有权，宜作为 flight-gate 收口后的独立 change。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 25,
+      "summary": "写入拦截只覆盖 Write/Edit，实测 MultiEdit 写 openspec/changes/demo/slices.json 与 Bash `printf x > .../slices.json` 均放行。门禁定位是把模型自觉换成机械判定，而最省事的绕过路径不被判定（S2 契约只写 Write/Edit，故非偏离 spec，而是判据覆盖面不足）。",
+      "fix": "EDIT_TOOLS 补 \"MultiEdit\" 与 \"NotebookEdit\"（工具名不存在时无副作用）；Bash 分支加一条重定向判据：命令含 `>` / `>>` / `tee` 且后跟命中 FLIGHT_PLAN_RE 的路径即 deny。若认为超出 S2 契约，则在 slices/S2.md 或 design.md 显式记「已知绕过路径由人类纪律兜底」，避免后续误判为已封死。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 129,
+      "summary": "阶段取自转录最后一条人类命令消息，而官方文档明确转录异步落盘（S2.md 事实基线第 3 条自述）。若人类刚发 /opsx-propose、该条尚未落盘，propose 的首个 slices.json 写入会被判成 explore 越界并 deny，文案却写「要显式发出 /opsx-propose」——人刚发过，易被当成门禁抽风。真机上用户消息是否总在首个工具调用前落盘，需进一步确认。",
+      "fix": "在 emit_deny 文案末尾补可操作出口：「若你刚发出 /opsx-propose，转录可能尚未落盘，原样重试一次本次写入即可」。纯文案改动，不动判据，现有断言只校验含 \"explore\" 与 \"/opsx-propose\"，不受影响。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_phase_gate.py",
+      "line": 50,
+      "summary": "三个越界/放行用例全部只构造 tool_name=\"Write\"，EDIT_TOOLS 的 \"Edit\" 分支零覆盖（实测 Edit 写 tasks.md 确实 deny，功能对但无测试锁）；current_phase 的「多条 opsx 命令取最后一条」核心语义也无用例——转录只放了单条命令。",
+      "fix": "test_explore_denies_flight_plan_write 三次循环里把一次 tool 换成 \"Edit\"；test_non_explore_phase_passes 补一份转录 [human(cmd_msg(\"opsx-explore\")), human(cmd_msg(\"opsx-propose\",\"demo\"))] 并断言写 slices.json 放行，锁住「后来的命令覆盖更早阶段」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/openspec/changes/flight-gate/evidence.log",
+      "line": 1,
+      "summary": "门禁误判（需人工确认）：prompt 与门禁 JSON 称本切片有 evidence.log 留痕且 warnings 为空，但该文件在 worktree 全仓 find 不到（change 目录下只有 .flight · design.md · gate-report.md · proposal.md · slices/ · slices.json）。按 slice-gate.py:481-482，evidence.log 缺失必产生 G5 警告，故 warnings=[] 与文件系统事实矛盾，铁律 3「RED 先于 GREEN 由 hook 留痕、不接受自述」对本切片无法核对。",
+      "fix": "人工确认二选一：① test-evidence hook 未安装/未触发 → 装好后按 S2 verify 重跑 `python3 -m pytest -q tests/test_phase_gate.py` 补留痕并重跑 slice-gate 复核；② hook 正常但门禁摘要传递中丢了 warnings → 修正报告生成链路让 hooks_missing/warnings 原样透传给评审员。澄清前不要把本切片 TDD 留痕视为已验证。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/hooks.json",
+      "line": 23,
+      "summary": "S3 的第一项改动（PreToolUse 注册 phase-gate.py）没有任何测试覆盖：全仓 tests/ 无一处读 hooks.json，三个解锁的 scenario 测试只看 commands/skills 文本。phase-gate.py 本体测得很全，但「它有没有被挂上去」是 S2 生效的唯一前提，一旦后续有人误删该条目或改窄 matcher，测试全绿而门禁静默失效。",
+      "fix": "在 tests/test_template_docs.py（或 tests/test_phase_gate.py）加一条测试：json.load(template/.claude/hooks/hooks.json)，断言 PreToolUse 中存在 command 含 phase-gate.py 的条目且其 matcher 同时含 Write、Edit、Bash，并断言 intent-gate（Write|Edit）与 takeoff-gate（Workflow|Agent|Task）两条仍在。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_template_docs.py",
+      "line": 6,
+      "summary": "去掉三个 @pytest.mark.xfail 装饰器后 import pytest 全文件再无使用者，是本次改动自造的 orphan import（仓库纪律要求自己造的 orphan 自己清）。",
+      "fix": "删掉第 6 行 import pytest（已确认文件内无其它 pytest.* 引用）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-explore.md",
+      "line": 167,
+      "summary": "新增 guardrail 写「不跑 slice-gate.py baseline（也不跑 lint / spec.html 渲染）」，而 specs/phase-discipline/spec.md 的 scenario explore-denies-baseline 明确要求 hook 放行不含 baseline 的 lint 调用，S3.md 也只要求禁 baseline。人读到的边界比机械判据严，且是本切片自行扩的范围（openspec-explore/SKILL.md:283 同）。",
+      "fix": "把括号里的「也不跑 lint / spec.html 渲染」删掉，或改成「hook 只拦 baseline；lint / 渲染在 explore 阶段无对象可跑，属自律而非门禁」，让文本与 phase-gate.py 判据一一对应。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/skills/openspec-propose/SKILL.md",
+      "line": 86,
+      "summary": "SKILL.md 里把原本自然的「本 skill 到此结束」改成「本 skill / 本命令到此结束」，唯一动因是满足 test_propose_prints_takeoff_command 对两份文件统一断言子串「本命令到此结束」——文档措辞被弱断言牵着走，读起来别扭且模糊了 skill 与 command 的归属。",
+      "fix": "把断言放宽为 (\"本命令到此结束\" in text or \"本 skill 到此结束\" in text)，SKILL.md 恢复「本 skill 到此结束」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/hooks.json",
+      "line": 23,
+      "summary": "注册面 matcher 是正则 Write|Edit|Bash，会一并命中 NotebookEdit / MultiEdit 这类含 Edit 的工具名，而 phase-gate.py 的 violation() 用精确白名单 tool in (\"Write\",\"Edit\") 判定，两者宽窄不一致。今日实际影响接近零（notebook 路径不会命中 slices.json / tasks.md / slices/*.md 正则），仅为一致性提示，需进一步确认当前运行时是否仍暴露 MultiEdit。",
+      "fix": "二选一：matcher 收紧为 Write|Edit|Bash 的精确列举不可行时，改在 phase-gate.py 的 EDIT_TOOLS 里补上 MultiEdit / NotebookEdit（属 S2 所有权，建议记入 change 的 Open Questions 而非在本切片改）。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "README.md",
+      "line": 161,
+      "summary": "表头称阶段边界表是「硬约束，由 phase-gate.py 与 takeoff-gate.py 机械守」，但覆盖面不足：phase-gate.py 只在 explore 阶段拦 Write/Edit 命中 slices.json·tasks.md·slices/*.md 与 Bash 的 `slice-gate.py baseline`（见 template/.claude/hooks/phase-gate.py violation()），「实现类子 agent」仅当 subagent_type ∈ (slice-executor, integrator) 时由 takeoff-gate.py 拦（DISPATCH_TOOLS/TAKEOFF_AGENTS），派其它实现类 agent 不拦；propose 行的「在同一轮继续 apply」若表现为主会话直接 Write 实现代码（工件已齐、intent-gate 放行），两个 hook 都不拦。本仓库对「门禁自证 / 夸大机械性」零容忍，README 是对外承诺面，过度声称会让人误以为边界不可越。docs/WORKFLOW_zh.md:24 是同一段文字。",
+      "fix": "把表头改成分层措辞，例如「阶段边界（`slices.json`·`tasks.md`·`slices/*.md`·baseline 与 slice-executor/integrator 派发由 `.claude/hooks/phase-gate.py`·`takeoff-gate.py` 机械拦；其余由 `/opsx-explore`·`/opsx-propose` 的 Guardrails 约束）」；README.md:161 与 docs/WORKFLOW_zh.md:24 同步改，保持两份逐字一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_docs_iron_rules.py",
+      "line": 90,
+      "summary": "scenario takeoff-model-confirm#iron-rule-records-handshake 的 AND（「PR #29 已写入的判据不得由模型自证保留」）用的是整文件级 `\"禁自述\" in text and \"takeoff-gate\" in text`，对 snippet 而言命中的是第 52 行「主模型判定禁自述」那条与铁律 30 行的 takeoff-gate，而铁律 7 里表达该语义的原文其实是「模型自证无效」。即使有人把铁律 7 的「（模型自证无效）」整段删掉，本断言仍会通过 —— 该 AND 实质未被钉住；且这两个 token 在同文件 line 74-75 的 test_docs_state_mechanical_resolution 已断言过，属重复覆盖。第一条断言（两段式/发起 ≠ 批准/短确认）没有此问题。",
+      "fix": "把第二条断言收敛到「两处审批」那一条本身，例如先取出该行再断言：`rule = next(l for l in text.splitlines() if \"两处\" in l)`，然后 `assert \"takeoff-gate\" in rule and (\"禁自述\" in rule or \"模型自证无效\" in rule)`，Then 注释同步点明检查的是该条目内的措辞。"
+    },
+    {
+      "severity": "LOW",
+      "file": "docs/WORKFLOW_zh.md",
+      "line": 24,
+      "summary": "新增的阶段边界表 + 说明段在 README.md:161-169 与 docs/WORKFLOW_zh.md:24-32 逐字重复约 10 行，但没有任何测试断言这两份存在或一致（S4 的 scenario 只覆盖 CLAUDE.md 与 snippet；specs/ 下也无 README/WORKFLOW 相关 scenario）。后续任一处被改，另一处会静默漂移，而本仓库纪律强调「命令与同名 skill 同改，禁漂移」，文档双份同样有此风险。",
+      "fix": "在 tests/test_docs_iron_rules.py::test_docs_updated 里补一条低成本断言，例如 `for t in (readme, workflow): assert \"阶段边界\" in t and \"两段式\" in t and \"phase-gate.py\" in t`；如需更强可断言两份的该段文本相等。"
+    }
+  ],
+  "fix": {
+    "slice": "final",
+    "ok": true,
+    "commit": "c6c36356fa72b802ef5860a020cb9f0e25f5d048",
+    "failed": [],
+    "warnings": [
+      "slice-gate.py start fix 被拒（slices.json 无 fix 条目），按指示跳过，本轮无所有权标记",
+      "final 门禁 JSON 的 commit 为 c6c3635（fix 三连的末条）；其后追加一条 chore(flight) 0a4167a 提交 timeline.md + gate-report.md 门禁留痕，未 push",
+      "spec 文本 template/openspec/changes/flight-gate/specs/takeoff-model-confirm/spec.md:6 的 Rule 行仍写「最后一条人类消息是发起 → 停」，实现已按评审改成「最新一条确认 ≥ 最新一条发起」；6 个 scenario 全绿故未改工件（改计划工件会使人类批准过期），措辞对齐建议交主会话决定"
+    ],
+    "summary": "3 条 HIGH 全部闭环，各一条先失败的测试 + 独立 fix: commit，全量 143 tests 绿、hooks compileall 绿，final 门禁 scenario 15/15。① takeoff-gate.py classify 确认分支加否定守卫 vetoed()：批准词 ±6 字窗口命中 别/不要/不能/暂缓/先等/还没/再等/等等/don't/do not/not yet/hold → 返回 None（既非发起也非确认 → 停）；新测试 test_negation_near_approve_word_is_not_confirm 参数化 3 句制止语，改前 3 条全绿放飞（实测 stdout 打印批准证据、exit 0），改后全停。② verdict 判据从「最后一条人类消息是确认」改为「存在一条确认且 ≥ 最新发起、≥ 计划工件最大 mtime」：scan_human 改为返回 (最后一条消息, 最新发起, 最新确认)；新测试 test_confirm_survives_later_human_chatter（握手后插一句「状态？」再派 slice-executor → 改前 deny、改后放行）与不变量测试 test_new_initiation_after_confirm_blocks（确认后又出现新发起 → 仍停）。③ opsx-propose.md 与 openspec-propose/SKILL.md 同改：头部摘要与硬交接第 2 条把「takeoff-gate.py 核验这条人类批准」改为「这条只算发起，批准是发起之后你再单独回的一句 ≤40 字、含批准词、不带 change 名与路径的短确认」，并在起飞指令那一行下方加「发出后 /opsx-apply 会停在 step 0 向你要这句短确认」；新测试 test_propose_calls_takeoff_line_initiation_not_approval 锁住措辞并禁止旧说法回潮。未改动任何既有 scenario 骨架的断言；未 push、未 merge、未改 tasks.md 勾选。"
+  },
+  "fixed": [
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 126,
+      "summary": "「确认」判据只看「≤40 字 + 命中批准词」，没有否定守卫。两段式握手之后这是**唯一**的批准通路（命令形式已降级为发起），所以一条明确制止起飞的人类回复会被读成批准。实测（本机跑 CLI 模式，发起 08:? + 确认「先别起飞，等我看完」）：stdout 打印批准证据、exit=0，即人类说「别飞」→ 门禁放飞，方向与铁律 7 相反。同类问题曾在 mechanical-takeoff-gates/review-findings.json:121 以 MEDIUM 提过且未闭环；本切片把它抬成单点通路，影响升级。",
+      "fix": "在 classify 的「确认」分支加否定守卫：批准词前后邻近窗口（如 ±6 字）命中 `别|不要|不能|暂缓|先等|还没|再等|等等|don't|do not|not yet|hold` 时返回 None（既非发起也非确认 → 停）；并在 tests/test_approval_gate.py 补一条用例：发起 + 「先别起飞，等我看完」→ returncode != 0。",
+      "status": "fixed",
+      "fix_commit": "f4556e1",
+      "verified_by": "主会话验证：① takeoff-gate.py:57 NEGATION_RE + :122 vetoed() ② takeoff-gate.py:155 scan_human ③ opsx-propose.md:5/78/87 措辞；final 门禁 scenario 15/15、pytest 143 绿"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 272,
+      "summary": "verdict 要求「转录里最后一条人类消息」必须是确认，否则一律停。CLI（step 0 一次性判定）没问题，但同一 verdict 也服务 hook 模式，而 hook 在整场飞行的每次 slice-executor / integrator / Workflow 派发上都会重跑：握手完成后人只要再说一句与批准无关的话（「继续」「状态？」「先跑 S2」，或中断后补一句指示），下一次派发就落到 `kind != \"确认\"` 分支被 deny，在飞的 flight 被自家门禁腰斩。PR #29 的 latest_approval（扫最新一条批准）不会这样。spec 的 6 个 scenario 都不覆盖「确认之后还有别的人类消息」，属实现取「最后一条」这一强读法带来的副作用。",
+      "fix": "把判据从「最后一条人类消息是确认」改成「存在一条确认，其时间 ≥ 最新一条发起、≥ 计划工件最大 mtime，且该确认之后没有出现新的发起」：scan_human 同时返回最新确认与最新发起，verdict 用两者比较。6 个 scenario 仍全绿（initiation-is-not-approval 无确认 → 停；confirm-must-follow-initiation 的遗留确认早于发起 → 停；replan 走 plan_mtime → 停），而飞行途中的人类插话不再使已成立的握手失效。",
+      "status": "fixed",
+      "fix_commit": "dd8e93e",
+      "verified_by": "主会话验证：① takeoff-gate.py:57 NEGATION_RE + :122 vetoed() ② takeoff-gate.py:155 scan_human ③ opsx-propose.md:5/78/87 措辞；final 门禁 scenario 15/15、pytest 143 绿"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/commands/opsx-propose.md",
+      "line": 78,
+      "summary": "propose 收尾仍写「起飞需要你自己发出 /opsx-apply <name>（takeoff-gate.py 会核验这条人类批准）」，把发起说成批准，与同 commit opsx-apply.md:21 写入的两段式握手直接矛盾（文件头部摘要 opsx-propose.md:5、openspec-propose/SKILL.md:12 与 :86 同病）。更要命的是新增的第 4 条那一行起飞指令含 worktree 路径 + change 名且远超 40 字，按 takeoff-gate.py 判据只能算「发起」，人照抄发出后必然吃 exit 3，而 propose 全文没有一处告诉人还要再回一句短确认——本切片的目的正是消除命令文本与 hook 判据的漂移，这里反而留了反向指引。",
+      "fix": "在四件事的第 2 条与两个文件的头部摘要把「这条人类批准」改为「这条只算发起」，并补一句判据原文：批准是发起之后你再单独回的一句 ≤40 字、含批准词、不带 change 名与路径的短确认；同时在第 4 条那一行指令下方加一行提示「发出后 apply 会停在 step 0 向你要这句短确认」。命令与 SKILL 两份同改，措辞一致。",
+      "status": "fixed",
+      "fix_commit": "c6c3635",
+      "verified_by": "主会话验证：① takeoff-gate.py:57 NEGATION_RE + :122 vetoed() ② takeoff-gate.py:155 scan_human ③ opsx-propose.md:5/78/87 措辞；final 门禁 scenario 15/15、pytest 143 绿"
+    }
+  ],
+  "reviews": [
+    {
+      "round": 1,
+      "mode": "full",
+      "verdict": "3 HIGH / 20 MEDIUM-LOW",
+      "scope": "每切片一个 code-reviewer（opus/high），离关键路径并行"
+    },
+    {
+      "round": 2,
+      "mode": "fix-verify",
+      "verdict": "3 HIGH 闭环，各带一条先失败的测试",
+      "scope": "一次批量修复 + final 全量门禁 scenario 15/15"
+    }
+  ]
+}

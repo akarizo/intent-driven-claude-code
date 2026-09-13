@@ -3,7 +3,7 @@
 ### Requirement: 起飞是两段式握手，发起不等于批准
 起飞指令（一行自然语言 或 `/opsx-apply <name>`）SHALL 只构成**发起**；批准 SHALL 是发起之后另一条人类确认消息。`takeoff-gate.py` MUST NOT 再把发起消息本身当作批准，MUST NOT 接受模型代记的批准。
 Feature: 每次起飞都停一次，让人看清用哪个模型飞
-Rule: 最后一条人类消息是发起 → 停；是短确认 → 放行
+Rule: 存在一条确认、且晚于最新发起与计划工件最后改动 → 放行；否则停（确认之后又出现新发起同样要重新确认）
 
 #### Scenario: initiation-is-not-approval
 - **GIVEN** 一份转录，最后一条人类消息是起飞发起——含 change 名、worktree 路径或 `<command-name>/opsx-apply` 之一，即使正文里带"授权"这类词
