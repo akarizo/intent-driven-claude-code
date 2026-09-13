@@ -108,17 +108,23 @@ def test_integrator_agent_contract():
     assert "git merge" in body and "_interfaces.md" in body and "slice-gate.py final" in body
 
 
-@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#executor-carries-subtractive-rules 待 S2 实现")
 def test_executor_carries_subtractive_rules():
-    # Given: template/.claude/agents/slice-executor.md
-    # When: 读它的纪律段
+    # Given: template/.claude/agents/slice-executor.md 这份执行体契约文件
+    # When: 读它的 frontmatter 与正文
+    fm, body = frontmatter(AGENTS / "slice-executor.md")
+
     # Then: 三条减法纪律都在（先查已有并复用 · 全部 caller 修在汇流处 · 切角标 ceiling:），且正文不含 LOC 之类的长度阈值
-    raise AssertionError("S2 待实现：执行体减法纪律")
+    assert "先查已有" in body and "复用" in body
+    assert "全部 caller" in body and "汇流处" in body
+    assert "ceiling:" in body
+    assert "LOC" not in body
 
 
-@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#reviewer-flags-symptom-fix 待 S2 实现")
 def test_reviewer_flags_symptom_fix():
-    # Given: template/.claude/agents/code-reviewer.md
-    # When: 读它的审查 checklist
+    # Given: template/.claude/agents/code-reviewer.md 这份评审员契约文件
+    # When: 读它的 frontmatter 与正文（含审查 checklist）
+    fm, body = frontmatter(AGENTS / "code-reviewer.md")
+
     # Then: 正确性维度含症状修复（同类输入经其他 caller 仍失败），且既有可维护性维度的重复代码与过度设计条目一条不少
-    raise AssertionError("S2 待实现：评审症状修复维度")
+    assert "症状修复" in body and "caller" in body
+    assert "重复代码" in body and "过度设计" in body
