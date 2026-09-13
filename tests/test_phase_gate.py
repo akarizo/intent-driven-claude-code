@@ -1,14 +1,10 @@
 """阶段纪律门禁（scenario: phase-discipline#*）。
 
-骨架：S2 未实现前全部 xfail(strict=True)；S2 实现后去掉标记即解锁。
+已解锁：S2 实现 phase-gate.py 后去掉 xfail 标记。
 """
 import json
 
-import pytest
-
 from conftest import run_hook
-
-pytestmark = pytest.mark.xfail(strict=True, reason="S2 未实现 phase-gate.py；实现后去掉本标记")
 
 
 def human(text, ts="2026-09-12T07:00:00Z"):
