@@ -1,8 +1,6 @@
 """文档与铁律（scenario: executable-specs#claudemd-iron-rules / docs-updated, flight-apply#legacy-mode-optional）。"""
 import re
 
-import pytest
-
 from conftest import ROOT
 
 IRON = ["先意图后代码", "规格即验收", "TDD", "独立评审", "门禁", "Git 边界", "两处", "度量", "零 token", "回退", "显式路由"]
@@ -78,8 +76,7 @@ def test_docs_state_mechanical_resolution():
     assert "session-model.py" in docs["install.sh"]
 
 
-# ---------------------------------------------- 起飞模型确认入铁律（S3 骨架，实现后去掉 xfail 标记）
-@pytest.mark.xfail(strict=True, reason="S4 未改铁律与文档；实现后去掉本标记")
+# ---------------------------------------------- 起飞模型确认入铁律（scenario: takeoff-model-confirm#iron-rule-records-handshake）
 def test_iron_rule_records_handshake():
     # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
     root = read("CLAUDE.md")
@@ -88,6 +85,6 @@ def test_iron_rule_records_handshake():
     # When: 检查"两处人类审批"那一条的措辞
     for text in (root, snippet):
         # Then: 写明起飞为两段式握手——发起 ≠ 批准，批准是发起之后人自己发出的短确认
-        assert "发起" in text and "批准" in text
+        assert "两段式" in text and "发起 ≠ 批准" in text and "短确认" in text
         # Then: PR #29 已加的"判据不得由模型自证"保留，不被本次改写覆盖
         assert "禁自述" in text and "takeoff-gate" in text

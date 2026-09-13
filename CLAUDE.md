@@ -10,7 +10,7 @@
 4. 独立评审必有：每个 change 至少一次不带主会话立场的 reviewer；CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁止勾选、禁止声明完成、禁止 PR。
 6. Git 边界：每 change 一间 worktree；不自动 merge、不推 main、不删 worktree；ADR 不可改只 supersede。
-7. 两处人类审批不可省：飞行计划批准（运行 /opsx-apply）与 PR review；第一处由 `.claude/hooks/takeoff-gate.py` 机械校验（人类消息证据 + 新鲜度），模型不得自证。
+7. 两处人类审批不可省：起飞批准与 PR review；**起飞是两段式握手——发起 ≠ 批准**：起飞指令（一行自然语言 或 /opsx-apply）只是发起，批准是发起之后人自己发出的一句短确认，模型不得代填、不得把发起当批准。第一处由 `.claude/hooks/takeoff-gate.py` 机械校验（人类消息证据 + 新鲜度），模型不得自证。
 8. 度量必打印：每次 apply 收口打印飞行记录；无数据不得声称提速。
 9. 零 token 优先：能用脚本 / hook 判定的不交给模型。
 10. 回退必存在：新机制失效时回退路径语义一致（Workflow → Agent 派发；脚本渲染 → 保留占位）。
