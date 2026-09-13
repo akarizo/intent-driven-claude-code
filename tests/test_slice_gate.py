@@ -1,8 +1,6 @@
 """slice-gate.py：切片规划 lint 与切片门禁（scenario: slice-gate#*）。"""
 import json
 
-import pytest
-
 from conftest import commit_all, git, run_hook, write
 
 
@@ -405,6 +403,25 @@ def test_record_writes_ceilings_from_gate_json(git_repo):
     rows = [l for l in text.splitlines() if "src/mod.py:2" in l and "只支持两个整数相加" in l and "需要小数精度时换 Decimal" in l]
     assert "## 天花板" in text, text
     assert len(rows) == 1, rows
+
+
+def test_record_survives_bad_ceiling_lineno(git_repo):
+    # Given: ceilings 的行号不是整数（执行体结构化输出可以给出任意形状，GATE schema 的内层元素无类型约束）
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": [["src/mod.py", "第二行", "只支持两个整数相加", "需要小数精度时换 Decimal"],
+                                         ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"]],
+                            "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0 不抛异常；timeline 的 gate 行已写（不停在 append_report 之后的半写态）；坏行号降级为 :0 仍留下天花板文本，好行照常
+    assert p.returncode == 0, p.stderr
+    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
+    text = (change / "gate-report.md").read_text(encoding="utf-8")
+    assert any("src/mod.py:0" in l and "只支持两个整数相加" in l for l in text.splitlines()), text
+    assert any("src/mod.py:7" in l and "不做溢出检查" in l for l in text.splitlines()), text
 
 
 def test_gate_g8_silent_without_marker(git_repo):

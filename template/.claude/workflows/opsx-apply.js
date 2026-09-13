@@ -58,7 +58,8 @@ const GATE = {
     failed: { type: 'array', items: { type: 'string' } },
     warnings: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
-    // 合规天花板行 [[相对路径, 行号, 限制, 升级路径], ...]：门禁在临时 worktree 里算出，靠这个字段带回给 record 写进飞行记录
+    // 合规天花板行 [[相对路径, 行号（整数）, 限制, 升级路径], ...]：门禁在临时 worktree 里算出，靠这个字段带回给 record 写进飞行记录
+    // 内层元素无类型约束，执行体可能转写出非整数行号 → 消费侧 slice-gate.py 的 ceiling_rows_from_json 负责宽容化，不在这里 fail
     ceilings: { type: 'array', items: { type: 'array' } },
   },
 }

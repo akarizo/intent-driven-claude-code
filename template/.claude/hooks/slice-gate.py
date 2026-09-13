@@ -11,7 +11,9 @@
 #   final    --change-dir DIR                 全量 test / lint / typecheck + 全部 scenario 状态
 #   baseline --change-dir DIR                 跑一次全量测试，把耗时写回 slices.json.gate.full_suite_sec
 #
-# JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...], "summary"}；failed 每项以 G<n> 开头并点名对象。
+# JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...],
+#             "ceilings": [[路径, 行号, 限制, 升级路径], ...], "summary"}；failed 每项以 G<n> 开头并点名对象。
+#             ceilings 由执行体转写后经 record --json 回流，形状不可信：解析见 ceiling_rows_from_json，绝不抛异常。
 # 兼容 Python 3.8+，只用标准库。
 import argparse
 import fnmatch
@@ -193,6 +195,23 @@ def append_report(change_dir, result):
 
 def _cell(text):
     return text.replace("|", "/").replace("\n", " ")
+
+
+def ceiling_rows_from_json(raw):
+    """门禁 JSON 的 ceilings 字段 → record_ceilings 可用的行；形状不对的整条丢掉，行号不可信降级为 0。
+
+    这个字段全程由执行体的结构化输出转写，不可信。解析绝不抛异常：留痕失败不得中断飞行。
+    """
+    out = []
+    for r in raw or []:
+        if not isinstance(r, (list, tuple)) or len(r) < 4:
+            continue
+        try:
+            ln = int(str(r[1]).strip())
+        except (TypeError, ValueError):
+            ln = 0
+        out.append((str(r[0]), ln, str(r[2]), str(r[3])))
+    return out
 
 
 def record_ceilings(change_dir, slice_id, rows):
@@ -627,7 +646,7 @@ def cmd_record(args):
     append_report(args.change_dir, result)
     # 临时 worktree 里跑出的天花板行同样不会随 commit 进分支，随门禁结论一起写回（幂等由上面的 report_has_row 兜）
     record_ceilings(args.change_dir, result.get("slice", ""),
-                    [(r[0], int(r[1]), r[2], r[3]) for r in (result.get("ceilings") or []) if len(r) >= 4])
+                    ceiling_rows_from_json(result.get("ceilings")))
     timeline_record(args.change_dir, "gate", "%s %s" % (result.get("slice"), "ok" if result.get("ok") else "red"))
     print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 
