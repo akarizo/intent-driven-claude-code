@@ -359,7 +359,11 @@ def test_hook_denies_dispatch_without_confirm(tmp_path):
 
 
 # ============================================================ fix：确认分支的否定守卫
-@pytest.mark.parametrize("veto", ["先别起飞，等我看完", "还没看完，先不要批准", "don't approve yet"])
+@pytest.mark.parametrize("veto", [
+    "先别起飞，等我看完", "还没看完，先不要批准", "don't approve yet",
+    # PR #30 评审 H1 实测：这四条「推迟型」措辞含批准词但语义相反，邻近窗口挡不住
+    "等我看完再起飞", "等会再起飞", "明天再批准", "not ready, approve later",
+])
 def test_negation_near_approve_word_is_not_confirm(tmp_path, veto):
     # Given: 发起之后人类回的是一句明确制止起飞的短消息（「先别起飞，等我看完」/「还没看完，先不要批准」/
     #        「don't approve yet」——都 ≤40 字且命中批准词 起飞 / 批准 / approve）
@@ -432,3 +436,50 @@ def test_propose_calls_takeoff_line_initiation_not_approval():
         assert "短确认" in t and "40" in t
         assert "step 0" in t
         assert "核验这条人类批准" not in t and "机械校验这条批准" not in t
+
+
+# ====================================================== PR #30 评审 H2：发起与确认必须绑定到本 change
+def test_other_change_mention_keeps_confirm(tmp_path):
+    # Given: 本 change（demo）握手已成立，随后人提到另一个 change 的路径与另一间 worktree
+    d = change_dir(tmp_path)
+    sess = transcript(tmp_path / "s.jsonl", approved_rows() + [
+        human("看下 openspec/changes/other-change/tasks.md 进度", "2026-09-10T09:10:00Z"),
+        human("那个 .worktrees/other 里的日志呢", "2026-09-10T09:11:00Z"),
+    ])
+
+    # When: 判定本 change
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
+
+    # Then: 仍然放行——别的 change 的路径不构成对本 change 的新发起，在飞的 flight 不该被腰斩
+    assert p.returncode == 0, (p.returncode, p.stderr)
+    assert CONFIRM_AT in p.stdout
+
+
+def test_confirm_for_other_change_does_not_approve_this(tmp_path):
+    # Given: 转录里只有针对另一个 change 的一行式发起与其后的短确认，没有任何针对本 change 的发起
+    d = change_dir(tmp_path)
+    sess = transcript(tmp_path / "s.jsonl", [
+        human("去 '/abs/repo/.worktrees/other-change' apply other-change, 授权你git提交",
+              "2026-09-10T08:58:04Z"),
+        human("起飞", "2026-09-10T08:59:00Z"),
+    ])
+
+    # When: 判定本 change
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
+
+    # Then: 不成立——给 B 的确认不能替 A 放行，人从未针对 A 看过计划与模型
+    assert p.returncode != 0, p.stdout
+
+
+def test_short_change_name_chatter_is_not_initiation(tmp_path):
+    # Given: change 名为 demo，握手已成立，随后人说一句恰好含 "demo" 子串的闲聊
+    d = change_dir(tmp_path)
+    sess = transcript(tmp_path / "s.jsonl", approved_rows() + [
+        human("这个 demo-site 的截图发我", "2026-09-10T09:12:00Z"),
+    ])
+
+    # When: 判定
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
+
+    # Then: 仍放行——change 名要有词边界，短名不能把普通闲聊判成新发起
+    assert p.returncode == 0, (p.returncode, p.stderr)

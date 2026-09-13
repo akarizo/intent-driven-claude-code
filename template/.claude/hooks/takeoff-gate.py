@@ -56,6 +56,12 @@ APPROVE_WORD_RE = re.compile(r"批准|起飞|授权|approve|go ahead", re.IGNORE
 # 制止词：出现在批准词邻近窗口里 → 这条是「别飞」而不是「飞」，既非发起也非确认
 NEGATION_RE = re.compile(r"别|不要|不能|暂缓|先等|还没|再等|等等|don't|do not|not yet|hold", re.IGNORECASE)
 NEGATION_WINDOW = 6
+# 确认必须「整条就是一句批准」，而不是「句子里含批准词」：
+# 「等我看完再起飞」「明天再批准」「not ready, approve later」都含批准词而语义相反，
+# 邻近窗口的否定守卫挡不住（实测放飞）。整句白名单让所有推迟句天然落选。
+CONFIRM_RE = re.compile(
+    r"^\s*(?:好的?|行|ok|okay)?\s*[，,、：:]?\s*(?:批准|起飞|授权|approve|go\s+ahead)\s*[!！。.、，,~～]*\s*$",
+    re.IGNORECASE)
 # 只吃路径字符：prompt 里常写成 「切片包：`template/openspec/changes/<name>`」，
 # 宽前缀会把反引号 / 全角冒号 / 中文一起吞进来，拼出的路径必不存在 → 静默 fail-open
 CHANGE_PATH_RE = re.compile(r"/?(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+")
@@ -129,17 +135,30 @@ def vetoed(text):
     return False
 
 
+def mentions_this_change(text, change_name):
+    """文本是否指向【本】change：路径 basename 相等，或 change 名带词边界出现。
+    指向别的 change 的路径不算本次发起——否则人在飞行途中提一句别的 change，
+    最新发起就被刷新到那一刻，已成立的握手作废、下一次派发被 deny，在飞的 flight 遭腰斩。"""
+    if not change_name:
+        return False
+    for rex in (CHANGE_PATH_RE, WORKTREE_RE):
+        for m in rex.finditer(text):
+            if os.path.basename(m.group(0).rstrip("/")) == change_name:
+                return True
+    # 裸名匹配要有词边界：change 名越短（demo / gate）越容易把普通闲聊判成发起
+    return re.search(r"(?<![0-9A-Za-z_-])%s(?![0-9A-Za-z_-])" % re.escape(change_name),
+                     text, re.IGNORECASE) is not None
+
+
 def classify(text, change_name):
     """一条人类消息 → '发起' / '确认' / None。
-    先判发起：含 change 名或 worktree 路径的长指令即使带「授权」这类词也是发起，不是批准。"""
+    先判发起：指向本 change 的长指令即使带「授权」这类词也是发起，不是批准。"""
     if APPLY_CMD_RE.search(text):
         return "发起"
-    if change_name and change_name.lower() in text.lower():
+    if mentions_this_change(text, change_name):
         return "发起"
-    if CHANGE_PATH_RE.search(text) or WORKTREE_RE.search(text):
-        return "发起"
-    if len(text) <= WORD_LIMIT and APPROVE_WORD_RE.search(text):
-        return None if vetoed(text) else "确认"
+    if len(text) <= WORD_LIMIT and CONFIRM_RE.match(text) and not vetoed(text):
+        return "确认"
     return None
 
 

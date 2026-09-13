@@ -19,7 +19,7 @@
 - explore 阶段的两类越界动作（写飞行计划工件、跑 baseline）当场被 hook deny。
 - 每次起飞停一次，把当前主模型与规模摆在人面前，人一句短确认才飞。
 - 交给人的起飞指令是**一行**，`/clear` 后可直接复制；派发参数一律机械推导。
-- 判据零 token、不可由模型伪造；命令文本与 hook 判据同改。
+- 判据零 token；模型**不能借工具输出自证**（`tool_result` / `<bash-stdout>` / `<local-command-stdout>` / sidechain 形状都被 `human_text()` 排除）。⚠ 直接向 `~/.claude/projects/**/<sid>.jsonl` 追加伪造的 `type:"user"` 行是**已知残留通路**，两个门禁都分辨不了；属既有架构问题（非本 change 引入），见 Open Questions。命令文本与 hook 判据同改。
 
 **Non-Goals**
 - 不改 `session-model.py`（直接复用其 `alias_of`）。
@@ -133,4 +133,6 @@ step 0 重跑 → 批准成立 → 派发（hook 同判据兜底）→ 飞
 
 - `phase-gate.py` 与 `takeoff-gate.py` 的转录扫描是否抽成公共模块——待 PR #29 合并、两者各稳定一个迭代后评估。
 - `UserPromptSubmit` exit 2 后被 erase 的 prompt 是否写入转录——文档未定义。若日后做实验确认留痕，停顿可前移到 prompt 提交时刻，判据语义不变（值得单独记一条基础设施事实）。
+- **转录文件本身可被模型直接写**：`human_text()` 封住了「借工具输出自证」，但模型持 Bash 写权限时可向 `~/.claude/projects/**/<sid>.jsonl` 追加伪造的人类消息行，`takeoff-gate` 与 `phase-gate` 都分辨不了。封堵方案是对该路径加一条 `PreToolUse` 写入拦截，属跨 change 的架构问题，另案处理。
+- `phase-gate.py` 的阶段只认 `<command-name>/opsx-*` 形状，而本 change 新确立的主用起飞路径是一行自然语言。若最后一条 opsx 命令是 `/opsx-explore`、随后用一行式起飞，阶段会卡在 explore 并误拦 apply 期间的 `tasks.md` 勾选（PR #30 评审 M1）。已入 `review-findings.json` 的 deferred，下一轮修。
 - 本设计不建议修改任何在force ADR；`DRAFT-gate-evidence-not-self-reported` 的适用范围由"起飞那一刻"延伸到"起飞之前的整段路"，属延伸而非变更，无需 supersede。

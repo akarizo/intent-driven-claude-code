@@ -152,6 +152,27 @@
       "line": 24,
       "summary": "新增的阶段边界表 + 说明段在 README.md:161-169 与 docs/WORKFLOW_zh.md:24-32 逐字重复约 10 行，但没有任何测试断言这两份存在或一致（S4 的 scenario 只覆盖 CLAUDE.md 与 snippet；specs/ 下也无 README/WORKFLOW 相关 scenario）。后续任一处被改，另一处会静默漂移，而本仓库纪律强调「命令与同名 skill 同改，禁漂移」，文档双份同样有此风险。",
       "fix": "在 tests/test_docs_iron_rules.py::test_docs_updated 里补一条低成本断言，例如 `for t in (readme, workflow): assert \"阶段边界\" in t and \"两段式\" in t and \"phase-gate.py\" in t`；如需更强可断言两份的该段文本相等。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/phase-gate.py",
+      "line": 31,
+      "summary": "阶段只认 <command-name>/opsx-* 形状，而本 change 新确立的主用起飞路径是一行自然语言。若最后一条 opsx 命令是 /opsx-explore、随后用一行式起飞，阶段卡在 explore，apply 期间写 tasks.md 勾选会被 deny，提示语与人刚做的事对不上。",
+      "fix": "current_phase 遇到命中 WORKTREE_RE / `apply <name>` 形状的自然语言起飞指令时视作非 explore；或在 deny 文案里补一句刷新阶段的指引。已记入 design 的 Open Questions。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 55,
+      "summary": "确认词表与用户实际习惯有落差：真实转录里人类的确认原话出现过 `go`、`同意，go`，实测均不成立，多一次往返（停下文案已明确要求回「起飞」，不构成阻断）。",
+      "fix": "若要放宽，连同整句白名单一起做（只扩词表会加重假放行面）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 178,
+      "summary": "排序口径不一致：confirmed/last 用 (when, idx) 做 tie-break，initiated 只用 when；同一时间戳下旧确认会胜出（毫秒级时间戳概率极低）。scan_human 返回的 _last_kind 从未使用。",
+      "fix": "initiated 同样用 (when, idx)；从返回元组里去掉 _last_kind。"
     }
   ],
   "fix": {
@@ -196,6 +217,56 @@
       "status": "fixed",
       "fix_commit": "c6c3635",
       "verified_by": "主会话验证：① takeoff-gate.py:57 NEGATION_RE + :122 vetoed() ② takeoff-gate.py:155 scan_human ③ opsx-propose.md:5/78/87 措辞；final 门禁 scenario 15/15、pytest 143 绿"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 122,
+      "summary": "否定守卫只挡「先别 X」一种语序，推迟型措辞仍被判为批准。实测「等我看完再起飞」「等会再起飞」「明天再批准」「not ready, approve later」四条全部 exit 0 放飞——两段式握手唯一的批准通路出现假放行，直接击穿铁律 7。",
+      "fix": "确认判据由「含批准词」改为整句白名单 CONFIRM_RE（允许至多一个短前缀），推迟句天然落选；vetoed() 保留为第二道防线。4 条实测串加进 test_negation_near_approve_word_is_not_confirm。",
+      "status": "fixed",
+      "fix_commit": "(本轮)",
+      "verified_by": "TDD：改前 4 条 parametrize 全红，改后 tests/test_approval_gate.py 29 passed"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/takeoff-gate.py",
+      "line": 132,
+      "summary": "发起与确认都不与本次 change 绑定：任何提到任意 change/worktree 路径的人类消息都算新发起，实测握手成立后说一句「看下 openspec/changes/other-change/tasks.md 进度」即 exit 3，在飞的 flight 被自家门禁腰斩；反向则给 B 的确认能替 A 放行。change 名裸子串匹配还缺词边界。",
+      "fix": "新增 mentions_this_change()：路径取 basename 与 change_name 相等才算发起，裸名匹配加词边界；classify 改用它。补 3 条用例（无关 change 路径不腰斩 · 给 B 的确认不放行 A · 短名闲聊不算发起）。",
+      "status": "fixed",
+      "fix_commit": "(本轮)",
+      "verified_by": "TDD：改前 3 条新用例全红，改后全绿"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/openspec/changes/flight-gate/specs/takeoff-approval/spec.md",
+      "line": 1,
+      "summary": "BREAKING 收紧未 supersede target 分支的既有 requirement：本 PR 把 test_approval_gate_accepts_human_command 改成断言「命令形式不构成批准」，而它映射的 scenario（mechanical-takeoff-gates 的 approval-gate-accepts-human-command）仍写「退出码 0」，验收测试变成验证其否命题，铁律 2 在该条上失效。",
+      "fix": "新增 specs/takeoff-approval/spec.md 的 ## MODIFIED Requirements，原样重述并改写该 requirement 与三个 scenario，声明发起 ≠ 批准；scenario 的 THEN 与测试断言重新一致。",
+      "status": "fixed",
+      "fix_commit": "(本轮)",
+      "verified_by": "openspec validate flight-gate 绿；slice-gate lint 绿"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/openspec/changes/flight-gate/design.md",
+      "line": 22,
+      "summary": "design 写「判据不可由模型伪造」措辞过强：工具输出形状已封，但模型持 Bash 写权限时可直接向 ~/.claude/projects/**/<sid>.jsonl 追加伪造的 type:\"user\" 行，两个门禁都分辨不了。",
+      "fix": "改为「不能借工具输出自证」并点名残留通路，同时记入 design 的 Open Questions（另案处理）。",
+      "status": "fixed",
+      "fix_commit": "(本轮)",
+      "verified_by": "design.md 措辞已改，Open Questions 已补"
+    },
+    {
+      "severity": "LOW",
+      "file": "install.sh",
+      "line": 438,
+      "summary": "安装收尾的门禁清单只列 takeoff-gate，本 change 新增的 phase-gate 漏同步（README / WORKFLOW / CLAUDE.md / snippet 都改了唯独漏这里）。",
+      "fix": "补一行 phase-gate 说明，并把 takeoff-gate 那行的描述更新为两段式握手。",
+      "status": "fixed",
+      "fix_commit": "(本轮)",
+      "verified_by": "install.sh 已补两行"
     }
   ],
   "reviews": [
@@ -210,6 +281,18 @@
       "mode": "fix-verify",
       "verdict": "3 HIGH 闭环，各带一条先失败的测试",
       "scope": "一次批量修复 + final 全量门禁 scenario 15/15"
+    },
+    {
+      "round": 3,
+      "mode": "full",
+      "verdict": "3 HIGH / 2 MEDIUM / 3 LOW（阻断）",
+      "scope": "PR #30 相对 target 的完整 diff，干净 code-reviewer（opus/high），不带主会话立场"
+    },
+    {
+      "round": 4,
+      "mode": "fix-verify",
+      "verdict": "3 HIGH + 1 MEDIUM + 1 LOW 闭环，各带先失败的测试",
+      "scope": "主会话 TDD 修复：7 条新用例先红后绿，全量 150 passed"
     }
   ]
 }
