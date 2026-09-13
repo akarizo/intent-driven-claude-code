@@ -435,7 +435,8 @@ cat <<EOF
   - 3 个 agent 见 .claude/agents/（slice-executor / integrator / code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定），integrator = sonnet）
   - apply 默认飞行模式（slices.json 切片 + wave 并行 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
-  - PreToolUse takeoff-gate 拦未获人类批准的飞行派发（校验会话转录里的人类消息证据与新鲜度，模型自证无效；对 Workflow 工具是否触发待实测，未触发时由 /opsx-apply step 0 自检兜底）
+  - PreToolUse takeoff-gate 拦未获人类批准的飞行派发（起飞两段式握手：起飞指令只算发起，批准是其后人类的一句短确认；校验转录里的人类消息证据与新鲜度，模型自证无效；对 Workflow 工具是否触发待实测，未触发时由 /opsx-apply step 0 自检兜底）
+  - PreToolUse phase-gate 拦 explore 阶段的越界动作（写 slices.json/tasks.md/slices/*.md 与跑 slice-gate.py baseline 属 propose 收口，需显式 /opsx-propose）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-commit·/claudemd-distill·claudemd-lint 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
   - Worktree 隔离：每个 change 从 propose 起在自己的 .worktrees/<change>/ (branch worktree-<change>) 里进行，工件+实现全落其中，项目根保持干净；权威见 .claude/skills/openspec-git-discipline/

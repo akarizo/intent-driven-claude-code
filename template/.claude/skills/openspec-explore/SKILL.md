@@ -251,7 +251,7 @@ You: That changes everything.
 
 There's no required ending. Discovery might:
 
-- **Flow into a proposal**: "Ready to start? I can create a change proposal."
+- **交接给 `/opsx-propose`**: 想法成形了就引导人类**自己发出** `/opsx-propose <name>`——explore 本身不生成飞行计划，也不在同一轮继续。
 - **Result in artifact updates**: "Updated design.md with these decisions"
 - **Just provide clarity**: User has what they need, moves on
 - **Continue later**: "We can pick this up anytime"
@@ -279,6 +279,10 @@ But this summary is optional. Sometimes the thinking IS the value.
 ## Guardrails
 
 - **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
+- **不产飞行计划工件** - explore **不写** `slices.json` · `tasks.md` · `slices/*.md` 切片包 · scenario 测试骨架。这些是 `/opsx-propose` 的产物，在 explore 里写出来等于跳过审批面板。
+- **不跑 baseline** - 不跑 `slice-gate.py baseline`（也不跑 `lint` / `spec.html` 渲染）。基线属于 propose 阶段。
+- **不派实现类子 agent** - 不派 `slice-executor` · `integrator`；explore 只读只想，要并行就派只读的探索类 agent。
+- **成形后引导人显式 `/opsx-propose`** - `proposal.md` · `design.md` · `specs/**` 仍可在 explore 内写（那是捕获思考）；写完只打印一行「下一步：请你自己发出 `/opsx-propose <name>`」，**不在同一轮继续**、不代跑。
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally

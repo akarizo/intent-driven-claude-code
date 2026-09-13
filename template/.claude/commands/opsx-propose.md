@@ -2,7 +2,7 @@
 description: 一次成稿：一步生成完整 change 的全部工件（含切片计划），收尾把 spec.html 交给人类审批，起飞需人类自己发 /opsx-apply
 ---
 
-一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板，然后硬交接给人类：本命令到此结束，起飞由人类自己发出 `/opsx-apply`（`takeoff-gate.py` 机械校验这条批准）。
+一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板，然后硬交接给人类：本命令到此结束，起飞由人类自己发出 `/opsx-apply`——这条只算发起，批准是发起之后你再单独回的一句短确认（`takeoff-gate.py` 机械校验这两段）。
 
 ---
 
@@ -72,15 +72,25 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
    ```bash
    openspec status --change "<name>"
    ```
-   然后**硬交接**（三件事缺一不可）：
+   然后**硬交接**（四件事缺一不可）：
 
    1. 打印 `spec.html` 的**绝对路径**（`openspec/changes/<name>/spec.html`，用 `pwd` 拼成绝对路径再打印），请人类打开审阅飞行计划。
-   2. 明确一行：**本命令到此结束。不得在同一轮继续 `/opsx-apply`；起飞需要你自己发出 `/opsx-apply <name>`（`takeoff-gate.py` 会在转录里核验这条人类批准 + 计划新鲜度，模型自证无效）。**
+   2. 明确一行：**本命令到此结束。不得在同一轮继续 `/opsx-apply`；起飞需要你自己发出 `/opsx-apply <name>`——这条只算发起，不是批准。批准是发起之后你再单独回的一句 ≤ 40 字、含批准词（`起飞` / `批准` / `授权` / `approve`）、不带 change 名与路径的短确认；`takeoff-gate.py` 会在转录里核验「发起 + 短确认 + 计划新鲜度」，模型自证无效。**
    3. 提示用户把工件单独 commit（artifacts-only commit）。
+   4. 打印**一行**可直接复制的起飞指令——人要切模型起飞得先 `/clear`，清空后既不知道进哪个目录也无从复原参数，所以这一行必须自足：
+
+      ```
+      去 '<worktree 绝对路径>' apply <name>, 授权你git提交, 完成后就pr-ship, 把pr url交付我review
+      ```
+
+      - `<worktree 绝对路径>` = step 1.5 建的 `.worktrees/<name>/`，用 `pwd` 拼成**绝对路径**，**不得**写相对路径。
+      - 这一行发出后，`/opsx-apply` 会**停在 step 0** 向你要那句短确认（并把当前主模型与切片规模摆给你看）；回一句「起飞」才真的飞。
+      - 授权语固化在这一行里：授权范围与 git 铁律「命令即授权」一致——commit · push feature 分支 · 建 PR · 贴评审评论 · draft↔ready 转换。
+      - **不得**把 `waves` · `deps` · `expectHead` · `hooksDir` · `agentsDir` 等派发参数列进这一行让人复制；它们由起飞会话自己机械推导。
 
 **Output**
 
-完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、spec.html 绝对路径 + 「请你自己发出 `/opsx-apply <name>` 起飞」（本命令不代跑）。
+完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、spec.html 绝对路径 + 那一行起飞指令 + 「请你自己发出它」（本命令不代跑）。
 
 **Artifact Creation Guidelines**
 

@@ -158,6 +158,16 @@ your-project/
 
 一个典型变更从想法到归档要经过 7 个阶段，每个阶段对应至少一个 slash 命令：
 
+**阶段边界（硬约束，由 `.claude/hooks/phase-gate.py` 与 `.claude/hooks/takeoff-gate.py` 机械守）**：
+
+| 阶段 | 可产出 | 禁止 |
+| --- | --- | --- |
+| `/opsx-explore` | `proposal` · `design` · `specs` | `slices.json` · `tasks.md` · `slices/*.md` · baseline · 实现类子 agent |
+| `/opsx-propose` | 全部工件 + 切片计划 + baseline + `spec.html` | 在同一轮继续 apply |
+| 起飞 | 实现与门禁 | 发起后未经人短确认即派发 |
+
+起飞被**停一次**是设计、不是故障：`takeoff-gate.py` 停下时打印当前主模型别名与规模（切片数 / wave 数）、worktree 与 `spec.html` 绝对路径，让你在派发前看清用哪个模型飞——确认无误回一句 `起飞`，要换模型先 `/model` 再回。起飞是**两段式握手**：起飞指令（一行自然语言 或 `/opsx-apply`）只是**发起**，批准是发起之后你自己发出的那句短确认，模型不得代填。`/opsx-propose` 收尾会给出**一行**可直接复制的起飞指令（含 worktree 绝对路径与 change 名），派发参数由起飞会话机械推导，不用你填。
+
 ### 阶段 1 · 规划（写 markdown，不写代码）
 
 5-artifact 链：`proposal → specs → design → adr → tasks`

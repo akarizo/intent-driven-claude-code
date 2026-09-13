@@ -159,3 +159,53 @@ def test_apply_checks_approval_gate():
     assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
     assert "takeoff-gate.py" in skill
     assert "record approve" in cmd and "批准证据" in cmd
+
+
+# ------------------------------------------------ 阶段边界与两段式起飞握手（S3 实现，xfail 标记已去）
+def test_explore_command_states_boundary():
+    # Given: /opsx-explore 命令与 openspec-explore skill
+    cmd = read(CMD / "opsx-explore.md")
+    skill = read(SKILLS / "openspec-explore" / "SKILL.md")
+
+    # When: 检查 Guardrails 里的三条硬边界与收尾交接措辞
+    for text in (cmd, skill):
+        # Then: 三类飞行计划工件、baseline、实现类子 agent 都写明禁止，并引导人显式 /opsx-propose
+        assert "slices.json" in text and "tasks.md" in text
+        assert "baseline" in text and "slice-executor" in text
+        assert "/opsx-propose" in text
+        # Then: 仍保留 explore 可写思考类工件的既有定位
+        assert "proposal.md" in text and "design.md" in text
+        # Then: 不再有把 explore 直接推进到飞行的措辞
+        assert "Flow into a proposal" not in text
+
+
+def test_apply_command_documents_handshake():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 检查 step 0 是否写明两段式握手与参数机械推导
+    for text in (cmd, skill):
+        # Then: 发起 ≠ 批准，停下等人一句短确认
+        assert "发起" in text and "确认" in text
+        # Then: 派发参数的机械来源写清楚，不要求人提供
+        for src in ("slice-gate.py lint", "rev-parse --short=10", "session-model.py"):
+            assert src in text, src
+        # Then: 该停顿由 takeoff-gate.py 强制
+        assert "takeoff-gate.py" in text
+
+
+def test_propose_prints_takeoff_command():
+    # Given: /opsx-propose 命令与 openspec-propose skill
+    cmd = read(CMD / "opsx-propose.md")
+    skill = read(SKILLS / "openspec-propose" / "SKILL.md")
+
+    # When: 检查收尾硬交接是否交付一行自足的起飞指令
+    for text in (cmd, skill):
+        # Then: 一行式含 worktree 绝对路径 + change 名 + 授权语，人 clear 后可直接复制
+        assert "worktree" in text and "pwd" in text
+        assert "apply" in text and "授权" in text and "pr-ship" in text
+        # Then: 明确禁止把派发参数列进那一行让人复制
+        assert "expectHead" in text and "不得" in text
+        # Then: 既有三件事保留
+        assert "spec.html" in text and "本命令到此结束" in text and "commit" in text
