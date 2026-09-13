@@ -583,6 +583,7 @@ def cmd_gate(args):
 
     result = {"slice": args.slice, "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
               "failed": failed, "warnings": warnings, "hooks_missing": hooks_missing,
+              "ceilings": [[rel, ln, limit, up] for rel, ln, limit, up in ceilings],
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
     append_report(args.change_dir, result)
     record_ceilings(args.change_dir, args.slice, ceilings)
@@ -624,6 +625,9 @@ def cmd_record(args):
         print(json.dumps({"recorded": False, "reason": "already recorded"}, ensure_ascii=False))
         return
     append_report(args.change_dir, result)
+    # 临时 worktree 里跑出的天花板行同样不会随 commit 进分支，随门禁结论一起写回（幂等由上面的 report_has_row 兜）
+    record_ceilings(args.change_dir, result.get("slice", ""),
+                    [(r[0], int(r[1]), r[2], r[3]) for r in (result.get("ceilings") or []) if len(r) >= 4])
     timeline_record(args.change_dir, "gate", "%s %s" % (result.get("slice"), "ok" if result.get("ok") else "red"))
     print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 

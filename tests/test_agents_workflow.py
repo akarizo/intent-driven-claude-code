@@ -60,6 +60,19 @@ def test_workflow_routes_models_explicitly():
     assert "log(`模型路由" in text
 
 
+def test_workflow_hands_ceilings_to_record():
+    # Given: template/.claude/workflows/opsx-apply.js（飞行模式默认路径：切片在临时 worktree 跑 gate，integrator 用 record 写回）
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    # When: 取 GATE 结构化输出 schema 段与 integrator 的 record 命令拼装行
+    schema = text[text.index("const GATE = {"):text.index("const FINDINGS = {")]
+    record_cmd = re.search(r"slice-gate\.py record [^\n`]*", text)
+
+    # Then: GATE schema 声明 ceilings 属性（否则结构化输出会丢掉天花板行）；record 命令用 --json 传整份门禁 JSON 而不是只传 --slice/--commit
+    assert "ceilings" in schema, schema
+    assert record_cmd and "--json" in record_cmd.group(0), record_cmd and record_cmd.group(0)
+
+
 def test_executor_agent_contract():
     # Given: template/.claude/agents/slice-executor.md
     fm, body = frontmatter(AGENTS / "slice-executor.md")

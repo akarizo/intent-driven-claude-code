@@ -373,6 +373,40 @@ def test_gate_g8_flags_missing_limit(git_repo):
     assert any(f.startswith("G8 ceiling:") and "src/mod.py:2" in f and "限制" in f for f in out["failed"]), out["failed"]
 
 
+def test_gate_json_carries_ceilings(git_repo):
+    # Given: 已 start 的切片 S1，区间内新增源码含两条完整 ceiling 标记（src/mod.py 第 2 行与第 7 行）
+    change = gate_repo(git_repo, src_body=GOOD_CEILING_SRC)
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: JSON 的 ceilings 字段是两条行，分别为 ["src/mod.py", 2, 限制, 升级路径] 与 ["src/mod.py", 7, ...]
+    out = json.loads(p.stdout)
+    assert out.get("ceilings") == [
+        ["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"],
+        ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"],
+    ], out.get("ceilings")
+
+
+def test_record_writes_ceilings_from_gate_json(git_repo):
+    # Given: 一份带 ceilings 的切片门禁 JSON（S1 ok、commit abc1234def、天花板行 src/mod.py:2），change 分支上还没有它的门禁行
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": [["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"]],
+                            "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录两次
+    run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；gate-report.md 有天花板表头；含 src/mod.py:2 与限制、升级路径两段的行恰好一条（幂等）
+    assert p.returncode == 0, p.stderr
+    text = (change / "gate-report.md").read_text(encoding="utf-8")
+    rows = [l for l in text.splitlines() if "src/mod.py:2" in l and "只支持两个整数相加" in l and "需要小数精度时换 Decimal" in l]
+    assert "## 天花板" in text, text
+    assert len(rows) == 1, rows
+
+
 def test_gate_g8_silent_without_marker(git_repo):
     # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明
     change = gate_repo(git_repo, src_body=NO_MARKER_SRC, extra_owned={"docs/note.md": "# %s 示例说明\n" % CEILING})
