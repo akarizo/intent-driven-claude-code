@@ -27,7 +27,7 @@
 4. 独立评审必有：CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁勾选、禁声明完成。
 6. Git 边界：一 change 一 worktree，不自动 merge / push / 删；ADR 只 supersede。
-7. 两处审批不可省：飞行计划批准与 PR review。
+7. 两处审批不可省：飞行计划批准与 PR review；起飞批准由 takeoff-gate.py 校验人类消息证据（模型自证无效）。
 8. 度量必打印：apply 收口打印飞行记录，无数据不称提速。
 9. 零 token 优先：能脚本 / hook 判定的不交给模型。
 10. 回退必存在：机制失效时回退路径语义一致。
@@ -49,6 +49,7 @@
 > Claude Code v2.1.251 起 subagent 模型解析顺序 = 调用时 `model` 参数 > agent frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` env > 主会话（来源：code.claude.com/docs/en/sub-agents "Choose a model"，2026-09-10 核实）。env 只是**默认值**；需强制统一才设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（模板不设）。fork 恒随主会话模型。
 
 - **飞行角色**：slice-executor / code-reviewer = 会话主模型 + effort high；integrator 等机械角色 = sonnet + effort low。`/opsx-apply` 以 `args.models` 显式传入，脚本缺参即拒绝起飞。
+- **主模型判定禁自述**：`<main>` 由 `.claude/hooks/session-model.py` 读会话转录判定；判定不出停飞，人工 `--model=<alias>`。
 - **任何 Agent 派发不得省略 `model`**：留空就落到 env 默认，这正是 2026-09-10 实测「实现 / 评审 / 修复全在 Sonnet」的成因。
 - **确需主模型级子任务**（复杂重构 · 架构决策 · 难 bug 根因）：主会话直接做，或派发时显式 `model: <主模型别名>`。
 - **主会话自查**：低推理命令（`/opsx-explore` `/opsx-sync` `/claudemd-commit`）先手动 `/model sonnet`——env 管不到主会话。

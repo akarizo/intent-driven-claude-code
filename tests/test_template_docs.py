@@ -108,3 +108,54 @@ def test_git_discipline_wave_parallel_carveout():
     assert "integrator" in section
     assert "运行时" in section
     assert "不 push" in section
+
+
+# ---------------------------------------------------------------- 起飞判据（scenario: model-routing#apply-resolves-main-model /
+# pr-ship-resolves-main-model, takeoff-approval#apply-checks-approval-gate）。
+
+
+def test_apply_resolves_main_model():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 检查两份文件里 <main> 的来源与失败处置
+    texts = [cmd, skill]
+
+    # Then: <main> 取自 session-model.py；判定失败停下报告并提示 --model=；.flight 记录路由与来源；收口带 --expect-models；不再有"看 /model"式自述
+    for t in texts:
+        assert "session-model.py" in t
+        assert "看 `/model`" not in t
+        assert "--expect-models" in t
+    assert "--model=" in cmd and "停下报告" in cmd
+    assert ".flight" in cmd and '"models"' in cmd
+
+
+def test_pr_ship_resolves_main_model():
+    # Given: /pr-ship 命令
+    text = read(CMD / "pr-ship.md")
+
+    # When: 检查两处 code-reviewer 派发的 <main> 来源
+    asks = text.count('model: "<main>"')
+
+    # Then: 两处仍显式带 model；<main> 注明取自 session-model.py；不再有"看 /model"式自述
+    assert asks >= 2, asks
+    assert "session-model.py" in text
+    assert "看 `/model`" not in text
+
+
+def test_apply_checks_approval_gate():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    cmd = read(CMD / "opsx-apply.md")
+    skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+    # When: 切出 step 0「批准自检」实体（step 1「选 change」之前），而非开头的流程摘要句
+    assert "0. **批准自检" in cmd, "step 0 批准自检整块缺失"
+    step0 = cmd[cmd.index("0. **批准自检"): cmd.index("1. **选 change**")]
+
+    # Then: step 0 内实跑 takeoff-gate.py --change-dir 并交出 spec.html、不问询；门禁调用早于 step 1；skill 一致；approve 事件带批准证据
+    assert "takeoff-gate.py --change-dir" in step0 and "spec.html" in step0
+    assert "AskUserQuestion" not in step0
+    assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
+    assert "takeoff-gate.py" in skill
+    assert "record approve" in cmd and "批准证据" in cmd

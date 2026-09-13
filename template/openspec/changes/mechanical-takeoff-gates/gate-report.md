@@ -1,0 +1,18 @@
+# Gate Report
+
+| 时间 | 切片 | 结论 | commit | failed | warnings |
+|---|---|---|---|---|---|
+| 2026-09-10T09:51:39Z | S1 | ok | 7431eb257a | - | - |
+| 2026-09-10T09:51:40Z | S3 | ok | 74d69cbce1 | - | - |
+| 2026-09-10T09:52:30Z | final | red | 2631ed4e22 | G7 scenario: model-routing#route-audit-flags-mismatch → tests/test_evidence_timeline.py::test_route_audit_flags_mismatch 仍标记 xfail/skip; G7 scenario: model-routing#route-audit-passes-on-match → tests/test_evidence_timeline.py::test_route_audit_passes_on_match 仍标记 xfail/skip; G7 scenario: takeoff-approval#approval-gate-accepts-human-command → tests/test_approval_gate.py::test_approval_gate_accepts_human_command 仍标记 xfail/skip; G7 scenario: takeoff-approval#approval-gate-rejects-self-start → tests/test_approval_gate.py::test_approval_gate_rejects_self_start 仍标记 xfail/skip; G7 scenario: takeoff-approval#approval-gate-requires-fresh-approval → tests/test_approval_gate.py::test_approval_gate_requires_fresh_approval 仍标记 xfail/skip; G7 scenario: takeoff-approval#takeoff-hook-denies-unapproved-dispatch → tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch 仍标记 xfail/skip; G7 scenario: takeoff-approval#takeoff-hook-ignores-unrelated-dispatch → tests/test_approval_gate.py::test_takeoff_hook_ignores_unrelated_dispatch 仍标记 xfail/skip; G7 scenario: takeoff-approval#propose-ends-with-handoff → tests/test_approval_gate.py::test_propose_ends_with_handoff 仍标记 xfail/skip | - |
+| 2026-09-10T09:59:04Z | S2 | ok | 37ebfd4b31 | - | - |
+| 2026-09-10T09:59:04Z | S4 | ok | 407ee71747 | - | - |
+| 2026-09-10T11:44:19Z | final | ok | c0c25c679b | - | - |
+| 2026-09-10T11:44:58Z | final | ok | 74523dc1b2 | - | - |
+| 2026-09-10T11:49:46Z | final | ok | 323bb23ed0 | - | - |
+| 2026-09-10T12:03:09Z | final | ok | 03b41612c5 | - | - |
+| 2026-09-10T12:09:18Z | final | ok | d350b118d1 | - | - |
+| 2026-09-10T12:09:37Z | final | ok | c29f529329 | - | - |
+| 2026-09-10T12:12:56Z | final | ok | 1307cea9cc | - | - |
+| 2026-09-10T12:14:03Z | final | ok | f193e22959 | - | - |
+| 2026-09-10T12:15:16Z | final | ok | f2b36db998 | - | - |

@@ -57,3 +57,20 @@ def test_legacy_mode_optional():
     assert legacy.exists()
     assert "legacy" in head and "--gate=per-task" in head
     assert not old.exists()
+
+
+# ---------------------------------------------------------------- 判据机械化（scenario: model-routing#docs-state-mechanical-resolution）
+def test_docs_state_mechanical_resolution():
+    # Given: README.md、docs/WORKFLOW_zh.md、template/CLAUDE.md.snippet、仓库根 CLAUDE.md、install.sh
+    docs = {rel: read(rel) for rel in
+            ("README.md", "docs/WORKFLOW_zh.md", "template/CLAUDE.md.snippet", "CLAUDE.md", "install.sh")}
+
+    # When: 检索模型路由与起飞批准相关段落
+    routed = [docs["README.md"], docs["docs/WORKFLOW_zh.md"], docs["template/CLAUDE.md.snippet"], docs["CLAUDE.md"]]
+
+    # Then: 都声明主模型由 session-model.py 判定；铁律含"禁自述"与起飞批准的机械校验；无"看 /model"式措辞；install.sh 说明同步
+    assert all("session-model.py" in t for t in routed)
+    assert all("看 `/model`" not in t for t in docs.values())
+    assert "禁自述" in docs["CLAUDE.md"] and "禁自述" in docs["template/CLAUDE.md.snippet"]
+    assert "takeoff-gate" in docs["CLAUDE.md"] and "takeoff-gate" in docs["install.sh"]
+    assert "session-model.py" in docs["install.sh"]

@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+mechanical-takeoff-gates · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+mechanical-takeoff-gates
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/model-routing</span><span class="chip" data-state="done">specs/takeoff-approval</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">起飞前有两件事<strong>必须为真</strong>，今天却都由模型自己说了算：</p><p class="why-body"><strong>① 会话主模型是什么（铁律 11）。</strong> 2026-09-10 一次 <code>/opsx-apply</code> 把 <code>slice-executor</code> / <code>code-reviewer</code> 路由到 <code>fable</code>，而当时会话主模型是 <code>claude-opus-5</code>。逐条聚合那次会话转录（<code>…/-Users-akarizo-Workspace-amc-afa--worktrees-syscomponent-from-system-part/d6c3b9c2-….jsonl</code>，614 条 assistant 条目）：</p><p class="why-body">| 主循环模型切换时刻（UTC） | <code>message.model</code> | 旁证 |
+|---|---|---|
+| 05:27:39 | <code>k3</code> | — |
+| 07:38:14 | <code>claude-fable-5-1</code> | 05:25 会话里出现过 <code>/model</code> → &quot;Set model to <code>Fable 5.1</code>&quot; |
+| 08:19:02 | <code>claude-opus-5</code> | 紧接 08:18 的 <code>/compact</code>，无 <code>/model</code> 留痕 |
+| 09:07:23 起飞 | 命令宣告 executor / reviewer = <code>fable</code> ❌ | 实际主模型已是 Opus 近 50 分钟 |</p><p class="why-body">模型的&quot;我是谁&quot;来自上下文里的旧痕迹（那条 <code>/model</code> 输出、被 compact 压缩过两次的摘要），<strong>不等于当前实际路由</strong>。命令却写着「当前会话主模型别名（看 <code>/model</code>）」——把可机械判定的事实交给模型自述。</p><p class="why-body"><strong>② 人类批准过飞行计划（铁律 7）。</strong> 今天的&quot;批准&quot;是：propose 收尾提示一句&quot;运行 <code>/opsx-apply</code> 即视为批准&quot;，apply 的 step 4 由模型自己 <code>timeline.py record approve</code>。<strong>没有任何一处校验人类真的看过、真的说了起飞</strong>——模型在同一轮里从 propose 直冲 apply，工件不落地、人不在场，飞行记录里照样有一条漂亮的 <code>approve</code>。用户实测：&quot;现在几乎没有在 apply 前停下来问我。&quot;</p><p class="why-body">两条是同一个病：<strong>门禁的判据由被门禁的一方提供</strong>。与铁律 9（能用脚本 / hook 判定的不交给模型）、铁律 1（intent-gate 只能加严不能绕过）直接冲突。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>新增 <code>template/.claude/hooks/session-model.py</code>（零 token 判定）</strong>：读当前会话转录（<code>CLAUDE_CODE_SESSION_ID</code> → <code>~/.claude/projects/*/&lt;sid&gt;.jsonl</code>）里<strong>最后一条主循环 assistant</strong> 的 <code>message.model</code>，映射成派发别名（<code>opus</code> / <code>sonnet</code> / <code>haiku</code> / <code>fable</code>）。<strong>fail-closed</strong>：转录缺失 / 无 assistant 条目 / 第三方 id（实测有 <code>k3</code>）一律非 0 退出并点名原因，绝不给默认值。</li><li><strong>新增 <code>template/.claude/hooks/takeoff-gate.py</code> + <code>hooks.json</code> 注册（PreToolUse）</strong>：拦截飞行派发（<code>Workflow</code> 的 <code>opsx-apply</code>、<code>Agent</code> 的 <code>slice-executor</code> / <code>integrator</code>），要求转录里存在<strong>人类自己发出的批准证据</strong>（真人消息调用 <code>/opsx-apply</code>｜<code>/opsx-bulk-apply</code>，或含批准词），且<strong>晚于计划工件最后一次改动</strong>；没有 → <code>permissionDecision: deny</code>，把 <code>spec.html</code> 路径交给人。模型绕不过 hook。</li><li><strong><code>/opsx-apply</code> 与 <code>openspec-apply-change</code> 同改</strong>：step 0 显式跑 <code>takeoff-gate.py --change-dir …</code>（与 hook 双保险，给人看得懂的停下理由）；step 5 的 <code>&lt;main&gt;</code> 取自 <code>session-model.py</code>，判定失败 → 停下报告并要求 <code>--model=&lt;alias&gt;</code> 显式指定；step 4 的 <code>approve</code> 事件必须带人类批准证据（时间戳 + 摘要），不再自证。</li><li><strong><code>/opsx-propose</code> 与 <code>openspec-propose</code> 同改</strong>：收尾改成<strong>硬交接</strong>——打印 <code>spec.html</code> 绝对路径，声明&quot;本命令到此结束，不得在同一轮继续 apply；起飞需你显式 <code>/opsx-apply</code>&quot;。</li><li><strong><code>/pr-ship</code></strong>：两处 <code>code-reviewer</code> 派发的 <code>&lt;main&gt;</code> 同源于 <code>session-model.py</code>。</li><li><strong>收口对账机械化</strong>：起飞把路由表写进 <code>.flight</code>；<code>session-decompose.py --workflow &lt;dir&gt; --expect-models &lt;json&gt;</code> 把各 agent 实际模型归一成别名后逐条对账，不符 → ❌ 并非 0 退出（<code>/pr-ship</code> 随之以 draft 建 PR）。</li><li><strong>文档同改</strong>：README · <code>docs/WORKFLOW_zh.md</code> · <code>template/CLAUDE.md.snippet</code> · 仓库根 <code>CLAUDE.md</code>（铁律 7 / 11 各加一句&quot;判据不得由模型自证&quot;）· <code>install.sh</code>。</li></ul>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><strong>model-routing</strong>：会话主模型的机械判定（判定来源 · fail-closed 语义 · 别名映射）与收口路由对账。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><strong>takeoff-approval</strong>：起飞前人类批准的机械证据（证据来源 · 新鲜度 · hook 强制点 · propose 硬交接）。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>model-routing <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 会话主模型由脚本判定</p><p>飞行与评审派发用的&quot;会话主模型&quot;SHALL 由脚本读会话转录判定，MUST NOT 由模型自述；判定不出时 SHALL 失败退出而非给出默认值。
+Feature: 主模型是一条可机械判定的事实
+Rule: 读最后一条主循环 assistant 的 model；不认识就报错，不猜</p><div class="scenario"><p class="scenario-name">Scenario: session-model-resolves-alias</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份主会话转录，最后一条 <code>type: &quot;assistant&quot;</code> 条目的 <code>message.model</code> 为 <code>claude-opus-5[1m]</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>python3 .claude/hooks/session-model.py --session &lt;该转录&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>stdout 为别名 <code>opus</code>，退出码为 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>--json</code> 时输出含 <code>alias</code> / <code>model</code> / <code>session</code> / <code>source</code> 四个字段，<code>model</code> 为原始 id</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: session-model-latest-wins</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份中途换过模型的转录（依次为 <code>k3</code> → <code>claude-fable-5-1</code> → <code>claude-opus-5</code>，即 2026-09-10 事故会话的形状）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定脚本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出 <code>opus</code>——以最后一条主循环 assistant 为准，早先的 <code>fable</code> 不影响结果</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: session-model-skips-sidechain</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>转录里在最后混有 <code>isSidechain: true</code> 的 assistant 条目（子 agent，<code>message.model</code> 为 <code>claude-sonnet-5</code>）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定脚本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出仍是最后一条<strong>主循环</strong>条目的别名，子 agent 条目被跳过</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: session-model-fails-closed</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>下列任一情形：转录文件不存在 · 转录里没有可用 assistant 条目 · <code>message.model</code> 是无法映射的第三方 id（如 <code>k3</code>）· 既无 <code>--session</code> 也无 <code>CLAUDE_CODE_SESSION_ID</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定脚本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码非 0，stdout 不输出任何别名</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 点名具体原因（含无法映射时的原始 id）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞与评审的路由取自判定脚本</p><p><code>/opsx-apply</code> 与 <code>/pr-ship</code> SHALL 以判定脚本的输出作为 <code>&lt;main&gt;</code>，判定失败时 SHALL 停下报告且 MUST NOT 派发；人工 SHALL 能以 <code>--model=&lt;alias&gt;</code> 覆盖。
+Feature: 路由表的声明端有机械来源
+Rule: 脚本给不出别名就不起飞，改由人显式指定</p><div class="scenario"><p class="scenario-name">Scenario: apply-resolves-main-model</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读启动切片工作流的步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>&lt;main&gt;</code> 来自 <code>python3 .claude/hooks/session-model.py</code>，两份文件写法一致（命令与同名 skill 不漂移）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>判定失败 → 停下报告并提示 <code>--model=&lt;alias&gt;</code> 显式指定，不派发任何 agent</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全文不再出现&quot;看 <code>/model</code>&quot;式由模型自述主模型的措辞</span></li><li><span class="step-key" data-kw="AND">AND</span><span>起飞写的 <code>.flight</code> 含解析出的路由表、原始 model id 与判定来源</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: pr-ship-resolves-main-model</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/pr-ship.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读两处 <code>code-reviewer</code> 派发（首审与 follow-up 复核）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两处的 <code>&lt;main&gt;</code> 都注明取自 <code>session-model.py</code>，且仍显式带 <code>model:</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>全文不再出现由模型自述主模型的措辞</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 收口路由对账是门禁</p><p>收口 SHALL 把各 agent 的实际模型与起飞路由表机械对账，不一致 SHALL 以非 0 退出，MUST NOT 只靠模型肉眼比对。
+Feature: 路由表的实际端也有机械来源
+Rule: 别名归一后比对；不一致即铁律违规，红着退出</p><div class="scenario"><p class="scenario-name">Scenario: route-audit-flags-mismatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个 Workflow 转录目录，其中某 <code>Implement</code> 阶段 agent 的实际模型为 <code>claude-sonnet-5</code>，而期望路由 <code>{&quot;executor&quot;: &quot;opus&quot;, &quot;reviewer&quot;: &quot;opus&quot;, &quot;integrator&quot;: &quot;sonnet&quot;}</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>session-decompose.py --workflow &lt;dir&gt; --expect-models &lt;该 JSON&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出逐条列出不符项（标签 · 阶段 · 期望别名 · 实际 id），退出码非 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>/opsx-apply</code> 收口遇非 0 时在收口报告点名不符的 agent，并把它追加进 <code>review-findings.json.blocking</code>，由 <code>slice-gate.py ship</code> 机械判成 draft（与 final 未绿同处置，主会话不自判）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: route-audit-passes-on-match</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>各 agent 实际模型与期望路由一致（<code>claude-opus-5[1m]</code> 与 <code>claude-opus-5</code> 都归一为 <code>opus</code>）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行同一命令</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>打印一致结论，退出码为 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不传 <code>--expect-models</code> 时行为与既有一致：只打印各 agent 实际模型，退出码 0</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 判定纪律写进模板文档</p><p>模板下发的文档与铁律 SHALL 声明主模型由脚本判定，MUST NOT 保留&quot;由模型自述&quot;的写法。
+Feature: 下游装模板即得同一条纪律
+Rule: 文档与实现同改，不漂移</p><div class="scenario"><p class="scenario-name">Scenario: docs-state-mechanical-resolution</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>README.md</code> · <code>docs/WORKFLOW_zh.md</code> · <code>template/CLAUDE.md.snippet</code> · 仓库根 <code>CLAUDE.md</code> · <code>install.sh</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>检索模型路由相关段落</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>均声明会话主模型由 <code>session-model.py</code> 判定、判定失败不起飞</span></li><li><span class="step-key" data-kw="AND">AND</span><span>铁律 11 增加&quot;主模型判定禁自述&quot;这一条款，且不出现&quot;看 <code>/model</code>&quot;式措辞</span></li></ul></div></div></div><div class="spec-card"><h3>takeoff-approval <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 起飞需要人类批准的机械证据</p><p>起飞 SHALL 以会话转录里<strong>人类自己发出</strong>的批准消息为证据，MUST NOT 以模型自己记录的 <code>approve</code> 事件为准；批准 SHALL 晚于计划工件的最后一次改动。
+Feature: 批准是人给的事实，不是模型的叙述
+Rule: 人类消息 + 新鲜度，两者缺一即不起飞</p><div class="scenario"><p class="scenario-name">Scenario: approval-gate-accepts-human-command</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份转录，其中有一条人类消息调用了 <code>/opsx-apply &lt;change&gt;</code>（<code>&lt;command-name&gt;</code> 形式），时间晚于计划工件的最大 mtime</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>python3 .claude/hooks/takeoff-gate.py --change-dir &lt;dir&gt; --session &lt;转录&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 0，stdout 打印批准证据（时间戳 + 人类原话摘要）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>一条不含命令调用、但内容为短批准词（如 <code>起飞</code> / <code>授权</code> / <code>批准</code>）的人类消息同样被接受</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: approval-gate-rejects-self-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份转录，最近的人类消息只是继续规划类指令（如 <code>继续上述任务的规划</code>），既无 <code>/opsx-apply</code> 调用也无批准词</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码非 0，stdout 不输出任何&quot;已批准&quot;结论</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 说明需要人类显式批准，并给出 <code>spec.html</code> 路径与补救方式</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: approval-gate-requires-fresh-approval</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>批准消息的时间<strong>早于</strong>计划工件（<code>proposal.md</code> · <code>design.md</code> · <code>slices.json</code> · <code>specs/**/spec.md</code>；<code>tasks.md</code> 的勾选是执行记账，不算计划改动）的最大 mtime——即计划在批准之后又被改过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行判定</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码非 0，stderr 点名&quot;计划在批准之后改过，需重新批准&quot;</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 飞行派发由 hook 强制</p><p>飞行派发 SHALL 被 <code>PreToolUse</code> hook 拦截并校验批准证据；未获批准 SHALL 以 <code>permissionDecision: deny</code> 拒绝，MUST NOT 依赖模型自觉停下。
+Feature: 强制点在 hook，模型绕不过
+Rule: 命中飞行派发才判定，其余一律放行</p><div class="scenario"><p class="scenario-name">Scenario: takeoff-hook-denies-unapproved-dispatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次 <code>PreToolUse</code> 输入：<code>Workflow</code> 工具、<code>args.changeDir</code> 指向 <code>openspec/changes/&lt;name&gt;</code>，而转录里没有该 change 的人类批准</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>把该 JSON 喂给 <code>takeoff-gate.py</code>（hook 模式，stdin）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>stdout 是 <code>permissionDecision: deny</code> 的 hook 输出，reason 含 <code>spec.html</code> 路径与&quot;需人类显式 <code>/opsx-apply</code>&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>同样的输入在批准成立时静默放行（无输出、退出码 0）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: takeoff-hook-ignores-unrelated-dispatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次与飞行无关的派发（<code>tool_input</code> 里不含 <code>openspec/changes/&lt;name&gt;</code>，如普通 Explore 子 agent）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>把该 JSON 喂给 hook</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行；脚本自身异常（转录不可读等）同样放行——hook 不锁死派发能力</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: hook-allows-review-dispatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次 <code>/pr-ship</code> 的 <code>code-reviewer</code> 派发，prompt 里提到了该 change 的 <code>gate-report.md</code> 路径，而转录里没有任何批准</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>把该 JSON 喂给 hook</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>静默放行——只有起飞类派发（<code>Workflow</code> 带 <code>args.changeDir</code> / <code>Agent</code> 派 <code>slice-executor</code>·<code>integrator</code>）才判定</span></li><li><span class="step-key" data-kw="AND">AND</span><span>否则本门禁会掐断铁律 4 要求的独立评审</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: tasks-tick-keeps-approval</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>批准成立后，收口把 <code>tasks.md</code> 里门禁绿的切片勾成 <code>- [x]</code>（mtime 变新）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>随后再有起飞类派发</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>仍然放行——勾选是执行记账不是计划变更</span></li><li><span class="step-key" data-kw="AND">AND</span><span>改动真正的计划工件（如 <code>slices.json</code>）后同一派发被 deny，新鲜度规则本身不放松</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 规划收尾硬交接，起飞前先自检</p><p><code>/opsx-propose</code> SHALL 在收尾把 <code>spec.html</code> 交给人并声明本轮结束；<code>/opsx-apply</code> SHALL 在 step 0 自跑批准自检并在未批准时停下报告。
+Feature: 人的两处审批看得见
+Rule: propose 不接 apply；apply 先验批准再谈路由</p><div class="scenario"><p class="scenario-name">Scenario: propose-ends-with-handoff</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-propose.md</code> 与 <code>template/.claude/skills/openspec-propose/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读收尾步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份文件都要求打印 <code>spec.html</code> 的<strong>绝对路径</strong>，并声明&quot;本命令到此结束，不得在同一轮继续 apply；起飞需人类显式 <code>/opsx-apply</code>&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不再出现&quot;运行 <code>/opsx-apply</code> 即视为批准&quot;这种把批准与执行合并的措辞（批准仍由人给，但要人自己发出）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: apply-checks-approval-gate</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>阅读起飞前的步骤</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>step 0 运行 <code>takeoff-gate.py --change-dir …</code>，非 0 → 停下报告并把 <code>spec.html</code> 路径交给人，不进入后续任何步骤</span></li><li><span class="step-key" data-kw="AND">AND</span><span>step 4 的 <code>approve</code> 事件带上该批准证据（时间戳 + 原话摘要），不再由模型自证</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>.flight</code> 记录 <code>approval</code> 字段</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>病灶：判据由被门禁的一方提供</h3><p>两处判据（人批准了吗 · 主模型是什么）都来自模型自己的叙述：模型在同一轮里 propose → apply 也会留下一条 <code>approve</code>；上下文里旧的 <code>/model</code> 痕迹会让 <code>&lt;main&gt;</code> 停在几小时前的模型上。</p></div><div class="design-block"><h3>目标态：判据来自转录与文件系统，hook 强制</h3></div><div class="design-block"><h3>决策 · 主模型判定</h3><p>### D1 判定来源：读转录，不读模型的自我认知</p><p>| 候选 | 判断 | |---|---| | A 模型自述（现状&quot;看 <code>/model</code>&quot;） | <strong>已证伪</strong>：2026-09-10 那次会话，模型的依据是 05:25 的 <code>/model</code> 输出与两次 compact 后的摘要，而实际主模型 08:19 起已是 Opus | | B 靠 <code>model: inherit</code> 兜底（frontmatter 或派发传 <code>inherit</code>） | <strong>不可依赖</strong>：本机 2.1.267 的 Agent 工具 <code>model</code> 取值域实测为 <code>sonnet\|opus\|haiku\|fable</code>，无 <code>inherit</code>；且 2026-09-10 wave 3 实测，frontmatter 已是 <code>model: inherit</code> 的 <code>slice-executor</code> 在派发未显式传 <code>model</code> 时仍全落 Sonnet。与铁律 11「不留空」也冲突 | | <strong>C 读会话转录（采用）</strong> | 主转录每条 <code>type: &quot;assistant&quot;</code> 带 <code>message.model</code>；两份真实转录实测该字段稳定存在 |</p><p><strong>&quot;最后一条&quot;即当前主模型</strong>：两份真实转录里 assistant 条目的 <code>isSidechain</code> 恒 <code>false</code>（子 agent 转录另存 <code>&lt;sid&gt;/subagents/</code>），主转录只含主循环；转录随轮次追加，step 5 运行时当轮条目已落盘（本会话实测运行中即可读到当轮 <code>claude-opus-5</code>）。实现仍显式跳过 <code>isSidechain: true</code>，防未来格式合并。</p><p>### D2 定位转录：环境变量 + glob，不推 slug</p><p><code>CLAUDE_CODE_SESSION_ID</code> 实测存在于 Bash 工具环境（本机 2.1.267）。用它 glob <code>~/.claude/projects/*/&lt;sid&gt;.jsonl</code>，<strong>不按 cwd 推 slug</strong>：飞行在 worktree 里跑（slug 随 cwd 变），且 slug 是 <code>/</code>→<code>-</code> 的正向不可逆映射。<code>--session PATH</code> 覆盖供测试与异常兜底。定位函数 <code>find_transcript()</code> 与别名函数 <code>alias_of()</code> 是本文件的公开接口，S2 / S4 复用。</p><p>### D3 别名映射：子串归一，不认识就不猜</p><p><code>claude-opus-5</code> / <code>claude-opus-5[1m]</code> → <code>opus</code>；sonnet / haiku / fable 同理。<code>[1m]</code> 变体归基座别名（子 agent 派发别名不带变体）。第三方 id（实测 <code>k3</code>）→ 不映射，非 0 退出。</p><p>### D4 fail-closed（与 intent-gate 相反）</p><p><code>intent-gate.py</code> 是 fail-open（坏门禁不能锁死编辑能力）；本脚本相反：判定不出就停飞。&quot;猜一个默认值&quot;正是要消灭的故障模式，静默错配的代价（整场飞行跑错模型）远高于停下问一句。</p><p>### D5 对账口径：比别名，不比原始 id</p><p>主会话可能是 <code>claude-opus-5[1m]</code>，其子 agent 实测是 <code>claude-opus-5</code>。故 <code>.flight</code> 存<strong>别名</strong>路由表（附原始 id 与来源仅供留痕），对账时把各 agent 实际 id 归一成别名再比。阶段→角色：<code>Implement</code>/<code>Fix</code>→executor · <code>Review</code>→reviewer · <code>Finalize</code>→integrator。</p><p>### D6 复用 <code>alias_of</code>：importlib 按路径加载</p><p>hooks 文件名含连字符不能直接 <code>import</code>；<code>session-decompose.py</code> 以 <code>importlib.util.spec_from_file_location</code> 按同目录路径加载 <code>session-model.py</code>（<code>tests/conftest.py</code> 已有同款写法）。加载失败 → warn 一行退化为只打印，不阻断收口。</p></div><div class="design-block"><h3>决策 · 起飞批准</h3><p>### D7 批准证据来源：转录里的<strong>人类消息</strong></p><p>| 候选 | 判断 | |---|---| | A 模型自己 <code>record approve</code>（现状） | 自证，无效 | | B <code>UserPromptSubmit</code> hook 写批准 marker | 有状态：必须那一刻 hook 已装好才留得下痕，事后无法回溯；且让 <code>intent-reminder</code> 背上不相干职责 | | <strong>C 读转录里的人类消息（采用）</strong> | 与 D1 同一份真值源、同一个定位函数；无状态、可回溯、可测（喂 fixture 即可） |</p><p><strong>人类消息</strong>判据：<code>type == &quot;user&quot;</code> 且 <code>isMeta</code> 非真、<code>userType == &quot;external&quot;</code>、内容是文本而非 <code>tool_result</code>。命令调用在转录里形如 <code>&lt;command-name&gt;/opsx-apply&lt;/command-name&gt;</code>，可精确识别；纯文本批准词（<code>批准</code>·<code>起飞</code>·<code>授权</code>·<code>approve</code>·<code>go</code>）作为补充令牌，覆盖&quot;停下后人说一句起飞&quot;的真实流程（2026-09-10 那次会话实测出现过 <code>授权</code> / <code>不相等，起飞</code>）。</p><p>### D8 新鲜度锚点：计划工件的 mtime</p><p>批准必须<strong>晚于计划工件最后一次改动</strong>（<code>proposal.md</code> · <code>design.md</code> · <code>slices.json</code> · <code>specs/**/spec.md</code> 的最大 mtime），否则&quot;改完计划再拿旧批准起飞&quot;就能绕过。</p><p>⚠ <strong><code>tasks.md</code> 不算计划工件</strong>（PR #29 评审实测）：收口要把门禁绿的切片勾成 <code>- [x]</code>，若把它算进锚点，勾一下就让批准过期——同一次飞行的收口与 <code>/pr-ship</code> 会被自家门禁拦住。勾选是执行记账，不是计划变更。 代价（已知边界）：批准后只改 <code>tasks.md</code> 的 verify 命令 / scenario 列表不会让批准过期。影响小——机械判定读的是 <code>slices.json</code>，<code>tasks.md</code> 由它生成——但 &quot;计划变了必须重新批准&quot; 在这一处不字面成立。</p><ul><li>不用 git commit 时间：真实流程里工件常在人说完 <code>/opsx-apply</code> 之后才被 artifacts-only commit，用 commit 时间会<strong>误判</strong>（批准早于 commit）。</li><li>已知局限：<code>git checkout</code> / 重建 worktree 会刷新 mtime → 需要人再批准一次。方向是 fail-closed，可接受；命令的 deny 文案里写清楚怎么办。</li></ul><p>### D9 强制点：PreToolUse hook（模型绕不过）+ 命令内显式调用（给人看的理由）</p><p>hook <code>takeoff-gate.py</code> 只判定<strong>起飞类派发</strong>：<code>Workflow</code> 且 <code>args.changeDir</code> 存在，或 <code>Agent</code>/<code>Task</code> 且 <code>subagent_type</code> 是 <code>slice-executor</code> / <code>integrator</code>；再要求 <code>tool_input</code> 里能定位到 <code>openspec/changes/&lt;name&gt;</code>。其余一律放行——<strong>命中才 fail-closed，命中不到 fail-open</strong>。</p><p>⚠ <strong>legacy <code>--gate=per-task</code> 路径 hook 覆盖不到</strong>（PR #29 复核实测）：那条路径的实现体派发是 <code>subagent_type: general-purpose</code>，收窄判据后一律 fail-open，只剩 step 0 的 CLI 自检（靠模型守指令）。这是刻意取舍——legacy 是可选旁路，不值得为它放宽主路径判据；要收紧就得先把 legacy 的实现体改成 <code>slice-executor</code> 类型。</p><p>⚠ 判据必须窄到&quot;起飞&quot;（PR #29 评审实测）：早先按&quot;tool_input 里出现 change 路径&quot;判定，会把 <code>/pr-ship</code> 的 <code>code-reviewer</code> 派发（prompt 里带 <code>gate-report.md</code> 路径）也拦掉——等于本 change 亲手掐断铁律 4 的独立评审。强制点并不因此变松：一次飞行的第一个动作必是 Workflow 或 <code>slice-executor</code> 派发。</p><p><strong>威胁模型</strong>：本门禁防的是&quot;模型自证式起飞&quot;与流程漂移，<strong>不防</strong>拥有写文件能力的对抗性伪造（转录是普通文件，能跑 Bash 就能往里追加一行假的人类消息）。deny 走 <code>permissionDecision: deny</code>，reason 里给 <code>spec.html</code> 绝对路径与&quot;请人类显式 <code>/opsx-apply</code>&quot;。</p><p>命令 step 0 另外显式跑一次同一脚本：hook 的 deny 文案是给模型看的，step 0 的输出是给人看的；两者判据同源，不会打架。</p><p>⚠ <strong>待实测</strong>：PreToolUse 是否对 <code>Workflow</code> 工具触发未经官方文档确认。实现时先用一次真实派发验证：若不触发，<code>Agent</code> 回退路径仍被覆盖，<code>Workflow</code> 路径由 step 0 的显式调用兜底，并把实测结论写进 <code>docs/WORKFLOW_zh.md</code>。</p><p>### D10 propose 的硬交接</p><p><code>/opsx-propose</code> 收尾从&quot;提示一句&quot;改为<strong>硬交接</strong>：打印 <code>spec.html</code> 绝对路径 + &quot;本命令到此结束；不得在同一轮继续 apply&quot;。这条是给模型的指令，不是给人的礼貌——真正的强制在 D9 的 hook。</p></div><div class="design-block"><h3>契约</h3><p><strong><code>session-model.py</code></strong></p><p>``<code> python3 .claude/hooks/session-model.py [--session PATH] [--json] stdout  opus | sonnet | haiku | fable（--json：{&quot;alias&quot;,&quot;model&quot;,&quot;session&quot;,&quot;source&quot;}） exit 0  成功 · exit 3  判定失败（stderr 点名：无 CLAUDE_CODE_SESSION_ID / 转录不存在 / 无 assistant 条目 / 无法映射 &lt;id&gt;） </code>``</p><p><strong><code>takeoff-gate.py</code></strong></p><p>``<code> python3 .claude/hooks/takeoff-gate.py --change-dir DIR [--session PATH]     # 人跑 / 命令 step 0 跑 stdout  批准证据一行（时间戳 + 人类原话摘要） exit 0  批准成立 · exit 3  无批准 / 批准早于计划改动（stderr 说明补救方式） （无参数、从 stdin 收到 PreToolUse JSON 时）→ hook 模式：放行则静默 exit 0；拦截则打 permissionDecision=deny </code>``</p><p><strong><code>.flight</code></strong>（起飞写，收口删）</p><p>``<code>json {&quot;started&quot;: &quot;&lt;ISO&gt;&quot;, &quot;approval&quot;: {&quot;at&quot;: &quot;&lt;ISO&gt;&quot;, &quot;quote&quot;: &quot;&lt;人类原话摘要&gt;&quot;}, &quot;models&quot;: {&quot;executor&quot;: &quot;opus&quot;, &quot;reviewer&quot;: &quot;opus&quot;, &quot;integrator&quot;: &quot;sonnet&quot;}, &quot;efforts&quot;: {&quot;executor&quot;: &quot;high&quot;, &quot;reviewer&quot;: &quot;high&quot;, &quot;integrator&quot;: &quot;low&quot;}, &quot;raw&quot;: &quot;claude-opus-5&quot;, &quot;source&quot;: &quot;session-model.py&quot;} </code>``</p><p><strong><code>session-decompose.py --workflow DIR --expect-models &#x27;&lt;json&gt;&#x27;</code></strong>：既有表后追加 <code>路由对账：✅ 一致</code> 或逐条 <code>❌ &lt;label&gt; · &lt;phase&gt; · 期望 &lt;alias&gt; · 实际 &lt;id&gt;</code>；有 ❌ → exit 3。不传该参数 → 行为与今日一致。</p></div><div class="design-block"><h3>回退</h3><p>| 机制失效 | 回退 | |---|---| | <code>session-model.py</code> 判定不出 | 命令停下报告，人 <code>--model=&lt;alias&gt;</code> 显式指定；语义与今日一致（路由表照传） | | PreToolUse 不覆盖 <code>Workflow</code> | <code>Agent</code> 回退路径仍被 hook 覆盖；<code>Workflow</code> 路径由 step 0 显式调用兜底 | | <code>takeoff-gate.py</code> 不可用（无 python3） | hook 异常一律放行（不锁死），命令 step 0 报错停下——人可直接确认后再起飞 | | 不传 <code>--expect-models</code> | 收口退化为只打印，与今日一致 |</p></div><div class="design-block"><h3>风险</h3><p>| 风险 | 处置 | |---|---| | 转录 JSONL 字段改名 | 两个脚本都 fail-closed 报错，不静默放行；测试用固定 fixture 锁字段 | | 批准词误判（人说&quot;别起飞&quot;含&quot;起飞&quot;) | 令牌匹配限定在<strong>整条消息 ≤ 40 字</strong>或命令调用；否则只认 <code>/opsx-apply</code> 调用 | | <code>git checkout</code> 刷新 mtime → 误拦 | deny 文案给出补救：人再说一句批准即可 | | legacy <code>--gate=per-task</code> 路径不被 hook 覆盖 | 该路径派 <code>general-purpose</code>，判据窄化后 fail-open；只由 <code>/opsx-apply</code> step 0 的 CLI 自检守，已在 D9 写明 | | hook 影响无关 Agent 派发 | 只判定起飞类派发（Workflow 带 <code>args.changeDir</code> / Agent 派 <code>slice-executor</code>·<code>integrator</code>）且能定位到 change 目录；评审 · 探索 · 通用派发一律放行 |</p></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart TB
+  subgraph now[&quot;今天&quot;]
+    P[&quot;/opsx-propose 收尾&lt;br/&gt;「运行 /opsx-apply 即视为批准」&quot;] --&gt; A[&quot;/opsx-apply&quot;]
+    A --&gt; A1[&quot;step 4：模型自己 record approve&quot;]
+    A --&gt; A2[&quot;step 5：模型自述 &amp;lt;main&amp;gt;（看 /model）&quot;]
+    A1 --&gt; D[&quot;派发&quot;]
+    A2 --&gt; D
+    D --&gt; C[&quot;收口：模型肉眼对账&quot;]
+    C -.-&gt;|同一双眼睛，拦不住| D
+  end</div><pre class="diagram-fallback">flowchart TB
+  subgraph now[&quot;今天&quot;]
+    P[&quot;/opsx-propose 收尾&lt;br/&gt;「运行 /opsx-apply 即视为批准」&quot;] --&gt; A[&quot;/opsx-apply&quot;]
+    A --&gt; A1[&quot;step 4：模型自己 record approve&quot;]
+    A --&gt; A2[&quot;step 5：模型自述 &amp;lt;main&amp;gt;（看 /model）&quot;]
+    A1 --&gt; D[&quot;派发&quot;]
+    A2 --&gt; D
+    D --&gt; C[&quot;收口：模型肉眼对账&quot;]
+    C -.-&gt;|同一双眼睛，拦不住| D
+  end</pre><div class="caption">## 病灶：判据由被门禁的一方提供</div></div><div class="diagram-frame"><div class="mermaid">flowchart TB
+  H[&quot;人类消息&lt;br/&gt;/opsx-apply 或 批准词&quot;] --&gt; T[&quot;会话转录 jsonl&quot;]
+  T --&gt; G[&quot;takeoff-gate.py&lt;br/&gt;（PreToolUse · Workflow/Agent）&quot;]
+  PL[&quot;计划工件 mtime&lt;br/&gt;proposal/design/specs/slices（不含 tasks）&quot;] --&gt; G
+  G --&gt;|无证据 / 证据过期| DENY[&quot;deny：把 spec.html 交给人&lt;br/&gt;不派发&quot;]
+  G --&gt;|证据成立| M[&quot;session-model.py&lt;br/&gt;读最后一条主循环 assistant&quot;]
+  M --&gt;|exit 3| STOP[&quot;停下报告：需 --model=&amp;lt;alias&amp;gt;&quot;]
+  M --&gt;|opus| F[&quot;.flight 路由快照&lt;br/&gt;models/efforts/raw/source&quot;]
+  F --&gt; W[&quot;Workflow / Agent 派发&quot;]
+  W --&gt; AU[&quot;session-decompose --expect-models&lt;br/&gt;别名归一后逐条对账&quot;]
+  AU --&gt;|不符| RED[&quot;❌ exit 3 → pr-ship 走 draft&quot;]
+  AU --&gt;|一致| OK[&quot;✅ exit 0&quot;]</div><pre class="diagram-fallback">flowchart TB
+  H[&quot;人类消息&lt;br/&gt;/opsx-apply 或 批准词&quot;] --&gt; T[&quot;会话转录 jsonl&quot;]
+  T --&gt; G[&quot;takeoff-gate.py&lt;br/&gt;（PreToolUse · Workflow/Agent）&quot;]
+  PL[&quot;计划工件 mtime&lt;br/&gt;proposal/design/specs/slices（不含 tasks）&quot;] --&gt; G
+  G --&gt;|无证据 / 证据过期| DENY[&quot;deny：把 spec.html 交给人&lt;br/&gt;不派发&quot;]
+  G --&gt;|证据成立| M[&quot;session-model.py&lt;br/&gt;读最后一条主循环 assistant&quot;]
+  M --&gt;|exit 3| STOP[&quot;停下报告：需 --model=&amp;lt;alias&amp;gt;&quot;]
+  M --&gt;|opus| F[&quot;.flight 路由快照&lt;br/&gt;models/efforts/raw/source&quot;]
+  F --&gt; W[&quot;Workflow / Agent 派发&quot;]
+  W --&gt; AU[&quot;session-decompose --expect-models&lt;br/&gt;别名归一后逐条对账&quot;]
+  AU --&gt;|不符| RED[&quot;❌ exit 3 → pr-ship 走 draft&quot;]
+  AU --&gt;|一致| OK[&quot;✅ exit 0&quot;]</pre><div class="caption">## 目标态：判据来自转录与文件系统，hook 强制</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>判定脚本 session-model.py（读转录 → 别名，fail-closed）</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/session-model.py<br>tests/test_session_model.py</td><td><code>python3 -m pytest -q tests/test_session_model.py</code></td></tr><tr><td class="mono">S2</td><td>收口路由对账：session-decompose.py --expect-models</td><td>wave 2</td><td>S1</td><td>template/.claude/hooks/session-decompose.py<br>tests/test_evidence_timeline.py</td><td><code>python3 -m pytest -q tests/test_evidence_timeline.py</code></td></tr><tr><td class="mono">S3</td><td>接线与文档：opsx-apply / apply skill / pr-ship / README / WORKFLOW / snippet / CLAUDE.md / install.sh</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-apply.md<br>template/.claude/commands/pr-ship.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>README.md<br>docs/WORKFLOW_zh.md<br>template/CLAUDE.md.snippet<br>CLAUDE.md<br>install.sh<br>tests/test_template_docs.py<br>tests/test_docs_iron_rules.py</td><td><code>python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py</code></td></tr><tr><td class="mono">S4</td><td>起飞批准门禁 takeoff-gate.py（CLI + PreToolUse hook）与 propose 硬交接</td><td>wave 2</td><td>S1</td><td>template/.claude/hooks/takeoff-gate.py<br>template/.claude/hooks/hooks.json<br>template/.claude/commands/opsx-propose.md<br>template/.claude/skills/openspec-propose/SKILL.md<br>tests/test_approval_gate.py</td><td><code>python3 -m pytest -q tests/test_approval_gate.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>model-routing#session-model-resolves-alias</td><td><code>tests/test_session_model.py::test_session_model_resolves_alias</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#session-model-latest-wins</td><td><code>tests/test_session_model.py::test_session_model_latest_wins</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#session-model-skips-sidechain</td><td><code>tests/test_session_model.py::test_session_model_skips_sidechain</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#session-model-fails-closed</td><td><code>tests/test_session_model.py::test_session_model_fails_closed</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#route-audit-flags-mismatch</td><td><code>tests/test_evidence_timeline.py::test_route_audit_flags_mismatch</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#route-audit-passes-on-match</td><td><code>tests/test_evidence_timeline.py::test_route_audit_passes_on_match</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#apply-resolves-main-model</td><td><code>tests/test_template_docs.py::test_apply_resolves_main_model</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#pr-ship-resolves-main-model</td><td><code>tests/test_template_docs.py::test_pr_ship_resolves_main_model</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>model-routing#docs-state-mechanical-resolution</td><td><code>tests/test_docs_iron_rules.py::test_docs_state_mechanical_resolution</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#apply-checks-approval-gate</td><td><code>tests/test_template_docs.py::test_apply_checks_approval_gate</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#approval-gate-accepts-human-command</td><td><code>tests/test_approval_gate.py::test_approval_gate_accepts_human_command</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#approval-gate-rejects-self-start</td><td><code>tests/test_approval_gate.py::test_approval_gate_rejects_self_start</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#approval-gate-requires-fresh-approval</td><td><code>tests/test_approval_gate.py::test_approval_gate_requires_fresh_approval</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#takeoff-hook-denies-unapproved-dispatch</td><td><code>tests/test_approval_gate.py::test_takeoff_hook_denies_unapproved_dispatch</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#takeoff-hook-ignores-unrelated-dispatch</td><td><code>tests/test_approval_gate.py::test_takeoff_hook_ignores_unrelated_dispatch</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#propose-ends-with-handoff</td><td><code>tests/test_approval_gate.py::test_propose_ends_with_handoff</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#hook-allows-review-dispatch</td><td><code>tests/test_approval_gate.py::test_takeoff_hook_allows_reviewer_dispatch</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>takeoff-approval#tasks-tick-keeps-approval</td><td><code>tests/test_approval_gate.py::test_tasks_tick_does_not_expire_approval</code></td><td><span class="chip" data-state="passed">passed</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-09-10T09:39:00Z</td><td>baseline</td><td>exit 0, 7.2s</td></tr><tr><td class="mono">2026-09-10T09:44:55Z</td><td>approve</td><td>人类批准：2026-09-10T09:43:29Z「起飞」（转录证据，晚于计划工件 mtime）</td></tr><tr><td class="mono">2026-09-10T09:51:39Z</td><td>gate</td><td>S1 ok</td></tr><tr><td class="mono">2026-09-10T09:51:40Z</td><td>gate</td><td>S3 ok</td></tr><tr><td class="mono">2026-09-10T09:52:08Z</td><td>integrate</td><td>wave 1</td></tr><tr><td class="mono">2026-09-10T09:52:30Z</td><td>final</td><td>red</td></tr><tr><td class="mono">2026-09-10T09:59:04Z</td><td>gate</td><td>S2 ok</td></tr><tr><td class="mono">2026-09-10T09:59:04Z</td><td>gate</td><td>S4 ok</td></tr><tr><td class="mono">2026-09-10T09:59:45Z</td><td>integrate</td><td>wave 2</td></tr><tr><td class="mono">2026-09-10T11:44:13Z</td><td>fix</td><td>blocking=5</td></tr><tr><td class="mono">2026-09-10T11:44:19Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T11:44:49Z</td><td>review</td><td>findings=24 blocking=5 deferred=19</td></tr><tr><td class="mono">2026-09-10T11:44:58Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T11:45:02Z</td><td>apply-done</td><td>blocked=1 blocking=5</td></tr><tr><td class="mono">2026-09-10T11:49:46Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T11:51:55Z</td><td>pr-open</td><td>https://github.com/akarizo/intent-driven-claude-code/pull/29</td></tr><tr><td class="mono">2026-09-10T12:03:09Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T12:09:18Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T12:09:37Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T12:12:56Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T12:12:56Z</td><td>ship</td><td>draft: 5 条 CRITICAL/HIGH 评审未闭环</td></tr><tr><td class="mono">2026-09-10T12:14:03Z</td><td>final</td><td>ok</td></tr><tr><td class="mono">2026-09-10T12:14:03Z</td><td>ship</td><td>ready</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>S1 判定脚本 · deps: - · verify: `python3 -m pytest -q tests/test_session_model.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S1 <code>template/.claude/hooks/session-model.py</code>：<code>CLAUDE_CODE_SESSION_ID</code> → glob 转录 → 最后一条主循环 assistant 的 <code>message.model</code> → 别名（子串归一，<code>[1m]</code> 归基座）；<code>--session</code> / <code>--json</code>；判定不出一律 exit 3 + stderr 点名，绝不给默认值；公开 <code>alias_of()</code> 与 <code>find_transcript()</code> 供 S2 / S4 复用；scenarios：session-model-resolves-alias · session-model-latest-wins · session-model-skips-sidechain · session-model-fails-closed</span></li></ul></details><details class="task-group" open><summary>S2 收口路由对账 · deps: S1 · verify: `python3 -m pytest -q tests/test_evidence_timeline.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S2 <code>session-decompose.py</code> 增 <code>--expect-models &lt;json&gt;</code>：以 <code>importlib</code> 载 <code>alias_of</code> 归一各 agent 实际模型，按阶段映射角色（Implement/Fix→executor · Review→reviewer · Finalize→integrator）逐条对账；不符 → ❌ 行并 exit 3；不传该参数行为不变；scenarios：route-audit-flags-mismatch · route-audit-passes-on-match</span></li></ul></details><details class="task-group" open><summary>S3 接线与文档 · deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S3 <code>/opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill 同改（step 0 跑 <code>takeoff-gate.py</code> · <code>&lt;main&gt;</code> 取自 <code>session-model.py</code> · 失败停飞 · <code>--model=</code> 覆盖 · <code>.flight</code> 记 approval + 路由 · 收口带 <code>--expect-models</code>）；<code>/pr-ship</code> 两处评审派发同源；README / <code>docs/WORKFLOW_zh.md</code> / <code>template/CLAUDE.md.snippet</code> / 仓库根 <code>CLAUDE.md</code>（铁律 7 / 11 各加&quot;判据不得由模型自证&quot;）/ <code>install.sh</code>；scenarios：apply-resolves-main-model · pr-ship-resolves-main-model · docs-state-mechanical-resolution · apply-checks-approval-gate</span></li></ul></details><details class="task-group" open><summary>S4 起飞批准门禁 · deps: S1 · verify: `python3 -m pytest -q tests/test_approval_gate.py`</summary><ul><li data-done="true"><input type="checkbox" disabled checked><span>S4 <code>template/.claude/hooks/takeoff-gate.py</code>（CLI 模式判定人类批准证据 + 新鲜度；stdin 模式作 PreToolUse hook，命中 <code>openspec/changes/&lt;name&gt;</code> 的 Workflow / Agent 派发才判定，未批准 deny，异常放行）+ <code>hooks.json</code> 注册 + <code>/opsx-propose</code> 与 <code>openspec-propose</code> 硬交接收尾；scenarios：approval-gate-accepts-human-command · approval-gate-rejects-self-start · approval-gate-requires-fresh-approval · takeoff-hook-denies-unapproved-dispatch · takeoff-hook-ignores-unrelated-dispatch · hook-allows-review-dispatch · tasks-tick-keeps-approval · propose-ends-with-handoff</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-09-10 12:14 · 章节 9 · 图示 2 · 任务 4
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>
