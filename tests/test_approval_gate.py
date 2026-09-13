@@ -376,3 +376,41 @@ def test_negation_near_approve_word_is_not_confirm(tmp_path, veto):
     # Then: 非 0 退出，且 stdout 不吐出任何批准证据（人说「别飞」不得被读成批准）
     assert p.returncode != 0, p.stdout
     assert p.stdout.strip() == "", p.stdout
+
+
+# ============================================================ fix：批准取「最新一条确认」，而非「最后一条人类消息」
+def test_confirm_survives_later_human_chatter(tmp_path):
+    # Given: 08:58:04 发起 + 08:59:10 短确认「起飞」握手已成立，人又在 09:05 插了一句与批准无关的「状态？」
+    d = change_dir(tmp_path)
+    t = transcript(tmp_path / "chat.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        human("起飞", "2026-09-12T08:59:10Z"),
+        human("状态？", "2026-09-12T09:05:00Z"),
+    ])
+    dispatch = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(t),
+                "tool_input": {"subagent_type": "slice-executor",
+                               "prompt": "切片包：`openspec/changes/demo/slices/S2.md`"}}
+
+    # When: 飞行途中再来一次 slice-executor 派发，以 hook 模式判定
+    p = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
+
+    # Then: 静默放行（已成立的握手不被途中插话作废，在飞的 flight 不被自家门禁腰斩）
+    assert p.returncode == 0 and p.stdout.strip() == "", p.stdout
+
+
+def test_new_initiation_after_confirm_blocks(tmp_path):
+    """不变量：确认之后又出现新的发起 → 旧确认不覆盖新发起，必须重新确认。"""
+    # Given: 08:59:10 确认「起飞」之后，人在 09:10 又发了一次新的起飞发起，此后再无确认
+    d = change_dir(tmp_path)
+    t = transcript(tmp_path / "re.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        human("起飞", "2026-09-12T08:59:10Z"),
+        human(INITIATION, "2026-09-12T09:10:00Z"),
+    ])
+
+    # When: 运行 CLI 判定
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t))
+
+    # Then: 非 0 退出，且 stdout 不吐出批准证据
+    assert p.returncode != 0, p.stdout
+    assert p.stdout.strip() == "", p.stdout

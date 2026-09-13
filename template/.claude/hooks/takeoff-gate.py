@@ -22,7 +22,8 @@
 #              / .worktrees/<name> 路径片段。发起只是发起，不构成批准。
 #   确认     = 整条 ≤ 40 字 · 含批准词 · 不含 change 名与路径片段 · 批准词邻近窗口（±6 字）无制止词
 #              （先判发起再判确认；「先别起飞」这类制止句既非发起也非确认 → 停）。
-#   批准成立 = 转录里最后一条人类消息是确认，且该确认晚于发起、晚于计划工件最大 mtime。
+#   批准成立 = 转录里存在一条确认，其时间 ≥ 最新一条发起、≥ 计划工件最大 mtime（即确认之后没有新的发起）。
+#              不要求它是最后一条人类消息：握手完成后人再说「继续」「状态？」不该把在飞的 flight 腰斩。
 #   新鲜度   = 计划工件 = proposal/design/slices.json/specs/**/spec.md。
 #              tasks.md 不算计划工件：收口勾选 `- [x]` 是执行记账，勾一下就让批准过期会把自家收口拦死。
 #   停下时的输出（CLI stderr 与 hook reason 同源）：当前主模型别名（判不出也停，fail-closed）· 切片/wave 规模
@@ -152,10 +153,12 @@ def summarize(text):
 
 
 def scan_human(path, change_name):
-    """→ (最后一条人类消息 (datetime, 摘要, 类别)，最新一条发起的 datetime)；两者都可能是 None。"""
+    """→ (最后一条人类消息 (datetime, 摘要, 类别)，最新一条发起的 datetime，最新一条确认 (datetime, 摘要))；
+    三者都可能是 None。确认单独返回：握手成立后人再说别的话不该让已成立的批准失效。"""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         lines = fh.read().splitlines()
     last = None       # (when, idx, 摘要, 类别)
+    confirmed = None  # (when, idx, 摘要)
     initiated = None
     for idx, line in enumerate(lines):
         line = line.strip()
@@ -174,9 +177,12 @@ def scan_human(path, change_name):
         kind = classify(text, change_name)
         if kind == "发起" and (initiated is None or when > initiated):
             initiated = when
+        if kind == "确认" and (confirmed is None or (when, idx) > (confirmed[0], confirmed[1])):
+            confirmed = (when, idx, summarize(text))
         if last is None or (when, idx) > (last[0], last[1]):
             last = (when, idx, summarize(text), kind)
-    return (None if last is None else (last[0], last[2], last[3])), initiated
+    return ((None if last is None else (last[0], last[2], last[3])), initiated,
+            (None if confirmed is None else (confirmed[0], confirmed[2])))
 
 
 def plan_mtime(change_dir):
@@ -273,20 +279,23 @@ def verdict(change_dir, session):
     """→ (ok, 证据行, 说明)。ok=False 时说明是给人/模型看的停下理由。"""
     change_name = os.path.basename(os.path.normpath(change_dir))
     plan_at = plan_mtime(change_dir)
-    last, initiated_at = scan_human(session, change_name)
+    last, initiated_at, confirmed = scan_human(session, change_name)
 
     if last is None:
         return False, "", block_message(change_dir, session,
                                         "未找到人类消息：转录 %s 里没有可用的人类发言。" % session)
-    when, quote, kind = last
-    if kind == "发起":
-        return False, "", block_message(change_dir, session,
-                                        "最后一条人类消息是起飞发起（%s：%s）——发起不等于批准，"
-                                        "起飞是两段式握手，还缺人类的一句短确认。" % (iso(when), quote))
-    if kind != "确认":
-        return False, "", block_message(change_dir, session,
-                                        "未找到人类批准证据：最后一条人类消息（%s：%s）"
-                                        "既不是起飞发起也不是批准确认。" % (iso(when), quote))
+    if confirmed is None:
+        last_when, last_quote, _last_kind = last
+        if initiated_at is not None:
+            head = ("只有起飞发起（最新一条 %s）、没有随后的短确认——发起不等于批准，"
+                    "起飞是两段式握手，还缺人类的一句短确认。" % iso(initiated_at))
+        else:
+            head = ("未找到人类批准证据：最后一条人类消息（%s：%s）"
+                    "既不是起飞发起也不是批准确认。" % (iso(last_when), last_quote))
+        return False, "", block_message(change_dir, session, head)
+    when, quote = confirmed
+    # 判据是「最新一条确认 ≥ 最新一条发起」，不是「最后一条人类消息是确认」：
+    # 后者会让握手完成后的任何人类插话（「继续」「状态？」）把在飞的 flight 腰斩在下一次派发上。
     if initiated_at is None or when < initiated_at:
         return False, "", block_message(change_dir, session,
                                         "这条确认（%s：%s）不是对本次发起的回应——确认不继承历史，"
