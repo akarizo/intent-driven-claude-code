@@ -414,3 +414,21 @@ def test_new_initiation_after_confirm_blocks(tmp_path):
     # Then: 非 0 退出，且 stdout 不吐出批准证据
     assert p.returncode != 0, p.stdout
     assert p.stdout.strip() == "", p.stdout
+
+
+# ============================================================ fix：propose 收尾不得把「发起」说成「批准」
+def test_propose_calls_takeoff_line_initiation_not_approval():
+    # Given: /opsx-propose 命令与 openspec-propose skill 两份文本（头部摘要 + 收尾硬交接四件事）
+    cmd = (CMD / "opsx-propose.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-propose" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 检查两者对 /opsx-apply 与那一行起飞指令的定性
+    texts = [cmd, skill]
+
+    # Then: 都写明这只算发起、批准是随后一句 ≤40 字短确认、apply 会停在 step 0 要这句确认；
+    #       不再出现把发起说成批准的旧措辞
+    for t in texts:
+        assert "只算发起" in t
+        assert "短确认" in t and "40" in t
+        assert "step 0" in t
+        assert "核验这条人类批准" not in t and "机械校验这条批准" not in t
