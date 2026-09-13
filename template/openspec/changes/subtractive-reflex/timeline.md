@@ -7,3 +7,6 @@
 2026-09-13T13:19:27Z	final	ok
 2026-09-13T13:27:33Z	fix	blocking=1
 2026-09-13T13:27:44Z	final	ok
+2026-09-13T13:28:07Z	review	findings=10 blocking=1 deferred=9
+2026-09-13T13:28:21Z	final	ok
+2026-09-13T13:28:25Z	apply-done	blocked=0 blocking=1
