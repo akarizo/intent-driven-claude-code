@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+subtractive-reflex · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+subtractive-reflex
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/subtractive-discipline</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">AI 写代码的默认失败模式是<strong>过度构建</strong>：没人要的抽象、为&quot;以后&quot;留的脚手架、在第 7 个文件里第 4 次实现同一个 helper、只修工单点名的那条路径而兄弟 caller 仍坏着。这些不是风格问题，是可维护性成本——未来每次变更都要为它们付钱。</p><p class="why-body"><code>DietrichGebert/ponytail</code>（@ <code>356918e</code>，136,912 star）把这个症状做成了一个常驻 prompt 人格。审查它之后（判据 = 本仓库 11 条铁律，结论：通过 2 / 部分 3 / 不通过 4 / 不适用 2）结论是<strong>诊断对、处方错</strong>：它把一整套规则押在模型自律上（<code>ACTIVE EVERY RESPONSE. No drift.</code>），三个 hook 全是注入与状态标记，<strong>没有一个 <code>PreToolUse</code> / <code>PostToolUse</code></strong>；它的 CI 守着 8 份规则副本不漂移，却不守技能是否还在起作用。它的规则里真正有效的那几条，其实是<strong>可维护性规则伪装成懒规则</strong>——因为&quot;懒&quot;是模型更容易服从的指令形式。</p><p class="why-body">本 change 只吸收那几条，并且把判断权尽量交给脚本。本仓库的真实缺口（均为本地实测）：</p><p class="why-body">| 能力 | 现状 | 缺口 |
+|---|---|---|
+| 重复实现 / 未要求的抽象 | <code>code-reviewer.md</code> checklist 已有「重复代码」「未要求的抽象 / 过度设计（YAGNI）」 | <strong>判得太晚</strong>：评审抓到时代码已写完，闭环要走一轮批量修复 |
+| 根因修复（grep 全部 caller） | <code>slice-executor.md</code> 纪律段无此条；<code>code-reviewer.md</code> 无「症状修复」维度 | 两边都没有 |
+| 故意简化的天花板与升级路径 | ADR（重）· backlog（文件名指针）· <code>gate-report.md</code>（门禁结论） | <strong>代码级无载体</strong>：简化的理由只活在对话里，而对话会被 compact |</p><p class="why-body">第三条同时修掉 ponytail 自己的反向机制：它的输出契约是 <code>[code] → skipped: X</code> 三行以内，外加一条「解释比代码长就删掉解释」——在优化单次交付的同时，系统性地删除了下一次变更需要的上下文。它有 <code>ponytail:</code> 注释规范想救这个，但<strong>零执行器</strong>，是纯自愿标注。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>新增 <code>slice-gate.py</code> 的 G8 <code>ceiling</code> 判据</strong>（零 token 机械校验）：扫本切片 diff 的<strong>新增源码行</strong>，行首注释形如 <code>ceiling:</code> 的标记必须同时给出「限制」与「升级路径」（<code>限制 -&gt; 升级条件/路径</code>），缺一 → <code>failed</code> 点名 <code>file:line</code>；合规标记汇总进 <code>gate-report.md</code> 的「天花板」表。<strong>非目标：无标记的切片不得因此变红</strong>——否则判据会退化成形式主义标注，比没有更糟。</li><li><strong><code>slice-executor.md</code> 纪律段 +3 行</strong>（实现段的减法反射，只在这一段生效）：① 写新符号前先查项目里是否已有同义实现，命中就复用；② 改函数体前先 grep 全部 caller，修在汇流处而不是工单点名的那一条路径；③ 故意切了角的简化用 <code>ceiling:</code> 标记写清限制与升级路径。</li><li><strong><code>code-reviewer.md</code> 正确性维度 +1 条</strong>：症状修复（同类输入经其他 caller 仍失败）。</li><li><strong>新增 ADR</strong>：《从外部 prompt 工程吸收能力的判据》——记录三条闸门、三条吸收项、五条拒绝项及其理由与证据，防止将来把整包 ponytail 装进来。</li><li><strong><code>tests/</code> +6 条 scenario</strong>：4 条锁 G8 语义（含 1 条非目标守卫），2 条锁两个 agent 的正文契约。</li><li><strong>依赖新增门禁 → 砍（Q2 已有覆盖）</strong>：切片 <code>owns</code> 是白名单，依赖清单文件不在 owns 里写入即被 G6 拒绝；而「引入新抽象或依赖」在 <code>template/CLAUDE.md.snippet</code> 里本就是中级+ 触发条件，由 <code>intent-gate.py</code> 拦。</li><li><strong>reuse 专用 <code>PreToolUse</code> hook（替模型预搜同义实现）→ 砍（Q1 无实据）</strong>：评审层尚未报过一次重复实现，现在造机制是投机。留观察判据：连续 3 个切片被 reviewer 报重复实现，再立 change。</li></ul><div class="impact"><span class="tag"><strong>代码</strong>：<code>template/.claude/hooks/slice-gate.py</code>（新增判据，约 30–40 行，复用现成的 <code>changed_files</code> / <code>is_doc_or_config</code> / <code>append_report</code>）· <code>template/.claude/agents/slice-executor.md</code>（+3 行）· <code>template/.claude/agents/code-reviewer.md</code>（+1 条）。</span><span class="tag"><strong>契约</strong>：<code>gate</code> 子命令的 <code>failed</code> 可能出现 <code>G8 ceiling: &lt;file&gt;:&lt;line&gt; …</code>；<code>gate-report.md</code> 追加一个「天花板」表（追加式，不改既有表）。下游消费者只依赖 <code>failed</code> 的前缀约定，不受影响。</span><span class="tag"><strong>测试</strong>：<code>tests/test_slice_gate.py</code> +4 · <code>tests/test_agents_workflow.py</code> +2（后者已在对 agent 正文做内容断言，扩断言即可）。</span><span class="tag"><strong>依赖</strong>：无新增。纯 stdlib + 既有 pytest。</span><span class="tag"><strong>自举陷阱（实现时必须避开）</strong>：G8 的实现文件自己会提到 <code>ceiling:</code>。判据因此只匹配<strong>行首注释紧跟标记</strong>（<code>^\s*(#|//|--|\*)+\s*ceiling:</code>），并排除 <code>is_doc_or_config</code> 与 <code>NON_SOURCE_PREFIX</code>；实现 slice-gate.py 时不得写出 <code># ceiling: …</code> 形状的说明注释（要举例就写 <code># G8 ceiling: …</code> 或放进 docstring 的非行首位置）。切片包 S1 记了这条。</span><span class="tag"><strong>未复跑的外部数据</strong>：proposal 引用的 ponytail benchmark 结论（54% 均值 / 94% 天花板 / 100% safe）来自其 <code>README.md</code> 与 <code>benchmarks/results/</code>，本次<strong>未复跑</strong>（需 API key 与 fixture 仓库）。本 change 不依赖这些数字——吸收判据来自代码事实（hook 清单、CI 配置、SKILL.md 原文），均本地实测。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><strong>subtractive-discipline</strong>：实现段的减法纪律——<code>ceiling</code> 标记的机械判据（格式 · 扫描范围 · 汇总 · 非目标），以及执行体与评审员两侧的减法契约条目。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>subtractive-discipline <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 故意的简化必须留下天花板与升级路径</p><p>切片提交里的 <code>ceiling:</code> 标记 SHALL 同时给出<strong>限制</strong>与<strong>升级条件或路径</strong>两段；只给一段的标记 MUST NOT 通过切片门禁。合规标记 SHALL 被汇总进该 change 的 <code>gate-report.md</code>，使简化决策与门禁结论同处一份记录。
+Feature: 切了真角的地方，理由钉在代码旁，不靠会话记忆
+Rule: 标记只校验完整性，不校验&quot;该不该标&quot;——后者是评审的事</p><div class="scenario"><p class="scenario-name">Scenario: ceiling-marker-passes-gate</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个已 <code>start</code> 的切片，区间内新增的源码行含行首注释标记 <code># ceiling: 全局锁，单进程内够用 -&gt; 吞吐成为瓶颈时换 per-account 锁</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>python3 .claude/hooks/slice-gate.py gate &lt;S&gt; --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>failed</code> 里没有任何以 <code>G8</code> 开头的项</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>gate-report.md</code> 出现「天花板」表，其中一行同时含该标记所在的 <code>文件:行号</code>、限制段文本与升级路径段文本</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全角箭头 <code>→</code> 与半角 <code>-&gt;</code> 同样被接受</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: ceiling-missing-upgrade-path</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>区间内新增的源码行含 <code># ceiling: 先用全局锁</code>（只有限制，无分隔符与升级路径）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行切片门禁</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ok</code> 为 <code>false</code>，<code>failed</code> 含一项以 <code>G8 ceiling:</code> 开头并点名该标记的 <code>文件:行号</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>该项的文本说明缺的是升级路径，且给出期望形状 <code>限制 -&gt; 升级条件/路径</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: ceiling-missing-limit</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>区间内新增的源码行含 <code># ceiling: -&gt; 以后优化</code>（有分隔符与升级段，但限制段为空）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行切片门禁</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ok</code> 为 <code>false</code>，<code>failed</code> 含一项以 <code>G8 ceiling:</code> 开头并点名该标记的 <code>文件:行号</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>两段中任一段去空白后短于 4 个字符时同样被判为缺段</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 判据不得越界扫描</p><p><code>ceiling</code> 判据 SHALL 只扫描本切片区间内<strong>新增的源码行</strong>，且只匹配<strong>行首注释紧跟标记</strong>的形式；无标记的切片 MUST NOT 因此判红，文档与配置文件、以及代码中偶然出现 <code>ceiling:</code> 字样的非注释行 MUST NOT 触发判定。
+Feature: 门禁只在它确实该说话的地方说话
+Rule: 宁可漏判，不可把「没标」变成红 —— 否则判据退化成形式主义标注</p><div class="scenario"><p class="scenario-name">Scenario: no-marker-no-gate</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个已 <code>start</code> 的切片，区间内改动的源码与测试里<strong>不含任何</strong> <code>ceiling:</code> 标记</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行切片门禁</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>failed</code> 与 <code>warnings</code> 里都没有以 <code>G8</code> 开头的项，门禁结论与该判据引入之前一致</span></li><li><span class="step-key" data-kw="AND">AND</span><span>同一区间内若存在含 <code>ceiling:</code> 字样但非行首注释的代码行（如 <code>CEILING_RE = re.compile(r&quot;ceiling:&quot;)</code>），仍不触发判定</span></li><li><span class="step-key" data-kw="AND">AND</span><span>同一区间内若 Markdown 文档里写了 <code># ceiling: 示例</code> 作为说明，仍不触发判定</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 实现段携带减法纪律</p><p>切片执行体的契约 SHALL 包含三条减法纪律——写新符号前先查项目内是否已有同义实现、改函数体前先查全部 caller 并修在汇流处、故意切角的简化用 <code>ceiling:</code> 标记留痕；评审员的契约 SHALL 包含「症状修复」这一审查维度。两者 MUST NOT 以 LOC 或 diff 行数作为判断依据。
+Feature: 减法发生在动手前，评审退为兜底
+Rule: 只在实现段生效，不进常驻记忆</p><div class="scenario"><p class="scenario-name">Scenario: executor-carries-subtractive-rules</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/slice-executor.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读它的纪律段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三条减法纪律都在：先查已有同义实现再写、改函数体前查全部 caller 修在汇流处、切角简化写 <code>ceiling:</code> 标记</span></li><li><span class="step-key" data-kw="AND">AND</span><span>正文不含任何以行数 / LOC 为阈值的要求</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: reviewer-flags-symptom-fix</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/code-reviewer.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读它的审查 checklist</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>正确性维度含「症状修复」一条，要求检查同类输入经其他 caller 是否仍失败</span></li><li><span class="step-key" data-kw="AND">AND</span><span>既有的可维护性维度（重复代码 · 未要求的抽象 / 过度设计）一条不少</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>外部 prompt 工程产物（<code>DietrichGebert/ponytail</code>，@ <code>356918e</code>）把「AI 默认过度构建」这个真问题压成了一个 120 行的常驻人格。审查结论（judged by 本仓库 11 条铁律）：<strong>症状端强、机制端弱</strong>——它的规则没有一个执行器，三个 hook 全是注入与状态标记，CI 守的是 8 份规则副本一致性而非技能有效性。</p><p>本仓库的情况正相反：机制端强（G1–G7 + intent-gate + takeoff-gate + stop-gate），但<strong>实现段缺一个减法反射</strong>。<code>code-reviewer.md</code> 的 checklist 已经能判「重复代码」与「未要求的抽象（YAGNI）」，缺的不是判据而是<strong>时点</strong>：</p><p>第三个缺口是载体：故意切了角的简化（全局锁、O(n²) 扫描、朴素启发式），其理由在本体系里无处可落——ADR 太重（长期架构承诺），<code>gate-report.md</code> 只记门禁结论，对话会被 compact。ponytail 有这个规范（<code>ponytail:</code> 注释标注 ceiling 与升级路径）但零执行器，纯自愿。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals:</strong></p><ul><li>把「先搜已有 / 根因修复 / 简化留天花板」三条纪律放进<strong>实现段</strong>（执行体开工那一轮），不放进常驻记忆。</li><li>让第三条有机械执行器：标了就必须标全，格式由脚本判定，零 token。</li><li>让这些简化决策<strong>可汇总、可回看</strong>：合规标记进 <code>gate-report.md</code>，与门禁结论同一份记录。</li><li>吸收与拒绝的判据本身留档（ADR），使下一次&quot;要不要装某个外部 prompt 产品&quot;有可复用的闸门。</li></ul><p><strong>Non-Goals:</strong></p><ul><li><strong>不判&quot;该不该标&quot;</strong>。G8 只校验既有标记的完整性；&quot;这里切了角却没标&quot;是语义判断，留给 <code>code-reviewer</code>（其维度一条不减）。</li><li><strong>不引入任何 LOC / diff 行数阈值</strong>。见 proposal 的拒绝表：LOC 分不清压缩与简化。</li><li><strong>不常驻</strong>。<code>template/CLAUDE.md.snippet</code> 与仓库根 <code>CLAUDE.md</code> 均不加条目（D5）。</li><li><strong>不改 G1–G7 语义</strong>，不进 <code>cmd_final</code>（D7）。</li><li>不吸收 ponytail 的测试 YAGNI、删解释、ultra 挑战需求、常驻人格四条（proposal 已列，ADR 定档）。</li></ul></div><div class="design-block"><h3>Decisions</h3><p>### D1 吸收闸门：用它自己 ladder 的前三级审这份规划</p><p>六个候选各过三问，结论与证据：</p><p>| 候选 | Q1 真缺口？ | Q2 已有覆盖？ | Q3 能机械判？ | 裁决 | |---|---|---|---|---| | 先搜已有再写 | 是（执行体纪律段无此条） | 评审事后有，事前无 | 否（语义） | <strong>吸收 · 提示层</strong> | | 根因修复 · grep 全部 caller | 是（两侧都无） | 无 | 否（语义） | <strong>吸收 · 提示 + 评审</strong> | | 简化留天花板 | 是（代码级无载体） | 无 | <strong>是</strong>（正则） | <strong>吸收 · 机械 G8</strong> | | 依赖新增门禁 | — | <strong>有</strong>：<code>owns</code> 白名单 → G6 拒绝；且&quot;引入新依赖&quot;本就是 <code>snippet</code> 里的中级+ 触发条件 → <code>intent-gate</code> 拦 | — | 砍 | | reuse 专用 <code>PreToolUse</code> hook（替模型预搜） | <strong>否</strong>：评审层尚未报过一次重复实现 | — | — | 砍（观察判据见 Open Questions） | | diff 行数 / LOC 阈值 | <strong>否</strong>：要解决的是结构问题，不是长度问题 | — | 是（但判错的事） | 永久拒绝 |</p><p>采纳这套闸门本身的理由：它把&quot;看起来有用&quot;与&quot;经证据确认缺失&quot;分开。上表第 4 行是直接收益——最初的规划建议做依赖门禁，读了 <code>owns</code> 机制后发现已被两层覆盖。</p><p>### D2 标记语法：<code>ceiling:</code> + <code>-&gt;</code>，不沿用外部品牌名</p><p>| 候选 | 判断 | |---|---| | 沿用 <code>ponytail:</code> | 否。仓库内出现外部产品名会让读者以为装了那个插件；且语义偏了——我们要记的是<strong>天花板</strong>，不是&quot;这里很懒&quot; | | 中文 <code># 天花板:</code> | 否。注释符前缀在不同语言下已需多态匹配，再叠中英混排会让正则更脆；<code>grep</code> 跨平台也更麻烦 | | <strong><code>ceiling:</code> + <code>-&gt;</code> 分隔（采用）</strong> | ASCII、语义准、<code>grep -rn &#x27;ceiling:&#x27;</code> 直接可用；<code>-&gt;</code> 与 <code>→</code> 都接受（中文输入法常出全角箭头） |</p><p>契约形状（两段都必须非空，去空白后各 ≥ 4 字符）：</p><p>``<code> &lt;注释符&gt; ceiling: &lt;限制&gt; -&gt; &lt;升级条件或路径&gt; </code>``</p><p>### D3 扫描范围三重收窄 —— 自举陷阱是真实的</p><p>G8 的实现文件自己会提到 <code>ceiling:</code>。若判据按「行内含 <code>ceiling:</code>」匹配，S1 提交 <code>slice-gate.py</code> 的那一刻 G8 就会扫到自己的正则常量与说明注释并判格式不合。三重收窄：</p><p>1. <strong>只扫 diff 新增行</strong>（<code>git diff &lt;base&gt;..HEAD</code> 的 <code>+</code> 行），不扫全文件；行号由 hunk header 累加得出。 2. <strong>只扫源码</strong>：复用既有 <code>is_doc_or_config()</code> 与 <code>NON_SOURCE_PREFIX</code>（<code>.claude/</code> · <code>openspec/</code> · <code>docs/</code>）排除文档与配置——切片包里写示例不会自触发。 3. <strong>只匹配行首注释紧跟标记</strong>：<code>^\s*(?:#|//|--|\*)+\s*ceiling:</code>。<code>CEILING_RE = re.compile(...)</code> 这类代码行不匹配；说明注释写成 <code># G8 ceiling: …</code> 也不匹配（<code>ceiling:</code> 不紧跟注释符）。</p><p>⚠ 实现 <code>slice-gate.py</code> 时<strong>不得写出 <code># ceiling: …</code> 形状的说明注释</strong>；要举例就写 <code># G8 ceiling: …</code> 或放进 docstring 的非行首位置。S1 切片包记了这条，并要求一条针对性的自举测试。</p><p>### D4 严厉度：<code>failed</code> 阻断，不是 <code>warnings</code></p><p>| 候选 | 判断 | |---|---| | <code>warnings</code> 观察一轮 | 否。警告在本体系里不阻断收口，等于又回到&quot;自愿标注&quot;——正是 ponytail 那条规范失效的原因 | | <strong><code>failed</code> 阻断（采用）</strong> | 标注成本极低（一行注释写全两段），而 SC4 保证「不标不红」，所以执行体永远有一条零成本的合规路径：要么不标，要么标全。<strong>不存在&quot;被迫写空洞标记&quot;的压力</strong> |</p><p>安全阀是 SC4 这条非目标守卫测试：它锁死&quot;无标记的切片必须绿&quot;，使 G8 无法演化成&quot;每切片都得标&quot;的形式主义判据。</p><p>### D5 只在实现段生效，不进常驻记忆</p><p>减法纪律写进 <code>slice-executor.md</code>（执行体每次开工必读的 39 行契约），<strong>不写进</strong> <code>template/CLAUDE.md.snippet</code> 与仓库根 <code>CLAUDE.md</code>。三个理由：</p><p>1. <strong>阶段性</strong>：「该少写」与「该写全」在项目里交替出现；常驻会让它在一半时刻是错的。ponytail 的 <code>no drift</code> 条款正是把阶段切换当故障，这是它的反向机制之一。 2. <strong>辖区</strong>：按 <code>claudemd-standard</code> 的准入四问，第 ④ 问「能写成测试 / lint / hook 吗」答「能」→ 去写那个。G8 就是那个。 3. <strong>预算</strong>：<code>snippet</code> 受 <code>tests/test_docs_iron_rules.py::test_claudemd_iron_rules</code> 的 8KB 硬断言约束，当前已接近上限；花在此处不值。</p><p>### D6 汇总落 <code>gate-report.md</code>，不新立文件</p><p>合规标记汇总进 <code>gate-report.md</code> 的「## 天花板」表（<code>| 时间 | 切片 | 位置 | 限制 | 升级路径 |</code>），追加式，不动既有 Gate Report 表。复用现成的 <code>append_report()</code> 写入路径，零新文件、零新读取方——飞行记录已经是收口要打印的东西，天花板跟它同处一份最省。</p><p>### D7 只在 <code>gate</code> 子命令，不进 <code>cmd_final</code></p><p><code>ceiling</code> 是逐切片的代码事实，收口再全量扫一遍只会把同样的行重复报一次。<code>cmd_final</code> 保持现状（全量 verify + G7 scenario 对账）。</p><p>### D8 新判据必须带 good / bad fixture 对（反向吸收它的方法学）</p><p>ponytail 最硬的一点是<strong>先证尺子再花钱</strong>：<code>benchmarks/agentic/run.py --selftest</code> 必须先证明 scorer 能区分 good / bad 参考实现，才允许消费 API；<code>--rescore</code> 让改指标不重复付费。对应到本仓库 = <strong>每条新门禁判据必须成对断言</strong>：合规样本必过（SC1）、每种违规样本必被抓且点名位置（SC2 / SC3）、非目标必须守住（SC4）。<code>tests/</code> 已经是这个形状（<code>test_gate_pass_json</code> 与 <code>test_gate_ownership_violation</code> 成对），本 change 把它写成 spec 约束而不是习惯。</p></div><div class="design-block"><h3>Risks / Trade-offs</h3><p>| 风险 | 处置 | |---|---| | <strong>形式主义标注</strong>：执行体为过门禁写空洞 ceiling | SC4 保证不标不红 → 合规成本为零的路径永远存在；且 G8 只校验格式完整性，写空洞两段仍会被 <code>code-reviewer</code> 的可维护性维度看见 | | <strong>正则误伤 / 自举自触发</strong> | D3 三重收窄 + S1 要求一条针对性自举测试（提交含 <code>ceiling:</code> 字样的实现文件时 G8 不得因自身代码变红） | | <strong>G8 管不到&quot;该标却没标&quot;</strong> | 承认边界：这是语义判断，留给评审。G8 的价值是把&quot;已经想到要标的人&quot;从自愿变成必须标全 | | <strong>agent 契约测试断言中文短语</strong>，改措辞即红 | 既有模式如此（<code>test_executor_agent_contract</code> 已断言「一轮多动作」等），接受；改措辞时同步改断言是正确的耦合 | | 执行体可能干脆不标以避开 G8 | 无法机械阻止（同上一条）。缓解：<code>slice-executor.md</code> 的纪律行把&quot;切了真角要标&quot;写成开工契约，评审兜底 |</p></div><div class="design-block"><h3>Migration Plan</h3><ul><li>无数据迁移、无配置迁移。<code>hooks.json</code> 不变（G8 在 <code>slice-gate.py</code> 内部，不新增 hook 注册点）。</li><li><strong>回退</strong>：G8 实现为独立函数 + <code>cmd_gate</code> 里一行调用。删那一行即回到 G1–G7 语义，<code>gate-report.md</code> 的「天花板」表留在历史记录里不影响解析（追加式）。符合铁律 10「回退路径语义一致」。</li><li>下游影响：<code>install.sh</code> 分发面不变（同一份 <code>slice-gate.py</code>）；已安装的用户项目升级后，旧 change 的 <code>gate-report.md</code> 不含天花板表，新表按需创建。</li></ul></div><div class="design-block"><h3>Open Questions</h3><p>1. <strong>先搜已有是否需要机械执行器</strong>：本次只做提示层。观察判据——连续 3 个切片被 <code>code-reviewer</code> 报「重复实现」，则立 change 做 <code>PreToolUse</code> 预搜注入（替模型搜好摆在面前，而不是要求它自述搜过了；自述违反&quot;判据禁自证&quot;）。 2. <strong><code>phase-gate.py</code> 悬空注册</strong>（旁枝，不在本 change 范围）：主仓 <code>.claude/settings.json:7</code> 注册了 <code>template/.claude/hooks/phase-gate.py</code>，该文件在 main 上不存在，<code>template/.claude/hooks/hooks.json</code> 也无此条，hooks 目录里找不到任何 explore 阶段闸门实现。注册包了存在性保护故静默放行、无害，但 PR #30 标题里的「explore 阶段闸门」在 main 上没有落地物。建议单开 change 查清是&quot;未落地&quot;还是&quot;落在别处&quot;。 3. <strong><code>openspec instructions</code> 的 schema 告警</strong>（旁枝）：本仓 schema <code>intent-driven</code> 的 rules 里引用了不存在的 artifact id <code>spec</code>（有效值为 adr / design / proposal / specs / tasks），每次 <code>openspec instructions</code> 都会打一行 <code>Unknown artifact ID in rules: &quot;spec&quot;</code>。不影响工件生成，但属噪音，可并入下次 schema 维护。 4. <strong>in-force ADR 是否需要 supersede</strong>：<code>DRAFT-gate-evidence-not-self-reported</code>（门禁判据不得由被门禁方提供）与本 change 同向，本 ADR 是其在&quot;外部能力吸收&quot;方向上的补充，<strong>不 supersede</strong>，只在关联里互指。</p></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart LR
+  subgraph now[&quot;现状：唯一拦点在事后&quot;]
+    A1[&quot;读切片包&quot;] --&gt; B1[&quot;写测试 · 写实现&quot;] --&gt; C1[&quot;G1–G7&quot;] --&gt; D1[&quot;评审&lt;br/&gt;此处才判过度构建&quot;] --&gt; E1[&quot;批量修复&quot;]
+    E1 -.-&gt;|返工| B1
+  end
+  subgraph next[&quot;吸收后：判断前移，评审退为兜底&quot;]
+    A2[&quot;读切片包&lt;br/&gt;+ 减法反射三问&quot;] --&gt; B2[&quot;写测试 · 写实现&quot;] --&gt; C2[&quot;G1–G7 + G8&quot;] --&gt; D2[&quot;评审（兜底）&quot;]
+  end</div><pre class="diagram-fallback">flowchart LR
+  subgraph now[&quot;现状：唯一拦点在事后&quot;]
+    A1[&quot;读切片包&quot;] --&gt; B1[&quot;写测试 · 写实现&quot;] --&gt; C1[&quot;G1–G7&quot;] --&gt; D1[&quot;评审&lt;br/&gt;此处才判过度构建&quot;] --&gt; E1[&quot;批量修复&quot;]
+    E1 -.-&gt;|返工| B1
+  end
+  subgraph next[&quot;吸收后：判断前移，评审退为兜底&quot;]
+    A2[&quot;读切片包&lt;br/&gt;+ 减法反射三问&quot;] --&gt; B2[&quot;写测试 · 写实现&quot;] --&gt; C2[&quot;G1–G7 + G8&quot;] --&gt; D2[&quot;评审（兜底）&quot;]
+  end</pre><div class="caption">本仓库的情况正相反：机制端强（G1–G7 + intent-gate + takeoff-gate + stop-gate），但<strong>实现段缺一个减法反射</strong>。<code>code-reviewer.md</code> 的 checklist 已经能判「重复代码」与「未要求的抽象（YAGNI）」，缺的不是判据而是<strong>时点</strong>：</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>slice-gate G8 · ceiling 标记完整性判据 + 天花板汇总</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>tests/test_slice_gate.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py</code></td></tr><tr><td class="mono">S2</td><td>执行体与评审员的减法契约（三条纪律 + 症状修复维度）</td><td>wave 1</td><td>-</td><td>template/.claude/agents/slice-executor.md<br>template/.claude/agents/code-reviewer.md<br>tests/test_agents_workflow.py</td><td><code>python3 -m pytest -q tests/test_agents_workflow.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>subtractive-discipline#ceiling-marker-passes-gate</td><td><code>tests/test_slice_gate.py::test_gate_g8_accepts_complete_ceiling</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>subtractive-discipline#ceiling-missing-upgrade-path</td><td><code>tests/test_slice_gate.py::test_gate_g8_flags_missing_upgrade_path</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>subtractive-discipline#ceiling-missing-limit</td><td><code>tests/test_slice_gate.py::test_gate_g8_flags_missing_limit</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>subtractive-discipline#no-marker-no-gate</td><td><code>tests/test_slice_gate.py::test_gate_g8_silent_without_marker</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>subtractive-discipline#executor-carries-subtractive-rules</td><td><code>tests/test_agents_workflow.py::test_executor_carries_subtractive_rules</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>subtractive-discipline#reviewer-flags-symptom-fix</td><td><code>tests/test_agents_workflow.py::test_reviewer_flags_symptom_fix</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-09-13T11:32:08Z</td><td>baseline</td><td>exit 0, 9.6s</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>S1 slice-gate G8 · deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py`</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 <code>template/.claude/hooks/slice-gate.py</code> 新增 <code>ceiling_rows(root, base)</code>：解析 <code>git diff --unified=0 &lt;base&gt;..HEAD</code> 的新增行（先判 <code>+++</code>/<code>---</code>/<code>@@</code> 文件头再判内容行），排除 <code>is_doc_or_config</code> 与 <code>NON_SOURCE_PREFIX</code>，只匹配行首注释紧跟 <code>ceiling:</code>，限制与升级路径两段 strip 后各 ≥ 4 字符，缺段 → <code>failed</code> 点名 <code>文件:行号</code>；合规行汇总进 <code>gate-report.md</code> 的「天花板」表；只接 <code>cmd_gate</code>，<code>cmd_final</code> 不动；⚠ 实现时不得写出 <code># ceiling: …</code> 形状的说明注释（自举自触发）；scenarios：ceiling-marker-passes-gate · ceiling-missing-upgrade-path · ceiling-missing-limit · no-marker-no-gate</span></li></ul></details><details class="task-group" open><summary>S2 执行体与评审员的减法契约 · deps: - · verify: `python3 -m pytest -q tests/test_agents_workflow.py`</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S2 <code>template/.claude/agents/slice-executor.md</code> 纪律段在 TDD 之前加三条（先查已有再写 · 修在汇流处 grep 全部 caller · 切角标 <code>ceiling:</code> 天花板，措辞照切片包契约原文）；<code>template/.claude/agents/code-reviewer.md</code>「正确性」维度加「症状修复」一条，既有 7 维度与可维护性条目一条不减；<code>tests/test_agents_workflow.py</code> 只新增两个测试函数，不动既有断言；scenarios：executor-carries-subtractive-rules · reviewer-flags-symptom-fix</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-09-13 11:32 · 章节 9 · 图示 1 · 任务 2
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

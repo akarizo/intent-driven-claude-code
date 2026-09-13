@@ -1,6 +1,8 @@
 """slice-gate.py：切片规划 lint 与切片门禁（scenario: slice-gate#*）。"""
 import json
 
+import pytest
+
 from conftest import commit_all, git, run_hook, write
 
 
@@ -308,3 +310,35 @@ def test_final_gate_reports_scenarios(git_repo):
     assert out["scenarios"]["total"] == 1
     assert out["scenarios"]["passed"] == 1
     assert out["ok"] is True, out
+
+
+@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#ceiling-marker-passes-gate 待 S1 实现")
+def test_gate_g8_accepts_complete_ceiling(git_repo):
+    # Given: 已 start 的切片 S1，区间内新增的源码行含完整 ceiling 标记（限制 -> 升级路径），半角箭头与全角箭头各一条
+    # When: 运行 slice-gate.py gate S1
+    # Then: failed 里没有以 G8 开头的项，且 gate-report.md 的天花板表出现含 文件:行号 与限制、升级路径两段文本的行
+    raise AssertionError("S1 待实现：G8 ceiling 判据")
+
+
+@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#ceiling-missing-upgrade-path 待 S1 实现")
+def test_gate_g8_flags_missing_upgrade_path(git_repo):
+    # Given: 区间内新增的源码行含 `# ceiling: 先用全局锁`，只有限制段、无分隔符与升级路径
+    # When: 运行 slice-gate.py gate S1
+    # Then: ok 为 false，failed 含一项以 G8 ceiling: 开头、点名该标记的 文件:行号 并说明缺升级路径
+    raise AssertionError("S1 待实现：G8 ceiling 判据")
+
+
+@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#ceiling-missing-limit 待 S1 实现")
+def test_gate_g8_flags_missing_limit(git_repo):
+    # Given: 区间内新增的源码行含 `# ceiling: -> 以后优化`，有分隔符与升级段但限制段为空（或短于 4 字符）
+    # When: 运行 slice-gate.py gate S1
+    # Then: ok 为 false，failed 含一项以 G8 ceiling: 开头并点名该标记的 文件:行号
+    raise AssertionError("S1 待实现：G8 ceiling 判据")
+
+
+@pytest.mark.xfail(strict=True, reason="scenario subtractive-discipline#no-marker-no-gate 待 S1 实现")
+def test_gate_g8_silent_without_marker(git_repo):
+    # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明
+    # When: 运行 slice-gate.py gate S1
+    # Then: failed 与 warnings 里都没有以 G8 开头的项，门禁结论与判据引入前一致
+    raise AssertionError("S1 待实现：G8 非目标守卫")
