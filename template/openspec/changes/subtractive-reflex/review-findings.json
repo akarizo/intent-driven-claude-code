@@ -1,0 +1,123 @@
+{
+  "change": "subtractive-reflex",
+  "models": {
+    "executor": "opus",
+    "reviewer": "opus",
+    "integrator": "sonnet"
+  },
+  "efforts": {
+    "executor": "high",
+    "reviewer": "high",
+    "integrator": "low"
+  },
+  "run_id": "wf_9ab552bf-674",
+  "blocked": [],
+  "blocking": [],
+  "fixed": [
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 588,
+      "summary": "天花板汇总在飞行模式的默认路径里必然丢失：opsx-apply 让每个切片执行体在 isolation: worktree 的临时 worktree 里跑 gate，executor 纪律是「只 add owns 内文件，不裹飞行记录」（slice-executor.md:36 / tests 里同样只 add src、tests），所以 record_ceilings 写进临时 worktree 的 gate-report.md 从未入库；随后 integrator 只用 `slice-gate.py record` 把门禁 JSON 幂等写回 change 分支（cmd_record:626 仅调 append_report），而 gate 的 JSON 契约里根本没有 ceilings 字段 → 合规天花板行无法被下游恢复。结果：spec「合规的汇总进飞行记录」在主执行路径上等于没实现（本 change 自身的 S1/S2 同 wave，正是这条路径）。",
+      "fix": "把 ceilings 进 JSON 契约并在 record 路径复用：cmd_gate 的 result 里加 `\"ceilings\": [[rel, ln, limit, up], ...]`（additive，不破坏既有键）；cmd_record 在 append_report 之后加 `record_ceilings(args.change_dir, result.get(\"slice\", \"\"), [tuple(r) for r in (result.get(\"ceilings\") or [])])`，复用其已有的 report_has_row 幂等判定，使临时 worktree 跑出的天花板行随门禁结论一起写回 change 分支。",
+      "status": "fixed",
+      "fix_commit": "6dde2b87c38185eb0815fbfc49106ef9782049e7",
+      "fix_note": "ceilings 进 gate JSON 契约 + cmd_record 调 record_ceilings + opsx-apply.js recordCmds 改 --json 传整份门禁 JSON；3 条新测试先红后绿；final ok scenario 6/6"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 198,
+      "summary": "record_ceilings 不幂等：同一 commit 重跑 gate（门禁红→修→再跑是设计内的常规循环，marker 还会 red_count+1）会把同一批 (位置, 限制, 升级路径) 重复插进「天花板」表，飞行记录里出现同一标记多行；且 gate 红时 ceilings 也照写（此时该 commit 的结论是阻断，天花板行却已落盘），与 cmd_record 的 report_has_row 幂等纪律不一致。",
+      "fix": "在插入前按内容去重：读出 CEILING_HEAD 段已有的表行，构造 `已存在 = {(slice_id, 位置, 限制)}`，只插不在其中的 new 行；另建议把 record_ceilings 的调用移到 `if result[\"ok\"]` 分支内（或只在 ok 时写），使阻断态不产生天花板留痕。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 297,
+      "summary": "added_lines 对 git 的路径引号形式没有防护：core.quotepath 默认 true 时非 ASCII 文件名在 diff 里输出为 `+++ \"b/\\347\\254\\224\\350\\256\\260.md\"`（已实测确认）。该形式不以 `b/` 开头，rel 变成带引号的转义串 → os.path.splitext 得到 `.md\"` 不在 DOC_EXT、也不匹配 NON_SOURCE_PREFIX → 中文名的 Markdown / 文档被当源码扫描，文档里的 `# ceiling: 示例` 会误判 G8 红（直接违反 spec scenario no-marker-no-gate 的「Markdown 里的示例仍不触发」这条 AND），failed 文案里的路径也是乱码转义。本仓当前无非 ASCII 文件名，但这个 hook 是发给消费方项目用的。",
+      "fix": "取 diff 时关掉引号并剥壳：`diff = git(root, \"-c\", \"core.quotepath=false\", \"diff\", \"--unified=0\", \"%s..HEAD\" % base)`，并在解析处先 `if p.startswith('\"') and p.endswith('\"'): p = p[1:-1]` 再判 `b/` 前缀。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 302,
+      "summary": "`+++ ` 文件头判定过宽：新增内容行本身以 `++ ` 开头时，diff 里呈现为 `+++ ...`，会被当成文件头，rel 被改成垃圾路径、lineno 归零，后续新增行全部归错文件与错行号（报出的 `文件:行号` 不可信）。概率低（内容须在列 0 以 `++ ` 起头），但代价是判据点名位置错。",
+      "fix": "加状态位区分头区与内容区：见到 `diff --git` 置 `in_header=True`，`@@` 置 False，只有 in_header 为 True 时才把 `+++ ` 当文件头；内容区的 `+++ x` 按新增行处理（yield line[1:]）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 378,
+      "summary": "非目标守卫测试没把「Markdown 免扫」钉在正确判据上：夹具用 `docs/note.md`，同时命中 DOC_EXT 与 NON_SOURCE_PREFIX(\"docs/\") 两道排除，任一条被误删测试仍绿，spec 那条 AND 实际没被独立覆盖。",
+      "fix": "把夹具路径换成不带 `docs/` 前缀的文档，例如 extra_owned={\"notes/note.md\": ...}（文档不参与 G3 配对，门禁结论不变），使断言只能由 is_doc_or_config 的扩展名规则兜住；若想两条都锁，再各加一个路径。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 46,
+      "summary": "CEILING_MIN=4 按字符数计，对中文标记偏严：`# ceiling: 全局锁 -> 换分段锁` 的限制段只有 3 字符会被判红，属于内容合格却被形式挡下的误红（阈值来自 slices/S1.md 契约，非实现偏离，但落到中文写法上是真摩擦）。",
+      "fix": "要么把下限降到 2（CJK 语义密度高），要么在 failed 文案里明确「每段至少 4 个字符」的硬约束并同步 spec/slice 契约措辞，避免执行体靠凑字数过门禁。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_agents_workflow.py",
+      "line": 117,
+      "summary": "两个新测试对整篇正文做子串匹配，未锁段落位置。scenario 的 WHEN 明确是「读它的纪律段」/「读它的审查 checklist」，而断言只要求关键短语出现在 body 任意位置——三条减法纪律被挪到 `## 收尾` 段、或「症状修复」挂到「可维护性」维度下，测试仍会绿，契约位置约束未被守住。",
+      "fix": "先按标题切段再断言：executor 侧 `disc = re.search(r\"## 纪律\\n(.*?)\\n## \", body, re.S).group(1)` 后对 disc 断言三条纪律；reviewer 侧同法取 `## 审查 checklist` 段，并进一步取「正确性」bullet 及其缩进子项（例如 `re.search(r\"- \\*\\*正确性\\*\\*.*?(?=\\n- \\*\\*)\", checklist, re.S)`）再断言「症状修复」与「caller」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_agents_workflow.py",
+      "line": 120,
+      "summary": "`assert \"LOC\" not in body` 这条负向断言同时漏判与误伤：scenario 的 AND 是「正文不含任何以行数 / LOC 为阈值的要求」，写成中文阈值（如「diff 不超过 200 行」）可照常通过；反向地，正文若出现含 `LOC` 子串的正常词（`LOCK`、`BLOCK`，当前计数为 0）会被误判为违规。",
+      "fix": "换成带词边界 + 中文阈值的联合判据，例如 `assert not re.search(r\"\\bLOC\\b|\\d+\\s*行(以内|以下|上限|阈值)\", body)`，并在 Then 注释里写明覆盖两种表述。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_agents_workflow.py",
+      "line": 114,
+      "summary": "`fm, body = frontmatter(...)` 解出的 `fm` 在两个新测试（114 行、126 行）里都未被使用，属本次改动自造的 orphan 变量（F841 形状）。既有 `test_reviewer_no_rerun` 也有同样写法，属沿袭旧习而非新问题，但新增代码可直接避免。",
+      "fix": "两处改为 `_, body = frontmatter(...)`；若想顺带守住「frontmatter 仍是合法 YAML 且字段不变」（S2.md 第 60 行的约束），则保留 `fm` 并加一条最小断言（如 executor 侧 `assert fm.get(\"model\") == \"inherit\"`）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/agents/slice-executor.md",
+      "line": 26,
+      "summary": "新增纪律把 `cx symbols --name` 写进被 install.sh 分发的模板，而 `cx` 是非标准 CLI，template 内其他任何 agent / hook / 命令都未引用过它；新装环境里执行体可能先跑出 command not found 再回退，白费一轮（有「或 Grep」兜底，故影响有限）。措辞是切片包契约原文，若要改需同步 slices/S2.md 与 spec 措辞。",
+      "fix": "把首选项换成模板自带能力、`cx` 降为可选加速：「先在项目里查有没有同义实现（Grep / Glob；装了 `cx` 时 `cx symbols --name` 更快）」。"
+    }
+  ],
+  "fix": {
+    "slice": "final",
+    "ok": true,
+    "commit": "6dde2b87c38185eb0815fbfc49106ef9782049e7",
+    "failed": [],
+    "warnings": [],
+    "summary": "final 通过：scenario 6/6。修 1 条 HIGH（天花板汇总在飞行模式默认路径丢失），commit 6dde2b8：先加 3 条失败测试（tests/test_slice_gate.py::test_gate_json_carries_ceilings · test_record_writes_ceilings_from_gate_json · tests/test_agents_workflow.py::test_workflow_hands_ceilings_to_record，亲眼见红），再实现：slice-gate.py cmd_gate 的 result 加 additive 的 ceilings 字段、cmd_record 在 append_report 后调 record_ceilings（幂等靠已有 report_has_row）；opsx-apply.js 的 GATE schema 声明 ceilings、recordCmds 改用 --json 传整份门禁 JSON（含单引号 shell 转义），否则结构化输出与 --slice/--commit 形式仍会丢字段；回退路径文档 commands/opsx-apply.md 与 skills/openspec-apply-change/SKILL.md 同改保持语义一致。未改任何既有骨架断言。131 tests passed · node --check OK · compileall OK。start fix 被拒（slices.json 无 fix 条目），按指示跳过。"
+  },
+  "final": {
+    "commit": "64e64551428e177eea1465223414c6408a3069e0",
+    "failed": [],
+    "ok": true,
+    "slice": "final",
+    "summary": "final 通过：scenario 6/6",
+    "warnings": []
+  },
+  "reviews": [
+    {
+      "round": 1,
+      "mode": "full",
+      "verdict": "阻断（1 HIGH）",
+      "scope": "切片 S1 实现 commit 29bdf3cdf1"
+    },
+    {
+      "round": 1,
+      "mode": "full",
+      "verdict": "通过（MEDIUM/LOW 若干）",
+      "scope": "切片 S2 实现 commit 4bae4d4914"
+    }
+  ]
+}
