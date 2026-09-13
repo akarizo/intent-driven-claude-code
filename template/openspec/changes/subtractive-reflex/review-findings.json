@@ -23,6 +23,28 @@
       "status": "fixed",
       "fix_commit": "6dde2b87c38185eb0815fbfc49106ef9782049e7",
       "fix_note": "ceilings 进 gate JSON 契约 + cmd_record 调 record_ceilings + opsx-apply.js recordCmds 改 --json 传整份门禁 JSON；3 条新测试先红后绿；final ok scenario 6/6"
+    },
+    {
+      "severity": "HIGH",
+      "source": "pr-review#31 round1",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 630,
+      "summary": "cmd_record 的 int(r[1]) 未设防：非整数行号抛 ValueError，且停在 append_report 之后、timeline_record 之前的半写态；重试被 report_has_row 判 already recorded 直接返回 → 该切片 timeline 门禁行与天花板行永久丢失，record exit 1 让整个 wave 记 blocked、ship 转 draft。",
+      "fix": "抽出 ceiling_rows_from_json()：形状不对整条丢弃、行号不可信降级为 0，解析不抛异常。",
+      "status": "fixed",
+      "fix_commit": "9232fb28c5e58de58560d9a362f13c810d369828",
+      "fix_note": "先失败测试 test_record_survives_bad_ceiling_lineno；顺带补文件头 JSON 契约的 ceilings 字段、清本分支自造的 orphan import pytest。"
+    },
+    {
+      "severity": "MEDIUM",
+      "source": "pr-review#31 round2",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 206,
+      "summary": "ceiling_rows_from_json 的 docstring 声称「解析绝不抛异常」，但 for r in raw or [] 只挡 falsy：真值非可迭代标量迭代本身抛 TypeError，半写态与被修掉的旧 bug 相同。回退路径由 integrator 手写 record --json，没有 JS schema 兜形状。",
+      "fix": "函数首行加 isinstance(raw, (list, tuple)) 守卫，dict / 标量整段丢掉。",
+      "status": "fixed",
+      "fix_commit": "ffed495e23",
+      "fix_note": "例外处置（飞行纪律不自动修 MEDIUM）：本条是上一条修复自己声称的不变量不成立，属把自己的断言变成真。先失败测试 test_record_survives_non_iterable_ceilings。"
     }
   ],
   "deferred": [
@@ -88,6 +110,62 @@
       "line": 26,
       "summary": "新增纪律把 `cx symbols --name` 写进被 install.sh 分发的模板，而 `cx` 是非标准 CLI，template 内其他任何 agent / hook / 命令都未引用过它；新装环境里执行体可能先跑出 command not found 再回退，白费一轮（有「或 Grep」兜底，故影响有限）。措辞是切片包契约原文，若要改需同步 slices/S2.md 与 spec 措辞。",
       "fix": "把首选项换成模板自带能力、`cx` 降为可选加速：「先在项目里查有没有同义实现（Grep / Glob；装了 `cx` 时 `cx symbols --name` 更快）」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "source": "pr-review#31 round1",
+      "file": "template/.claude/workflows/opsx-apply.js",
+      "line": 139,
+      "summary": "ceilings 回写补上了，但同样只存在于临时 worktree 的另两样漏了：hooks_missing（G5 留痕缺失信号，GATE schema 无此属性）与 evidence.log 的 RED→GREEN 行本身。实证就是本 PR：change dir 无 evidence.log，gate-report 的 warnings 列却是 `-`，读 PR 的人看不出留痕没留下来 —— 铁律 3 的判据在飞行模式默认路径上目前是空的。",
+      "fix": "最小修法：hooks_missing 进 payload 与 GATE schema 并在 warnings 列体现；evidence.log 回写属新能力，另立 change。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round1",
+      "file": "template/.claude/agents/code-reviewer.md",
+      "line": 75,
+      "summary": "G8 落地后模板措辞漂移：本文件仍写「G1–G7 通过」，commands/pr-ship.md:134 与 :147 同样。",
+      "fix": "统一改 G1–G8（design.md 里「不改 G1–G7 语义」的历史叙述不动）。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round1",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 322,
+      "summary": "is_doc_or_config(rel) or rel.startswith(NON_SOURCE_PREFIX) 后半段是死条件：is_doc_or_config 首行就判 NON_SOURCE_PREFIX。",
+      "fix": "只留 if is_doc_or_config(rel): continue。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round1",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 297,
+      "summary": "G8 扫描面窄于同一次 gate 的其它判据：added_lines 只看 base..HEAD 已提交新增行，而 changed_files 含未提交改动并被 G3/G6 使用。",
+      "fix": "若要闭合，对未提交部分补一次 git diff --unified=0 HEAD，复用同一解析函数。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round1",
+      "file": "template/openspec/adr/DRAFT-external-capability-intake.md",
+      "line": 9,
+      "summary": "Context 段把外部仓库的量化数据（star 数 / 行数 / benchmark 百分比）当决策依据写死，离线不可复核，而 ADR 不可改只 supersede，风险不对称。",
+      "fix": "注明采集口径与链接，或弱化为量级表述。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round2",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 205,
+      "summary": "ceilings 若被转写成 dict，迭代 key 得到 str → 全部静默丢弃，record 仍打印 recorded: true，天花板表空掉且无信号。",
+      "fix": "record 输出带丢弃计数（如 ceilings_dropped: n），让留痕丢失可观测。"
+    },
+    {
+      "severity": "LOW",
+      "source": "pr-review#31 round2",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 180,
+      "summary": "append_report 直接取 result[\"slice\"] / result[\"ok\"]，缺键时 KeyError 不被 except OSError 捕获，能复现同一类「半写 + 幂等误判」链路（既有代码，非本 diff 引入）。",
+      "fix": "与 ceiling_rows_from_json 同思路：缺键降级为空值，不让留痕失败中断飞行。"
     }
   ],
   "fix": {
@@ -118,6 +196,21 @@
       "mode": "full",
       "verdict": "通过（MEDIUM/LOW 若干）",
       "scope": "切片 S2 实现 commit 4bae4d4914"
+    },
+    {
+      "round": 1,
+      "mode": "full",
+      "verdict": "阻断（1 HIGH）",
+      "scope": "PR #31 相对 main 的完整 diff",
+      "comment": "https://github.com/akarizo/intent-driven-claude-code/pull/31#issuecomment-5653643820"
+    },
+    {
+      "round": 2,
+      "mode": "follow-up",
+      "verdict": "通过",
+      "scope": "f8613fcda2..9232fb28c5",
+      "comment": "https://github.com/akarizo/intent-driven-claude-code/pull/31#issuecomment-5653677425"
     }
-  ]
+  ],
+  "pr": "https://github.com/akarizo/intent-driven-claude-code/pull/31"
 }
