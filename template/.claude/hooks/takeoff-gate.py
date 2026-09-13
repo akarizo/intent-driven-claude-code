@@ -14,17 +14,22 @@
 #   4. 判定不成立                                   → permissionDecision=deny，reason 含 spec.html 与 /opsx-apply
 #   任何异常一律放行，与 intent-gate.py 同规矩。
 #
-# 判据（design D7 / D8）：
+# 判据（design D7 / D8 + 两段式握手）：
 #   人类消息 = type=="user" 且 isMeta 非真、isSidechain 非真、userType=="external"、内容是文本而非 tool_result，
 #              且不含 <local-command-stdout> / <task-notification> / [Request interrupted by user] /
 #              <bash-input> / <bash-stdout> / compact 续写注入等非人类形状。
-#   批准     = 含 <command-name>/opsx-apply（或 /opsx-bulk-apply）；或整条 ≤ 40 字且含批准词。
-#   新鲜度   = 该消息时间 ≥ 计划工件最大 mtime（proposal/design/slices.json/specs/**/spec.md）。
+#   发起     = 含 <command-name>/opsx-apply（或 /opsx-bulk-apply）；或含 change 名；或含 openspec/changes/<name>
+#              / .worktrees/<name> 路径片段。发起只是发起，不构成批准。
+#   确认     = 整条 ≤ 40 字 · 含批准词 · 且不含 change 名与路径片段（先判发起再判确认）。
+#   批准成立 = 转录里最后一条人类消息是确认，且该确认晚于发起、晚于计划工件最大 mtime。
+#   新鲜度   = 计划工件 = proposal/design/slices.json/specs/**/spec.md。
 #              tasks.md 不算计划工件：收口勾选 `- [x]` 是执行记账，勾一下就让批准过期会把自家收口拦死。
-#   多条候选取最新一条。
+#   停下时的输出（CLI stderr 与 hook reason 同源）：当前主模型别名（判不出也停，fail-closed）· 切片/wave 规模
+#              · worktree 与 spec.html 绝对路径 · 补救指引（回一句「起飞」；换模型先 /model）。
 # 只读，不改任何文件。兼容 Python 3.8+，只用标准库。
 import argparse
 import glob
+import importlib.util
 import json
 import os
 import re
@@ -49,6 +54,8 @@ APPROVE_WORD_RE = re.compile(r"批准|起飞|授权|approve|go ahead", re.IGNORE
 # 只吃路径字符：prompt 里常写成 「切片包：`template/openspec/changes/<name>`」，
 # 宽前缀会把反引号 / 全角冒号 / 中文一起吞进来，拼出的路径必不存在 → 静默 fail-open
 CHANGE_PATH_RE = re.compile(r"/?(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+")
+# 起飞发起里常见的 worktree 路径片段：`去 '/abs/repo/.worktrees/<name>' apply <name>, 授权你git提交…`
+WORKTREE_RE = re.compile(r"\.worktrees?/[A-Za-z0-9._-]+")
 
 
 def parse_ts(value):
@@ -107,12 +114,17 @@ def human_text(row):
     return text
 
 
-def approval_of(text):
-    """批准种类：'命令' / '口头'；不构成批准返回 None。"""
+def classify(text, change_name):
+    """一条人类消息 → '发起' / '确认' / None。
+    先判发起：含 change 名或 worktree 路径的长指令即使带「授权」这类词也是发起，不是批准。"""
     if APPLY_CMD_RE.search(text):
-        return "命令"
+        return "发起"
+    if change_name and change_name.lower() in text.lower():
+        return "发起"
+    if CHANGE_PATH_RE.search(text) or WORKTREE_RE.search(text):
+        return "发起"
     if len(text) <= WORD_LIMIT and APPROVE_WORD_RE.search(text):
-        return "口头"
+        return "确认"
     return None
 
 
@@ -125,12 +137,13 @@ def summarize(text):
     return flat if len(flat) <= SUMMARY_LIMIT else flat[:SUMMARY_LIMIT - 1] + "…"
 
 
-def latest_approval(path):
-    """转录里最新一条人类批准 → (datetime, 摘要, 种类)；没有返回 None。"""
+def scan_human(path, change_name):
+    """→ (最后一条人类消息 (datetime, 摘要, 类别)，最新一条发起的 datetime)；两者都可能是 None。"""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         lines = fh.read().splitlines()
-    best = None
-    for line in lines:
+    last = None       # (when, idx, 摘要, 类别)
+    initiated = None
+    for idx, line in enumerate(lines):
         line = line.strip()
         if not line:
             continue
@@ -141,15 +154,15 @@ def latest_approval(path):
         text = human_text(row)
         if not text:
             continue
-        kind = approval_of(text)
-        if not kind:
-            continue
         when = parse_ts(row.get("timestamp"))
         if not when:
             continue
-        if best is None or when > best[0]:
-            best = (when, summarize(text), kind)
-    return best
+        kind = classify(text, change_name)
+        if kind == "发起" and (initiated is None or when > initiated):
+            initiated = when
+        if last is None or (when, idx) > (last[0], last[1]):
+            last = (when, idx, summarize(text), kind)
+    return (None if last is None else (last[0], last[2], last[3])), initiated
 
 
 def plan_mtime(change_dir):
@@ -160,22 +173,114 @@ def plan_mtime(change_dir):
     return datetime.fromtimestamp(max(stamps), timezone.utc) if stamps else None
 
 
+_SESSION_MODEL = []
+
+
+def session_model_module():
+    """按路径加载同目录的 session-model.py（文件名含连字符）；加载不了返回 None。"""
+    if not _SESSION_MODEL:
+        mod = None
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session-model.py")
+            spec = importlib.util.spec_from_file_location("takeoff_session_model", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:
+            mod = None
+        _SESSION_MODEL.append(mod)
+    return _SESSION_MODEL[0]
+
+
+def model_line(session):
+    """停下信息里的主模型一行；判不出也只是点名原因——停下本身不依赖它（fail-closed）。"""
+    unresolved = "executor / reviewer 无法按主模型路由，判不出主模型就不许起飞。"
+    mod = session_model_module()
+    if mod is None:
+        return "当前主模型：判不出——session-model.py 不可用。%s" % unresolved
+    try:
+        model = mod.last_main_model(session)
+    except BaseException:  # last_main_model 读不了文件时会 sys.exit
+        model = None
+    if not model:
+        return "当前主模型：判不出——转录 %s 里没有主循环 assistant 条目。%s" % (session, unresolved)
+    alias = mod.alias_of(model)
+    if not alias:
+        return "当前主模型：判不出——模型 id %s 不在已知别名表内。%s" % (model, unresolved)
+    return "当前主模型：%s（模型 id %s）——executor / reviewer 都会用它。" % (alias, model)
+
+
+def scale_line(change_dir):
+    """规模一行：切片数 · wave 数（按 slices.json 的 deps 拓扑分层）；读不出返回 None，不因此失败。"""
+    try:
+        with open(os.path.join(change_dir, "slices.json"), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        deps = {s["id"]: list(s.get("deps") or []) for s in data["slices"]}
+    except Exception:
+        return None
+    if not deps:
+        return None
+    layer = dict.fromkeys(deps, 0)
+    for _ in range(len(deps)):  # 迭代次数有界：即使 deps 有环也不会空转
+        for sid, ups in deps.items():
+            heights = [layer[d] for d in ups if d in layer]
+            layer[sid] = max(heights) + 1 if heights else 0
+    return "规模：%d 个切片 · %d 个 wave。" % (len(deps), max(layer.values()) + 1)
+
+
+def worktree_of(change_dir):
+    """change 目录向上找含 .git 的目录；找不到就退到 openspec 的上一级。"""
+    cur = os.path.abspath(change_dir)
+    fallback = cur
+    while True:
+        if os.path.exists(os.path.join(cur, ".git")):
+            return cur
+        if os.path.basename(cur) == "openspec":
+            fallback = os.path.dirname(cur)
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return fallback
+        cur = parent
+
+
+def block_message(change_dir, session, head):
+    """停下时一次给全人做判断所需的信息（CLI stderr 与 hook reason 同一段文本）。"""
+    name = os.path.basename(os.path.normpath(change_dir))
+    parts = [head, model_line(session)]
+    scale = scale_line(change_dir)
+    if scale:
+        parts.append(scale)
+    parts.append("worktree：%s · 飞行计划：%s" % (worktree_of(change_dir), os.path.join(change_dir, "spec.html")))
+    parts.append("确认无误就回一句「起飞」（本门禁只认转录里的人类消息，模型不得自证）；要换模型先 /model 切换再回；"
+                 "尚未发起过就由人类显式发出 `/opsx-apply %s`。" % name)
+    return "\n".join(parts)
+
+
 def verdict(change_dir, session):
-    """→ (ok, 证据行, 说明)。ok=False 时说明是给人/模型看的拒绝理由。"""
-    spec_html = os.path.join(change_dir, "spec.html")
+    """→ (ok, 证据行, 说明)。ok=False 时说明是给人/模型看的停下理由。"""
+    change_name = os.path.basename(os.path.normpath(change_dir))
     plan_at = plan_mtime(change_dir)
-    hint = ("请人类打开飞行计划 %s 亲自确认，然后由人类显式发出 `/opsx-apply %s`（本门禁只认转录里的人类消息，"
-            "模型不得自证；人直接回一句「批准」/「起飞」同样成立）。"
-            % (spec_html, os.path.basename(os.path.normpath(change_dir))))
+    last, initiated_at = scan_human(session, change_name)
 
-    approval = latest_approval(session)
-    if not approval:
-        return False, "", "未找到人类批准证据（转录 %s 里没有人类发出的 /opsx-apply，也没有批准词）。%s" % (session, hint)
-
-    when, quote, kind = approval
+    if last is None:
+        return False, "", block_message(change_dir, session,
+                                        "未找到人类消息：转录 %s 里没有可用的人类发言。" % session)
+    when, quote, kind = last
+    if kind == "发起":
+        return False, "", block_message(change_dir, session,
+                                        "最后一条人类消息是起飞发起（%s：%s）——发起不等于批准，"
+                                        "起飞是两段式握手，还缺人类的一句短确认。" % (iso(when), quote))
+    if kind != "确认":
+        return False, "", block_message(change_dir, session,
+                                        "未找到人类批准证据：最后一条人类消息（%s：%s）"
+                                        "既不是起飞发起也不是批准确认。" % (iso(when), quote))
+    if initiated_at is None or when < initiated_at:
+        return False, "", block_message(change_dir, session,
+                                        "这条确认（%s：%s）不是对本次发起的回应——确认不继承历史，"
+                                        "请在发起之后重新确认。" % (iso(when), quote))
     if plan_at and when < plan_at:
-        return False, "", ("批准已过期：人类批准于 %s（%s：%s），而计划工件在 %s 之后又改过——"
-                           "计划变了必须重新批准。%s" % (iso(when), kind, quote, iso(plan_at), hint))
+        return False, "", block_message(change_dir, session,
+                                        "批准已过期：人类确认于 %s（%s），而计划工件在 %s 之后又改过——"
+                                        "计划变了必须重新批准。" % (iso(when), quote, iso(plan_at)))
     return True, "%s · %s" % (iso(when), quote), ""
 
 

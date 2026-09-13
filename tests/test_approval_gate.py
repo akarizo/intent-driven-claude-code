@@ -1,10 +1,8 @@
-"""起飞前的人类批准门禁（scenario: takeoff-approval#*）。
-S4 已实现，骨架标记已去。"""
+"""起飞前的人类批准门禁（scenario: takeoff-approval#* · takeoff-model-confirm#*）。
+S4 与 S1 已实现，骨架标记已去。"""
 import json
 import os
 from datetime import datetime, timezone
-
-import pytest
 
 from conftest import ROOT, run_hook
 
@@ -39,23 +37,29 @@ def change_dir(tmp_path, plan_iso="2026-09-10T08:00:00Z", under=""):
 
 APPLY_CMD = ("<command-message>opsx-apply</command-message> "
              "<command-name>/opsx-apply</command-name> <command-args>demo</command-args>")
+CONFIRM_AT = "2026-09-10T08:58:40Z"
+
+
+def approved_rows(init_ts="2026-09-10T08:58:04Z", confirm_ts=CONFIRM_AT):
+    """两段式握手的最小成立形态：一条发起（/opsx-apply）+ 其后一条人类短确认。"""
+    return [human(APPLY_CMD, init_ts), human("起飞", confirm_ts)]
 
 
 def test_approval_gate_accepts_human_command(tmp_path):
-    # Given: 人类自己发出的 /opsx-apply（晚于计划工件 mtime），以及另一份只说短批准词的转录
+    # Given: 一份只有 /opsx-apply 发起的转录，与一份发起后人又补了短确认「起飞」的转录，两者都晚于计划工件 mtime
     d = change_dir(tmp_path)
     typed = transcript(tmp_path / "typed.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
-    worded = transcript(tmp_path / "worded.jsonl", [human("不相等，起飞", "2026-09-10T09:06:33Z")])
+    confirmed = transcript(tmp_path / "confirmed.jsonl", approved_rows())
 
     # When: 分别以 --session 运行门禁
     p1 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(typed))
-    p2 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(worded))
+    p2 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(confirmed))
 
-    # Then: 都判为批准成立（退出码 0），stdout 打印带时间戳的批准证据
-    assert p1.returncode == 0, p1.stderr
-    assert "2026-09-10T08:58:04Z" in p1.stdout
+    # Then: 只发起不成立（非 0 退出、stdout 无批准结论）；补了确认才成立，且证据取确认那一刻的时间与原话
+    assert p1.returncode != 0, p1.stdout
+    assert "已批准" not in p1.stdout
     assert p2.returncode == 0, p2.stderr
-    assert "起飞" in p2.stdout
+    assert CONFIRM_AT in p2.stdout and "起飞" in p2.stdout
 
 
 def test_approval_gate_rejects_self_start(tmp_path):
@@ -77,9 +81,9 @@ def test_approval_gate_rejects_self_start(tmp_path):
 
 
 def test_approval_gate_requires_fresh_approval(tmp_path):
-    # Given: 批准发生在 08:58，而计划工件在 09:30 又被改过
+    # Given: 两段式握手在 08:58 完成（发起 + 确认），而计划工件在 09:30 又被改过
     d = change_dir(tmp_path, plan_iso="2026-09-10T09:30:00Z")
-    sess = transcript(tmp_path / "sess.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    sess = transcript(tmp_path / "sess.jsonl", approved_rows())
 
     # When: 运行门禁
     p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
@@ -93,7 +97,7 @@ def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
     # Given: 一次指向该 change 的 Workflow 派发；转录里没有批准 / 有批准两种情况
     d = change_dir(tmp_path)
     none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    okay = transcript(tmp_path / "ok.jsonl", approved_rows())
     payload = {"tool_name": "Workflow", "cwd": str(tmp_path),
                "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
 
@@ -143,7 +147,7 @@ def test_takeoff_cli_honors_equals_form_change_dir(tmp_path):
     # Given: 一份无批准的转录、一份有批准的转录，命令行用 --change-dir=DIR 等号写法且 stdin 为空
     d = change_dir(tmp_path)
     none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    okay = transcript(tmp_path / "ok.jsonl", approved_rows())
 
     # When: 以等号写法分别运行 CLI 模式
     p1 = run_hook("takeoff-gate", "--change-dir=" + str(d), "--session=" + str(none))
@@ -152,7 +156,7 @@ def test_takeoff_cli_honors_equals_form_change_dir(tmp_path):
     # Then: 无批准时非 0 退出且 stderr 给补救指引；有批准时 exit 0 并打印批准证据（等号写法不得退化成静默放行）
     assert p1.returncode != 0, p1.stdout
     assert "spec.html" in p1.stderr
-    assert p2.returncode == 0 and "2026-09-10T08:58:04Z" in p2.stdout
+    assert p2.returncode == 0 and CONFIRM_AT in p2.stdout
 
 
 def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
@@ -206,7 +210,7 @@ def test_takeoff_hook_allows_reviewer_dispatch(tmp_path):
 def test_tasks_tick_does_not_expire_approval(tmp_path):
     # Given: 批准成立后，收口把 tasks.md 的 `- [ ]` 勾成 `- [x]`（mtime 变成现在），随后仍有起飞类派发
     d = change_dir(tmp_path)
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+    okay = transcript(tmp_path / "ok.jsonl", approved_rows())
     os.utime(d / "tasks.md", None)
     dispatch = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(okay),
                 "tool_input": {"subagent_type": "slice-executor",
@@ -224,9 +228,9 @@ def test_tasks_tick_does_not_expire_approval(tmp_path):
     assert "重新批准" in replan["permissionDecisionReason"]  # deny 必须来自「过期」而不是「没批准」
 
 
-# ============================================================ S1 骨架：两段式握手（实现后去掉 xfail 标记）
-# ⚠ 本段落地后，上方 test_approval_gate_accepts_human_command 的「/opsx-apply 即批准」断言必须一并改写为
-#    「发起 → 停」；判据收紧是本 change 的刻意行为，不是回归。
+# ============================================================ S1：两段式握手（骨架标记已去）
+# ⚠ 上方 test_approval_gate_accepts_human_command 原本断言「/opsx-apply 即批准」，已随本段一并改写为
+#    「发起 → 停，补一条短确认才成立」；判据收紧是本 change 的刻意行为，不是回归。
 
 INITIATION = ("去 '/abs/repo/.worktrees/demo' apply demo, 授权你git提交, "
               "完成后就pr-ship, 把pr url交付我review")
@@ -237,7 +241,6 @@ def assistant(model, ts="2026-09-12T08:00:00Z"):
             "message": {"role": "assistant", "model": model, "content": []}}
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
 def test_initiation_is_not_approval(tmp_path):
     # Given: 两种发起形式——一行自然语言（含"授权"二字）与 /opsx-apply 命令，都晚于计划工件
     d = change_dir(tmp_path)
@@ -272,7 +275,6 @@ def test_short_confirm_approves(tmp_path):
     assert "2026-09-12T08:59:10Z" in p.stdout and "起飞" in p.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未落停下信息；实现后去掉本标记")
 def test_block_message_shows_model_and_scale(tmp_path):
     # Given: 最后一条人类消息是发起，转录末条主循环 assistant 是 fable，slices.json 为 3 片 / 2 wave
     d = change_dir(tmp_path)
@@ -297,7 +299,6 @@ def test_block_message_shows_model_and_scale(tmp_path):
     assert "起飞" in p.stderr and "/model" in p.stderr   # 确认与换模型两条出路
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
 def test_confirm_must_follow_initiation(tmp_path):
     # Given: 短确认出现在发起之前（上一轮遗留），以及确认之后计划又被改动的两种转录
     d = change_dir(tmp_path)
@@ -321,7 +322,6 @@ def test_confirm_must_follow_initiation(tmp_path):
     assert "重新批准" in p_replan.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未落 fail-closed 主模型判定；实现后去掉本标记")
 def test_unresolvable_model_still_blocks(tmp_path):
     # Given: 最后一条是发起，但模型 id 认不出别名；以及完全没有 assistant 条目的转录
     d = change_dir(tmp_path)
@@ -339,7 +339,6 @@ def test_unresolvable_model_still_blocks(tmp_path):
     assert p_none.returncode != 0
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未落两段式握手；实现后去掉本标记")
 def test_hook_denies_dispatch_without_confirm(tmp_path):
     # Given: 转录里只有发起、没有短确认，来一次起飞类派发
     d = change_dir(tmp_path)
