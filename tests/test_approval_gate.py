@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 
+import pytest
 from conftest import ROOT, run_hook
 
 CMD = ROOT / "template" / ".claude" / "commands"
@@ -355,3 +356,23 @@ def test_hook_denies_dispatch_without_confirm(tmp_path):
     assert out["permissionDecision"] == "deny"
     assert "fable" in out["permissionDecisionReason"]
     assert "起飞" in out["permissionDecisionReason"]
+
+
+# ============================================================ fix：确认分支的否定守卫
+@pytest.mark.parametrize("veto", ["先别起飞，等我看完", "还没看完，先不要批准", "don't approve yet"])
+def test_negation_near_approve_word_is_not_confirm(tmp_path, veto):
+    # Given: 发起之后人类回的是一句明确制止起飞的短消息（「先别起飞，等我看完」/「还没看完，先不要批准」/
+    #        「don't approve yet」——都 ≤40 字且命中批准词 起飞 / 批准 / approve）
+    d = change_dir(tmp_path)
+    t = transcript(tmp_path / "veto.jsonl", [
+        human(INITIATION, "2026-09-12T08:58:04Z"),
+        assistant("claude-opus-5", "2026-09-12T08:58:30Z"),
+        human(veto, "2026-09-12T08:59:10Z"),
+    ])
+
+    # When: 运行 CLI 判定
+    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(t))
+
+    # Then: 非 0 退出，且 stdout 不吐出任何批准证据（人说「别飞」不得被读成批准）
+    assert p.returncode != 0, p.stdout
+    assert p.stdout.strip() == "", p.stdout

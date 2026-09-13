@@ -20,7 +20,8 @@
 #              <bash-input> / <bash-stdout> / compact 续写注入等非人类形状。
 #   发起     = 含 <command-name>/opsx-apply（或 /opsx-bulk-apply）；或含 change 名；或含 openspec/changes/<name>
 #              / .worktrees/<name> 路径片段。发起只是发起，不构成批准。
-#   确认     = 整条 ≤ 40 字 · 含批准词 · 且不含 change 名与路径片段（先判发起再判确认）。
+#   确认     = 整条 ≤ 40 字 · 含批准词 · 不含 change 名与路径片段 · 批准词邻近窗口（±6 字）无制止词
+#              （先判发起再判确认；「先别起飞」这类制止句既非发起也非确认 → 停）。
 #   批准成立 = 转录里最后一条人类消息是确认，且该确认晚于发起、晚于计划工件最大 mtime。
 #   新鲜度   = 计划工件 = proposal/design/slices.json/specs/**/spec.md。
 #              tasks.md 不算计划工件：收口勾选 `- [x]` 是执行记账，勾一下就让批准过期会把自家收口拦死。
@@ -51,6 +52,9 @@ NON_HUMAN_MARKERS = (
 )
 APPLY_CMD_RE = re.compile(r"<command-name>\s*/?(opsx-apply|opsx-bulk-apply)\b", re.IGNORECASE)
 APPROVE_WORD_RE = re.compile(r"批准|起飞|授权|approve|go ahead", re.IGNORECASE)
+# 制止词：出现在批准词邻近窗口里 → 这条是「别飞」而不是「飞」，既非发起也非确认
+NEGATION_RE = re.compile(r"别|不要|不能|暂缓|先等|还没|再等|等等|don't|do not|not yet|hold", re.IGNORECASE)
+NEGATION_WINDOW = 6
 # 只吃路径字符：prompt 里常写成 「切片包：`template/openspec/changes/<name>`」，
 # 宽前缀会把反引号 / 全角冒号 / 中文一起吞进来，拼出的路径必不存在 → 静默 fail-open
 CHANGE_PATH_RE = re.compile(r"/?(?:[A-Za-z0-9._~-]+/)*openspec/changes/[A-Za-z0-9._-]+")
@@ -114,6 +118,16 @@ def human_text(row):
     return text
 
 
+def vetoed(text):
+    """批准词前后各 NEGATION_WINDOW 个字里出现制止词 → True。
+    确认是唯一的批准通路，「先别起飞，等我看完」被读成批准就等于人说停、门禁放飞。"""
+    for m in APPROVE_WORD_RE.finditer(text):
+        window = text[max(0, m.start() - NEGATION_WINDOW):m.end() + NEGATION_WINDOW]
+        if NEGATION_RE.search(window):
+            return True
+    return False
+
+
 def classify(text, change_name):
     """一条人类消息 → '发起' / '确认' / None。
     先判发起：含 change 名或 worktree 路径的长指令即使带「授权」这类词也是发起，不是批准。"""
@@ -124,7 +138,7 @@ def classify(text, change_name):
     if CHANGE_PATH_RE.search(text) or WORKTREE_RE.search(text):
         return "发起"
     if len(text) <= WORD_LIMIT and APPROVE_WORD_RE.search(text):
-        return "确认"
+        return None if vetoed(text) else "确认"
     return None
 
 
