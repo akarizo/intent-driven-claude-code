@@ -11,3 +11,5 @@
 2026-09-13T13:28:21Z	final	ok
 2026-09-13T13:28:25Z	apply-done	blocked=0 blocking=1
 2026-09-13T13:30:03Z	apply-done	blocked=0 blocking=1(fixed) deferred=9
+2026-09-13T13:30:53Z	final	ok
+2026-09-13T13:30:58Z	ship	ready
