@@ -161,8 +161,7 @@ def test_apply_checks_approval_gate():
     assert "record approve" in cmd and "批准证据" in cmd
 
 
-# ------------------------------------------------ 阶段边界与起飞确认 flag（S2 骨架，实现后去掉 xfail 标记）
-@pytest.mark.xfail(strict=True, reason="S2 未改 explore 命令与 skill；实现后去掉本标记")
+# ------------------------------------------------ 阶段边界与两段式起飞握手（S3 实现，xfail 标记已去）
 def test_explore_command_states_boundary():
     # Given: /opsx-explore 命令与 openspec-explore skill
     cmd = read(CMD / "opsx-explore.md")
@@ -180,7 +179,6 @@ def test_explore_command_states_boundary():
         assert "Flow into a proposal" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未改 apply 命令与 skill；实现后去掉本标记")
 def test_apply_command_documents_handshake():
     # Given: /opsx-apply 命令与 openspec-apply-change skill
     cmd = read(CMD / "opsx-apply.md")
@@ -197,7 +195,6 @@ def test_apply_command_documents_handshake():
         assert "takeoff-gate.py" in text
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未改 propose 收尾；实现后去掉本标记")
 def test_propose_prints_takeoff_command():
     # Given: /opsx-propose 命令与 openspec-propose skill
     cmd = read(CMD / "opsx-propose.md")
