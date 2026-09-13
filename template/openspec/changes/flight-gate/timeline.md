@@ -15,3 +15,6 @@
 2026-09-13T03:14:25Z	review	findings=23 blocking=3 deferred=20
 2026-09-13T03:14:47Z	final	ok
 2026-09-13T03:14:50Z	apply-done	blocked=0 blocking=3
+2026-09-13T03:17:49Z	final	ok
+2026-09-13T03:18:04Z	ship	ready
+2026-09-13T03:18:04Z	apply-done	blocked=0 blocking=0（3 HIGH 已闭环） deferred=20

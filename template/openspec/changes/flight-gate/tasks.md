@@ -6,7 +6,7 @@
 
 ## 切片
 
-- [ ] S1 takeoff-gate.py 两段式握手：发起 ≠ 批准 + 停下展示模型与规模 （deps: - · verify: `python3 -m pytest -q tests/test_approval_gate.py`）
-- [ ] S2 phase-gate.py：explore 阶段越界 deny （deps: - · verify: `python3 -m pytest -q tests/test_phase_gate.py`）
-- [ ] S3 hooks.json 注册 + explore / apply / propose 命令与 skill 同改 （deps: S1, S2 · verify: `python3 -m pytest -q tests/test_template_docs.py`）
-- [ ] S4 铁律与文档：CLAUDE.md · snippet · README · WORKFLOW_zh （deps: S1 · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py`）
+- [x] S1 takeoff-gate.py 两段式握手：发起 ≠ 批准 + 停下展示模型与规模 （deps: - · verify: `python3 -m pytest -q tests/test_approval_gate.py`）
+- [x] S2 phase-gate.py：explore 阶段越界 deny （deps: - · verify: `python3 -m pytest -q tests/test_phase_gate.py`）
+- [x] S3 hooks.json 注册 + explore / apply / propose 命令与 skill 同改 （deps: S1, S2 · verify: `python3 -m pytest -q tests/test_template_docs.py`）
+- [x] S4 铁律与文档：CLAUDE.md · snippet · README · WORKFLOW_zh （deps: S1 · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py`）
