@@ -2,10 +2,14 @@
   "worktree": { "baseRef": "head" },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/intent-gate.py\"" } ] }
+      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/intent-gate.py\"" } ] },
+      { "matcher": "Workflow|Agent|Task", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/takeoff-gate.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/takeoff-gate.py\" || exit 0'" } ] },
+      { "matcher": "Write|Edit|Bash", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/phase-gate.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/phase-gate.py\" || exit 0'" } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] }
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] },
+      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/claudemd-lint.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/claudemd-lint.py\" --hook || exit 0'" } ] },
+      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" --hook || exit 0'" } ] }
     ],
     "PostToolUseFailure": [
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] }
@@ -15,6 +19,9 @@
     ],
     "SubagentStop": [
       { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/stop-gate.py\"" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/intent-reminder.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/intent-reminder.py\" || exit 0'" } ] }
     ]
   }
 }

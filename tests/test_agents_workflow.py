@@ -60,6 +60,19 @@ def test_workflow_routes_models_explicitly():
     assert "log(`模型路由" in text
 
 
+def test_workflow_hands_ceilings_to_record():
+    # Given: template/.claude/workflows/opsx-apply.js（飞行模式默认路径：切片在临时 worktree 跑 gate，integrator 用 record 写回）
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    # When: 取 GATE 结构化输出 schema 段与 integrator 的 record 命令拼装行
+    schema = text[text.index("const GATE = {"):text.index("const FINDINGS = {")]
+    record_cmd = re.search(r"slice-gate\.py record [^\n`]*", text)
+
+    # Then: GATE schema 声明 ceilings 属性（否则结构化输出会丢掉天花板行）；record 命令用 --json 传整份门禁 JSON 而不是只传 --slice/--commit
+    assert "ceilings" in schema, schema
+    assert record_cmd and "--json" in record_cmd.group(0), record_cmd and record_cmd.group(0)
+
+
 def test_executor_agent_contract():
     # Given: template/.claude/agents/slice-executor.md
     fm, body = frontmatter(AGENTS / "slice-executor.md")
@@ -106,3 +119,25 @@ def test_integrator_agent_contract():
     assert fm.get("effort") == "low"
     assert "Bash" in tools
     assert "git merge" in body and "_interfaces.md" in body and "slice-gate.py final" in body
+
+
+def test_executor_carries_subtractive_rules():
+    # Given: template/.claude/agents/slice-executor.md 这份执行体契约文件
+    # When: 读它的 frontmatter 与正文
+    fm, body = frontmatter(AGENTS / "slice-executor.md")
+
+    # Then: 三条减法纪律都在（先查已有并复用 · 全部 caller 修在汇流处 · 切角标 ceiling:），且正文不含 LOC 之类的长度阈值
+    assert "先查已有" in body and "复用" in body
+    assert "全部 caller" in body and "汇流处" in body
+    assert "ceiling:" in body
+    assert "LOC" not in body
+
+
+def test_reviewer_flags_symptom_fix():
+    # Given: template/.claude/agents/code-reviewer.md 这份评审员契约文件
+    # When: 读它的 frontmatter 与正文（含审查 checklist）
+    fm, body = frontmatter(AGENTS / "code-reviewer.md")
+
+    # Then: 正确性维度含症状修复（同类输入经其他 caller 仍失败），且既有可维护性维度的重复代码与过度设计条目一条不少
+    assert "症状修复" in body and "caller" in body
+    assert "重复代码" in body and "过度设计" in body

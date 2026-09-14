@@ -58,6 +58,9 @@ const GATE = {
     failed: { type: 'array', items: { type: 'string' } },
     warnings: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
+    // 合规天花板行 [[相对路径, 行号（整数）, 限制, 升级路径], ...]：门禁在临时 worktree 里算出，靠这个字段带回给 record 写进飞行记录
+    // 内层元素无类型约束，执行体可能转写出非整数行号 → 消费侧 slice-gate.py 的 ceiling_rows_from_json 负责宽容化，不在这里 fail
+    ceilings: { type: 'array', items: { type: 'array' } },
   },
 }
 const FINDINGS = {
@@ -130,10 +133,12 @@ for (const [i, allWave] of waves.entries()) {
   const merged = wave.filter((s, k) => done[k] && done[k].ok)
   if (iso && merged.length) {
     const shas = merged.map((s) => done[wave.indexOf(s)].commit)
-    // 临时 worktree 里跑出的门禁结论不会随 commit 进分支，由 integrator 用 record 幂等写回
+    // 临时 worktree 里跑出的门禁结论（含天花板行）不会随 commit 进分支，由 integrator 用 record --json 幂等写回
+    const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
     const recordCmds = merged.map((s) => {
       const g = done[wave.indexOf(s)]
-      return `python3 ${hooksDir}/slice-gate.py record --change-dir ${changeDir} --slice ${s} --commit ${g.commit}${g.ok ? '' : ' --red'}`
+      const payload = { slice: s, ok: !!g.ok, commit: g.commit, failed: g.failed || [], warnings: g.warnings || [], ceilings: g.ceilings || [] }
+      return `python3 ${hooksDir}/slice-gate.py record --change-dir ${changeDir} --json ${shq(JSON.stringify(payload))}`
     })
     const integ = await agent(
       rules('integrator') + `按 agent 定义第 0 项先把 ${changeDir} 内未提交的飞行记录文件（timeline.md / gate-report.md / evidence.log）提交掉；` +

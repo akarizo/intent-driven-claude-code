@@ -5,13 +5,15 @@
 #   lint     --change-dir DIR                 校验 slices.json；stdout 打印 waves JSON；违规 exit 2 并在 stderr 点名规则
 #   waves    --change-dir DIR                 只打印 waves JSON
 #   start    S --change-dir DIR               在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base=HEAD / started）
-#   gate     S --change-dir DIR [--base REF]  跑 G1–G7；stdout 打印 JSON；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
+#   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
 #   final    --change-dir DIR                 全量 test / lint / typecheck + 全部 scenario 状态
 #   baseline --change-dir DIR                 跑一次全量测试，把耗时写回 slices.json.gate.full_suite_sec
 #
-# JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...], "summary"}；failed 每项以 G<n> 开头并点名对象。
+# JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...],
+#             "ceilings": [[路径, 行号, 限制, 升级路径], ...], "summary"}；failed 每项以 G<n> 开头并点名对象。
+#             ceilings 由执行体转写后经 record --json 回流，形状不可信：解析见 ceiling_rows_from_json，绝不抛异常。
 # 兼容 Python 3.8+，只用标准库。
 import argparse
 import fnmatch
@@ -40,6 +42,14 @@ PY_TEST_DEF = re.compile(r"^(\s*)(?:async\s+)?def\s+(test_\w+)\s*\(")
 JS_TEST_DEF = re.compile(r"^\s*(?:test|it)\s*\(\s*[\'\"`](.+?)[\'\"`]")
 JS_BLOCK_START = re.compile(r"^\s*(?:test|it|describe)\s*\(")
 MARK_RE = re.compile(r"xfail|skip", re.I)
+# G8 天花板标记：行首注释紧跟标记，两段用 -> 或 → 分隔（形如 `限制 -> 升级条件/路径`）
+CEILING_RE = re.compile(r"^\s*(?:#|//|--|\*)+\s*ceiling\s*:\s*(.*)$", re.I)
+CEILING_SPLIT = re.compile(r"->|→")
+CEILING_MIN = 4
+CEILING_HEAD = "## 天花板"
+CEILING_COLS = "| 时间 | 切片 | 位置 | 限制 | 升级路径 |"
+CEILING_SEP = "|---|---|---|---|---|"
+DIFF_HUNK_RE = re.compile(r"^@@ .*?\+(\d+)")
 
 
 # ---------------------------------------------------------------- 基础
@@ -183,6 +193,61 @@ def append_report(change_dir, result):
         pass
 
 
+def _cell(text):
+    return text.replace("|", "/").replace("\n", " ")
+
+
+def ceiling_rows_from_json(raw):
+    """门禁 JSON 的 ceilings 字段 → record_ceilings 可用的行；形状不对的整条丢掉，行号不可信降级为 0。
+
+    这个字段全程由执行体的结构化输出转写，不可信。解析绝不抛异常：留痕失败不得中断飞行。
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []  # 非可迭代标量 / dict：整段丢掉，不让迭代自己抛 TypeError
+    out = []
+    for r in raw:
+        if not isinstance(r, (list, tuple)) or len(r) < 4:
+            continue
+        try:
+            ln = int(str(r[1]).strip())
+        except (TypeError, ValueError):
+            ln = 0
+        out.append((str(r[0]), ln, str(r[2]), str(r[3])))
+    return out
+
+
+def record_ceilings(change_dir, slice_id, rows):
+    """把合规天花板标记汇总进 gate-report.md 的「天花板」表。
+
+    表插在 Gate Report 表之前，这样 append_report 继续往文件尾追加的门禁行仍落在 gate 表里。
+    """
+    if not rows:
+        return
+    path = os.path.join(change_dir, REPORT)
+    new = ["| %s | %s | %s:%d | %s | %s |" % (now_iso(), slice_id, rel, ln, _cell(limit), _cell(up))
+           for rel, ln, limit, up in rows]
+    try:
+        lines = []
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        if CEILING_HEAD in lines:
+            at = lines.index(CEILING_HEAD) + 1
+            while at < len(lines) and not lines[at].strip():  # 表头前的空行
+                at += 1
+            while at < len(lines) and lines[at].startswith("|"):  # 表头与已有行，停在表尾空行
+                at += 1
+        else:
+            at = 1 if lines and lines[0].startswith("#") else 0
+            lines[at:at] = ["", CEILING_HEAD, "", CEILING_COLS, CEILING_SEP]
+            at += 5
+        lines[at:at] = new
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
 def evidence_state(change_dir, slice_id):
     """返回 'missing_file' | 'no_rows' | 'red_first' | 'no_red'。"""
     path = os.path.join(change_dir, EVIDENCE)
@@ -242,6 +307,53 @@ def changed_files(root, base):
         if len(line) > 3:
             uncommitted.add(line[3:].split(" -> ")[-1].strip())
     return committed, uncommitted
+
+
+def added_lines(root, base):
+    """产出 base..HEAD 里新增的 (rel_path, lineno, text)。
+
+    注意：`+++ b/<path>` 也以 `+` 开头，必须先判文件头再判内容行。
+    """
+    try:
+        diff = git(root, "diff", "--unified=0", "%s..HEAD" % base)
+    except RuntimeError:
+        return
+    rel, lineno = None, 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            p = line[4:].strip()
+            rel = None if p == "/dev/null" else (p[2:] if p.startswith("b/") else p)
+        elif line.startswith("@@"):
+            m = DIFF_HUNK_RE.match(line)
+            lineno = int(m.group(1)) if m else 0
+        elif line.startswith(("--- ", "diff ", "index ", "old mode", "new mode", "similarity ", "rename ")):
+            continue
+        elif line.startswith("+") and rel:
+            yield rel, lineno, line[1:]
+            lineno += 1
+
+
+def ceiling_rows(root, base):
+    """扫新增源码行里的天花板标记，返回 (failed, rows)；rows 每项 = (rel, lineno, 限制, 升级路径)。
+
+    无标记既不判红也不警告：判据只管标了的完整性，不管该不该标。
+    """
+    failed, rows = [], []
+    for rel, lineno, text in added_lines(root, base):
+        if is_doc_or_config(rel) or rel.startswith(NON_SOURCE_PREFIX):
+            continue
+        m = CEILING_RE.match(text)
+        if not m:
+            continue
+        parts = CEILING_SPLIT.split(m.group(1), 1)
+        limit = parts[0].strip().strip("`").strip()
+        upgrade = parts[1].strip().strip("`").strip() if len(parts) > 1 else ""
+        if len(limit) < CEILING_MIN or len(upgrade) < CEILING_MIN:
+            failed.append("G8 ceiling: %s:%d 缺%s（期望形状 `限制 -> 升级条件/路径`，两段各不少于 %d 字符）" % (
+                rel, lineno, "限制段" if len(limit) < CEILING_MIN else "升级路径段", CEILING_MIN))
+        else:
+            rows.append((rel, lineno, limit, upgrade))
+    return failed, rows
 
 
 def gwt_violations(root, test_files):
@@ -487,11 +599,15 @@ def cmd_gate(args):
     failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel, committed))
     v7, _, _ = scenario_status(root, data, {args.slice})
     failed.extend(v7)
+    v8, ceilings = ceiling_rows(root, base)
+    failed.extend(v8)
 
     result = {"slice": args.slice, "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
               "failed": failed, "warnings": warnings, "hooks_missing": hooks_missing,
+              "ceilings": [[rel, ln, limit, up] for rel, ln, limit, up in ceilings],
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
     append_report(args.change_dir, result)
+    record_ceilings(args.change_dir, args.slice, ceilings)
     timeline_record(args.change_dir, "gate", "%s %s" % (args.slice, "ok" if result["ok"] else "red"))
     if marker is not None:
         if result["ok"]:
@@ -530,6 +646,9 @@ def cmd_record(args):
         print(json.dumps({"recorded": False, "reason": "already recorded"}, ensure_ascii=False))
         return
     append_report(args.change_dir, result)
+    # 临时 worktree 里跑出的天花板行同样不会随 commit 进分支，随门禁结论一起写回（幂等由上面的 report_has_row 兜）
+    record_ceilings(args.change_dir, result.get("slice", ""),
+                    ceiling_rows_from_json(result.get("ceilings")))
     timeline_record(args.change_dir, "gate", "%s %s" % (result.get("slice"), "ok" if result.get("ok") else "red"))
     print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 

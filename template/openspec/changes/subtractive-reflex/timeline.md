@@ -1,0 +1,21 @@
+<!-- timeline: ISO时间\t事件\t备注（由 hooks 自动追加） -->
+2026-09-13T11:32:08Z	baseline	exit 0, 9.6s
+2026-09-13T13:11:38Z	approve	2026-09-13T13:08:39Z · /opsx-apply subtractive-reflex —— takeo…
+2026-09-13T13:18:14Z	gate	S1 ok
+2026-09-13T13:18:14Z	gate	S2 ok
+2026-09-13T13:19:01Z	integrate	wave 1
+2026-09-13T13:19:27Z	final	ok
+2026-09-13T13:27:33Z	fix	blocking=1
+2026-09-13T13:27:44Z	final	ok
+2026-09-13T13:28:07Z	review	findings=10 blocking=1 deferred=9
+2026-09-13T13:28:21Z	final	ok
+2026-09-13T13:28:25Z	apply-done	blocked=0 blocking=1
+2026-09-13T13:30:03Z	apply-done	blocked=0 blocking=1(fixed) deferred=9
+2026-09-13T13:30:53Z	final	ok
+2026-09-13T13:30:58Z	ship	ready
+2026-09-13T13:32:45Z	final	ok
+2026-09-13T13:32:45Z	ship	ready
+2026-09-13T13:32:45Z	ship	ready
+2026-09-13T13:33:54Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/31
+2026-09-13T13:50:36Z	final	ok
+2026-09-13T13:50:36Z	ship	ready

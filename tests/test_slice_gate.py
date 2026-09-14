@@ -126,11 +126,18 @@ def test_mod_adds():
 '''
 
 
-def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None):
-    """构造：已 start 的切片 S1 + 一个含源码与配对测试的 commit。返回 change 目录。"""
+DEFAULT_SRC = "def add(a, b):\n    return a + b\n"
+
+
+def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None, src_body=DEFAULT_SRC, extra_owned=None):
+    """构造：已 start 的切片 S1 + 一个含源码与配对测试的 commit。返回 change 目录。
+
+    src_body 换源码正文；extra_owned 是 {相对路径: 正文}，既写文件也一并进 owns。
+    """
     change = git_repo / "openspec" / "changes" / "c"
+    extra_owned = extra_owned or {}
     data = plan(
-        [slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="python3 -m pytest -q tests/test_mod.py", scenarios=["cap#adds"])],
+        [slice_("S1", ["src/mod.py", "tests/test_mod.py"] + sorted(extra_owned), verify="python3 -m pytest -q tests/test_mod.py", scenarios=["cap#adds"])],
         scenario_tests={"cap#adds": "tests/test_mod.py::test_mod_adds"},
     )
     write_plan(change, data)
@@ -138,11 +145,13 @@ def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None):
     commit_all(git_repo, "artifacts")
     p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
     assert p.returncode == 0, p.stderr
-    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
+    write(git_repo / "src" / "mod.py", src_body)
     write(git_repo / "tests" / "test_mod.py", test_body)
+    for rel, text in extra_owned.items():
+        write(git_repo / rel, text)
     if extra_file:
         write(git_repo / extra_file, "x = 1\n")
-    git(git_repo, "add", "src", "tests")  # 执行体纪律：只 add owns 内文件，不裹飞行记录
+    git(git_repo, "add", "src", "tests", *sorted(extra_owned))  # 执行体纪律：只 add owns 内文件，不裹飞行记录
     git(git_repo, "commit", "-q", "-m", "S1")
     return change
 
@@ -307,4 +316,137 @@ def test_final_gate_reports_scenarios(git_repo):
     out = json.loads(p.stdout)
     assert out["scenarios"]["total"] == 1
     assert out["scenarios"]["passed"] == 1
+    assert out["ok"] is True, out
+
+
+# 标记一律用拼接构造：本仓自身提交这些夹具时，G8 判据不该把它们当成真标记
+CEILING = "ceiling:"
+GOOD_CEILING_SRC = (
+    "def add(a, b):\n    # %s 只支持两个整数相加 -> 需要小数精度时换 Decimal\n    return a + b\n"
+    "\n\ndef sub(a, b):\n    # %s 不做溢出检查 → 出现越界时接入 checked 运算\n    return a - b\n"
+) % (CEILING, CEILING)
+MISSING_UPGRADE_SRC = "def add(a, b):\n    # %s 先用全局锁\n    return a + b\n" % CEILING
+MISSING_LIMIT_SRC = "def add(a, b):\n    # %s -> 以后优化\n    return a + b\n" % CEILING
+NO_MARKER_SRC = 'import re\n\nCEILING_RE = re.compile(r"%s")\n\n\ndef add(a, b):\n    return a + b\n' % CEILING
+
+
+def test_gate_g8_accepts_complete_ceiling(git_repo):
+    # Given: 已 start 的切片 S1，区间内新增的源码行含完整 ceiling 标记（限制 -> 升级路径），半角箭头与全角箭头各一条
+    change = gate_repo(git_repo, src_body=GOOD_CEILING_SRC)
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: failed 里没有以 G8 开头的项；gate-report.md 的天花板表里半角箭头那条有一行含 src/mod.py:2 与限制、升级路径两段文本；全角箭头那条有一行含 src/mod.py:7 与两段文本
+    out = json.loads(p.stdout)
+    rows = (change / "gate-report.md").read_text(encoding="utf-8").splitlines()
+    assert [f for f in out["failed"] if f.startswith("G8")] == [], out["failed"]
+    assert any("src/mod.py:2" in r and "只支持两个整数相加" in r and "需要小数精度时换 Decimal" in r for r in rows), rows
+    assert any("src/mod.py:7" in r and "不做溢出检查" in r and "出现越界时接入 checked 运算" in r for r in rows), rows
+
+
+def test_gate_g8_flags_missing_upgrade_path(git_repo):
+    # Given: 区间内新增的源码行含 `# ceiling: 先用全局锁`，只有限制段、无分隔符与升级路径
+    change = gate_repo(git_repo, src_body=MISSING_UPGRADE_SRC)
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: ok 为 false；failed 含一项以 G8 ceiling: 开头、点名 src/mod.py:2 并说明缺升级路径、给出期望形状
+    out = json.loads(p.stdout)
+    assert out["ok"] is False, out
+    assert any(f.startswith("G8 ceiling:") and "src/mod.py:2" in f and "升级路径" in f and "限制 -> 升级条件/路径" in f for f in out["failed"]), out["failed"]
+
+
+def test_gate_g8_flags_missing_limit(git_repo):
+    # Given: 区间内新增的源码行含 `# ceiling: -> 以后优化`，有分隔符与升级段但限制段为空
+    change = gate_repo(git_repo, src_body=MISSING_LIMIT_SRC)
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: ok 为 false；failed 含一项以 G8 ceiling: 开头并点名 src/mod.py:2 说明缺限制段
+    out = json.loads(p.stdout)
+    assert out["ok"] is False, out
+    assert any(f.startswith("G8 ceiling:") and "src/mod.py:2" in f and "限制" in f for f in out["failed"]), out["failed"]
+
+
+def test_gate_json_carries_ceilings(git_repo):
+    # Given: 已 start 的切片 S1，区间内新增源码含两条完整 ceiling 标记（src/mod.py 第 2 行与第 7 行）
+    change = gate_repo(git_repo, src_body=GOOD_CEILING_SRC)
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: JSON 的 ceilings 字段是两条行，分别为 ["src/mod.py", 2, 限制, 升级路径] 与 ["src/mod.py", 7, ...]
+    out = json.loads(p.stdout)
+    assert out.get("ceilings") == [
+        ["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"],
+        ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"],
+    ], out.get("ceilings")
+
+
+def test_record_writes_ceilings_from_gate_json(git_repo):
+    # Given: 一份带 ceilings 的切片门禁 JSON（S1 ok、commit abc1234def、天花板行 src/mod.py:2），change 分支上还没有它的门禁行
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": [["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"]],
+                            "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录两次
+    run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；gate-report.md 有天花板表头；含 src/mod.py:2 与限制、升级路径两段的行恰好一条（幂等）
+    assert p.returncode == 0, p.stderr
+    text = (change / "gate-report.md").read_text(encoding="utf-8")
+    rows = [l for l in text.splitlines() if "src/mod.py:2" in l and "只支持两个整数相加" in l and "需要小数精度时换 Decimal" in l]
+    assert "## 天花板" in text, text
+    assert len(rows) == 1, rows
+
+
+def test_record_survives_bad_ceiling_lineno(git_repo):
+    # Given: ceilings 的行号不是整数（执行体结构化输出可以给出任意形状，GATE schema 的内层元素无类型约束）
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": [["src/mod.py", "第二行", "只支持两个整数相加", "需要小数精度时换 Decimal"],
+                                         ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"]],
+                            "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0 不抛异常；timeline 的 gate 行已写（不停在 append_report 之后的半写态）；坏行号降级为 :0 仍留下天花板文本，好行照常
+    assert p.returncode == 0, p.stderr
+    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
+    text = (change / "gate-report.md").read_text(encoding="utf-8")
+    assert any("src/mod.py:0" in l and "只支持两个整数相加" in l for l in text.splitlines()), text
+    assert any("src/mod.py:7" in l and "不做溢出检查" in l for l in text.splitlines()), text
+
+
+def test_record_survives_non_iterable_ceilings(git_repo):
+    # Given: ceilings 被转写成真值非可迭代标量（回退路径由 integrator 手写 record --json，没有 JS schema 拦这层）
+    change = gate_repo(git_repo)
+    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
+                            "ceilings": 5, "summary": "通过"}, ensure_ascii=False)
+
+    # When: 用 slice-gate.py record --json 记录
+    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0 不抛 TypeError；门禁行与 timeline 行都写全，不停在半写态
+    assert p.returncode == 0, p.stderr
+    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
+    assert "abc1234def" in (change / "gate-report.md").read_text(encoding="utf-8")
+
+
+def test_gate_g8_silent_without_marker(git_repo):
+    # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明
+    change = gate_repo(git_repo, src_body=NO_MARKER_SRC, extra_owned={"docs/note.md": "# %s 示例说明\n" % CEILING})
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: failed 与 warnings 里都没有以 G8 开头的项；门禁结论与判据引入前一致（ok 仍为 true）
+    out = json.loads(p.stdout)
+    assert [x for x in out["failed"] + out["warnings"] if x.startswith("G8")] == [], out
     assert out["ok"] is True, out
