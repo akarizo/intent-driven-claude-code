@@ -162,10 +162,8 @@ def test_apply_checks_approval_gate():
 
 
 # ---------------------------------------------------------------- flight-preflight-and-retry（scenario: flight-doc-contracts#*）
-# 骨架：xfail(strict) 直到 S4 实现；执行体去掉标记即解锁。
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_pr_ship_asks_before_autofix():
     # Given: template/.claude/commands/pr-ship.md
     text = read(CMD / "pr-ship.md")
@@ -183,7 +181,6 @@ def test_pr_ship_asks_before_autofix():
     assert text.count("AskUserQuestion") <= 1
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_propose_baseline_red_stops():
     # Given: opsx-propose.md 与 openspec-propose/SKILL.md
     cmd = read(CMD / "opsx-propose.md")
@@ -202,7 +199,6 @@ def test_propose_baseline_red_stops():
     assert hooks(cmd) == hooks(skill)
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_schema_verify_excludes_typecheck():
     # Given: schema.yaml 的 tasks 工件 instruction
     schema = read(SCHEMA / "schema.yaml")
