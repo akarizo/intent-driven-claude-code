@@ -1,1 +1,0 @@
-{"started": "2026-09-18T12:23:00Z", "approval": "2026-09-18T12:22:34Z · /opsx-apply flight-preflight-and-retry", "models": {"executor": "fable", "reviewer": "fable", "integrator": "sonnet"}, "efforts": {"executor": "high", "reviewer": "high", "integrator": "low"}, "raw": "fable", "source": "session-model.py"}
