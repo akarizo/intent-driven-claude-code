@@ -454,9 +454,7 @@ def test_gate_g8_silent_without_marker(git_repo):
 
 # ---------------------------------------------------------------- flight-preflight-and-retry
 # （scenario: flight-preflight#* / gate-baseline-diff#* / slice-retry-resume#start-* gate-json-carries-base）
-# 骨架：xfail(strict) 直到 S1 实现；执行体去掉标记即解锁。
 
-import pytest  # noqa: E402
 
 
 def _baseline_repo(git_repo, verify2="true", lint=None):
@@ -473,7 +471,6 @@ def _baseline_repo(git_repo, verify2="true", lint=None):
 LINT_TWO_LINES = "sh -c 'printf \"a.ts(186,41): error TS2339 x\\nb.rs:12: warning y\\n\"; exit 1'"
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_baseline_writes_gate_baseline(git_repo):
     # Given: gate.test 与两片 verify 在当前树上都退出 0；gate.lint 退出 1 并输出两行
     change = _baseline_repo(git_repo, lint=LINT_TWO_LINES)
@@ -491,7 +488,6 @@ def test_baseline_writes_gate_baseline(git_repo):
     assert json.loads((change / "slices.json").read_text(encoding="utf-8"))["gate"]["full_suite_sec"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_baseline_flags_red_verify(git_repo):
     # Given: S2 的 verify 在当前树上退出 1
     change = _baseline_repo(git_repo, verify2="false")
@@ -507,7 +503,6 @@ def test_baseline_flags_red_verify(git_repo):
     assert any("S2" in r and "verify" in r and "基线" in r for r in bl["reasons"])
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_preflight_refuses_missing_or_red_baseline(git_repo):
     # Given: 合法计划但没有 gate-baseline.json；之后再放一个 ok=false 的基线
     change = _baseline_repo(git_repo)
@@ -522,7 +517,6 @@ def test_preflight_refuses_missing_or_red_baseline(git_repo):
     assert p2.returncode != 0 and "S2 verify 在基线上红" in p2.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_preflight_refuses_stale_baseline(git_repo):
     # Given: baseline 绿之后把 S2 的 verify 改掉（plan_sha 不再匹配）
     change = _baseline_repo(git_repo)
@@ -543,7 +537,6 @@ def test_preflight_refuses_stale_baseline(git_repo):
     assert json.loads(p2.stdout) == [["S1", "S2"]]
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_lint_rejects_verify_embedding_typecheck(tmp_path):
     # Given: S1 的 verify 里嵌了 pnpm typecheck 的 grep
     change = tmp_path / "c"
@@ -581,7 +574,6 @@ def _set_gate(change, key, cmd):
     write_plan(change, data)
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_gate_lint_excludes_baseline_lines(git_repo):
     # Given: 已 start 的切片；基线记了 a.ts 的规范化报错；本次 lint 输出同一报错但行列号漂移
     change = gate_repo(git_repo)
@@ -597,7 +589,6 @@ def test_gate_lint_excludes_baseline_lines(git_repo):
     assert any(w.startswith("G2 lint") and "已按基线排除" in w for w in res["warnings"]), res["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_gate_lint_flags_new_lines_only(git_repo):
     # Given: 同上基线；本次 lint 除既有行外多一行 b.ts 的新错误
     change = gate_repo(git_repo)
@@ -628,7 +619,6 @@ def test_gate_lint_red_without_baseline(git_repo):  # 既有行为守卫：判�
     assert not any("已按基线排除" in w for w in res["warnings"])
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_final_typecheck_excludes_baseline_lines(git_repo):
     # Given: 基线记了两行 typecheck 既有错误；final 时 typecheck 输出这两行（行号漂移）；之后再多一行
     change = gate_repo(git_repo)
@@ -646,7 +636,6 @@ def test_final_typecheck_excludes_baseline_lines(git_repo):
     assert any(f.startswith("G2 typecheck") and "新增" in f for f in r2["failed"]), r2["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_start_keeps_marker_for_same_slice(git_repo):
     # Given: 标记为 S1、base 为 X、red_count 为 1；之后又有一个新 commit
     change = gate_repo(git_repo)
@@ -669,7 +658,6 @@ def test_start_keeps_marker_for_same_slice(git_repo):
     assert "\tslice-start\t" in last and "S1" in last and "resume" in last
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_start_accepts_base_flag(git_repo):
     # Given: 没有标记；X 是 HEAD 的父 commit
     change = gate_repo(git_repo)
@@ -689,7 +677,6 @@ def test_start_accepts_base_flag(git_repo):
     assert m2["base"] == git(git_repo, "rev-parse", "HEAD")
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_gate_json_carries_base(git_repo):
     # Given: 已 start 的切片，标记 base 为 X
     change = gate_repo(git_repo)
