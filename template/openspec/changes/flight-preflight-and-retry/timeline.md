@@ -8,3 +8,6 @@
 2026-09-18T12:28:24Z	final	red
 2026-09-18T12:32:56Z	fix	blocking=1
 2026-09-18T12:33:43Z	final	red
+2026-09-18T12:34:16Z	review	findings=14 blocking=1 deferred=13
+2026-09-18T12:34:42Z	final	red
+2026-09-18T12:34:48Z	apply-done	blocked=2 blocking=1
