@@ -5,3 +5,4 @@
 2026-09-18T12:27:21Z	gate	S2 ok
 2026-09-18T12:27:21Z	gate	S4 ok
 2026-09-18T12:27:51Z	integrate	wave 1
+2026-09-18T12:28:24Z	final	red
