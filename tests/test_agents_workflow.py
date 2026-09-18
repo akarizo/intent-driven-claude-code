@@ -144,13 +144,12 @@ def test_reviewer_flags_symptom_fix():
 
 
 # ---------------------------------------------------------------- flight-preflight-and-retry（scenario: slice-retry-resume#workflow-* / apply-docs-*）
-# 骨架：xfail(strict) 直到 S3 实现；执行体去掉标记即解锁。
+# S3 已解锁（骨架标记已去）。
 
 CMD = ROOT / "template" / ".claude" / "commands"
 SKILLS = ROOT / "template" / ".claude" / "skills"
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_workflow_retry_resumes_previous_commit():
     # Given: template/.claude/workflows/opsx-apply.js
     text = WORKFLOW.read_text(encoding="utf-8")
@@ -168,7 +167,6 @@ def test_workflow_retry_resumes_previous_commit():
     assert node_ok
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_apply_docs_mirror_retry_and_preflight():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
