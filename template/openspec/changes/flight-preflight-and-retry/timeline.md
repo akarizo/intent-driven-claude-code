@@ -13,3 +13,5 @@
 2026-09-18T12:34:48Z	apply-done	blocked=2 blocking=1
 2026-09-18T12:36:13Z	slice-start	S3
 2026-09-18T12:37:50Z	gate	S3 ok
+2026-09-18T12:38:52Z	integrate	wave 2 (fallback dispatch)
+2026-09-18T12:39:12Z	final	ok

@@ -31,6 +31,23 @@
 
 `tests/test_evidence_timeline.py` — 覆盖 change 定位优先级与歧义拒写的测试。
 
+
+## S3 — 工作流重试接续：重派带上一轮 commit/base，回退路径语义同改
+
+`template/.claude/workflows/opsx-apply.js`
+
+- `startCmd(s, base)` — `slice-gate.py start` 命令拼装，新增可选 `--base`（接续上一轮记录的区间起点，`start` 对同片幂等）。
+- `executorPrompt(s, retryOf)` — 重派 prompt：`retryOf.commit` 存在时第零步先校验/接上上一轮 commit（`git cherry-pick`，冲突则 abort 并回 `G0 base` 失败），再用 `retryOf.base` 跑 `start --base`；首轮仍走原 `expectHead` 基分支校验。
+- `GATE` schema — 新增 `base` 字段（string，本轮 `start` 记录的区间起点 sha，随门禁 JSON 回传给下一轮重派）。
+
+`template/.claude/agents/slice-executor.md` 开工步骤2 — 重派时按 prompt 第零步接上上一轮 commit，再跑带 `--base` 的 `start`（幂等，不改写起点）。
+
+`template/.claude/commands/opsx-apply.md` / `template/.claude/skills/openspec-apply-change/SKILL.md`：
+- 步骤3 lint 后新增 `slice-gate.py preflight`：非 0（缺基线/基线红/基线过期）→ 停下报告，不进入实现。
+- 步骤5 Workflow 回退路径：门禁红重派同一切片时，prompt 带上一轮 `commit` 与 `base`，语义与 `opsx-apply.js` 的 `executorPrompt`/`startCmd` 逐项一致。
+
+`tests/test_agents_workflow.py` — 覆盖以上重试接续行为的测试（无对外接口）。
+
 ## S4 — 文档契约：pr-ship 自动修前问一次 · propose 基线红即停 · schema verify 只跑测试
 
 - `template/.claude/commands/pr-ship.md` step 10：CRITICAL/HIGH 自动修复前唯一一次 AskUserQuestion（『自动修并 push』/『只贴评论交人』，无应答默认只贴评论）；step 11 收尾不再问询，直接打印 Output Summary。
