@@ -141,3 +141,46 @@ def test_reviewer_flags_symptom_fix():
     # Then: 正确性维度含症状修复（同类输入经其他 caller 仍失败），且既有可维护性维度的重复代码与过度设计条目一条不少
     assert "症状修复" in body and "caller" in body
     assert "重复代码" in body and "过度设计" in body
+
+
+# ---------------------------------------------------------------- flight-preflight-and-retry（scenario: slice-retry-resume#workflow-* / apply-docs-*）
+# 骨架：xfail(strict) 直到 S3 实现；执行体去掉标记即解锁。
+
+CMD = ROOT / "template" / ".claude" / "commands"
+SKILLS = ROOT / "template" / ".claude" / "skills"
+
+
+@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
+def test_workflow_retry_resumes_previous_commit():
+    # Given: template/.claude/workflows/opsx-apply.js
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    # When: 取 executorPrompt 函数体与 GATE schema 段
+    prompt = text[text.index("const executorPrompt"):text.index("const reviewPrompt")]
+    schema = text[text.index("const GATE = {"):text.index("const FINDINGS = {")]
+    node_ok = subprocess.run(["node", "--check", str(WORKFLOW)], capture_output=True, text=True).returncode == 0 if shutil.which("node") else True
+
+    # Then: 重试分支含 git cherry-pick 与 retryOf.commit，并以 --base 传 retryOf.base；首轮仍含 expectHead；schema 有 base；node --check 通过
+    assert "git cherry-pick" in prompt and "retryOf.commit" in prompt
+    assert "--base" in prompt and "retryOf.base" in prompt
+    assert "expectHead" in prompt
+    assert re.search(r"base:\s*\{\s*type:\s*'string'", schema), schema
+    assert node_ok
+
+
+@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
+def test_apply_docs_mirror_retry_and_preflight():
+    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 检查 step 3 与回退路径
+    def hooks(t):
+        return set(re.findall(r"(slice-gate\.py|spec_html\.py|timeline\.py|session-decompose\.py)", t))
+
+    # Then: 两者都在 lint 之后跑 preflight 并说明非 0 停飞；回退路径都含 cherry-pick 与 --base；hook 脚本集合一致
+    for t in (cmd, skill):
+        assert t.index("slice-gate.py lint") < t.index("slice-gate.py preflight")
+        assert "停" in t[t.index("slice-gate.py preflight"):t.index("slice-gate.py preflight") + 400]
+        assert "cherry-pick" in t and "--base" in t
+    assert hooks(cmd) == hooks(skill)

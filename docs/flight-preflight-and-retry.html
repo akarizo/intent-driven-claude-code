@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>飞行工作流复盘与修复方案</title>
+<meta name="description" content="scale-visibility-refine 实战暴露的 6 处工作流缺陷：证据、根因、修法、待批决策">
+<style>
+:root{
+  --bg:#f7f7f5;--panel:#ffffff;--ink:#1c1c1a;--muted:#5f5f5a;--line:#e3e2dd;
+  --accent:#2f5fa3;--ok:#2d7a4b;--warn:#b7791f;--bad:#b3352e;--soft:#eef2f8;--code:#f1f1ee;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141414;--panel:#1d1d1d;--ink:#ececea;--muted:#a3a39d;--line:#333;
+    --accent:#7ea6e8;--ok:#67c08a;--warn:#e0a94a;--bad:#e2726b;--soft:#22293a;--code:#262626;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141414;--panel:#1d1d1d;--ink:#ececea;--muted:#a3a39d;--line:#333;
+  --accent:#7ea6e8;--ok:#67c08a;--warn:#e0a94a;--bad:#e2726b;--soft:#22293a;--code:#262626;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;padding:0 16px 80px}
+main{max-width:1080px;margin:0 auto}
+h1{font-size:26px;margin:32px 0 6px}
+h2{font-size:20px;margin:40px 0 12px;padding-top:8px;border-top:2px solid var(--line)}
+h3{font-size:16px;margin:22px 0 8px}
+p{margin:8px 0}
+.sub{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
+.chip{background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+th,td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+th{background:var(--soft)}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:var(--code);padding:10px 12px;border-radius:8px;overflow:auto;font-size:12.5px;line-height:1.5}
+.tag{display:inline-block;padding:0 7px;border-radius:4px;font-size:12px;font-weight:600;color:#fff}
+.t-bad{background:var(--bad)}.t-ok{background:var(--ok)}.t-warn{background:var(--warn)}.t-acc{background:var(--accent)}
+.ev{border-left:3px solid var(--accent);padding:4px 10px;margin:6px 0;color:var(--muted);font-size:13px}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;margin:10px 0}
+.box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:120px;flex:1 1 140px;font-size:13px}
+.box.bad{border-color:var(--bad)}.box.ok{border-color:var(--ok)}.box.warn{border-color:var(--warn)}
+.arrow{align-self:center;color:var(--muted);font-size:18px;padding:0 2px}
+.box b{display:block;font-size:13px;margin-bottom:2px}
+.q{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;margin:12px 0}
+.q label{display:block;padding:4px 0;cursor:pointer}
+.q input[type=radio],.q input[type=checkbox]{margin-right:8px}
+.rec{color:var(--ok);font-weight:600;font-size:12px;margin-left:6px}
+textarea{width:100%;min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--code);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;margin:6px 6px 6px 0}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.toc{font-size:13.5px}.toc a{color:var(--accent);text-decoration:none;margin-right:14px}
+.small{font-size:12.5px;color:var(--muted)}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:13.5px}
+@media (max-width:640px){.kv{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>飞行工作流复盘与修复方案</h1>
+<p class="sub">实战来源：<code>amc/gateway</code> change <code>scale-visibility-refine</code>（2026-09-18，会话 <code>95eef968</code>，MR !39）。本页是修改本仓库 template 之前的意图审批面板：先批方向，再写 change 工件与代码。</p>
+<div class="chips">
+  <span class="chip">缺陷 6 处（你报 4 + 复盘发现 2）</span>
+  <span class="chip">证据全部来自转录 / 飞行记录 / git，无自述</span>
+  <span class="chip">修法全部是脚本级：零 token</span>
+  <span class="chip">待你决定 6 项 → 页底导出</span>
+</div>
+<p class="toc" style="margin-top:14px">
+  <a href="#tldr">结论</a><a href="#timeline">飞行经过</a><a href="#defects">六处缺陷</a><a href="#q1">追问① 停飞可避免吗</a><a href="#q2">追问② PR 后未问就修</a><a href="#design">修复设计</a><a href="#slices">切片计划</a><a href="#decide">待决定 · 导出</a>
+</p>
+
+<h2 id="tldr">0 · 结论先行</h2>
+<div class="grid">
+  <div class="card"><b>四个问题全部属实，根因都在 template 脚本</b>
+    <ul style="margin:6px 0 0 18px;padding:0">
+      <li>切片 lint 全 change 计算 → <code>slice-gate.py</code> 对 <code>gate.lint</code> 原样执行，没有基线也没有区间</li>
+      <li>重试基准校验拒绝上一轮 commit → <code>opsx-apply.js</code> 重试仍用起飞时的 <code>expectHead</code></li>
+      <li>evidence 写错目录 → <code>test-evidence.py</code> 无标记时按字母序猜第一个未完成 change</li>
+      <li>S3 verify 没排除既有错误 → typecheck 无基线、verify 手搓 grep、规划 lint 不拦</li>
+    </ul>
+  </div>
+  <div class="card"><b>复盘另发现两处</b>
+    <ul style="margin:6px 0 0 18px;padding:0">
+      <li>重试重跑 <code>start</code> 把 base 重置到上一轮 commit、<code>red_count</code> 归零 → 门禁区间变空、stop-gate 之后连拦 6 次</li>
+      <li>基线全量测试 <code>exit 101</code>（红）照常批准起飞 → 环境坏的判定推迟到飞行中</li>
+    </ul>
+  </div>
+  <div class="card"><b>追问①：停飞能避免吗</b>
+    <p style="margin:6px 0 0">能，而且该避免。这个 change 派发 3 次才飞完，4 个停飞原因全部可在起飞前用脚本判出（详见 §3）。修法 F2「起飞前预检」。</p>
+  </div>
+  <div class="card"><b>追问②：给了 PR 地址后没问就修</b>
+    <p style="margin:6px 0 0">属实。行为与 <code>pr-ship.md</code> step 10「CRITICAL/HIGH 自动修复，不问询」一致，不是模型越权；但你的全局 CLAUDE.md 列举的授权范围里没有「自动修并 push 修复 commit」。两份文档打架，需要你定（D5）。</p>
+  </div>
+</div>
+
+<h2 id="timeline">1 · 飞行经过：一个 change，三次派发</h2>
+<p class="sub">时间为 UTC。批准 09:05:34 → MR 打开 09:38:57，共 33.4 分钟；其中真正写代码的时间不到一半。</p>
+<table>
+<tr><th style="width:70px">派发</th><th style="width:110px">时间</th><th>waves</th><th>发生了什么</th><th style="width:150px">停飞原因</th><th style="width:90px">起飞前可判？</th></tr>
+<tr><td>run 1<br><span class="small">wf_5dd314f2</span></td><td>09:05–09:07</td><td>[S0] [S1,S2] [S3]</td>
+  <td>S0 门禁红 #1：G2 lint 对 propose 阶段提交的 Rust 测试骨架跑 rustfmt（S0 只 owns <code>slice-gate.py</code>）。重试：第零步 <code>G0 base: worktree HEAD 不是 c5134a6b31</code>，HEAD 是 S0 自己上一轮的 commit 99f8e1a。执行体随后手工格式化不属于自己的 .rs 文件 → G6 ownership 红。</td>
+  <td><span class="tag t-bad">缺陷 1 + 2</span></td><td>是（基线 lint 红）</td></tr>
+<tr><td>run 2<br><span class="small">wf_3e10e356</span></td><td>09:10–09:23</td><td>[S1,S2] [S3]</td>
+  <td>S1 / S2 各在临时 worktree。S2 绿（先手工 <code>ln -s</code> 主 worktree 的 node_modules）。S1 红 ×2：verify 写成 <code>cargo test --test mod requests::a requests::b</code>，cargo 报 unexpected argument；重试拿到的是全新 worktree，看不到上一轮 commit 3f1e84c，从头重做 3.5 分钟后撞同一堵墙（e92af59）。S3 因依赖 S1 记 blocked。</td>
+  <td><span class="tag t-bad">verify 不可运行 + 缺陷 2</span></td><td>是（基线上 verify 红）</td></tr>
+<tr><td>手工</td><td>09:28–09:30</td><td>S1</td>
+  <td>主会话修 verify 后自己跑 S1 门禁。09:28:33 那条 <code>sed</code> 命令文本里含「cargo test」，hook 误触发，此刻标记不存在，回退猜到 <code>fix-kafka-ingest-loss</code> 写了一行 → 09:29:17 门禁报 G6 + 工作树脏。S1 仍红：loco-openapi 路由累积导致随机 panic（基线同样复现）。</td>
+  <td><span class="tag t-bad">缺陷 3 + 缺陷 6</span></td><td>是（基线本来就红）</td></tr>
+<tr><td>run 3<br><span class="small">wf_5fa44e4a</span></td><td>09:32–09:36</td><td>[S3]</td>
+  <td>S3 红 ×2：verify 里的 typecheck grep 命中 <code>src/api/system.ts</code> 与 <code>hook.tsx</code> 自首个 commit 起就有的 18 处类型错误。重试重跑 <code>start</code>：base 被重置为 S3 自己的 commit 5c452e3，区间为空，第一轮出现的 G3 pairing 在第二轮消失；<code>red_count</code> 归零，之后 stop-gate 在 09:39–09:57 连拦主会话 6 次。</td>
+  <td><span class="tag t-bad">缺陷 4 + 5</span></td><td>是（基线上 verify 红）</td></tr>
+<tr><td>基线</td><td>08:53:58</td><td>—</td><td><code>baseline exit 101, 62.2s</code>：全量测试在起飞前就是红的，流程照常走到批准。</td><td><span class="tag t-warn">缺陷 6</span></td><td>已经判出，但没人拦</td></tr>
+</table>
+
+<h2 id="defects">2 · 六处缺陷：现象 → 证据 → 根因 → 修法</h2>
+
+<div class="card">
+<h3>缺陷 1 · 切片 lint 按整个 change 算文件 <span class="tag t-acc">F1</span></h3>
+<div class="kv">
+<span>现象</span><span>S0 只 owns <code>.claude/hooks/slice-gate.py</code>，G2 lint 却对 <code>backend/tests/requests/*.rs</code> 报 rustfmt 差异。</span>
+<span>证据</span><span>gate-report 09:06:31 S0 red「G2 lint: exit 1 … gap &lt; 60 …」；09:07:30 S0 red「G6 ownership: backend/tests/requests/manual_scale.rs 不在 owns 内」（执行体为了过 lint 去改了别人的文件）。</span>
+<span>根因</span><span><code>template/.claude/hooks/slice-gate.py:577-582</code>：<code>cmd_gate</code> 对 <code>gate.lint</code> 原样 <code>run_cmd</code>；作者把 lint 写成 <code>git diff main...HEAD -- "*.rs"</code>，覆盖整条分支。基线阶段没有记录 lint 输出，门禁也没有区间概念。</span>
+<span>修法</span><span><b>F1 基线差分</b>：<code>baseline</code> 时记录 lint / typecheck 的规范化输出行；切片门禁与 final 只对「基线没有的行」判红，与基线一致则降级为 warning「既有 N 行已按基线排除」。作者无需配合，零 token。</span>
+</div>
+</div>
+
+<div class="card">
+<h3>缺陷 2 · 重试时基准校验拒绝上一轮的 commit <span class="tag t-acc">F3</span></h3>
+<div class="kv">
+<span>现象</span><span>单切片 wave（不隔离）重试立即失败；多切片 wave（隔离）重试从零重做。</span>
+<span>证据</span><span>run 1 转录 09:06:55 执行体返回 <code>{"failed":["G0 base: worktree HEAD 不是 c5134a6b31"],"summary":"当前 HEAD 是 99f8e1a（上一轮已提交的 S0 commit …"}</code>。run 2 临时 worktree wf-1 与 wf-3 各有一个同题不同 sha 的 S1 commit（3f1e84c / e92af59）。</span>
+<span>根因</span><span><code>template/.claude/workflows/opsx-apply.js:87-98</code> <code>executorPrompt(s, retryOf)</code> 重试时仍用起飞时的 <code>expectHead</code> 做第零步校验；隔离模式下每次 <code>agent()</code> 都是新 worktree（已核实 Workflow API 无复用入口），上一轮 commit 只在 <code>worktree-wf_*-1</code> 分支上，「只修这些门禁项」无从下手。</span>
+<span>修法</span><span><b>F3 重试接续</b>：门禁 JSON 带上 <code>base</code>；重试第零步改为「HEAD ≠ 上一轮 commit 则 <code>git cherry-pick &lt;retryOf.commit&gt;</code>（worktree 共享对象库，两种模式都可达；冲突则 abort 返回 G0）」，再 <code>start &lt;S&gt; --base &lt;retryOf.base&gt;</code>。</span>
+</div>
+</div>
+
+<div class="card">
+<h3>缺陷 3 · evidence hook 写错 change 目录 <span class="tag t-acc">F4</span></h3>
+<div class="kv">
+<span>现象</span><span>S1 门禁报 <code>openspec/changes/fix-kafka-ingest-loss/evidence.log</code> 不在 owns 内 + 工作树脏；执行体只好 <code>git checkout --</code> 复原。</span>
+<span>证据</span><span>主会话 09:28:33 命令 <code>sed -i '' 's#cargo test --test mod …#…#' openspec/changes/…/slices.json</code>：文本含「cargo test」命中 <code>TEST_RE</code>；<code>start S1</code> 在 09:28:40 才写标记（09:10:48 S0 门禁绿时已删旧标记）。gateway 仓库有 11 个 tasks.md 未勾完的 change，按字母序第一个正是 <code>fix-kafka-ingest-loss</code>。</span>
+<span>根因</span><span><code>template/.claude/hooks/test-evidence.py:51-62</code> 无标记时的回退 = 遍历 <code>openspec/changes/*</code> 取第一个有未勾选项的 change，这是猜测；多活跃 change 的仓库里几乎必错。</span>
+<span>修法</span><span><b>F4 禁猜</b>：定位顺序改为 标记 → 当前分支名 <code>worktree-&lt;name&gt;</code> 且 <code>openspec/changes/&lt;name&gt;</code> 存在 → 恰好只有一个未完成 change → 否则不写。<span class="small">（<code>TEST_RE</code> 会被 sed / grep 文本误触发是另一个小问题，本次只记不修。）</span></span>
+</div>
+</div>
+
+<div class="card">
+<h3>缺陷 4 · S3 verify 没排除既有错误 <span class="tag t-acc">F1 + F2</span></h3>
+<div class="kv">
+<span>现象</span><span>S3 verify = <code>pnpm test &amp;&amp; ! (pnpm -s typecheck | grep -E "src/(views/system/jobs|api/system|…)")</code>，改动文件 0 处类型错误仍红。</span>
+<span>证据</span><span>gate-report 09:34:33 / 09:35:15；review-findings.json blocked：「命中 src/api/system.ts:174-189 与 hook.tsx:189 共 18 处既有错误（自 7e6b525 Initial commit 起即存在）… 规划缺陷：verify 未按基线排除既有错误」。已用 <code>git show main:</code> 复核这些行在 main 上原样存在。</span>
+<span>根因</span><span>三层都缺：typecheck 没有基线（F1）；verify 手搓 typecheck grep，<code>lint_plan</code>（<code>slice-gate.py:133-163</code>）不拦；<code>cmd_baseline</code>（<code>:686-700</code>）从不试跑各切片 verify，命令写错要到飞行中才知道。</span>
+<span>修法</span><span>F1 基线差分覆盖 <code>gate.typecheck</code>；<b>规划 lint 新规则</b>：verify 禁含 typecheck / lint 工具名（<code>tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci</code>），提示放到 <code>gate.typecheck</code> / <code>gate.lint</code>；<b>F2 预检</b>：baseline 逐片试跑 verify，骨架都是 strict-xfail 所以基线上必须绿，红即停下报告。</span>
+</div>
+</div>
+
+<div class="card">
+<h3>缺陷 5 · 重试重跑 start：base 重置 + red_count 归零 <span class="tag t-warn">复盘发现</span> <span class="tag t-acc">F3</span></h3>
+<div class="kv">
+<span>证据</span><span>worktree 根的 <code>.openspec-slice</code> 现为 <code>{"slice":"S3","base":"5c452e3…","red_count":1}</code>：base 就是 S3 自己的 commit，两次红只记了 1 次。第一轮 09:34:33 有「G3 pairing: 改了源码 … 但区间内没有测试文件改动」，第二轮 09:35:15 该项消失（区间为空）。09:39 起主会话每次收口都被 stop-gate 拦：「S3 已 start 但门禁未绿」，共 6 次。</span>
+<span>根因</span><span><code>slice-gate.py:531-541</code> <code>cmd_start</code> 无条件覆盖标记。</span>
+<span>修法</span><span><code>start</code> 对同一切片幂等：已有标记则保留 base 与 red_count，只记 <code>slice-start S3 (resume)</code>；新增 <code>--base</code> 供隔离模式重试钉住原始基准。红两次后 stop-gate 按既有规则放行。</span>
+</div>
+</div>
+
+<div class="card">
+<h3>缺陷 6 · 基线红照常起飞 <span class="tag t-warn">复盘发现</span> <span class="tag t-acc">F2</span></h3>
+<div class="kv">
+<span>证据</span><span>timeline 08:53:58 <code>baseline exit 101</code>；09:05:34 approve。S1 最终以 <code>infra</code> 记 blocked，原因「loco-openapi … 基线 flight_batch 同样复现」。</span>
+<span>根因</span><span><code>cmd_baseline</code> 退出码只是提示；<code>opsx-propose.md</code> step 4 不因红停下；<code>lint</code>（apply step 3）与 <code>takeoff-gate.py</code> 都不看基线。四种暂停例外里的「测试环境本身坏（verify 在改动前就不可运行）」本可在起飞前判定。</span>
+<span>修法</span><span>F2：baseline 产出 <code>gate-baseline.json</code>；<code>slice-gate.py lint</code> 缺它 / 不 ok / 过期 → 非 0 停飞。人类收窄 <code>gate.test</code> 或修环境后重跑 baseline；改了计划文件即触发 takeoff-gate 的新鲜度重批。</span>
+</div>
+</div>
+
+<h2 id="q1">3 · 追问①：起飞后停下来，需要避免吗、能避免吗</h2>
+<div class="card">
+<p><b>需要，且大部分能。</b>这次 4 个停飞原因没有一个是「设计想错了」，全是环境与命令层面的事实，在批准之前就能用脚本判定：</p>
+<table>
+<tr><th>停飞原因</th><th>类型</th><th>起飞前预检能拦？</th><th>靠什么</th></tr>
+<tr><td>S0：lint 对不属于本片的骨架文件报差异</td><td>基线本就有的问题</td><td><span class="tag t-ok">能</span></td><td>baseline 记 lint 基线，门禁只看新增</td></tr>
+<tr><td>S1：verify 命令语法错，cargo 直接拒绝</td><td>命令不可运行</td><td><span class="tag t-ok">能</span></td><td>baseline 逐片试跑 verify，非 0 即报</td></tr>
+<tr><td>S1：loco-openapi 路由累积随机 panic</td><td>环境坏</td><td><span class="tag t-ok">能</span></td><td>baseline 已经 exit 101，只是没人拦</td></tr>
+<tr><td>S3：typecheck 命中 18 处既有错误</td><td>基线本就有的问题</td><td><span class="tag t-ok">能</span></td><td>同上两条</td></tr>
+<tr><td>S2：临时 worktree 没有 node_modules</td><td>基础设施</td><td><span class="tag t-warn">部分</span></td><td>不是停飞原因；可在预检里提示「verify 依赖未纳入 git 的目录」，本次不做</td></tr>
+</table>
+<p><b>不能靠预检避免的</b>：切片对接口 / 数据模型的理解偏差。那是 spec、design、切片评审的职责，不属于本次。</p>
+<p><b>代价</b>：预检 = 全量测试一次 + 各片 verify 各一次，本例约 62 s + 3 × 30 s ≈ 3 分钟；对比三次派发与 33 分钟的飞行，划算。预检跑在 propose 阶段的 baseline 步骤，也就是人类批准之前，红会直接出现在审批面板里。</p>
+</div>
+
+<h2 id="q2">4 · 追问②：给了 PR 地址，code-review 出问题却没问我就修</h2>
+<div class="card">
+<p><b>属实。</b>转录（会话 95eef968，UTC）：</p>
+<table>
+<tr><th style="width:80px">时间</th><th>动作</th></tr>
+<tr><td>09:38:07</td><td>主会话自己调用 Skill <code>pr-ship</code>（<code>opsx-apply.md</code> step 7「不问，直接进入 /pr-ship」），不是你发的命令</td></tr>
+<tr><td>09:39:09</td><td>向你报告「draft MR 已建好：…/merge_requests/39」</td></tr>
+<tr><td>09:42:12</td><td>评审回来 1 个 HIGH；回复里写「修这个 HIGH」，未问询</td></tr>
+<tr><td>09:43:24</td><td>应用修复脚本 → commit <code>f3f7333</code> → push → 派 follow-up 复核</td></tr>
+<tr><td>09:38–09:57</td><td>整段 <code>AskUserQuestion</code> 调用次数：0。你 09:51 主动要 MEDIUM 方案时它出了方案页并等你，那次是问了的</td></tr>
+</table>
+<p><b>定性</b>：与 <code>pr-ship.md</code> step 10「CRITICAL/HIGH 自动修复（至多 2 轮，不问询）」和 Guardrail「全程至多问询 1 次（仅 step 11 收尾）」完全一致，模型没有越出命令文档。但你的全局 CLAUDE.md git 第 5 条把 <code>/opsx-apply</code>、<code>/pr-ship</code> 的授权列为「commit · push feature 分支 · 建 PR/MR · 贴 AI review 评论 · 转 draft/ready」，没有「按 AI 评审自动改代码并 push 修复 commit」。两份文档不一致，需要你在 D5 里定哪一份说了算。</p>
+</div>
+
+<h2 id="design">5 · 修复设计</h2>
+
+<h3>F2 · 起飞前预检（覆盖缺陷 4、6，回答追问①）</h3>
+<div class="flow">
+  <div class="box"><b>propose step 3</b>写 slices.json → <code>lint</code> 绿</div><div class="arrow">→</div>
+  <div class="box"><b>propose step 4 · baseline</b>跑 <code>gate.test</code> · <code>gate.lint</code> · <code>gate.typecheck</code> · 每片 <code>verify</code></div><div class="arrow">→</div>
+  <div class="box"><b>gate-baseline.json</b><code>{commit, plan_sha, ok, reasons, test{exit,sec}, lint{exit,lines}, typecheck{exit,lines}, verify{S1:{exit},…}}</code></div><div class="arrow">→</div>
+  <div class="box"><b>spec.html</b>红 → 面板显示原因，人类先修再批</div><div class="arrow">→</div>
+  <div class="box ok"><b>apply step 3 · lint</b>缺文件 / ok=false / plan_sha 过期 → 非 0 停飞</div>
+</div>
+<ul>
+  <li><b>ok 判据</b>：test exit 0 ∧ 每片 verify exit 0（骨架是 strict-xfail，基线上应绿）。lint / typecheck 红不阻断，只记基线行。</li>
+  <li><b>plan_sha</b>：<code>gate</code> 三条命令 + 各片 verify 的 sha1。改了任何一条就过期，必须重跑 baseline。不用 mtime，跨 worktree 不可靠。</li>
+  <li><b>不设「已知红，放行」字段</b>：那等于让模型自证。红就改 <code>gate.test</code> 或修环境，改计划文件会触发 takeoff-gate 重批，链条闭合。</li>
+</ul>
+
+<h3>F1 · 门禁基线差分（覆盖缺陷 1、4）</h3>
+<div class="flow">
+  <div class="box">门禁跑 <code>gate.lint</code> / <code>gate.typecheck</code>，取完整输出</div><div class="arrow">→</div>
+  <div class="box">规范化：去 ANSI · 数字串→<code>#</code> · 去首尾空白 · 丢空行</div><div class="arrow">→</div>
+  <div class="box">新增行 = 本次行集 − 基线行集</div><div class="arrow">→</div>
+  <div class="box bad">有新增 → 红，只贴新增行（≤ 6 行）</div>
+  <div class="box warn">无新增但 exit ≠ 0 → warning「既有 N 行已按基线排除」</div>
+</div>
+<p class="small">数字串折叠是为了让「同文件同报错、行号漂移」仍算既有。无 gate-baseline.json 时退回现行为（exit ≠ 0 即红），回退语义一致。</p>
+
+<h3>F3 · 重试接续（覆盖缺陷 2、5）</h3>
+<div class="grid">
+<div class="card"><b>现在</b>
+<div class="flow">
+  <div class="box">第 1 轮 commit C1 → 门禁红</div><div class="arrow">→</div>
+  <div class="box bad">重试仍校验 HEAD == expectHead X<br>不隔离：HEAD=C1 ≠ X → G0 拒绝<br>隔离：新 worktree@X，C1 不可达 → 从头重做</div><div class="arrow">→</div>
+  <div class="box bad">重跑 start → base=C1，red_count=0</div>
+</div></div>
+<div class="card"><b>改后</b>
+<div class="flow">
+  <div class="box">门禁 JSON 多带 <code>base</code></div><div class="arrow">→</div>
+  <div class="box ok">重试第零步：HEAD ≠ C1 → <code>git cherry-pick C1</code>（冲突 abort → G0）</div><div class="arrow">→</div>
+  <div class="box ok"><code>start S --base X</code>：同片已有标记则保留 base / red_count</div><div class="arrow">→</div>
+  <div class="box ok">只修 failed → gate：区间 X..HEAD 完整，red_count 累加到 2 后 stop-gate 放行</div>
+</div></div>
+</div>
+<p class="small">已核实 Workflow <code>agent()</code> 只有 <code>isolation: 'worktree'</code>，无复用上一轮 worktree 的选项，所以用 cherry-pick 而不是改派发方式。<code>opsx-apply.md</code> / <code>openspec-apply-change/SKILL.md</code> 的回退路径同句同改。</p>
+
+<h3>F4 · evidence 定位禁猜（覆盖缺陷 3）</h3>
+<div class="flow">
+  <div class="box"><code>.openspec-slice</code> 标记</div><div class="arrow">→</div>
+  <div class="box">分支名 <code>worktree-&lt;name&gt;</code> ∧ <code>openspec/changes/&lt;name&gt;</code> 存在</div><div class="arrow">→</div>
+  <div class="box">恰好一个 tasks.md 未勾完的 change</div><div class="arrow">→</div>
+  <div class="box warn">多于一个 → 不写（宁缺毋错）</div>
+</div>
+
+<h3>F5 · pr-ship 自动修复前问一次（可选，取决于 D5）</h3>
+<p>把唯一一次问询预算从 step 11「要不要人工再看」挪到 step 10「N 条 CRITICAL/HIGH：自动修并 push / 只贴评论交人」；无人应答默认只贴评论。只改 <code>pr-ship.md</code> 一处与对应测试。</p>
+
+<h2 id="slices">6 · 切片计划（草案，写进 slices.json 前请看 D1–D5）</h2>
+<table>
+<tr><th>切片</th><th>内容</th><th>owns</th><th>deps</th><th>verify</th></tr>
+<tr><td>S1</td><td>slice-gate.py：baseline 扩展 + gate-baseline.json · G2 基线差分 · start 幂等 / <code>--base</code> · gate JSON 带 base · lint 校验基线与 verify 禁含 typecheck 工具</td><td><code>template/.claude/hooks/slice-gate.py</code> · <code>tests/test_slice_gate.py</code></td><td>—</td><td><code>python3 -m pytest -q tests/test_slice_gate.py</code></td></tr>
+<tr><td>S2</td><td>test-evidence.py：change 定位顺序改为 标记 → 分支名 → 唯一候选 → 不写</td><td><code>template/.claude/hooks/test-evidence.py</code> · <code>tests/test_evidence_timeline.py</code></td><td>—</td><td><code>python3 -m pytest -q tests/test_evidence_timeline.py</code></td></tr>
+<tr><td>S3</td><td>opsx-apply.js 重试第零步 cherry-pick + <code>start --base</code>；GATE schema 加 base；slice-executor.md 与 opsx-apply.md / openspec-apply-change SKILL 回退路径同改</td><td><code>template/.claude/workflows/opsx-apply.js</code> · <code>template/.claude/agents/slice-executor.md</code> · <code>template/.claude/commands/opsx-apply.md</code> · <code>template/.claude/skills/openspec-apply-change/SKILL.md</code> · <code>tests/test_agents_workflow.py</code></td><td>S1</td><td><code>python3 -m pytest -q tests/test_agents_workflow.py</code></td></tr>
+<tr><td>S4</td><td>文档：opsx-propose.md / openspec-propose SKILL 的 baseline 语义（红即停）· schema.yaml 切片规则加「verify 只跑测试」· pr-ship.md（若 D5 选 B/C）</td><td><code>template/.claude/commands/opsx-propose.md</code> · <code>template/.claude/skills/openspec-propose/SKILL.md</code> · <code>template/openspec/schemas/intent-driven/schema.yaml</code> · <code>template/.claude/commands/pr-ship.md</code> · <code>tests/test_template_docs.py</code></td><td>—</td><td><code>python3 -m pytest -q tests/test_template_docs.py &amp;&amp; (cd template &amp;&amp; openspec schema validate intent-driven)</code></td></tr>
+</table>
+<p class="small">gate.test <code>python3 -m pytest -q tests</code> · gate.lint <code>python3 -m compileall -q template/.claude/hooks</code>。waves：[S1, S2, S4] → [S3]。每个 scenario 先落 strict-xfail 骨架，改完这个 change 之后，本仓库自己的 baseline 也会按 F2 跑预检。</p>
+<p><b>不在本次范围</b>（另立 change 或不做）：<code>TEST_RE</code> 被命令文本误触发；临时 worktree 缺 node_modules 的提示；gateway 本地已移植的 Rust <code>#[test]</code> / JS <code>it.fails</code> 识别（template 的 G7 目前不认 Rust 测试，值得回流，但是独立工作）；loco-openapi 随机 panic 属 gateway 自身。</p>
+
+<h2 id="decide">7 · 待你决定 · 导出</h2>
+<p class="sub">勾完点「导出结果」，把生成的文本贴回会话即可。推荐项已标出。</p>
+
+<div class="q" data-key="D1"><b>D1 · 范围：复盘发现的缺陷 5、6 是否并入本次</b>
+  <label><input type="radio" name="D1" value="包含缺陷5和6" checked>包含<span class="rec">推荐</span> · 与缺陷 2、4 是同一段代码，分开改会两次动 slice-gate.py</label>
+  <label><input type="radio" name="D1" value="只修你报的4条">只修你报的 4 条，5、6 另立 change</label>
+</div>
+
+<div class="q" data-key="D2"><b>D2 · 缺陷 1 的修法</b>
+  <label><input type="radio" name="D2" value="仅基线差分" checked>仅基线差分（F1）<span class="rec">推荐</span> · 作者不用配合，lint 命令怎么写都只看新增</label>
+  <label><input type="radio" name="D2" value="基线差分+注入SLICE_FILES">基线差分 + 门禁注入 <code>SLICE_FILES</code> / <code>SLICE_BASE</code> 环境变量，让 lint 命令可以只跑本片文件（省时间，多一段机制与作者指引）</label>
+</div>
+
+<div class="q" data-key="D3"><b>D3 · 预检严格度</b>
+  <label><input type="radio" name="D3" value="基线红硬拦起飞" checked>基线红（全量测试或任一 verify 非 0）硬拦起飞，人类改 gate.test / 修环境后重跑<span class="rec">推荐</span> · 符合铁律 5「门禁红不收口」</label>
+  <label><input type="radio" name="D3" value="基线红只警告">只在 spec.html 与 lint 输出里警告，不拦</label>
+</div>
+
+<div class="q" data-key="D4"><b>D4 · 重试如何接上一轮</b>
+  <label><input type="radio" name="D4" value="cherry-pick上一轮commit" checked>cherry-pick 上一轮 commit 后只修 failed<span class="rec">推荐</span> · 两种隔离模式统一，不浪费上一轮</label>
+  <label><input type="radio" name="D4" value="只修G0校验保持从头重做">只把 G0 校验改成接受上一轮 commit，隔离模式仍从头重做</label>
+</div>
+
+<div class="q" data-key="D5"><b>D5 · pr-ship 遇到 CRITICAL/HIGH</b>
+  <label><input type="radio" name="D5" value="B:自动修前问一次" checked>B · 自动修之前问一次，无人应答默认只贴评论<span class="rec">推荐</span> · 与你全局 CLAUDE.md 列举的授权范围一致</label>
+  <label><input type="radio" name="D5" value="A:维持自动修不问">A · 维持现状：文档已写明自动修，不问</label>
+  <label><input type="radio" name="D5" value="C:仅从opsx-apply自动串入时问">C · 只有从 /opsx-apply 自动串入 /pr-ship 时问；你显式跑 /pr-ship 时不问</label>
+</div>
+
+<div class="q" data-key="D6"><b>D6 · 下一步</b>
+  <label><input type="radio" name="D6" value="按此写change工件并渲染spec.html" checked>按此页写 change 工件（proposal / specs / design / tasks / slices.json / 骨架）并渲染 spec.html，起飞仍由你发 <code>/opsx-apply</code><span class="rec">推荐</span></label>
+  <label><input type="radio" name="D6" value="先补充讨论">先补充讨论，暂不写工件</label>
+</div>
+
+<div class="q" data-key="NOTE"><b>补充意见（可空）</b>
+  <textarea id="note" style="min-height:70px" placeholder="例如：D2 选第二项但环境变量名改成 …"></textarea>
+</div>
+
+<button onclick="exportResult()">导出结果</button>
+<button class="ghost" onclick="allRecommended()">全部按推荐</button>
+<button class="ghost" onclick="copyResult()">复制到剪贴板</button>
+<button class="ghost" onclick="downloadResult()">下载 JSON</button>
+<textarea id="out" placeholder="点「导出结果」后在这里生成可粘贴的文本"></textarea>
+
+</main>
+<script>
+function collect(){
+  const r={change:'flight-preflight-and-retry',source:'docs/flight-preflight-and-retry.html',decisions:{}};
+  document.querySelectorAll('.q[data-key]').forEach(q=>{
+    const k=q.dataset.key; if(k==='NOTE') return;
+    const c=q.querySelector('input:checked'); r.decisions[k]=c?c.value:null;
+  });
+  r.note=(document.getElementById('note').value||'').trim();
+  return r;
+}
+function exportResult(){
+  const r=collect();
+  const md=['## 飞行工作流修复方案 · 决策结果',''].concat(
+    Object.entries(r.decisions).map(([k,v])=>'- '+k+'：'+(v||'（未选）'))
+  ).concat(r.note?['- 补充：'+r.note]:[]).concat(['','```json',JSON.stringify(r,null,2),'```']).join('\n');
+  document.getElementById('out').value=md;
+}
+function allRecommended(){
+  document.querySelectorAll('.q .rec').forEach(s=>{const i=s.closest('label').querySelector('input'); if(i) i.checked=true;});
+  exportResult();
+}
+function copyResult(){
+  if(!document.getElementById('out').value) exportResult();
+  const t=document.getElementById('out'); t.select();
+  try{ navigator.clipboard.writeText(t.value); }catch(e){ document.execCommand('copy'); }
+}
+function downloadResult(){
+  const r=collect();
+  const blob=new Blob([JSON.stringify(r,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='flight-preflight-and-retry.decisions.json'; a.click();
+}
+</script>
+</body>
+</html>
