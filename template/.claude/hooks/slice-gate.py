@@ -4,12 +4,18 @@
 # 子命令：
 #   lint     --change-dir DIR                 校验 slices.json；stdout 打印 waves JSON；违规 exit 2 并在 stderr 点名规则
 #   waves    --change-dir DIR                 只打印 waves JSON
-#   start    S --change-dir DIR               在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base=HEAD / started）
-#   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
+#   start    S --change-dir DIR [--base REF]  在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base / started）；
+#                                              标记已是同一切片时不改（resume），保住区间与 red_count
+#   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
-#   final    --change-dir DIR                 全量 test / lint / typecheck + 全部 scenario 状态
-#   baseline --change-dir DIR                 跑一次全量测试，把耗时写回 slices.json.gate.full_suite_sec
+#   final    --change-dir DIR                 全量 test / lint / typecheck（按基线差分）+ 全部 scenario 状态
+#   baseline --change-dir DIR                 起飞前预检：跑 gate.test / lint / typecheck 与每片 verify，写 gate-baseline.json；
+#                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
+#   preflight --change-dir DIR                lint_plan + 基线四项校验（存在 / ok / plan_sha / commit 在分支历史）；通过打印 waves
+#
+# G2 差分：gate / final 的 lint / typecheck 非 0 时，与 gate-baseline.json 里规范化后的输出行比对，只为新增行判红；
+#          无基线或该项基线为 null 时行为不变（直接判红）。
 #
 # JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...],
 #             "ceilings": [[路径, 行号, 限制, 升级路径], ...], "summary"}；failed 每项以 G<n> 开头并点名对象。
@@ -17,6 +23,7 @@
 # 兼容 Python 3.8+，只用标准库。
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -32,6 +39,10 @@ MARKER = ".openspec-slice"
 REPORT = "gate-report.md"
 EVIDENCE = "evidence.log"
 TIMELINE = "timeline.md"
+BASELINE = "gate-baseline.json"
+# verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
+VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec"}
 TEST_FILE_RE = re.compile(r"(^|/)(test_[^/]*\.py|[^/]*_test\.py|[^/]*\.test\.[^/]+|[^/]*\.spec\.[^/]+)$")
@@ -91,11 +102,72 @@ def save_plan(change_dir, data):
         f.write("\n")
 
 
-def run_cmd(cmd, cwd):
+def run_cmd_full(cmd, cwd):
     p = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True)
-    out = (p.stdout or "") + (p.stderr or "")
-    tail = "\n".join(out.strip().splitlines()[-6:])
-    return p.returncode, tail
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def _tail(out):
+    return "\n".join(out.strip().splitlines()[-6:])
+
+
+def run_cmd(cmd, cwd):
+    rc, out = run_cmd_full(cmd, cwd)
+    return rc, _tail(out)
+
+
+def normalize_lines(text):
+    """去 ANSI、数字折成 #（行列号 / 错误码漂移不算新问题）、strip、丢空行，保序去重。"""
+    seen, out = set(), []
+    for raw in ANSI_RE.sub("", text or "").splitlines():
+        line = re.sub(r"\d+", "#", raw).strip()
+        if line and line not in seen:
+            seen.add(line)
+            out.append(line)
+    return out
+
+
+def plan_sha(data):
+    """基线只对 gate 命令与每片 verify 负责：这些变了基线就过期，其余（owns / 耗时）不影响。"""
+    gate = data.get("gate") or {}
+    key = [gate.get("test"), gate.get("lint"), gate.get("typecheck"),
+           [[s.get("id"), s.get("verify")] for s in data.get("slices") or []]]
+    return hashlib.sha1(json.dumps(key, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def load_baseline(change_dir):
+    path = os.path.join(change_dir, BASELINE)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def gate_cmd_verdict(kind, cmd, root, baseline):
+    """跑 gate.<kind>，返回 (failed_item, warning_item)，至多一个非 None。
+
+    有基线且该项非 null：只有规范化后不在基线里的输出行才判红；全在基线里则降为警告。
+    两条守卫先于差分：基线为绿时任何非 0 直接红；本次无输出（静默型检查器）无法比对也直接红。
+    """
+    rc, out = run_cmd_full(cmd, root)
+    if rc == 0:
+        return None, None
+    known = (baseline or {}).get(kind)
+    if not known:
+        return "G2 %s: exit %d\n%s" % (kind, rc, _tail(out)), None
+    if known.get("exit") == 0:
+        return "G2 %s: exit %d（基线为绿）\n%s" % (kind, rc, _tail(out)), None
+    lines = normalize_lines(out)
+    if not lines:
+        return "G2 %s: exit %d（无输出可与基线比对）" % (kind, rc), None
+    old = set(known.get("lines") or [])
+    new = [l for l in lines if l not in old]
+    if not new:
+        return None, "G2 %s: exit %d，输出与基线一致（既有 %d 行已按基线排除）" % (kind, rc, len(old))
+    return "G2 %s: exit %d（新增 %d 行）\n%s" % (kind, rc, len(new), "\n".join(new[:6])), None
 
 
 def glob_match(path, pattern):
@@ -144,6 +216,8 @@ def lint_plan(data):
             errors.append("owns: %s 的 owns 有 %d 条，须在 1–%d 内" % (s.get("id"), len(owns), MAX_OWNS))
         if not (s.get("verify") or "").strip():
             errors.append("verify: %s 缺少 verify 命令" % s.get("id"))
+        elif VERIFY_TOOL_RE.search(s.get("verify") or ""):
+            errors.append("verify: %s 含 typecheck/lint 工具，verify 只跑测试；typecheck 放 gate.typecheck、lint 放 gate.lint（门禁按基线差分）" % s.get("id"))
         for d in s.get("deps") or []:
             if d not in ids:
                 errors.append("deps: %s 依赖的 %s 不存在" % (s.get("id"), d))
@@ -533,8 +607,14 @@ def cmd_start(args):
     data = load_plan(args.change_dir)
     if args.slice not in [s["id"] for s in data.get("slices") or []]:
         die("切片 %s 不在 slices.json 中" % args.slice)
+    existing = _read_marker(root)
+    if existing and existing.get("slice") == args.slice:
+        # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动
+        timeline_record(args.change_dir, "slice-start", "%s (resume)" % args.slice)
+        print(json.dumps(existing, ensure_ascii=False))
+        return
     marker = {"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
-              "base": git(root, "rev-parse", "HEAD"), "started": now_iso()}
+              "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
     with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
         json.dump(marker, f, ensure_ascii=False)
     timeline_record(args.change_dir, "slice-start", args.slice)
@@ -576,12 +656,15 @@ def cmd_gate(args):
     if rc != 0:
         failed.append("G1 verify: exit %d\n%s" % (rc, tail))
     gate = data.get("gate") or {}
-    for key, label in (("lint", "G2 lint"), ("typecheck", "G2 typecheck")):
+    baseline = load_baseline(args.change_dir)
+    for key in ("lint", "typecheck"):
         cmd = gate.get(key)
         if cmd:
-            rc, tail = run_cmd(cmd, root)
-            if rc != 0:
-                failed.append("%s: exit %d\n%s" % (label, rc, tail))
+            f2, w2 = gate_cmd_verdict(key, cmd, root, baseline)
+            if f2:
+                failed.append(f2)
+            if w2:
+                warnings.append(w2)
 
     source = [f for f in files if not is_test_path(f) and not is_doc_or_config(f) and not f.startswith(change_rel + "/")]
     tests = [f for f in files if is_test_path(f)]
@@ -602,7 +685,7 @@ def cmd_gate(args):
     v8, ceilings = ceiling_rows(root, base)
     failed.extend(v8)
 
-    result = {"slice": args.slice, "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
+    result = {"slice": args.slice, "ok": not failed, "commit": git(root, "rev-parse", "HEAD"), "base": base,
               "failed": failed, "warnings": warnings, "hooks_missing": hooks_missing,
               "ceilings": [[rel, ln, limit, up] for rel, ln, limit, up in ceilings],
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
@@ -665,12 +748,15 @@ def cmd_final(args):
         rc, tail = run_cmd(test_cmd, root)
         if rc != 0:
             failed.append("G2 test: exit %d\n%s" % (rc, tail))
+    baseline = load_baseline(args.change_dir)
     for key in ("lint", "typecheck"):
         cmd = gate.get(key)
         if cmd:
-            rc, tail = run_cmd(cmd, root)
-            if rc != 0:
-                failed.append("G2 %s: exit %d\n%s" % (key, rc, tail))
+            f2, w2 = gate_cmd_verdict(key, cmd, root, baseline)
+            if f2:
+                failed.append(f2)
+            if w2:
+                warnings.append(w2)
     v7, total, passed = scenario_status(root, data)
     failed.extend(v7)
     result = {"slice": "final", "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
@@ -692,12 +778,57 @@ def cmd_baseline(args):
         die("未配置也未探测到全量测试命令")
     gate["test"] = test_cmd
     t0 = time.time()
-    rc, tail = run_cmd(test_cmd, root)
+    rc, out = run_cmd_full(test_cmd, root)
     gate["full_suite_sec"] = round(time.time() - t0, 1)
+    reasons = []
+    if rc != 0:
+        reasons.append("全量测试在基线上红（exit %d）" % rc)
+    bl = {"commit": git(root, "rev-parse", "HEAD"), "at": now_iso(), "plan_sha": None,
+          "ok": None, "reasons": reasons, "test": {"exit": rc, "sec": gate["full_suite_sec"]}}
+    for key in ("lint", "typecheck"):
+        cmd = gate.get(key)
+        if cmd:
+            krc, kout = run_cmd_full(cmd, root)
+            bl[key] = {"exit": krc, "lines": normalize_lines(kout) if krc != 0 else []}
+        else:
+            bl[key] = None
+    bl["verify"] = {}
+    for s in data.get("slices") or []:
+        vrc, _ = run_cmd_full(s.get("verify") or "false", root)
+        bl["verify"][s["id"]] = {"exit": vrc}
+        if vrc != 0:
+            reasons.append("%s verify 在基线上红（exit %d）：命令不可运行或含既有错误" % (s["id"], vrc))
     save_plan(args.change_dir, data)
-    timeline_record(args.change_dir, "baseline", "exit %d, %ss" % (rc, gate["full_suite_sec"]))
-    print(json.dumps({"test": test_cmd, "exit": rc, "full_suite_sec": gate["full_suite_sec"], "tail": tail}, ensure_ascii=False))
-    sys.exit(0 if rc == 0 else 1)
+    bl["plan_sha"] = plan_sha(data)
+    bl["ok"] = not reasons
+    with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
+        json.dump(bl, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    timeline_record(args.change_dir, "baseline", "exit %d, %ss %s" % (rc, gate["full_suite_sec"], "ok" if bl["ok"] else "red"))
+    print(json.dumps(dict(bl, test_cmd=test_cmd, tail=_tail(out)), ensure_ascii=False))
+    sys.exit(0 if bl["ok"] else 1)
+
+
+def cmd_preflight(args):
+    """起飞前四项校验：计划合法、基线存在且绿、基线未过期、基线 commit 在当前分支历史。通过打印 waves。"""
+    root = toplevel()
+    data = load_plan(args.change_dir)
+    errors, waves = lint_plan(data)
+    if errors:
+        die("slices.json 不合法：\n  - " + "\n  - ".join(errors))
+    bl = load_baseline(args.change_dir)
+    if bl is None:
+        die("缺基线：先运行 slice-gate.py baseline --change-dir %s" % args.change_dir)
+    if not bl.get("ok"):
+        die("基线红，不能起飞：\n  - " + "\n  - ".join(bl.get("reasons") or ["ok 为 false 但无 reasons"]))
+    if bl.get("plan_sha") != plan_sha(data):
+        die("基线过期：gate / verify 改动后需重跑 baseline")
+    # 不能用 git()：--is-ancestor 不成立时退出 1，git() 会当成异常抛
+    p = subprocess.run(["git", "merge-base", "--is-ancestor", str(bl.get("commit") or ""), "HEAD"],
+                       cwd=root, capture_output=True, text=True)
+    if p.returncode != 0:
+        die("基线 commit 不在当前分支历史：%s（重跑 baseline）" % (bl.get("commit") or "?")[:10])
+    print(json.dumps(waves, ensure_ascii=False))
 
 
 def report_latest(change_dir):
@@ -764,12 +895,13 @@ def cmd_ship(args):
 def main():
     ap = argparse.ArgumentParser(description="slice-gate：切片规划 lint 与切片门禁")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("lint", "waves", "final", "baseline"):
+    for name in ("lint", "waves", "final", "baseline", "preflight"):
         p = sub.add_parser(name)
         p.add_argument("--change-dir", required=True)
     p = sub.add_parser("start")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
+    p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
     p = sub.add_parser("gate")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
@@ -787,7 +919,7 @@ def main():
     p.add_argument("--markdown", action="store_true", help="打印可贴入 PR 正文的段落而不是 JSON")
     args = ap.parse_args()
     {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
-     "final": cmd_final, "baseline": cmd_baseline, "ship": cmd_ship}[args.cmd](args)
+     "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship}[args.cmd](args)
 
 
 if __name__ == "__main__":

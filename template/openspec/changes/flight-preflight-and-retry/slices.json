@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "change": "flight-preflight-and-retry",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 20.6
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "slice-gate：baseline 预检 + preflight + G2 基线差分 + start 幂等 / --base + gate JSON base + verify 规则",
+      "scenarios": [
+        "flight-preflight#baseline-writes-gate-baseline-json",
+        "flight-preflight#baseline-red-verify-blocks",
+        "flight-preflight#preflight-refuses-without-green-baseline",
+        "flight-preflight#preflight-refuses-stale-baseline",
+        "flight-preflight#lint-rejects-verify-with-typecheck-tool",
+        "gate-baseline-diff#gate-lint-ignores-baseline-lines",
+        "gate-baseline-diff#gate-lint-flags-new-lines",
+        "gate-baseline-diff#gate-without-baseline-unchanged",
+        "gate-baseline-diff#final-typecheck-uses-baseline",
+        "slice-retry-resume#start-idempotent-same-slice",
+        "slice-retry-resume#start-accepts-base-flag",
+        "slice-retry-resume#gate-json-carries-base"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "test-evidence：change 定位 标记 → 分支名 → 唯一候选 → 不写",
+      "scenarios": [
+        "evidence-change-resolution#evidence-resolves-change-from-branch",
+        "evidence-change-resolution#evidence-refuses-ambiguous-change",
+        "evidence-change-resolution#evidence-single-candidate-fallback"
+      ],
+      "owns": [
+        "template/.claude/hooks/test-evidence.py",
+        "tests/test_evidence_timeline.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_evidence_timeline.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "工作流重试接续：cherry-pick 上一轮 commit + start --base；apply 命令 / skill / 执行体契约同改",
+      "scenarios": [
+        "slice-retry-resume#workflow-retry-cherry-picks-previous-commit",
+        "slice-retry-resume#apply-docs-mirror-retry-and-preflight"
+      ],
+      "owns": [
+        "template/.claude/workflows/opsx-apply.js",
+        "template/.claude/agents/slice-executor.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "tests/test_agents_workflow.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_agents_workflow.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "文档契约：pr-ship 自动修前问一次 · propose 基线红即停 · schema verify 只跑测试",
+      "scenarios": [
+        "flight-doc-contracts#pr-ship-asks-before-autofix",
+        "flight-doc-contracts#propose-baseline-red-stops",
+        "flight-doc-contracts#schema-verify-excludes-typecheck"
+      ],
+      "owns": [
+        "template/.claude/commands/pr-ship.md",
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/openspec/schemas/intent-driven/schema.yaml",
+        "tests/test_template_docs.py"
+      ],
+      "deps": [],
+      "verify": "sh -c 'python3 -m pytest -q tests/test_template_docs.py && cd template && openspec schema validate intent-driven'",
+      "packet": "slices/S4.md"
+    }
+  ],
+  "scenario_tests": {
+    "flight-preflight#baseline-writes-gate-baseline-json": "tests/test_slice_gate.py::test_baseline_writes_gate_baseline",
+    "flight-preflight#baseline-red-verify-blocks": "tests/test_slice_gate.py::test_baseline_flags_red_verify",
+    "flight-preflight#preflight-refuses-without-green-baseline": "tests/test_slice_gate.py::test_preflight_refuses_missing_or_red_baseline",
+    "flight-preflight#preflight-refuses-stale-baseline": "tests/test_slice_gate.py::test_preflight_refuses_stale_baseline",
+    "flight-preflight#lint-rejects-verify-with-typecheck-tool": "tests/test_slice_gate.py::test_lint_rejects_verify_embedding_typecheck",
+    "gate-baseline-diff#gate-lint-ignores-baseline-lines": "tests/test_slice_gate.py::test_gate_lint_excludes_baseline_lines",
+    "gate-baseline-diff#gate-lint-flags-new-lines": "tests/test_slice_gate.py::test_gate_lint_flags_new_lines_only",
+    "gate-baseline-diff#gate-without-baseline-unchanged": "tests/test_slice_gate.py::test_gate_lint_red_without_baseline",
+    "gate-baseline-diff#final-typecheck-uses-baseline": "tests/test_slice_gate.py::test_final_typecheck_excludes_baseline_lines",
+    "slice-retry-resume#start-idempotent-same-slice": "tests/test_slice_gate.py::test_start_keeps_marker_for_same_slice",
+    "slice-retry-resume#start-accepts-base-flag": "tests/test_slice_gate.py::test_start_accepts_base_flag",
+    "slice-retry-resume#gate-json-carries-base": "tests/test_slice_gate.py::test_gate_json_carries_base",
+    "slice-retry-resume#workflow-retry-cherry-picks-previous-commit": "tests/test_agents_workflow.py::test_workflow_retry_resumes_previous_commit",
+    "slice-retry-resume#apply-docs-mirror-retry-and-preflight": "tests/test_agents_workflow.py::test_apply_docs_mirror_retry_and_preflight",
+    "evidence-change-resolution#evidence-resolves-change-from-branch": "tests/test_evidence_timeline.py::test_evidence_resolves_change_from_branch",
+    "evidence-change-resolution#evidence-refuses-ambiguous-change": "tests/test_evidence_timeline.py::test_evidence_skips_ambiguous_change",
+    "evidence-change-resolution#evidence-single-candidate-fallback": "tests/test_evidence_timeline.py::test_evidence_single_candidate_fallback",
+    "flight-doc-contracts#pr-ship-asks-before-autofix": "tests/test_template_docs.py::test_pr_ship_asks_before_autofix",
+    "flight-doc-contracts#propose-baseline-red-stops": "tests/test_template_docs.py::test_propose_baseline_red_stops",
+    "flight-doc-contracts#schema-verify-excludes-typecheck": "tests/test_template_docs.py::test_schema_verify_excludes_typecheck"
+  }
+}

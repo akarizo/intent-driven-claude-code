@@ -1,0 +1,156 @@
+{
+ "blocked": [
+  {
+   "slice": "wave1",
+   "kind": "infra",
+   "reason": "G7 scenario: slice-retry-resume#workflow-retry-cherry-picks-previous-commit → tests/test_agents_workflow.py::test_workflow_retry_resumes_previous_commit 仍标记 xfail/skip; G7 scenario: slice-retry-resume …",
+   "resolved": "S3 已按回退路径以当前 HEAD 重派并通过门禁（1c6253d），final 绿 20/20；起因是脚本 expectHead 在 wave 1 合回后过期（记入 backlog）"
+  },
+  {
+   "slice": "S3",
+   "kind": "gate",
+   "reason": "G0 base: worktree HEAD 不是 3594c6a170",
+   "resolved": "S3 已按回退路径以当前 HEAD 重派并通过门禁（1c6253d），final 绿 20/20；起因是脚本 expectHead 在 wave 1 合回后过期（记入 backlog）"
+  }
+ ],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 164,
+   "summary": "failed 文本贴的是规范化后的行（数字已折成 #，如 a.ts(#,#): error TS# x），执行体拿到门禁 JSON 后无法定位具体行列号，只能自己重跑 lint/typecheck。spec 要求「只贴新增行」，没要求贴折叠后的行。",
+   "fix": "差分时保留 (norm, raw) 对：遍历 ANSI 去除后的原始行，计算 norm，norm 不在 old 且未见过则收集 raw；failed 消息贴 raw[:6]，计数仍用 norm 去重后的数量。现有断言（含 b.ts、不含 a.ts）对 raw 行同样成立。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 605,
+   "summary": "resume 判定只比对 marker[\"slice\"] == args.slice，而 S1/S2 这类 id 在每个 change 都会重复。标记只在门禁 ok 时删除，同一 checkout 里上一个 change 红着收尾留下的 .openspec-slice 会被新 change 的 start S1 当作「同片重试」原样保留：base 指向旧 change 的起点、change_dir 指向旧目录、red_count 沿用，而 timeline 却写到新 change。改动前 start 是无条件覆盖，这是 stale marker 场景下的回归。",
+   "fix": "resume 条件改为 existing.get(\"slice\") == args.slice and os.path.abspath(existing.get(\"change_dir\") or \"\") == os.path.abspath(args.change_dir)；不满足则按新标记覆盖（可在 stderr 提示「覆盖其它 change 的残留标记」）。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 611,
+   "summary": "--base 的值原样写进标记，未经 git 解析；传错 ref 时 start 正常退出 0，问题要到 gate 里 changed_files 抛 RuntimeError 才暴露，且是 traceback 而非点名信息。",
+   "fix": "args.base 存在时用 try: base = git(root, \"rev-parse\", \"--verify\", args.base + \"^{commit}\") except RuntimeError: die(\"--base %s 不是合法 commit\" % args.base)，把解析后的全长 sha 写入标记。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 654,
+   "summary": "cmd_gate（654–661）与 cmd_final（746–753）各有一段完全相同的 8 行 G2 循环（取 gate[key] → gate_cmd_verdict → 分别 append failed / warnings）。",
+   "fix": "抽 def g2_verdicts(gate, root, baseline) -> (failed, warnings)，两处改为 f, w = g2_verdicts(...); failed.extend(f); warnings.extend(w)。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_evidence_timeline.py",
+   "line": 335,
+   "summary": "去掉两条 xfail 标记后，`import pytest  # noqa: E402` 在本文件已无任何引用（grep `pytest.` 为空），成为本次改动遗留的 orphan import。",
+   "fix": "删除第 335 行 `import pytest  # noqa: E402`。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/test-evidence.py",
+   "line": 71,
+   "summary": "第 2 级只做 `isdir` 判断，未排除边界名：分支恰为 `worktree-`（name 为空）会解析到 `openspec/changes` 目录本身并在其下写 evidence.log；分支 `worktree-archive` 会写进 archive 目录（第 3 级明确跳过 archive，两级口径不一致）。实际触发概率低，但与「不猜」的设计意图相悖。",
+   "fix": "取 `name = branch[len(BRANCH_PREFIX):]` 后加守卫：`if name and name != \"archive\" and os.sep not in name:` 再拼路径判 isdir。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/test-evidence.py",
+   "line": 42,
+   "summary": "`git branch --show-current` 需要 git >= 2.22；旧版 git 返回非 0 → 第 2 级被静默禁用，退化为第 3 级（fail-safe 但无感知）。文件头声明兼容 Python 3.8+ 却未声明 git 版本下限。",
+   "fix": "改用更老版本也支持的 `git symbolic-ref --short -q HEAD`（detached HEAD 时返回非 0，同样按 None 处理），或在文件头注释注明 git >= 2.22。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_evidence_timeline.py",
+   "line": 344,
+   "summary": "三条 scenario 测试都已覆盖，但切片「坑」里点名的两条降级路径没有测试守卫：① 分支 `worktree-x` 但 `openspec/changes/x` 不存在 → 应落到第 3 级；② detached HEAD → 应落到第 3 级。当前实现正确，仅缺回归保护。",
+   "fix": "可选：补一条测试，在 `_changes(git_repo, [\"a\"])` 后 `git checkout -q -b worktree-zzz`，断言 evidence.log 写进 a（验证分支不命中时回退唯一候选）。不阻断。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/commands/pr-ship.md",
+   "line": 161,
+   "summary": "「只贴评论交人」分支写的是 `review-findings.json.blocking` 保留这些 CRITICAL/HIGH，但该文件由 apply 收口写入（第 93 行），pr-ship step 8 新评出的 CRITICAL/HIGH 此时尚未在里面；真正的写入动作在第 176 行「收尾复裁」。「保留」易被执行体读成无需写入，若 apply 收口时 blocking 为 []，ship 会退出 0 把带未修 CRITICAL/HIGH 的 PR 转 ready，触碰铁律 4。",
+   "fix": "把「`review-findings.json.blocking` 保留这些 CRITICAL/HIGH」改为「这些 CRITICAL/HIGH 由下文「收尾复裁」写入 `review-findings.json.blocking`」，明确写入责任落在第 176 行。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/opsx-propose.md",
+   "line": 64,
+   "summary": "「退出非 0 → 停下报告 stdout 的 reasons」只对 exit 1（基线红）成立；slice-gate.py baseline 的 die() 路径（如未配置测试命令）exit 2 且只写 stderr，stdout 没有 reasons。SKILL.md 第 72 行同句。",
+   "fix": "改为「退出 1 → 报告 stdout JSON 的 `reasons`；退出 2 → 报告 stderr 错误」，两份文档同改。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/pr-ship.md",
+   "line": 198,
+   "summary": "Output Summary 只有「已自动修复 X 条 CRITICAL/HIGH」与「未自动修 Y 条 MEDIUM/LOW」，新加的「只贴评论交人」分支下 CRITICAL/HIGH 也会留在评论里未修，摘要无处体现。",
+   "fix": "在 Output Summary 增加一行「**交人处置（未自动修）**: Z 条 CRITICAL/HIGH」，或把「评论中列出」一行改为不限级别。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/pr-ship.md",
+   "line": 160,
+   "summary": "「无人应答默认只贴评论」：AskUserQuestion 是阻塞式问询，没有超时语义；「无人应答」在什么情形触发（用户取消 / 工具不可用 / headless 运行）未说明。契约原句如此，属规格用词问题。",
+   "fix": "把「无人应答」改为「用户取消或问询工具不可用时」，让默认分支的触发条件可判定。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/openspec/changes/flight-preflight-and-retry/evidence.log",
+   "line": 1,
+   "summary": "需进一步确认：prompt 指定的 evidence.log 在 worktree 与主仓库均不存在，无法 grep 本切片 RED→GREEN 留痕；门禁 JSON 报 ok，暂按门禁为准。",
+   "fix": "确认 hook 留痕落盘路径是否与 prompt 给的路径一致；若留痕写到了别处，修正 slice-gate 的 evidence 路径或 prompt 模板。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 93,
+   "summary": "重派分支只看 retryOf.commit 是否存在就走 cherry-pick 路径并丢掉 expectHead 校验；首轮若 G0 失败（commit 是错分叉 worktree 的 HEAD 且无 base），重派会把无关 commit 当上一轮工作 cherry-pick 过来。",
+   "fix": "收紧 resumable 判定：retryOf.commit && retryOf.base && commit !== base && failed 无 G0 项；仅 resumable 走 cherry-pick，否则回落 expectHead 分支；cherry-pick 前先按 expectHead 校验 HEAD。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 99,
+   "summary": "第零步与第一步用两个独立条件（retryOf.commit / retryOf.base）：commit 有而 base 无时会 cherry-pick 后不带 --base，门禁区间静默缩小。",
+   "fix": "两步共用同一个 resumable 判定；commit 有而 base 无时按首轮处理或在 prompt 里明示。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 94,
+   "summary": "接续只带单个 HEAD sha：上一轮多 commit 或未提交改动不会带过来，failed 项可能指向缺失文件。",
+   "fix": "重派 prompt 追加一句「只有 <commit> 一个 commit 被接上，缺文件则重建」。"
+  }
+ ],
+ "fix": {
+  "slice": "final",
+  "ok": false,
+  "commit": "55c285edc6c89c894ed05033316b0fb9b419d414",
+  "failed": [
+   "G7 scenario: slice-retry-resume#workflow-retry-cherry-picks-previous-commit → tests/test_agents_workflow.py::test_workflow_retry_resumes_previous_commit 仍标记 xfail/skip",
+   "G7 scenario: slice-retry-resume#apply-docs-mirror-retry-and-preflight → tests/test_agents_workflow.py::test_apply_docs_mirror_retry_and_preflight 仍标记 xfail/skip"
+  ],
+  "warnings": [
+   "start fix 被拒（slices.json 无 fix 条目），按指令跳过 start",
+   "两条 G7 红项在本次修复前的 final（41e2c957a9）即已存在，属 S3（wave 2）未做，与本次 HIGH 修复无关"
+  ],
+  "scenarios": "{\"total\": 20, \"passed\": 18}",
+  "summary": "final 阻断：scenario 18/20。HIGH 已修（commit 55c285e，fix(slice-gate)）：gate_cmd_verdict 差分前加两条守卫——基线 exit 0 时任何非 0 rc 直接 failed「G2 <kind>: exit N（基线为绿）+尾 6 行」；本次 rc!=0 且 normalize_lines 为空直接 failed「G2 <kind>: exit N（无输出可与基线比对）」；cmd_baseline 在 krc==0 时写 lines: []。TDD：tests/test_slice_gate.py 新增 3 条先红后绿测试（test_gate_lint_red_when_baseline_was_green / test_gate_lint_red_when_output_empty_with_red_baseline / test_baseline_records_empty_lines_for_green_lint），未改任何既有骨架断言。全量 154 passed / 2 xfailed（即上述 S3 两条），compileall 绿。timeline record fix --note blocking=1 已写。文件：/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/flight-preflight-and-retry/template/.claude/hooks/slice-gate.py、/Users/akarizo/Develop/fromgit/intent-driven-claude-code/.worktrees/flight-preflight-and-retry/tests/test_slice_gate.py"
+ },
+ "fixed_in_flight": [
+  {
+   "severity": "HIGH",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 162,
+   "summary": "gate_cmd_verdict 在「有基线且该 kind 非 null」时，只要 new 为空就降为警告——包括本次 rc!=0 但输出为空、或基线本身 exit 0（lines 为 []，dict 仍为真值）的情况。静默型检查器（black --check -q、prettier --check 静默级别、吞输出的包装脚本）一旦存在基线就从红变成不阻断；相对无基线路径是回归，且不在 D3 承认的「数字折叠少报」范围内。",
+   "fix": "在集合差分前加两条守卫：① known.get(\"exit\") == 0（基线时是绿的）→ 任何非 0 rc 直接返回 failed \"G2 %s: exit %d（基线为绿）\\n<尾 6 行>\"；② normalize_lines(out) 为空且 rc != 0 → 直接返回 failed \"G2 %s: exit %d（无输出可与基线比对）\"。只有基线本身红且本次有输出时才走差分。配套在 cmd_baseline 第 786 行：krc == 0 时写 {\"exit\": 0, \"lines\": []}，不把成功输出（如 All checks passed）记进基线行。"
+  }
+ ],
+ "note": "blocking 中的 1 条 HIGH 已由工作流 Fix 阶段在 55c285e 修复；S3 评审（回退派发）无 CRITICAL/HIGH"
+}
