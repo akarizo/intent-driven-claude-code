@@ -330,7 +330,7 @@ def test_route_audit_ignores_empty_attempt(tmp_path):
 
 
 # ---------------------------------------------------------------- flight-preflight-and-retry（scenario: evidence-change-resolution#*）
-# 骨架：xfail(strict) 直到 S2 实现；执行体去掉标记即解锁。
+# S2 已实现：标记 → 分支名 → 唯一候选 → 不写。
 
 import pytest  # noqa: E402
 from conftest import git  # noqa: E402
@@ -341,7 +341,6 @@ def _changes(git_repo, names):
         write(git_repo / "openspec" / "changes" / n / "tasks.md", "- [ ] S1 x\n")
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_evidence_resolves_change_from_branch(git_repo):
     # Given: 无标记；分支 worktree-c；change a 与 c 的 tasks.md 都有未勾选项（a 按字母序在前）
     _changes(git_repo, ["a", "c"])
@@ -357,7 +356,6 @@ def test_evidence_resolves_change_from_branch(git_repo):
     assert not (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="pending: flight-preflight-and-retry")
 def test_evidence_skips_ambiguous_change(git_repo):
     # Given: 无标记；分支 main；change a 与 b 都有未勾选项
     _changes(git_repo, ["a", "b"])
