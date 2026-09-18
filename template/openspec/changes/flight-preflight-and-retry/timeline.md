@@ -21,3 +21,5 @@
 2026-09-18T12:41:41Z	ship	draft: final 过期：记录 2a8da77c8a，HEAD b23ad58701
 2026-09-18T12:42:17Z	final	ok
 2026-09-18T12:42:17Z	ship	ready
+2026-09-18T12:43:28Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/32
+2026-09-18T12:48:49Z	ship	draft: final 过期：记录 b23ad58701，HEAD c6eaea39d3
