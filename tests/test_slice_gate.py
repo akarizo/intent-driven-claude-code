@@ -619,6 +619,54 @@ def test_gate_lint_red_without_baseline(git_repo):  # 既有行为守卫：判�
     assert not any("已按基线排除" in w for w in res["warnings"])
 
 
+def test_gate_lint_red_when_baseline_was_green(git_repo):
+    # Given: 基线记的 lint 是绿的（exit 0、lines 为 []）；本次 lint 退出 1 且输出一行错误
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=[])
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    bl["lint"]["exit"] = 0
+    write(change / "gate-baseline.json", json.dumps(bl, ensure_ascii=False))
+    _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「基线为绿」的项；warnings 无「已按基线排除」
+    assert res["ok"] is False
+    assert any(f.startswith("G2 lint: exit 1") and "基线为绿" in f for f in res["failed"]), res["failed"]
+    assert not any("已按基线排除" in w for w in res["warnings"])
+
+
+def test_gate_lint_red_when_output_empty_with_red_baseline(git_repo):
+    # Given: 基线记了一行 lint 既有错误（exit 1）；本次 lint 退出 1 但无任何输出（静默型检查器）
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=["a.ts(#,#): error TS# x"])
+    _set_gate(change, "lint", "sh -c 'exit 1'")
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「无输出可与基线比对」的项；warnings 无「已按基线排除」
+    assert res["ok"] is False
+    assert any(f.startswith("G2 lint: exit 1") and "无输出可与基线比对" in f for f in res["failed"]), res["failed"]
+    assert not any("已按基线排除" in w for w in res["warnings"])
+
+
+def test_baseline_records_empty_lines_for_green_lint(git_repo):
+    # Given: gate.lint 在当前树上退出 0 但打印 "All checks passed"
+    change = _baseline_repo(git_repo, lint="sh -c 'echo All checks passed; exit 0'")
+
+    # When: 运行 slice-gate.py baseline
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；gate-baseline.json 的 lint 为 {"exit": 0, "lines": []}，成功输出不记进基线行
+    assert p.returncode == 0, p.stderr
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    assert bl["lint"] == {"exit": 0, "lines": []}
+
+
 def test_final_typecheck_excludes_baseline_lines(git_repo):
     # Given: 基线记了两行 typecheck 既有错误；final 时 typecheck 输出这两行（行号漂移）；之后再多一行
     change = gate_repo(git_repo)

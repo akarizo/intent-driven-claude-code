@@ -150,6 +150,7 @@ def gate_cmd_verdict(kind, cmd, root, baseline):
     """跑 gate.<kind>，返回 (failed_item, warning_item)，至多一个非 None。
 
     有基线且该项非 null：只有规范化后不在基线里的输出行才判红；全在基线里则降为警告。
+    两条守卫先于差分：基线为绿时任何非 0 直接红；本次无输出（静默型检查器）无法比对也直接红。
     """
     rc, out = run_cmd_full(cmd, root)
     if rc == 0:
@@ -157,8 +158,13 @@ def gate_cmd_verdict(kind, cmd, root, baseline):
     known = (baseline or {}).get(kind)
     if not known:
         return "G2 %s: exit %d\n%s" % (kind, rc, _tail(out)), None
+    if known.get("exit") == 0:
+        return "G2 %s: exit %d（基线为绿）\n%s" % (kind, rc, _tail(out)), None
+    lines = normalize_lines(out)
+    if not lines:
+        return "G2 %s: exit %d（无输出可与基线比对）" % (kind, rc), None
     old = set(known.get("lines") or [])
-    new = [l for l in normalize_lines(out) if l not in old]
+    new = [l for l in lines if l not in old]
     if not new:
         return None, "G2 %s: exit %d，输出与基线一致（既有 %d 行已按基线排除）" % (kind, rc, len(old))
     return "G2 %s: exit %d（新增 %d 行）\n%s" % (kind, rc, len(new), "\n".join(new[:6])), None
@@ -783,7 +789,7 @@ def cmd_baseline(args):
         cmd = gate.get(key)
         if cmd:
             krc, kout = run_cmd_full(cmd, root)
-            bl[key] = {"exit": krc, "lines": normalize_lines(kout)}
+            bl[key] = {"exit": krc, "lines": normalize_lines(kout) if krc != 0 else []}
         else:
             bl[key] = None
     bl["verify"] = {}
