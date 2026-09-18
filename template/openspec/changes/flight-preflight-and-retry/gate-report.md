@@ -10,3 +10,4 @@
 | 2026-09-18T12:34:42Z | final | red | d581c09dfc | G7 scenario: slice-retry-resume#workflow-retry-cherry-picks-previous-commit → tests/test_agents_workflow.py::test_workflow_retry_resumes_previous_commit 仍标记 xfail/skip; G7 scenario: slice-retry-resume#apply-docs-mirror-retry-and-preflight → tests/test_agents_workflow.py::test_apply_docs_mirror_retry_and_preflight 仍标记 xfail/skip | - |
 | 2026-09-18T12:37:50Z | S3 | ok | 1c6253df09 | - | - |
 | 2026-09-18T12:39:12Z | final | ok | ee187192eb | - | - |
+| 2026-09-18T12:41:23Z | final | ok | 2a8da77c8a | - | - |

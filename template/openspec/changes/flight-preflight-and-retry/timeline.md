@@ -16,3 +16,5 @@
 2026-09-18T12:38:52Z	integrate	wave 2 (fallback dispatch)
 2026-09-18T12:39:12Z	final	ok
 2026-09-18T12:40:55Z	apply-done	blocked=2(resolved) blocking=0
+2026-09-18T12:41:23Z	final	ok
+2026-09-18T12:41:23Z	ship	ready
