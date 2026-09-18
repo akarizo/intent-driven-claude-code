@@ -60,7 +60,9 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
    ```bash
    python3 .claude/hooks/slice-gate.py baseline --change-dir openspec/changes/<name>
    ```
-   跑一次全量测试，把耗时写回 `slices.json.gate.full_suite_sec`。
+   跑一次全量测试，把耗时写回 `slices.json.gate.full_suite_sec`；同时跑 lint / typecheck 基线与每片 `verify`，产出 `gate-baseline.json`。
+   退出非 0 → **停下报告** stdout 的 `reasons`，不渲染、不交接；人类修 `gate.test` / `verify` / 环境后重跑本步。
+   verify 在基线上必须绿（骨架是 strict-xfail）。
 
 5. **渲染审批面板**
    ```bash
