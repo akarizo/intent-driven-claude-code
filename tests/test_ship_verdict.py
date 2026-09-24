@@ -2,6 +2,8 @@
 import json
 import re
 
+import pytest
+
 from conftest import ROOT, commit_all, git, run_hook, write
 
 CMD = ROOT / "template" / ".claude" / "commands"
@@ -250,3 +252,73 @@ def test_workflow_blocked_entries_carry_kind():
     for p in pushes:
         m = re.search(r"kind:\s*'(\w+)'", p)
         assert m and m.group(1) in ("gate", "infra"), p
+
+
+# ---------------------------------------------------------------- flight-wave-fixes（scenario: ship-final-freshness#*）
+# 骨架：xfail(strict) 直到 S1 实现记账豁免；两条守卫（改源码 / 改计划仍判过期）现在就绿，不标 xfail。
+
+
+def _commit_after_final(git_repo, touch):
+    """ship_repo 记下 S1 与 final（commit = 当时 HEAD）；先把飞行记录入库，再提交一次 touch(change) 造成的改动。返回 change 目录。"""
+    change = ship_repo(git_repo)
+    commit_all(git_repo, "chore(flight): 记录")
+    touch(change)
+    commit_all(git_repo, "after final")
+    return change
+
+
+def _append(path, line):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S1 未实现：ship 忽略 final 之后只改记账文件的 commit")
+def test_ship_ready_after_bookkeeping_commits(git_repo):
+    """scenario: ship-final-freshness#ship-ignores-bookkeeping-commits"""
+    # Given: S1 与 final 都在 commit F 记为 ok；之后两个 commit 只改了 change 目录的 gate-report.md、timeline.md、tasks.md、evidence.log、review-findings.json
+    def touch(change):
+        for name in ("timeline.md", "tasks.md", "evidence.log"):
+            _append(change / name, "x")
+        write(change / "review-findings.json", json.dumps({"blocked": [], "blocking": [], "deferred": [], "fix": None}))
+    change = _commit_after_final(git_repo, touch)
+
+    # When: 运行 ship
+    p = ship(git_repo, change)
+
+    # Then: ready 为 true，reasons 里没有「过期」，退出码 0
+    out = json.loads(p.stdout)
+    assert out["ready"] is True, out
+    assert not any("过期" in r for r in out["reasons"]), out["reasons"]
+    assert p.returncode == 0
+
+
+def test_ship_stale_after_code_change(git_repo):  # 既有行为守卫：白名单之外的改动在判据引入前后都判过期，故不标 xfail
+    """scenario: ship-final-freshness#ship-flags-code-change-after-final"""
+    # Given: final 在 commit F 记为 ok；之后的 commit 改了源码 src/app.py
+    change = _commit_after_final(git_repo, lambda change: write(git_repo / "src" / "app.py", "x = 1\n"))
+
+    # When: 运行 ship
+    p = ship(git_repo, change)
+
+    # Then: ready 为 false，reasons 有一条含「过期」
+    out = json.loads(p.stdout)
+    assert out["ready"] is False
+    assert any("过期" in r for r in out["reasons"]), out["reasons"]
+
+
+def test_ship_stale_after_plan_change(git_repo):  # 既有行为守卫：同上
+    """scenario: ship-final-freshness#ship-flags-plan-change-after-final"""
+    # Given: final 在 commit F 记为 ok；之后的 commit 改了 change 目录的 slices.json（计划，不是记账）
+    def touch(change):
+        data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+        data["slices"][0]["title"] = "S1 revised"
+        write(change / "slices.json", json.dumps(data))
+    change = _commit_after_final(git_repo, touch)
+
+    # When: 运行 ship
+    p = ship(git_repo, change)
+
+    # Then: ready 为 false，reasons 有一条含「过期」
+    out = json.loads(p.stdout)
+    assert out["ready"] is False
+    assert any("过期" in r for r in out["reasons"]), out["reasons"]

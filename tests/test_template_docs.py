@@ -210,3 +210,75 @@ def test_schema_verify_excludes_typecheck():
     # Then: 含 verify 只跑测试类规则，点名 typecheck 与 gate.lint / gate.typecheck
     assert "verify" in rules and "typecheck" in rules
     assert "gate.typecheck" in rules and "gate.lint" in rules
+
+
+# ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#apply-docs-pass-branch ·
+# flight-doc-contracts#fallback-effort-from-frontmatter · review-diff-fallback#*）
+# 骨架：xfail(strict) 直到 S3 实现；执行体去掉标记即解锁。
+
+AGENTS = ROOT / "template" / ".claude" / "agents"
+
+
+def apply_docs():
+    return read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")
+
+
+def fallback(t):
+    """apply 命令 / skill 的回退路径段：从「Workflow 不可用」到「两条路径」。"""
+    return t[t.index("Workflow 不可用"):t.index("两条路径")]
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：apply 文档用分支名起飞")
+def test_apply_docs_pass_branch():
+    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
+    cmd, skill = apply_docs()
+
+    # When: 取两者全文与回退路径段
+    fallbacks = [fallback(t) for t in (cmd, skill)]
+
+    # Then: 两者的 Workflow args 用 branch（取自 git branch --show-current），全文不再出现 expectHead；回退段含 --expect-branch 与「原样」
+    for t, fb in zip((cmd, skill), fallbacks):
+        assert 'branch: "<git branch --show-current>"' in t
+        assert "expectHead" not in t
+        assert "--expect-branch" in fb and "原样" in fb
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：回退派发的 effort 取 frontmatter")
+def test_fallback_effort_from_frontmatter():
+    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
+    cmd, skill = apply_docs()
+
+    # When: 取两者的回退路径段
+    fallbacks = [fallback(t) for t in (cmd, skill)]
+
+    # Then: 回退段都不把 effort 写成 Agent 派发参数（无 effort: high / effort: low），并写明 effort 由 agent frontmatter 决定
+    for fb in fallbacks:
+        assert "effort: high" not in fb and "effort: low" not in fb, fb
+        assert "frontmatter" in fb
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：pr-ship 取 diff 拉不到回退本地 diff")
+def test_pr_ship_review_diff_fallback():
+    # Given: template/.claude/commands/pr-ship.md
+    text = read(CMD / "pr-ship.md")
+
+    # When: 切出 step 8（呼叫 code-reviewer 评审 diff）
+    step8 = text[text.index("8. **"):text.index("9. **")]
+
+    # Then: 含回退命令 git diff origin/<target>...HEAD 与「取 diff 失败」；不再出现「为空或拉不到」这种合并写法
+    assert "git diff origin/<target>...HEAD" in step8
+    assert "取 diff 失败" in step8
+    assert "为空或拉不到" not in step8
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：评审员区分 diff 为空与拉不到")
+def test_reviewer_diff_empty_vs_unreachable():
+    # Given: template/.claude/agents/code-reviewer.md
+    text = read(AGENTS / "code-reviewer.md")
+
+    # When: 切出「评审流程」段
+    flow = text[text.index("## 评审流程"):text.index("## 审查 checklist")]
+
+    # Then: 同时含「无变更」（diff 为空时）与「取 diff 失败」（拉不到时）；不再出现「为空或拉不到」这种合并写法
+    assert "无变更" in flow and "取 diff 失败" in flow
+    assert "为空或拉不到" not in flow
