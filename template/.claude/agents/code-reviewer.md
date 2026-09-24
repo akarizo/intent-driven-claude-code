@@ -29,7 +29,7 @@ prompt 没声明模式时按 `full` 处理。分级标准、finding 格式与签
 ## 评审流程
 
 1. 读 prompt 给的模式、范围、门禁 JSON 与 evidence 摘要、以及切片包 / spec scenario（如有）。
-2. 取回 diff：按 prompt 给的命令（`git show <sha>`、`git diff <a>..<b>`、`gh pr diff <num>` 等）。diff 为空或拉不到 → 报告「无变更」并停止，不要硬凑。
+2. 取回 diff：按 prompt 给的命令（`git show <sha>`、`git diff <a>..<b>`、`gh pr diff <num>` 等）。diff 为空 → 报告「无变更」并停止；命令失败 → 按 prompt 给的回退命令再取；仍拉不到 → 报告「取 diff 失败」并停止，不得报告「无变更」，不要硬凑。
 3. 读上下文：对 diff 命中的文件，按需 Read 周边代码理解改动意图（只为判断改动本身，不扩散）。
 4. 按 checklist 审；`follow-up` 只审该模式「必须报」的两类。
 5. 分级输出。

@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "change": "flight-wave-fixes",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 27.9
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "slice-gate：start --expect-branch 基点祖先校验 + ship 忽略 final 之后的记账 commit",
+      "scenarios": [
+        "slice-base-check#start-accepts-head-at-branch-tip",
+        "slice-base-check#start-accepts-head-ahead-of-branch",
+        "slice-base-check#start-refuses-head-off-branch",
+        "ship-final-freshness#ship-ignores-bookkeeping-commits",
+        "ship-final-freshness#ship-flags-code-change-after-final",
+        "ship-final-freshness#ship-flags-plan-change-after-final"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py",
+        "tests/test_ship_verdict.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py tests/test_ship_verdict.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "工作流与执行体 / integrator 契约：每个执行体按分支名校验基点 + 合回用独立返回结构、不跑 final",
+      "scenarios": [
+        "slice-base-check#workflow-passes-branch-to-start",
+        "slice-base-check#executor-returns-start-refusal",
+        "integrator-merge-contract#merge-dispatch-forbids-final",
+        "integrator-merge-contract#integrator-final-only-when-named"
+      ],
+      "owns": [
+        "template/.claude/workflows/opsx-apply.js",
+        "template/.claude/agents/slice-executor.md",
+        "template/.claude/agents/integrator.md",
+        "tests/test_agents_workflow.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_agents_workflow.py tests/test_ship_verdict.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "文档：apply 命令 / skill 传分支名、回退 effort 取 frontmatter；pr-ship 与评审员取 diff 拉不到回退本地 diff",
+      "scenarios": [
+        "slice-base-check#apply-docs-pass-branch",
+        "flight-doc-contracts#fallback-effort-from-frontmatter",
+        "review-diff-fallback#pr-ship-review-falls-back-to-local-diff",
+        "review-diff-fallback#reviewer-distinguishes-empty-and-unreachable"
+      ],
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/commands/pr-ship.md",
+        "template/.claude/agents/code-reviewer.md",
+        "tests/test_template_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_template_docs.py tests/test_agents_workflow.py tests/test_ship_verdict.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "安装：模板 openspec/.gitignore 忽略 .flight + install.sh 安装 / 升级时幂等补行",
+      "scenarios": [
+        "flight-record-ignore#template-ignores-flight-marker",
+        "flight-record-ignore#upgrade-appends-flight-ignore-once"
+      ],
+      "owns": [
+        "template/openspec/.gitignore",
+        "install.sh",
+        "tests/test_install.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_install.py tests/test_docs_iron_rules.py",
+      "packet": "slices/S4.md"
+    }
+  ],
+  "scenario_tests": {
+    "slice-base-check#start-accepts-head-at-branch-tip": "tests/test_slice_gate.py::test_start_expect_branch_accepts_tip",
+    "slice-base-check#start-accepts-head-ahead-of-branch": "tests/test_slice_gate.py::test_start_expect_branch_accepts_descendant",
+    "slice-base-check#start-refuses-head-off-branch": "tests/test_slice_gate.py::test_start_expect_branch_refuses_stale_base",
+    "ship-final-freshness#ship-ignores-bookkeeping-commits": "tests/test_ship_verdict.py::test_ship_ready_after_bookkeeping_commits",
+    "ship-final-freshness#ship-flags-code-change-after-final": "tests/test_ship_verdict.py::test_ship_stale_after_code_change",
+    "ship-final-freshness#ship-flags-plan-change-after-final": "tests/test_ship_verdict.py::test_ship_stale_after_plan_change",
+    "slice-base-check#workflow-passes-branch-to-start": "tests/test_agents_workflow.py::test_workflow_start_carries_expect_branch",
+    "slice-base-check#executor-returns-start-refusal": "tests/test_agents_workflow.py::test_executor_returns_start_refusal",
+    "integrator-merge-contract#merge-dispatch-forbids-final": "tests/test_agents_workflow.py::test_workflow_merge_dispatch_forbids_final",
+    "integrator-merge-contract#integrator-final-only-when-named": "tests/test_agents_workflow.py::test_integrator_final_only_when_named",
+    "slice-base-check#apply-docs-pass-branch": "tests/test_template_docs.py::test_apply_docs_pass_branch",
+    "flight-doc-contracts#fallback-effort-from-frontmatter": "tests/test_template_docs.py::test_fallback_effort_from_frontmatter",
+    "review-diff-fallback#pr-ship-review-falls-back-to-local-diff": "tests/test_template_docs.py::test_pr_ship_review_diff_fallback",
+    "review-diff-fallback#reviewer-distinguishes-empty-and-unreachable": "tests/test_template_docs.py::test_reviewer_diff_empty_vs_unreachable",
+    "flight-record-ignore#template-ignores-flight-marker": "tests/test_install.py::test_template_ignores_flight_marker",
+    "flight-record-ignore#upgrade-appends-flight-ignore-once": "tests/test_install.py::test_upgrade_appends_flight_ignore_once"
+  }
+}

@@ -1,6 +1,8 @@
 """slice-gate.py：切片规划 lint 与切片门禁（scenario: slice-gate#*）。"""
 import json
 
+import pytest
+
 from conftest import commit_all, git, run_hook, write
 
 
@@ -736,3 +738,70 @@ def test_gate_json_carries_base(git_repo):
     # Then: JSON 含 base 等于 X；commit 仍为 HEAD
     assert res["base"] == base_x
     assert res["commit"] == git(git_repo, "rev-parse", "HEAD")
+
+
+# ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#start-*）
+# S1 已实现 start --expect-branch。
+
+
+def _branch_repo(git_repo):
+    """change 计划已提交；分支 worktree-c 指向当前 HEAD（即 change 分支的最新 commit）。返回 change 目录。"""
+    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    commit_all(git_repo, "plan")
+    git(git_repo, "branch", "worktree-c")
+    return change
+
+
+def _marker(git_repo):
+    return json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
+
+
+def test_start_expect_branch_accepts_tip(git_repo):
+    # Given: worktree 的 HEAD 正是 change 分支 worktree-c 的最新 commit（临时 worktree 从最新 tip 分叉）
+    change = _branch_repo(git_repo)
+
+    # When: start S1 --expect-branch worktree-c
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--expect-branch", "worktree-c", cwd=git_repo)
+
+    # Then: 退出 0；标记的 slice 为 S1、base 为 HEAD
+    assert p.returncode == 0, p.stderr
+    marker = _marker(git_repo)
+    assert marker["slice"] == "S1" and marker["base"] == git(git_repo, "rev-parse", "HEAD")
+
+
+def test_start_expect_branch_accepts_descendant(git_repo):
+    # Given: 分支 worktree-c 指向 T；HEAD 在 T 之上多一个 commit（重试时 cherry-pick 了上一轮的 commit）
+    change = _branch_repo(git_repo)
+    tip = git(git_repo, "rev-parse", "worktree-c")
+    write(git_repo / "src" / "mod.py", "x = 1\n")
+    commit_all(git_repo, "previous round")
+
+    # When: start S1 --base T --expect-branch worktree-c
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--base", tip,
+                 "--expect-branch", "worktree-c", cwd=git_repo)
+
+    # Then: 退出 0；标记的 base 为 T（祖先关系成立即放行，不要求 HEAD 等于 tip）
+    assert p.returncode == 0, p.stderr
+    assert _marker(git_repo)["base"] == tip
+
+
+def test_start_expect_branch_refuses_stale_base(git_repo):
+    # Given: 分支 worktree-c 已前进一个 commit（wave 1 合回），HEAD 仍停在它之前的 commit；另有一个不存在的分支名
+    change = _branch_repo(git_repo)
+    git(git_repo, "checkout", "-q", "worktree-c")
+    write(git_repo / "src" / "merged.py", "y = 2\n")
+    commit_all(git_repo, "integrate wave 1")
+    git(git_repo, "checkout", "-q", "main")
+
+    # When: 分别以 --expect-branch worktree-c 与 --expect-branch no-such-branch 运行 start S1
+    runs = [(name, run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--expect-branch", name, cwd=git_repo))
+            for name in ("worktree-c", "no-such-branch")]
+
+    # Then: 两次都退出非 0，stdout 是 G0 JSON（slice S1 · ok false · commit 空串 · failed 首项以 G0 base 开头并点名分支）；不写标记；随后 gate 因无 base 退出非 0
+    for name, p in runs:
+        assert p.returncode != 0 and p.stdout.strip().startswith("{"), (name, p.returncode, p.stdout, p.stderr)
+        res = json.loads(p.stdout)
+        assert res["slice"] == "S1" and res["ok"] is False and res["commit"] == "", res
+        assert res["failed"][0].startswith("G0 base") and name in res["failed"][0], res["failed"]
+    assert not (git_repo / ".openspec-slice").exists()
+    assert run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).returncode != 0

@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-wave-fixes · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-wave-fixes
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">specs</span><span class="chip" data-state="done">adr</span><span class="chip" data-state="done">tasks</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">2026-09-24 stc-foundation PR #7 那次飞行（workflow run <code>wf_3621d906-fb2</code>，3 个 wave、7 个切片）与本仓 #32 那次飞行（<code>wf_0cb8da3b-5c8</code>）暴露了同一组模板缺陷。证据已逐条核对 journal / timeline / gate-report / git，核实页见 <code>docs/flight-wave-fixes.html</code>。</p><p class="why-body"><strong>A · expectHead 只取一次</strong>：wave 2、3 每个切片首轮都 <code>G0 base: worktree HEAD 不是 79360023ce</code>，实际 HEAD 是合回后的 <code>d4c36c5</code> / <code>f1e6b95</code>；5 次白派发，S6 的重试额度被 G0 占掉，真实只跑一次就 blocked。本仓 #32 的 S3（单切片 wave、不开隔离）首轮与重试两次 G0 → blocked。根因：<code>opsx-apply.js:34</code> 的 <code>expectHead</code> 起飞时取一次，之后每个 wave 都拿它比对，且比对由执行体（模型）做。</p><p class="why-body"><strong>B · integrator 合回时自跑 final</strong>：integrate:w1、w2 自己跑了 <code>slice-gate.py final</code>，把后续 wave 尚未解锁的 scenario 当失败——多出两行 final red、两条 <code>wave&lt;i&gt;</code> infra blocked 误报，「门禁红次数」从 2 虚增到 4，三个 wave 的 integrator 返回三种形状。根因：合回派发与 Finalize 共用 GATE schema（<code>opsx-apply.js:151-157</code>），<code>integrator.md</code> 第 3 项「全量门禁」无条件可跑。</p><p class="why-body"><strong>D · ship 要求 final 对齐 HEAD</strong>：收口时 <code>ship</code> 判「final 过期」、要重跑 final（stc 1 次，#32 2 次）；PR 转 ready 后再提交飞行记录，final 又落后于 HEAD。根因：<code>slice-gate.py:873</code> 要求 final 行 commit 等于 HEAD，而收口顺序本身就是 final 之后才提交记账文件。</p><p class="why-body"><strong>F · 拉不到被当成无变更</strong>：<code>gh pr diff</code> 在 diff 超 2 万行时返回 HTTP 406，这次是评审员自行改用本地 diff 才没出事。根因：<code>pr-ship.md:131</code> 与 <code>code-reviewer.md:32</code> 把「为空」与「拉不到」合并成「报告无变更并停止」——照字面执行，大 PR 会被静默跳过评审（铁律 4）。</p><p class="why-body"><strong>H · .flight 未被忽略</strong>：<code>.flight</code> 未跟踪也没被忽略，integrator 三次在 warnings 里报它。根因：模板 <code>openspec/.gitignore</code> 只忽略 <code>.mini-active</code>；<code>install.sh:346</code> 对 openspec/ 从不覆盖，只改模板到不了已安装的仓库。</p><p class="why-body"><strong>I · 回退路径写了 effort</strong>：回退路径写着 <code>effort: high</code>，但 Agent 工具没有这个参数。文档错；实际 effort 由 agent frontmatter 决定，数值本来就对。</p><p class="why-body">A 在交接里的修法 ①（脚本改取 integrator 返回的 commit）被同一份 journal 否定：w1 返回的是它最后一次提交后的 HEAD，w2 返回的是 final 时的 <code>6bc66a7</code>，实际 tip 却是 <code>f1e6b95</code>。判据只能来自 git（<code>DRAFT-gate-evidence-not-self-reported</code>）。</p><p class="why-body"><strong>决策来源</strong>：2026-09-24 决策页 Q1–Q7（<code>docs/flight-wave-fixes.html</code>），用户选全部推荐项：范围 A、B、D、F、H、I；A 用 start 祖先校验；B 用独立返回结构；合为一个 change。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>A · 基点校验按分支实时位置、由脚本判定</strong>：<code>slice-gate.py start</code> 新增 <code>--expect-branch &lt;branch&gt;</code>，写标记前校验「该分支当前 tip 是 HEAD 的祖先」。不成立或分支不存在 → stdout 打印 <code>{&quot;slice&quot;,&quot;ok&quot;:false,&quot;commit&quot;:&quot;&quot;,&quot;failed&quot;:[&quot;G0 base: …&quot;]}</code>、exit 1、不写标记（随后 gate 因无 base 拒绝，失败即关）。<code>opsx-apply.js</code> 的参数 <strong><code>expectHead</code> 退役、换成 <code>branch</code></strong>，每个执行体（每个 wave、首轮与重试）的 start 都带 <code>--expect-branch</code>；删去执行体第零步的首轮 HEAD 比对。执行体契约写明 start 非 0 → 原样返回它的 JSON。apply 命令 / skill 的参数与回退路径同改。</li><li><strong>B · 合回只合回</strong>：wave 合回派发改用独立返回结构 <code>{ok, merged, failed, warnings}</code>，prompt 明令不要运行第 3 项（final）；<code>integ.ok</code> 只表示合回与 record 是否成功；<code>integrator.md</code> 第 3 项改为「仅当 prompt 点名时运行」。</li><li><strong>D · 记账 commit 不使 final 过期</strong>：<code>ship</code> 判 final 新鲜度时，final 行 commit 不等于 HEAD，但它是 HEAD 的祖先、且其后改动全部落在 change 目录的 5 个记账文件（<code>timeline.md</code> · <code>gate-report.md</code> · <code>evidence.log</code> · <code>review-findings.json</code> · <code>tasks.md</code>）→ 仍判有效；其余任何改动照旧判「final 过期」。</li><li><strong>F · 拉不到 ≠ 无变更</strong>：<code>pr-ship.md</code> step 8 与 <code>code-reviewer.md</code> 评审流程分三种情况：为空 → 无变更；<code>gh pr diff</code> 失败 → <code>git fetch origin &lt;target&gt;</code> 后 <code>git diff origin/&lt;target&gt;...HEAD</code>；都拉不到 → 报告「取 diff 失败」并停止，不得报告无变更。</li><li><strong>H · <code>.flight</code> 不入库</strong>：模板 <code>openspec/.gitignore</code> 加 <code>changes/*/.flight</code>；<code>install.sh</code> 安装 / 升级时对目标的 <code>openspec/.gitignore</code> 幂等补这一行。</li><li><strong>I · 回退 effort 文案</strong>：apply 命令 / skill 的回退段去掉 Agent 派发里的 <code>effort: high / low</code>，写明 effort 由 agent frontmatter 决定。</li></ul><div class="impact"><span class="tag"><strong>代码</strong>：<code>template/.claude/hooks/slice-gate.py</code>（start 祖先校验 + ship 记账豁免，约 40 行）· <code>template/.claude/workflows/opsx-apply.js</code>（参数 <code>branch</code>、start 命令、MERGE 结构与合回 prompt，约 25 行）· <code>install.sh</code>（约 10 行）· <code>template/openspec/.gitignore</code>（2 行）。</span><span class="tag"><strong>契约</strong>：<code>start</code> 新增可选 <code>--expect-branch</code>，G0 拒绝时 exit 1，stdout 是 GATE 形状 JSON（<code>commit</code> 为空串）；工作流参数 <code>expectHead</code> → <code>branch</code>（唯一调用方是 apply 命令 / skill，同 PR 同改）；合回派发返回 <code>{ok, merged, failed, warnings}</code>；「final 过期」只在 final 之后改了记账文件以外的内容时出现。</span><span class="tag"><strong>文档</strong>：<code>opsx-apply.md</code> · <code>openspec-apply-change/SKILL.md</code> · <code>pr-ship.md</code> · agents <code>slice-executor.md</code> / <code>integrator.md</code> / <code>code-reviewer.md</code>。</span><span class="tag"><strong>测试</strong>：<code>tests/test_slice_gate.py</code> +3 · <code>tests/test_ship_verdict.py</code> +3（其中 2 条是既有行为守卫，不标 xfail）· <code>tests/test_agents_workflow.py</code> +4（含用 node 驱动脚本的 mock 工作流测试）· <code>tests/test_template_docs.py</code> +4 · 新文件 <code>tests/test_install.py</code> +2。既有 <code>test_workflow_retry_resumes_previous_commit</code> 断言「首轮仍含 expectHead」，与本契约冲突，由 S2 按切片包说明改掉。</span><span class="tag"><strong>下游</strong>：stc-foundation 等已安装仓库跑 <code>install.sh --upgrade</code> 即可得到（<code>.claude/</code> 刷新 + <code>openspec/.gitignore</code> 补行）。</span><span class="tag"><strong>依赖</strong>：无新增；mock 工作流测试需要 node（缺则 skip，与既有 <code>node --check</code> 测试口径一致）。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>slice-base-check</h4><p>切片基点校验——<code>start --expect-branch</code> 的祖先判定与 G0 输出、工作流每个执行体把分支名交给 start、执行体与 apply 文档的对应契约。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>integrator-merge-contract</h4><p>wave 合回派发的返回结构与「合回不跑 final」。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>ship-final-freshness</h4><p><code>ship</code> 判 final 新鲜度时对记账 commit 的豁免及其边界。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>review-diff-fallback</h4><p>评审取 diff 失败时的回退，以及「取 diff 失败 ≠ 无变更」。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>flight-record-ignore</h4><p><code>.flight</code> 被模板 <code>.gitignore</code> 忽略，升级时幂等补规则。</p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4>flight-doc-contracts</h4><p>回退派发的 effort 由 agent frontmatter 决定（与 flight-preflight-and-retry 的同名 capability 各自新增 requirement）。</p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-doc-contracts <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 回退派发的 effort 由 agent frontmatter 决定</p><p><code>/opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill 的回退路径 SHALL NOT 把 <code>effort</code> 写成 Agent 工具的派发参数，SHALL 写明 effort 由 agent frontmatter 决定（Agent 工具没有 effort 参数）。
+Rule: 文档描述的调用必须是工具真实支持的调用</p><div class="scenario"><p class="scenario-name">Scenario: fallback-effort-from-frontmatter</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取两者的回退路径段（从「Workflow 不可用」到「两条路径」）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两段都不含 <code>effort: high</code> 与 <code>effort: low</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>两段都写明 effort 由 agent frontmatter 决定</span></li></ul></div></div></div><div class="spec-card"><h3>flight-record-ignore <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 起飞记录 .flight 不作为未跟踪文件出现</p><p>模板 <code>openspec/.gitignore</code> SHALL 忽略 <code>changes/*/.flight</code>，并保留既有的 <code>.mini-active</code> 规则。<code>install.sh</code> 在安装与 <code>--upgrade</code> 时 SHALL 确保目标项目的 <code>openspec/.gitignore</code> 含整行 <code>changes/*/.flight</code>：缺则追加，已有则不重复。
+Feature: <code>.flight</code> 是 apply 起飞到收口之间的每机瞬态文件，收口即删
+Rule: <code>install.sh</code> 对 openspec/ 从不覆盖，已安装的项目只能靠追加得到新规则</p><div class="scenario"><p class="scenario-name">Scenario: template-ignores-flight-marker</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个 git 仓库，<code>openspec/.gitignore</code> 是本模板的原文；某个 change 目录下有 <code>.flight</code>，<code>openspec/</code> 下有 <code>.mini-active</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>用 <code>git check-ignore</code> 询问这两个文件</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两者都被忽略</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: upgrade-appends-flight-ignore-once</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个已安装的项目，其 <code>openspec/.gitignore</code> 是老版本（只有 <code>.mini-active</code> 一条规则）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>连续两次运行 <code>install.sh --upgrade &lt;项目&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都以 0 退出</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>openspec/.gitignore</code> 里整行 <code>changes/*/.flight</code> 恰好出现一次，<code>.mini-active</code> 仍在</span></li></ul></div></div></div><div class="spec-card"><h3>integrator-merge-contract <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: wave 合回只合回，不跑全量门禁</p><p><code>opsx-apply.js</code> 为多切片 wave 派发的合回 SHALL 使用只含合回结论的返回结构（必填 <code>ok</code> 与 <code>failed</code>，不要求门禁 JSON 的 <code>slice</code> / <code>commit</code>），prompt SHALL 明令不要运行 integrator 定义的第 3 项（全量门禁）；合回成功时 SHALL NOT 记 wave 级 blocked。<code>integrator.md</code> 的第 3 项 SHALL 写明仅当 prompt 点名时运行。
+Feature: 后续 wave 的 scenario 尚未解锁，wave 级 final 必然红，不能当作合回失败
+Rule: 全量门禁只在 Finalize 跑一次</p><div class="scenario"><p class="scenario-name">Scenario: merge-dispatch-forbids-final</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>参数 waves 为 <code>[[S1, S2], [S3]]</code>，全部切片与合回都成功</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>用 mock agent 驱动工作流跑完，取 wave 1 的合回派发</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>合回派发的返回结构必填项含 <code>ok</code> 与 <code>failed</code>，不含 <code>slice</code> 与 <code>commit</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>合回 prompt 含「不要运行第 3 项」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>结果的 <code>blocked</code> 里没有以 <code>wave</code> 开头的条目</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: integrator-final-only-when-named</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/integrator.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取第 3 项「全量门禁」段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>该段写明仅当 prompt 点名才运行、wave 合回时不跑</span></li><li><span class="step-key" data-kw="AND">AND</span><span>仍给出 <code>slice-gate.py final</code> 命令</span></li></ul></div></div></div><div class="spec-card"><h3>review-diff-fallback <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 取 diff 失败不等于无变更</p><p><code>/pr-ship</code> step 8 给评审员的 prompt 与 <code>code-reviewer</code> 的评审流程 SHALL 区分三种情况：diff 确实为空 → 报告「无变更」并停止；首选命令（<code>gh pr diff</code> / <code>glab mr diff</code>）拉取失败 → 改用 <code>git fetch origin &lt;target&gt;</code> 之后的 <code>git diff origin/&lt;target&gt;...HEAD</code>；两种都拉不到 → 报告「取 diff 失败」并停止，SHALL NOT 报告「无变更」。
+Feature: 大 PR（diff 超过 2 万行）的 <code>gh pr diff</code> 会被 GitHub 以 HTTP 406 拒绝
+Rule: 独立评审必有（铁律 4），评审不能因取不到 diff 而静默跳过</p><div class="scenario"><p class="scenario-name">Scenario: pr-ship-review-falls-back-to-local-diff</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/pr-ship.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取 step 8（呼叫 code-reviewer 评审 diff）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>该段含回退命令 <code>git diff origin/&lt;target&gt;...HEAD</code> 与「取 diff 失败」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不再出现「为空或拉不到」这种合并写法</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: reviewer-distinguishes-empty-and-unreachable</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/code-reviewer.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取「评审流程」段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>该段同时含「无变更」（diff 为空时）与「取 diff 失败」（拉不到时）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不再出现「为空或拉不到」这种合并写法</span></li></ul></div></div></div><div class="spec-card"><h3>ship-final-freshness <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: final 之后只改记账文件的 commit 不使 final 过期</p><p><code>slice-gate.py ship</code> 判 final 新鲜度时，若 final 行记录的 commit 不等于 HEAD，SHALL 再判：该 commit 是 HEAD 的祖先，且二者之间改动的文件全部是 change 目录下的 <code>timeline.md</code>、<code>gate-report.md</code>、<code>evidence.log</code>、<code>review-findings.json</code>、<code>tasks.md</code> 之一 → 视为新鲜，不记「final 过期」。其余情况（改了任何其他文件、记录的 commit 不存在或不是祖先）SHALL 照旧记「final 过期：记录 X，HEAD Y」。
+Feature: 收口顺序本身就是 final 之后才提交记账文件
+Rule: 计划、规格、代码的任何改动都让 final 失效</p><div class="scenario"><p class="scenario-name">Scenario: ship-ignores-bookkeeping-commits</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 与 final 都在 commit F 记为 ok；之后的两个 commit 只改了 change 目录的 <code>gate-report.md</code>、<code>timeline.md</code>、<code>tasks.md</code>、<code>evidence.log</code>、<code>review-findings.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py ship --change-dir &lt;dir&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ready</code> 为 true，<code>reasons</code> 里没有「过期」，退出码为 0</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: ship-flags-code-change-after-final</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>final 在 commit F 记为 ok；之后的 commit 改了源码 <code>src/app.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 ship</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ready</code> 为 false，<code>reasons</code> 有一条含「过期」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: ship-flags-plan-change-after-final</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>final 在 commit F 记为 ok；之后的 commit 改了 change 目录的 <code>slices.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 ship</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>ready</code> 为 false，<code>reasons</code> 有一条含「过期」</span></li></ul></div></div></div><div class="spec-card"><h3>slice-base-check <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: start 按 change 分支的实时位置校验基点</p><p><code>slice-gate.py start &lt;S&gt;</code> SHALL 接受可选参数 <code>--expect-branch &lt;branch&gt;</code>。给出该参数时，SHALL 在读写标记之前（含同片 resume 的情形）校验「该分支当前指向的 commit 是 HEAD 的祖先」：成立则行为与不带该参数时完全一致；不成立或分支不存在时，SHALL 在 stdout 打印 <code>{&quot;slice&quot;: &quot;&lt;S&gt;&quot;, &quot;ok&quot;: false, &quot;commit&quot;: &quot;&quot;, &quot;failed&quot;: [&quot;G0 base: …&quot;], …}</code>（<code>failed</code> 首项以 <code>G0 base</code> 开头并点名分支），以非 0 退出，且不写标记。
+Feature: 基点真值来自 git，由脚本判定
+Rule: 分支每个 wave 都会前进，校验只看祖先关系，不比对某个固定 sha</p><div class="scenario"><p class="scenario-name">Scenario: start-accepts-head-at-branch-tip</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change 计划已提交，分支 <code>worktree-c</code> 指向当前 HEAD</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py start S1 --change-dir &lt;dir&gt; --expect-branch worktree-c</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>标记的 <code>slice</code> 为 <code>S1</code>、<code>base</code> 为 HEAD</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: start-accepts-head-ahead-of-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>分支 <code>worktree-c</code> 指向 T，HEAD 在 T 之上多一个 commit（重试时 cherry-pick 了上一轮的 commit）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>start S1 --change-dir &lt;dir&gt; --base T --expect-branch worktree-c</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 0，标记的 <code>base</code> 为 T</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: start-refuses-head-off-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>分支 <code>worktree-c</code> 已前进一个 commit，而 HEAD 仍停在它之前的 commit；另有一个不存在的分支名</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别以 <code>--expect-branch worktree-c</code> 与 <code>--expect-branch no-such-branch</code> 运行 <code>start S1</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都以非 0 退出，stdout 是 JSON：<code>slice</code> 为 <code>S1</code>、<code>ok</code> 为 false、<code>commit</code> 为空串、<code>failed</code> 首项以 <code>G0 base</code> 开头并含该分支名</span></li><li><span class="step-key" data-kw="AND">AND</span><span>根目录没有写出标记，随后对 S1 运行 <code>gate</code> 以非 0 退出</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 工作流的每个执行体都把分支名交给 start</p><p><code>opsx-apply.js</code> SHALL 从参数 <code>branch</code> 取 change 分支名，并在每一次执行体派发（每个 wave、首轮与重派）的 start 命令上带 <code>--expect-branch &lt;branch&gt;</code>；SHALL NOT 再读取参数 <code>expectHead</code>，也不在 prompt 里比对某个固定的 HEAD。上一轮以 G0 失败（<code>commit</code> 为空）的重派 SHALL 按首轮处理，不 cherry-pick。
+Feature: 多 wave 飞行里，基点校验不随 wave 失效</p><div class="scenario"><p class="scenario-name">Scenario: workflow-passes-branch-to-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>参数 <code>branch</code> 为 <code>worktree-c</code>，waves 为 <code>[[S1, S2], [S3]]</code>；S1 首轮被 start 以 G0 拒绝（<code>commit</code> 为空），S2 首轮门禁红（带上一轮 commit 与 base），两者重派后都绿</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>用 mock agent 驱动工作流跑完</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>S1、S1 重派、S2、S2 重派、S3 五次执行体派发的 start 命令都带 <code>--expect-branch worktree-c</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>S1 重派的 prompt 不含 <code>cherry-pick</code>；S2 重派的 prompt 含 <code>cherry-pick</code>，其 start 带上一轮的 <code>--base</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>脚本全文不再出现 <code>expectHead</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 执行体遇到 start 拒绝时原样返回</p><p><code>slice-executor.md</code> 的开工段 SHALL 写明 start 可能带 <code>--expect-branch</code> 做基点校验；start 以非 0 退出时，执行体 SHALL 不做任何改动，把 start 打印的 JSON 原样作为最终输出。</p><div class="scenario"><p class="scenario-name">Scenario: executor-returns-start-refusal</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/agents/slice-executor.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取「开工」段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>该段含 <code>--expect-branch</code>，并写明 start 非 0 时不做任何改动、把它打印的 JSON 原样返回</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: apply 命令与 skill 用分支名起飞</p><p><code>/opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill 的工作流参数 SHALL 用 <code>branch: &quot;&lt;git branch --show-current&gt;&quot;</code> 取代 <code>expectHead</code>；回退路径 SHALL 写明 start 带 <code>--expect-branch</code>，start 非 0 时执行体原样返回其 JSON。
+Rule: 命令与同名 skill 同改，不漂移</p><div class="scenario"><p class="scenario-name">Scenario: apply-docs-pass-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取两者的工作流参数与回退路径段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两者都含 <code>branch: &quot;&lt;git branch --show-current&gt;&quot;</code>，全文不再出现 <code>expectHead</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>两者的回退路径段都含 <code>--expect-branch</code> 与「原样」</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>飞行由主会话（<code>/opsx-apply</code>）启动命名工作流 <code>opsx-apply.js</code>：脚本按 wave 派发执行体（多切片 wave 各开临时 worktree），wave 后派 integrator 合回，评审离关键路径，收口由 integrator 跑 final；<code>slice-gate.py</code> 承载全部机械判据；<code>ship</code> 在收口与 pr-ship 里裁 draft / ready。</p><ul><li><strong>A 出在 E→G→R</strong>：现在的 G0 由执行体（模型）拿起飞时传入的 <code>expectHead</code> 比对 HEAD；R 每个 wave 合回后都前进，比对值却不动。现行重试分支根本不再校验基点。</li><li><strong>B 出在 I</strong>：合回派发要求 GATE 形状（<code>slice / commit / failed</code>），integrator 按定义第 3 项自跑 final 来填这些字段。</li><li><strong>D 出在 S→G</strong>：<code>ship</code> 要求 final 行 commit 等于 HEAD，而收口顺序是 final → 勾 tasks.md → 写 review-findings.json → 提交飞行记录。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong></p><ul><li>基点校验的真值来自 git 里分支的实时位置，由脚本判定；首轮、重试、单切片 wave、多切片 wave 语义一致。</li><li>wave 合回的结论只反映合回本身；全量门禁只在 Finalize 跑。</li><li>只动记账文件的 commit 不让 final 失效；其余任何改动仍让它失效。</li><li>评审拿不到 diff 时回退本地 diff，仍拿不到就如实报告失败，绝不报告「无变更」。</li><li><code>.flight</code> 在新装与已装项目里都不作为未跟踪文件出现。</li></ul><p><strong>Non-Goals</strong></p><ul><li>不修 C / E / J / G / L（见 proposal「不改」）。</li><li>不做 wave 级全量检查（<code>final --slices</code>，决策页 Q5 ② 未选）。</li><li>不把合回整段脚本化（更彻底的方向，留 backlog）。</li><li>不改重试接续（cherry-pick + <code>--base</code>）与 G1–G8 语义。</li></ul></div><div class="design-block"><h3>Decisions</h3><details><summary><strong>祖先而非相等</strong></summary><p>重试会先 cherry-pick 上一轮 commit，HEAD 比 tip 多一个 commit，相等比较在这里会误判；首轮 HEAD 等于 tip 时祖先关系同样成立。</p></details><details><summary><strong>单切片 wave</strong></summary><p>执行体就在 change worktree 里，HEAD 即 tip，自然通过（#32 的 S3 正是被旧比对误判的这种情况）。</p></details><details><summary><strong>失败即关</strong></summary><p>不写标记 → 之后的 <code>gate</code> 因「没有 base」退出非 0，产不出任何绿结论，不依赖执行体是否照做。</p></details><details><summary><strong><code>commit</code> 置空串</strong></summary><p>G0 的上一轮没有产出。脚本重派时 <code>retryOf.commit</code> 为空 → 走首轮分支，不 cherry-pick。现行 G0 JSON 填的是「实际 HEAD」，基点真错时重试会把一个无关 commit 接进来。</p></details><details><summary><strong>重试同样校验</strong></summary><p>重派的 start 也带 <code>--expect-branch</code>（现行重试分支不做任何基点校验）。</p></details><details><summary><strong>退出码 1</strong></summary><p>与 gate 红同义（判定为红），区别于参数错误的 2。</p></details><details><summary>合回 prompt 末尾加</summary><p>「本次只合回，不要运行第 3 项（全量门禁 final）——后续 wave 的 scenario 还没解锁，现在跑必然红。返回 JSON {ok, merged, failed, warnings}。」</p></details><details><summary><code>integrator.md</code> 第 3 项首句改为「仅当 prompt 点名第 3 项时运行（Finalize 会点名；wave 合回不点名，也不要自己跑）」，命令本身不变。</summary></details><details><summary><code>integ.ok</code> 为 false 的含义收窄为「合回冲突 / record 失败 / 未返回」；<code>blocked</code> 条目形状不变（<code>{slice: &#x27;wave&lt;i&gt;&#x27;, kind: &#x27;infra&#x27;}</code>）。</summary></details><details><summary><strong>白名单依据</strong></summary><p>stc 的 <code>3be9fd9..8fa0e50</code>（evidence.log · gate-report.md · review-findings.json · tasks.md · timeline.md）与 <code>8fa0e50..ac2158d</code>（gate-report.md · review-findings.json · timeline.md）实际改动都是它的子集；本仓 #32 的两次「final 过期」同理。</p></details><details><summary><strong>边界</strong></summary><p><code>slices.json</code>、<code>specs/</code>、<code>slices/*.md</code>、源码、测试任何一个改过都判过期——计划或代码变了，final 的结论就不再适用。</p></details><details><summary><strong><code>tasks.md</code> 算记账</strong></summary><p>它由 <code>slices.json</code> 生成，飞行中只被勾选；takeoff-gate 的新鲜度规则已把「勾选」判为执行记账（<code>tests/test_approval_gate.py</code>），两处口径一致。</p></details><details><summary><code>template/openspec/.gitignore</code> 追加注释行与 <code>changes/*/.flight</code>（相对 <code>openspec/</code>，新装即生效；本仓 <code>template/openspec/changes/*/.flight</code> 同样被它覆盖）。</summary></details><details><summary><code>install.sh</code></summary><p><code>copy_tree</code> openspec 之后，若 <code>$TARGET/openspec/.gitignore</code> 没有整行 <code>changes/*/.flight</code> 就追加（带注释），已有则 skip；install 与 <code>--upgrade</code> 都跑。理由：<code>install.sh:346</code> 对 openspec/ 从不覆盖，只改模板到不了 stc-foundation 这类已安装的仓库。</p></details></div><div class="design-block"><h3>一次多 wave 飞行（改后）</h3></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary>[分支名传错] → 所有 start 都 G0、所有切片 blocked，但失败即关，原因在 JSON 里点名分支；apply 命令从 change worktree 的 <code>git branch --show-current</code> 取值，不手填。</summary></details><details><summary>[旧调用方仍传 <code>expectHead</code>] → 脚本不再读它，等于不做基点校验（与旧版不传 expectHead 时一致）；唯一调用方 apply 命令 / skill 同 PR 同改，下游经 <code>install.sh --upgrade</code> 一并刷新。</summary></details><details><summary>[白名单过宽] → 只放 5 个记账文件，计划 / 规格 / 代码任何改动照旧判过期；两条守卫测试锁住边界。</summary></details><details><summary>[白名单漏项] → 以后新增记账文件时 ship 会多判一次「过期」，只是多跑一次 final，方向安全。</summary></details><details><summary>[integrator 仍自跑 final] → prompt 明令 + 定义第 3 项加条件；即便它仍跑，MERGE 结构里也没有门禁字段可填，<code>integ.ok</code> 不再被 final 结论带偏，残留只是一行 timeline 噪音。</summary></details><details><summary>[install.sh 测试的环境依赖] → 用 PATH 桩代替 openspec CLI，真实跑一次安装与两次升级，耗时秒级。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><ul><li>本仓 PR 合并后，下游跑 <code>./install.sh --upgrade &lt;repo&gt;</code>：<code>.claude/</code> 刷新（工作流、agents、命令、skill、hooks），<code>openspec/.gitignore</code> 补行。</li><li>进行中的 change 不受影响：<code>start</code> 不带 <code>--expect-branch</code> 时行为完全不变；旧计划文件无需改。</li><li>回退：revert 本 PR；<code>start</code> 的新参数可选，旧工作流不传就不生效。</li></ul></div><div class="design-block"><h3>Open Questions</h3><ul><li><strong>规格归档顺序</strong>：flight-preflight-and-retry（未归档）的 <code>slice-retry-resume</code> 写着「首轮派发仍以 <code>expectHead</code> 校验基分支」，与本 change 的 <code>slice-base-check</code> 冲突。两者都还没进 <code>openspec/specs/</code>；归档时由归档人把那一句改为指向 <code>slice-base-check</code>（或本 change 归档时补一份 MODIFIED delta）。</li><li><strong>后续 change</strong>：C（续跑语义：切片包哈希进 prompt，fix / final 的 prompt 也可能不变而命中旧缓存）、E（owns 外旧测试断言 owns 内文件：可用信号是「verify 跑的测试不在 owns 里」）、J（注入段 6500 B，预算 4608 B）。</li><li><strong>L（观察）</strong>：<code>takeoff-gate.py</code> 只凭 <code>args.changeDir</code> 识别起飞；参数不是含 changeDir 的对象时会放行，但脚本随即因 models 缺失抛错、不派发。再出现一次真实误用再立 change。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart LR
+  H[&quot;主会话&lt;br/&gt;/opsx-apply 命令&quot;] --&gt;|&quot;args: waves · models · branch&quot;| W[&quot;Workflow 运行时&lt;br/&gt;opsx-apply.js&quot;]
+  W --&gt;|&quot;每 wave 并行&quot;| E[&quot;slice-executor&lt;br/&gt;临时 worktree 或 change worktree&quot;]
+  W --&gt;|&quot;多切片 wave 之后&quot;| I[&quot;integrator&lt;br/&gt;合回 · record · 接口摘要&quot;]
+  W --&gt;|&quot;Finalize&quot;| F[&quot;integrator&lt;br/&gt;final&quot;]
+  E --&gt;|&quot;start / gate&quot;| G[&quot;slice-gate.py&quot;]
+  I --&gt;|&quot;record&quot;| G
+  F --&gt;|&quot;final&quot;| G
+  G --&gt;|&quot;rev-parse · merge-base · diff&quot;| R[(&quot;git&lt;br/&gt;change 分支 refs&quot;)]
+  G --&gt;|&quot;追加&quot;| L[(&quot;飞行记录&lt;br/&gt;gate-report.md · timeline.md&quot;)]
+  S[&quot;收口 / pr-ship&quot;] --&gt;|&quot;ship&quot;| G</div><pre class="diagram-fallback">flowchart LR
+  H[&quot;主会话&lt;br/&gt;/opsx-apply 命令&quot;] --&gt;|&quot;args: waves · models · branch&quot;| W[&quot;Workflow 运行时&lt;br/&gt;opsx-apply.js&quot;]
+  W --&gt;|&quot;每 wave 并行&quot;| E[&quot;slice-executor&lt;br/&gt;临时 worktree 或 change worktree&quot;]
+  W --&gt;|&quot;多切片 wave 之后&quot;| I[&quot;integrator&lt;br/&gt;合回 · record · 接口摘要&quot;]
+  W --&gt;|&quot;Finalize&quot;| F[&quot;integrator&lt;br/&gt;final&quot;]
+  E --&gt;|&quot;start / gate&quot;| G[&quot;slice-gate.py&quot;]
+  I --&gt;|&quot;record&quot;| G
+  F --&gt;|&quot;final&quot;| G
+  G --&gt;|&quot;rev-parse · merge-base · diff&quot;| R[(&quot;git&lt;br/&gt;change 分支 refs&quot;)]
+  G --&gt;|&quot;追加&quot;| L[(&quot;飞行记录&lt;br/&gt;gate-report.md · timeline.md&quot;)]
+  S[&quot;收口 / pr-ship&quot;] --&gt;|&quot;ship&quot;| G</pre><div class="caption">飞行由主会话（<code>/opsx-apply</code>）启动命名工作流 <code>opsx-apply.js</code>：脚本按 wave 派发执行体（多切片 wave 各开临时 worktree），wave 后派 integrator 合回，评审离关键路径，收口由 integrator 跑 final；<code>slice-gate.py</code> 承载全部机械判据；<code>ship</code> 在收口与 pr-ship 里裁 draft / ready。</div></div><div class="diagram-frame"><div class="mermaid">sequenceDiagram
+  participant W as opsx-apply.js
+  participant E as slice-executor
+  participant G as slice-gate.py
+  participant R as git（change 分支）
+  participant I as integrator
+  W-&gt;&gt;E: wave 2 · S3（start 命令带 --expect-branch worktree-c）
+  E-&gt;&gt;G: start S3 --expect-branch worktree-c
+  G-&gt;&gt;R: rev-parse worktree-c · merge-base --is-ancestor tip HEAD
+  alt tip 是 HEAD 的祖先
+    G--&gt;&gt;E: 写标记（base = HEAD）
+    E-&gt;&gt;G: gate S3
+    G--&gt;&gt;W: GATE JSON（原样）
+  else 不是（worktree 从旧 commit 分叉）
+    G--&gt;&gt;E: G0 JSON（commit 为空），exit 1，不写标记
+    E--&gt;&gt;W: 原样返回 → 重派按首轮处理
+  end
+  W-&gt;&gt;I: 合回 S3、S4（MERGE 结构，明令不跑第 3 项）
+  I--&gt;&gt;W: {ok, merged, failed, warnings}
+  Note over W,I: 全部 wave 之后，Finalize 才点名第 3 项跑 final</div><pre class="diagram-fallback">sequenceDiagram
+  participant W as opsx-apply.js
+  participant E as slice-executor
+  participant G as slice-gate.py
+  participant R as git（change 分支）
+  participant I as integrator
+  W-&gt;&gt;E: wave 2 · S3（start 命令带 --expect-branch worktree-c）
+  E-&gt;&gt;G: start S3 --expect-branch worktree-c
+  G-&gt;&gt;R: rev-parse worktree-c · merge-base --is-ancestor tip HEAD
+  alt tip 是 HEAD 的祖先
+    G--&gt;&gt;E: 写标记（base = HEAD）
+    E-&gt;&gt;G: gate S3
+    G--&gt;&gt;W: GATE JSON（原样）
+  else 不是（worktree 从旧 commit 分叉）
+    G--&gt;&gt;E: G0 JSON（commit 为空），exit 1，不写标记
+    E--&gt;&gt;W: 原样返回 → 重派按首轮处理
+  end
+  W-&gt;&gt;I: 合回 S3、S4（MERGE 结构，明令不跑第 3 项）
+  I--&gt;&gt;W: {ok, merged, failed, warnings}
+  Note over W,I: 全部 wave 之后，Finalize 才点名第 3 项跑 final</pre><div class="caption">## 一次多 wave 飞行（改后）</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>slice-gate：start --expect-branch 基点祖先校验 + ship 忽略 final 之后的记账 commit</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>tests/test_slice_gate.py<br>tests/test_ship_verdict.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py tests/test_ship_verdict.py</code></td></tr><tr><td class="mono">S2</td><td>工作流与执行体 / integrator 契约：每个执行体按分支名校验基点 + 合回用独立返回结构、不跑 final</td><td>wave 1</td><td>-</td><td>template/.claude/workflows/opsx-apply.js<br>template/.claude/agents/slice-executor.md<br>template/.claude/agents/integrator.md<br>tests/test_agents_workflow.py</td><td><code>python3 -m pytest -q tests/test_agents_workflow.py tests/test_ship_verdict.py</code></td></tr><tr><td class="mono">S3</td><td>文档：apply 命令 / skill 传分支名、回退 effort 取 frontmatter；pr-ship 与评审员取 diff 拉不到回退本地 diff</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>template/.claude/commands/pr-ship.md<br>template/.claude/agents/code-reviewer.md<br>tests/test_template_docs.py</td><td><code>python3 -m pytest -q tests/test_template_docs.py tests/test_agents_workflow.py tests/test_ship_verdict.py</code></td></tr><tr><td class="mono">S4</td><td>安装：模板 openspec/.gitignore 忽略 .flight + install.sh 安装 / 升级时幂等补行</td><td>wave 1</td><td>-</td><td>template/openspec/.gitignore<br>install.sh<br>tests/test_install.py</td><td><code>python3 -m pytest -q tests/test_install.py tests/test_docs_iron_rules.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>slice-base-check#start-accepts-head-at-branch-tip</td><td><code>tests/test_slice_gate.py::test_start_expect_branch_accepts_tip</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>slice-base-check#start-accepts-head-ahead-of-branch</td><td><code>tests/test_slice_gate.py::test_start_expect_branch_accepts_descendant</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>slice-base-check#start-refuses-head-off-branch</td><td><code>tests/test_slice_gate.py::test_start_expect_branch_refuses_stale_base</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>ship-final-freshness#ship-ignores-bookkeeping-commits</td><td><code>tests/test_ship_verdict.py::test_ship_ready_after_bookkeeping_commits</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>ship-final-freshness#ship-flags-code-change-after-final</td><td><code>tests/test_ship_verdict.py::test_ship_stale_after_code_change</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>ship-final-freshness#ship-flags-plan-change-after-final</td><td><code>tests/test_ship_verdict.py::test_ship_stale_after_plan_change</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>slice-base-check#workflow-passes-branch-to-start</td><td><code>tests/test_agents_workflow.py::test_workflow_start_carries_expect_branch</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>slice-base-check#executor-returns-start-refusal</td><td><code>tests/test_agents_workflow.py::test_executor_returns_start_refusal</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>integrator-merge-contract#merge-dispatch-forbids-final</td><td><code>tests/test_agents_workflow.py::test_workflow_merge_dispatch_forbids_final</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>integrator-merge-contract#integrator-final-only-when-named</td><td><code>tests/test_agents_workflow.py::test_integrator_final_only_when_named</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>slice-base-check#apply-docs-pass-branch</td><td><code>tests/test_template_docs.py::test_apply_docs_pass_branch</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-doc-contracts#fallback-effort-from-frontmatter</td><td><code>tests/test_template_docs.py::test_fallback_effort_from_frontmatter</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>review-diff-fallback#pr-ship-review-falls-back-to-local-diff</td><td><code>tests/test_template_docs.py::test_pr_ship_review_diff_fallback</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>review-diff-fallback#reviewer-distinguishes-empty-and-unreachable</td><td><code>tests/test_template_docs.py::test_reviewer_diff_empty_vs_unreachable</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-record-ignore#template-ignores-flight-marker</td><td><code>tests/test_install.py::test_template_ignores_flight_marker</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-record-ignore#upgrade-appends-flight-ignore-once</td><td><code>tests/test_install.py::test_upgrade_appends_flight_ignore_once</code></td><td><span class="chip" data-state="missing">missing</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-09-24T06:18:04Z</td><td>baseline</td><td>exit 0, 27.9s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 slice-gate：start --expect-branch 基点祖先校验 + ship 忽略 final 之后的记账 commit （deps: - · verify: <code>python3 -m pytest -q tests/test_slice_gate.py tests/test_ship_verdict.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 工作流与执行体 / integrator 契约：每个执行体按分支名校验基点 + 合回用独立返回结构、不跑 final （deps: - · verify: <code>python3 -m pytest -q tests/test_agents_workflow.py tests/test_ship_verdict.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 文档：apply 命令 / skill 传分支名、回退 effort 取 frontmatter；pr-ship 与评审员取 diff 拉不到回退本地 diff （deps: - · verify: <code>python3 -m pytest -q tests/test_template_docs.py tests/test_agents_workflow.py tests/test_ship_verdict.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 安装：模板 openspec/.gitignore 忽略 .flight + install.sh 安装 / 升级时幂等补行 （deps: - · verify: <code>python3 -m pytest -q tests/test_install.py tests/test_docs_iron_rules.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-09-24 06:19 · 章节 9 · 图示 2 · 任务 4
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

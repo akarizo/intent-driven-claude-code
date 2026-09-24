@@ -1,0 +1,56 @@
+{
+ "blocked": [],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 882,
+   "summary": "_final_fresh 调 `git diff --name-only <final> HEAD` 时开着默认的改名检测：文件被 git mv 改名时只列出新路径。我在临时仓库定向抽查过：把 src/app.py 用 git mv 改成 c/tasks.md，diff 只输出 `c/tasks.md`。所以 final 之后如果把源码文件改名成 change 目录下某个记账文件名（等于删掉或挪走了源码），会被判为只改了记账文件，ship 认为 final 仍新鲜、给出 ready。这让新鲜度门禁出现一条绕过路径。现实中不容易误触发，但仓库对门禁判据是零容忍，白名单判定应当把改名前后两个路径都算进去",
+   "fix": "改成 `git(root, \"diff\", \"--name-only\", \"--no-renames\", final_commit, \"HEAD\")`，让改名拆成「删旧路径 + 加新路径」两项，旧路径不在白名单内就判过期；再补一条守卫测试：final 之后把 src/app.py 改名为 change/tasks.md，断言 ship 判过期"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 52,
+   "summary": "`--expect-branch ${branch}` 直接拼进 shell 命令，没有加引号。git 分支名允许包含 `$` `(` `)` `;` `&` 等 shell 元字符，执行体照原样执行时可能被 shell 解释。分支名来自起飞时的 `git branch --show-current`，实际风险低；同文件的 changeDir 也没加引号，但文件里已经有 shq 这个工具函数。",
+   "fix": "把 shq 的定义挪到 startCmd 之前，改为 `(branch ? ` --expect-branch ${shq(branch)}` : '')`。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 113,
+   "summary": "「start 非 0 退出（G0 基点校验未通过）→ 把它打印的 JSON 原样作为最终输出」对所有非 0 退出一视同仁。但 start 遇到参数错误（exit 2）或切片不在 slices.json 等情况时，打印的可能不是 G0 JSON，执行体没法原样返回，只能自己拼一个符合 GATE schema 的结构。这句也会在 branch 为空（不带 --expect-branch）时照样下发，括号里的原因说明就不准确了。",
+   "fix": "改成「start 非 0 退出 → 不做任何改动；若它打印了 JSON 就原样返回，否则返回 {slice, ok:false, commit:\"\", failed:[\"G0 start: <stderr 首行>\"]}」，并把括号里的原因改成泛指（例如「基点校验或参数错误」）。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/opsx-apply.md",
+   "line": 59,
+   "summary": "回退段写的是「执行体 slice-gate.py start 带 --expect-branch <branch>」，但没说清两点：一是派发方要把完整的 start 命令（含 `--expect-branch <Workflow args 里同一个 branch 值>`）写进执行体 prompt，而 slice-executor.md 的说法是「prompt 给的 start 可能带」；二是重派那句只写了 `start <S> --base <base>`，而 opsx-apply.js 的 startCmd 重派时会同时带 `--base` 和 `--expect-branch`。按字面理解回退路径，重派可能漏掉基点校验，和「语义与脚本逐项一致」有细微出入。SKILL.md:67 同句镜像，问题相同。",
+   "fix": "两份文档同句改：把「执行体 slice-gate.py start 带 --expect-branch <branch>」改成「派发 prompt 的 start 命令带 `--expect-branch <branch>`（`<branch>` 取 Workflow args 里同一个值，首派和重派都带）」；重派句改成 `slice-gate.py start <S> --base <base> --expect-branch <branch>`。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_install.py",
+   "line": 5,
+   "summary": "删除 `import pytest` 后留下两个连续空行（`import subprocess` 与 `from conftest import ROOT` 之间），是本次去骨架标记后遗留的格式残渣",
+   "fix": "删掉多出的那一个空行，标准库 import 与本地 import 之间只留一个空行"
+  },
+  {
+   "severity": "LOW",
+   "file": "install.sh",
+   "line": 353,
+   "summary": "注释文案「飞行起飞记录（apply 起飞到收口之间的每机瞬态，收口即删，不入库）」在 install.sh 的 printf 和 template/openspec/.gitignore 里各写了一份，以后只改其中一处就会不一致（只影响注释，规则行本身靠 grep -qxF 判定，不受影响）",
+   "fix": "可以不改；如果想避免不一致，在 install.sh 旁加一句注释说明文案需与 template/openspec/.gitignore 保持同步"
+  }
+ ],
+ "fix": {
+  "slice": "final",
+  "ok": true,
+  "commit": "e4e34b6b22dc018bbad8bdbf88a0d0cb9ba986fc",
+  "failed": [],
+  "warnings": [],
+  "summary": "final 通过：scenario 16/16。HIGH 已修（template/.claude/workflows/opsx-apply.js）：任务行的判断从 `retryOf` 改成 `retryOf && retryOf.commit`。首轮被 G0 拒绝、没有产出时，重派走首轮分支，给出「按切片包 TDD 实现」。先在 tests/test_agents_workflow.py::test_workflow_start_carries_expect_branch 加了一条断言：S1:retry 要含「按切片包 TDD 实现」、不含「只修这些门禁项」，并同步更新了 Then 注释；先看到它失败，修复后全量 172 个测试通过。slices.json 里没有 fix 条目，start fix 被拒，按指示跳过。可选的 G0 说明句没有加。"
+ }
+}

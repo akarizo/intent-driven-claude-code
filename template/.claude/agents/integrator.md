@@ -23,7 +23,7 @@ color: cyan
 
 ## 3. 全量门禁
 
-`python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<change>`，把它打印的 JSON 原样返回。
+仅当 prompt 点名第 3 项时运行（Finalize 会点名；wave 合回不点名，也不要自己跑——后续 wave 的 scenario 还没解锁，跑了必然红）。`python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<change>`，把它打印的 JSON 原样返回。
 
 ## 4. 记事件
 
