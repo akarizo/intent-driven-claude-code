@@ -6,7 +6,7 @@
 
 ## 切片
 
-- [ ] S1 slice-gate：start --expect-branch 基点祖先校验 + ship 忽略 final 之后的记账 commit （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_ship_verdict.py`）
-- [ ] S2 工作流与执行体 / integrator 契约：每个执行体按分支名校验基点 + 合回用独立返回结构、不跑 final （deps: - · verify: `python3 -m pytest -q tests/test_agents_workflow.py tests/test_ship_verdict.py`）
-- [ ] S3 文档：apply 命令 / skill 传分支名、回退 effort 取 frontmatter；pr-ship 与评审员取 diff 拉不到回退本地 diff （deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_agents_workflow.py tests/test_ship_verdict.py`）
-- [ ] S4 安装：模板 openspec/.gitignore 忽略 .flight + install.sh 安装 / 升级时幂等补行 （deps: - · verify: `python3 -m pytest -q tests/test_install.py tests/test_docs_iron_rules.py`）
+- [x] S1 slice-gate：start --expect-branch 基点祖先校验 + ship 忽略 final 之后的记账 commit （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_ship_verdict.py`）
+- [x] S2 工作流与执行体 / integrator 契约：每个执行体按分支名校验基点 + 合回用独立返回结构、不跑 final （deps: - · verify: `python3 -m pytest -q tests/test_agents_workflow.py tests/test_ship_verdict.py`）
+- [x] S3 文档：apply 命令 / skill 传分支名、回退 effort 取 frontmatter；pr-ship 与评审员取 diff 拉不到回退本地 diff （deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_agents_workflow.py tests/test_ship_verdict.py`）
+- [x] S4 安装：模板 openspec/.gitignore 忽略 .flight + install.sh 安装 / 升级时幂等补行 （deps: - · verify: `python3 -m pytest -q tests/test_install.py tests/test_docs_iron_rules.py`）
