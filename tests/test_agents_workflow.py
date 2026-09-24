@@ -160,10 +160,9 @@ def test_workflow_retry_resumes_previous_commit():
     schema = text[text.index("const GATE = {"):text.index("const FINDINGS = {")]
     node_ok = subprocess.run(["node", "--check", str(WORKFLOW)], capture_output=True, text=True).returncode == 0 if shutil.which("node") else True
 
-    # Then: 重试分支含 git cherry-pick 与 retryOf.commit，并以 --base 传 retryOf.base；首轮仍含 expectHead；schema 有 base；node --check 通过
+    # Then: 重试分支含 git cherry-pick 与 retryOf.commit，并以 --base 传 retryOf.base；schema 有 base；node --check 通过
     assert "git cherry-pick" in prompt and "retryOf.commit" in prompt
     assert "--base" in prompt and "retryOf.base" in prompt
-    assert "expectHead" in prompt
     assert re.search(r"base:\s*\{\s*type:\s*'string'", schema), schema
     assert node_ok
 
@@ -186,7 +185,7 @@ def test_apply_docs_mirror_retry_and_preflight():
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#workflow-* / executor-* · integrator-merge-contract#*）
-# 骨架：xfail(strict) 直到 S2 实现；执行体去掉标记即解锁。
+# S2 已解锁（骨架标记已去）。
 # run_workflow 用 node 把脚本正文包进 async 函数，mock 掉 agent / parallel / phase / log 后真跑一遍，按 label 正则回放预设结果。
 
 HARNESS = r"""
@@ -247,7 +246,6 @@ TAIL_REPLIES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S2 未实现：每个执行体按分支名校验基点")
 def test_workflow_start_carries_expect_branch(tmp_path):
     # Given: branch=worktree-c，waves [[S1, S2], [S3]]；S1 首轮被 start 以 G0 拒绝（commit 为空），S2 首轮门禁红（带 commit 与 base），两者重派后都绿
     replies = [
@@ -272,7 +270,6 @@ def test_workflow_start_carries_expect_branch(tmp_path):
     assert "expectHead" not in WORKFLOW.read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S2 未实现：合回改用独立返回结构、不跑 final")
 def test_workflow_merge_dispatch_forbids_final(tmp_path):
     # Given: waves [[S1, S2], [S3]]，全部切片与合回都成功
     replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
@@ -289,7 +286,6 @@ def test_workflow_merge_dispatch_forbids_final(tmp_path):
     assert not [b for b in out["result"]["blocked"] if b["slice"].startswith("wave")], out["result"]["blocked"]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S2 未实现：执行体契约写明 start 拒绝即原样返回")
 def test_executor_returns_start_refusal():
     # Given: template/.claude/agents/slice-executor.md
     fm, body = frontmatter(AGENTS / "slice-executor.md")
@@ -302,7 +298,6 @@ def test_executor_returns_start_refusal():
     assert "非 0" in opening and "不做任何改动" in opening and "原样" in opening
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S2 未实现：integrator 第 3 项仅点名才跑")
 def test_integrator_final_only_when_named():
     # Given: template/.claude/agents/integrator.md
     fm, body = frontmatter(AGENTS / "integrator.md")
