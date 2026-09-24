@@ -741,7 +741,7 @@ def test_gate_json_carries_base(git_repo):
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#start-*）
-# 骨架：xfail(strict) 直到 S1 实现 start --expect-branch；执行体去掉标记即解锁。
+# S1 已实现 start --expect-branch。
 
 
 def _branch_repo(git_repo):
@@ -756,7 +756,6 @@ def _marker(git_repo):
     return json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S1 未实现：start --expect-branch")
 def test_start_expect_branch_accepts_tip(git_repo):
     # Given: worktree 的 HEAD 正是 change 分支 worktree-c 的最新 commit（临时 worktree 从最新 tip 分叉）
     change = _branch_repo(git_repo)
@@ -770,7 +769,6 @@ def test_start_expect_branch_accepts_tip(git_repo):
     assert marker["slice"] == "S1" and marker["base"] == git(git_repo, "rev-parse", "HEAD")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S1 未实现：start --expect-branch")
 def test_start_expect_branch_accepts_descendant(git_repo):
     # Given: 分支 worktree-c 指向 T；HEAD 在 T 之上多一个 commit（重试时 cherry-pick 了上一轮的 commit）
     change = _branch_repo(git_repo)
@@ -787,7 +785,6 @@ def test_start_expect_branch_accepts_descendant(git_repo):
     assert _marker(git_repo)["base"] == tip
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S1 未实现：start --expect-branch")
 def test_start_expect_branch_refuses_stale_base(git_repo):
     # Given: 分支 worktree-c 已前进一个 commit（wave 1 合回），HEAD 仍停在它之前的 commit；另有一个不存在的分支名
     change = _branch_repo(git_repo)

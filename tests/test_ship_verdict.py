@@ -255,7 +255,7 @@ def test_workflow_blocked_entries_carry_kind():
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: ship-final-freshness#*）
-# 骨架：xfail(strict) 直到 S1 实现记账豁免；两条守卫（改源码 / 改计划仍判过期）现在就绿，不标 xfail。
+# S1 已实现记账豁免；两条守卫（改源码 / 改计划仍判过期）锁住白名单边界。
 
 
 def _commit_after_final(git_repo, touch):
@@ -272,7 +272,6 @@ def _append(path, line):
         f.write(line + "\n")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S1 未实现：ship 忽略 final 之后只改记账文件的 commit")
 def test_ship_ready_after_bookkeeping_commits(git_repo):
     """scenario: ship-final-freshness#ship-ignores-bookkeeping-commits"""
     # Given: S1 与 final 都在 commit F 记为 ok；之后两个 commit 只改了 change 目录的 gate-report.md、timeline.md、tasks.md、evidence.log、review-findings.json
