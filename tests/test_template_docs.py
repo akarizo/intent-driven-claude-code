@@ -214,7 +214,7 @@ def test_schema_verify_excludes_typecheck():
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#apply-docs-pass-branch ·
 # flight-doc-contracts#fallback-effort-from-frontmatter · review-diff-fallback#*）
-# 骨架：xfail(strict) 直到 S3 实现；执行体去掉标记即解锁。
+# S3 已解锁。
 
 AGENTS = ROOT / "template" / ".claude" / "agents"
 
@@ -228,7 +228,6 @@ def fallback(t):
     return t[t.index("Workflow 不可用"):t.index("两条路径")]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：apply 文档用分支名起飞")
 def test_apply_docs_pass_branch():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     cmd, skill = apply_docs()
@@ -243,7 +242,6 @@ def test_apply_docs_pass_branch():
         assert "--expect-branch" in fb and "原样" in fb
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：回退派发的 effort 取 frontmatter")
 def test_fallback_effort_from_frontmatter():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     cmd, skill = apply_docs()
@@ -257,7 +255,6 @@ def test_fallback_effort_from_frontmatter():
         assert "frontmatter" in fb
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：pr-ship 取 diff 拉不到回退本地 diff")
 def test_pr_ship_review_diff_fallback():
     # Given: template/.claude/commands/pr-ship.md
     text = read(CMD / "pr-ship.md")
@@ -271,7 +268,6 @@ def test_pr_ship_review_diff_fallback():
     assert "为空或拉不到" not in step8
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S3 未实现：评审员区分 diff 为空与拉不到")
 def test_reviewer_diff_empty_vs_unreachable():
     # Given: template/.claude/agents/code-reviewer.md
     text = read(AGENTS / "code-reviewer.md")
