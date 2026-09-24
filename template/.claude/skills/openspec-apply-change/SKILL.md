@@ -44,8 +44,10 @@ metadata:
 2. **切片规划 lint**
    ```bash
    python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
+   python3 .claude/hooks/slice-gate.py preflight --change-dir openspec/changes/<name>
    ```
-   拿到 stdout 的 waves JSON。exit 非 0（规划红）→ 停下报告规划问题，不进入实现。
+   `lint` 拿到 stdout 的 waves JSON。exit 非 0（规划红）→ 停下报告规划问题，不进入实现。
+   `preflight` 校验 `gate-baseline.json`：exit 非 0（缺基线 / 基线红 / 基线过期）→ 停下把 stderr 原样报告，不进入实现；基线由 propose 的 `baseline` 步骤生成，缺了回去补。
 
 3. **记录批准事件并提交飞行记录**
    ```bash
@@ -62,7 +64,7 @@ metadata:
      `exit ≠ 0` → **停下报告**，提示用 `--model=<alias>` 显式指定后重跑；有 `--model=` 旗标时以旗标为准。禁模型自述主模型。
    - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change, changeDir, hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves, useAgentTypes: true, expectHead: "<git rev-parse --short=10 HEAD>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
    - 同时传 `deps: <slices.json 里每片的 deps 映射>`，依赖已 blocked 的切片脚本不再派发。
-   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`、`effort: high`（多切片 wave 各自 `isolation: worktree`；prompt 首行带 `expectHead` 第零步基分支校验），回报只收其原样 JSON；门禁红则以其 `failed` 重派同一切片一次，仍红记 blocked，依赖它的切片直接记 blocked；wave 后派 `integrator`（`model: "sonnet"`、`effort: low`）先提交飞行记录、合回、逐片 `slice-gate.py record --json '<该切片门禁 JSON 原文>'` 写回门禁结论与天花板行；评审用 `code-reviewer`（`model: "<main>"`、`effort: high`）并行派发（`run_in_background` 语义：不等）；最后一次批量修复与 final。
+   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`、`effort: high`（多切片 wave 各自 `isolation: worktree`；prompt 首行带 `expectHead` 第零步基分支校验），回报只收其原样 JSON；门禁红则以其 `failed` 重派同一切片一次——重派 prompt 带上一轮的 `commit` 与 `base`：第零步 HEAD 不是该 commit 则 `git cherry-pick <commit>`（冲突 abort 并记 `G0 base`），再 `slice-gate.py start <S> --base <base>` 接续同一基准（start 幂等）；仍红记 blocked，依赖它的切片直接记 blocked；wave 后派 `integrator`（`model: "sonnet"`、`effort: low`）先提交飞行记录、合回、逐片 `slice-gate.py record --json '<该切片门禁 JSON 原文>'` 写回门禁结论与天花板行；评审用 `code-reviewer`（`model: "<main>"`、`effort: high`）并行派发（`run_in_background` 语义：不等）；最后一次批量修复与 final。
    - 两条路径最终都产出同一份 JSON：`{change, models, efforts, slices, blocked, blocking, deferred, fix, final}`。
 
 5. **收口分解**

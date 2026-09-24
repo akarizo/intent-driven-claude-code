@@ -46,7 +46,8 @@ const typed = (name) => (useAgentTypes === false ? {} : { agentType: name })
 // agent 定义未注册（useAgentTypes=false）时，纪律仍以定义文件为准：让默认 subagent 先读它再干活
 const rules = (name) => (useAgentTypes === false ? `先 Read ${agentsDir}/${name}.md，严格按它的纪律执行（它就是你的角色定义）。\n` : '')
 const gateCmd = (s) => `python3 ${hooksDir}/slice-gate.py gate ${s} --change-dir ${changeDir}`
-const startCmd = (s) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}`
+// base：重派时传上一轮 gate JSON 的 base，让 start 在接续 commit 后仍以同一基准算区间（start 对同片幂等）
+const startCmd = (s, base) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}` + (base ? ` --base ${base}` : '')
 
 const GATE = {
   type: 'object',
@@ -58,6 +59,8 @@ const GATE = {
     failed: { type: 'array', items: { type: 'string' } },
     warnings: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
+    // 本轮 start 记录的区间起点 sha；重派时原样回传给 start --base，重试才能接着上一轮的 commit 与基准继续
+    base: { type: 'string' },
     // 合规天花板行 [[相对路径, 行号（整数）, 限制, 升级路径], ...]：门禁在临时 worktree 里算出，靠这个字段带回给 record 写进飞行记录
     // 内层元素无类型约束，执行体可能转写出非整数行号 → 消费侧 slice-gate.py 的 ceiling_rows_from_json 负责宽容化，不在这里 fail
     ceilings: { type: 'array', items: { type: 'array' } },
@@ -86,11 +89,16 @@ const FINDINGS = {
 
 const executorPrompt = (s, retryOf) => [
   rules('slice-executor') + `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
-  expectHead
-    ? `第零步：运行 \`git rev-parse HEAD\`，若不是以 ${expectHead} 开头，说明你的 worktree 没有从 change 分支最新 commit 分叉——不要做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: worktree HEAD 不是 ${expectHead}"]}。`
-    : '',
+  // 重派：接着上一轮的 commit 继续（临时 worktree 可能是新开的，HEAD 不是上一轮 commit 就 cherry-pick 它）；首轮：expectHead 基分支校验
+  retryOf && retryOf.commit
+    ? `第零步：运行 \`git rev-parse HEAD\`，若不等于上一轮的 commit ${retryOf.commit}，运行 \`git cherry-pick ${retryOf.commit}\` 把它接上；冲突则 \`git cherry-pick --abort\`，不做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: cherry-pick ${retryOf.commit} 冲突"]}。`
+    : expectHead
+      ? `第零步：运行 \`git rev-parse HEAD\`，若不是以 ${expectHead} 开头，说明你的 worktree 没有从 change 分支最新 commit 分叉——不要做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: worktree HEAD 不是 ${expectHead}"]}。`
+      : '',
   `切片包：${changeDir}/slices/${s}.md（scenario、owns、verify、接口摘要都在里面，先读它）。`,
-  `第一步运行 \`${startCmd(s)}\`。`,
+  retryOf && retryOf.base
+    ? `第一步运行 \`${startCmd(s, retryOf.base)}\`（\`--base\` 是上一轮的区间起点，start 对同片幂等；不要不带 --base 重跑）。`
+    : `第一步运行 \`${startCmd(s)}\`。`,
   retryOf
     ? `上一轮门禁未过：${JSON.stringify(retryOf.failed)}。只修这些门禁项，不扩大范围。`
     : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。',

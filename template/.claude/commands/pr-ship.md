@@ -155,9 +155,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    — reviewed by Claude Code (code-reviewer subagent), <YYYY-MM-DD>（当天日期）
    ```
 
-10. **CRITICAL/HIGH 自动修复（至多 2 轮，不问询）**
+10. **CRITICAL/HIGH 自动修复（至多 2 轮，修前问一次）**
 
-    - 有 CRITICAL/HIGH → 主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
+    - 有 CRITICAL/HIGH → 唯一一次 **AskUserQuestion**：『自动修并 push』/『只贴评论交人』；无人应答默认只贴评论。
+      - 选「只贴评论交人」（或默认）→ 不修代码：finding 留在 PR 评论里，`review-findings.json.blocking` 保留这些 CRITICAL/HIGH，下文「收尾复裁」的 `ship` 照常裁 draft。
+      - 选「自动修并 push」→ 走下面的原有流程（至多 2 轮）。
+    - 自动修：主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
       ```
       背景: 复核 PR/MR #<num> 的修复补丁。
       评审模式: follow-up
@@ -180,7 +183,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 11. **收尾**
 
-    打印 Output Summary。可选一次 **AskUserQuestion**：问用户是否要人工再看一遍再合并；不问也可以直接结束——默认直接结束，并给出 `gh pr merge <num> --squash --delete-branch` / `glab mr merge <num>` 供用户自己在终端跑（不代用户合并）。
+    打印 Output Summary，直接结束（不再问询），并给出 `gh pr merge <num> --squash --delete-branch` / `glab mr merge <num>` 供用户自己在终端跑（不代用户合并）。
 
 **Output Summary（命令收尾时打印）**
 
@@ -210,7 +213,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 - **subagent 必须干净**：不给它主会话的对话历史 / 设计意图，只给 diff + 门禁摘要（gate-report.md / evidence.log）。
 - **评审只 full 一种模式**：不重跑测试套件、不轮询，以门禁报告与 evidence.log 为准，至多 1 次定向抽查命令。
 - **CRITICAL/HIGH 自动修复至多 2 轮**：仍阻断则停下交人，不无限重试。
-- **全程至多问询 1 次**（仅 step 11 收尾那次，问是否人工复核）：其余环节（commit 文案、PR 正文、finding 处置、是否复审）一律直接执行，不问询。
+- **全程至多问询 1 次**（仅 step 10 自动修复前，问自动修还是只贴评论交人）：其余环节（commit 文案、PR 正文、是否复审、收尾）一律直接执行，不问询。
 - **review 评论签名必带**：让 PR 阅读者知道这条评论来自 AI。
 - **monorepo 友好**：跨多个 sub-repo 时按 sub-repo 分块 review。
 

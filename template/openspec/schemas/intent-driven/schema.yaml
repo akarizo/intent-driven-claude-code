@@ -319,6 +319,12 @@ artifacts:
 
       - Every slice has a non-empty `verify` command.
 
+      - `verify` runs tests only — it must not contain typecheck / lint tools
+      (`tsc` / `typecheck` / `eslint` / `rustfmt` / `clippy` / `ruff` /
+      `mypy` / `flake8` / `golangci`). Put typecheck in `gate.typecheck` and
+      lint in `gate.lint`; the gate diffs them against the baseline so
+      pre-existing errors are excluded (checked by `slice-gate.py lint`).
+
 
       After writing `slices.json`, run
       `python3 .claude/hooks/slice-gate.py lint --change-dir <dir>` and fix

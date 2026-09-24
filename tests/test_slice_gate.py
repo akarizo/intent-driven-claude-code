@@ -450,3 +450,289 @@ def test_gate_g8_silent_without_marker(git_repo):
     out = json.loads(p.stdout)
     assert [x for x in out["failed"] + out["warnings"] if x.startswith("G8")] == [], out
     assert out["ok"] is True, out
+
+
+# ---------------------------------------------------------------- flight-preflight-and-retry
+# （scenario: flight-preflight#* / gate-baseline-diff#* / slice-retry-resume#start-* gate-json-carries-base）
+
+
+
+def _baseline_repo(git_repo, verify2="true", lint=None):
+    """两片计划：S1/S2 的 verify 可注入；gate.test 用 true；返回 change 目录。"""
+    change = git_repo / "openspec" / "changes" / "c"
+    data = plan([slice_("S1", ["a/**"]), slice_("S2", ["b/**"], verify=verify2)],
+                gate={"test": "true", "lint": lint, "typecheck": None, "full_suite_sec": None})
+    write_plan(change, data)
+    write(change / "tasks.md", "- [ ] S1 x\n- [ ] S2 y\n")
+    commit_all(git_repo, "artifacts")
+    return change
+
+
+LINT_TWO_LINES = "sh -c 'printf \"a.ts(186,41): error TS2339 x\\nb.rs:12: warning y\\n\"; exit 1'"
+
+
+def test_baseline_writes_gate_baseline(git_repo):
+    # Given: gate.test 与两片 verify 在当前树上都退出 0；gate.lint 退出 1 并输出两行
+    change = _baseline_repo(git_repo, lint=LINT_TWO_LINES)
+
+    # When: 运行 slice-gate.py baseline
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；gate-baseline.json 的 ok 为 true、commit 为 HEAD、plan_sha 40 位；verify 每片 exit 0；lint.exit 1 且 lines 含规范化行；full_suite_sec 仍写回
+    assert p.returncode == 0, p.stderr
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    assert bl["ok"] is True and bl["commit"] == git(git_repo, "rev-parse", "HEAD")
+    assert len(bl["plan_sha"]) == 40
+    assert bl["verify"] == {"S1": {"exit": 0}, "S2": {"exit": 0}}
+    assert bl["lint"]["exit"] == 1 and any("a.ts(#,#): error TS# x" == l for l in bl["lint"]["lines"])
+    assert json.loads((change / "slices.json").read_text(encoding="utf-8"))["gate"]["full_suite_sec"] is not None
+
+
+def test_baseline_flags_red_verify(git_repo):
+    # Given: S2 的 verify 在当前树上退出 1
+    change = _baseline_repo(git_repo, verify2="false")
+
+    # When: 运行 baseline
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 1；文件与 stdout 的 ok 都为 false，reasons 点名 S2 并说明 verify 在基线上红
+    assert p.returncode == 1
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    out = json.loads(p.stdout)
+    assert bl["ok"] is False and out["ok"] is False
+    assert any("S2" in r and "verify" in r and "基线" in r for r in bl["reasons"])
+
+
+def test_preflight_refuses_missing_or_red_baseline(git_repo):
+    # Given: 合法计划但没有 gate-baseline.json；之后再放一个 ok=false 的基线
+    change = _baseline_repo(git_repo)
+
+    # When: 运行 preflight 两次
+    p1 = run_hook("slice-gate", "preflight", "--change-dir", str(change), cwd=git_repo)
+    write(change / "gate-baseline.json", json.dumps({"ok": False, "reasons": ["S2 verify 在基线上红（exit 1）"], "commit": git(git_repo, "rev-parse", "HEAD"), "plan_sha": "x"}))
+    p2 = run_hook("slice-gate", "preflight", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 两次都非 0；第一次提示先跑 baseline；第二次原样列出 reasons
+    assert p1.returncode != 0 and "基线" in p1.stderr and "baseline" in p1.stderr
+    assert p2.returncode != 0 and "S2 verify 在基线上红" in p2.stderr
+
+
+def test_preflight_refuses_stale_baseline(git_repo):
+    # Given: baseline 绿之后把 S2 的 verify 改掉（plan_sha 不再匹配）
+    change = _baseline_repo(git_repo)
+    assert run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo).returncode == 0
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    data["slices"][1]["verify"] = "true && true"
+    write_plan(change, data)
+
+    # When: 运行 preflight；改回后再运行一次
+    p1 = run_hook("slice-gate", "preflight", "--change-dir", str(change), cwd=git_repo)
+    data["slices"][1]["verify"] = "true"
+    write_plan(change, data)
+    p2 = run_hook("slice-gate", "preflight", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 第一次非 0 且提示过期需重跑 baseline；第二次退出 0 且 stdout 是 waves JSON
+    assert p1.returncode != 0 and "过期" in p1.stderr
+    assert p2.returncode == 0, p2.stderr
+    assert json.loads(p2.stdout) == [["S1", "S2"]]
+
+
+def test_lint_rejects_verify_embedding_typecheck(tmp_path):
+    # Given: S1 的 verify 里嵌了 pnpm typecheck 的 grep
+    change = tmp_path / "c"
+    data = plan([slice_("S1", ["a/**"], verify="sh -c 'pnpm test && ! (pnpm -s typecheck | grep src/)'")])
+    write_plan(change, data)
+
+    # When: 运行 lint；把 verify 改成只跑测试再运行一次
+    p1 = run_hook("slice-gate", "lint", "--change-dir", str(change))
+    data["slices"][0]["verify"] = "pnpm test"
+    write_plan(change, data)
+    p2 = run_hook("slice-gate", "lint", "--change-dir", str(change))
+
+    # Then: 第一次非 0，stderr 有以 verify: 开头、点名 S1 并提到 gate.typecheck 的项；第二次通过
+    assert p1.returncode != 0
+    assert any(l.strip().startswith("- verify:") and "S1" in l and "gate.typecheck" in l for l in p1.stderr.splitlines())
+    assert p2.returncode == 0, p2.stderr
+
+
+def _write_baseline(change, git_repo, lint_lines=None, typecheck_lines=None):
+    bl = {"commit": git(git_repo, "rev-parse", "HEAD"), "at": "2026-09-18T00:00:00Z", "plan_sha": "x", "ok": True, "reasons": [],
+          "test": {"exit": 0, "sec": 0.1},
+          "lint": {"exit": 1, "lines": lint_lines} if lint_lines is not None else None,
+          "typecheck": {"exit": 1, "lines": typecheck_lines} if typecheck_lines is not None else None,
+          "verify": {"S1": {"exit": 0}}}
+    write(change / "gate-baseline.json", json.dumps(bl, ensure_ascii=False))
+
+
+def _lint_cmd(lines):
+    return "sh -c 'printf \"%s\"; exit 1'" % "".join(l + "\\n" for l in lines)
+
+
+def _set_gate(change, key, cmd):
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    data["gate"][key] = cmd
+    write_plan(change, data)
+
+
+def test_gate_lint_excludes_baseline_lines(git_repo):
+    # Given: 已 start 的切片；基线记了 a.ts 的规范化报错；本次 lint 输出同一报错但行列号漂移
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=["a.ts(#,#): error TS# x"])
+    _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: failed 无 G2 lint；warnings 有 G2 lint 且含「已按基线排除」
+    assert not any(f.startswith("G2 lint") for f in res["failed"]), res["failed"]
+    assert any(w.startswith("G2 lint") and "已按基线排除" in w for w in res["warnings"]), res["warnings"]
+
+
+def test_gate_lint_flags_new_lines_only(git_repo):
+    # Given: 同上基线；本次 lint 除既有行外多一行 b.ts 的新错误
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=["a.ts(#,#): error TS# x"])
+    _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x", "b.ts(3,1): error TS2304 y"]))
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: ok 为 false；failed 有 G2 lint 项含「新增」与 b.ts，且不含基线里的 a.ts 行
+    assert res["ok"] is False
+    item = next(f for f in res["failed"] if f.startswith("G2 lint"))
+    assert "新增" in item and "b.ts" in item and "a.ts" not in item
+
+
+def test_gate_lint_red_without_baseline(git_repo):  # 既有行为守卫：判据引入前后都必须通过，故不标 xfail
+    # Given: 没有 gate-baseline.json；lint 退出 1
+    change = gate_repo(git_repo)
+    _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: failed 有以 G2 lint: exit 1 开头的项（现行为）；warnings 无「已按基线排除」
+    assert any(f.startswith("G2 lint: exit 1") for f in res["failed"]), res["failed"]
+    assert not any("已按基线排除" in w for w in res["warnings"])
+
+
+def test_gate_lint_red_when_baseline_was_green(git_repo):
+    # Given: 基线记的 lint 是绿的（exit 0、lines 为 []）；本次 lint 退出 1 且输出一行错误
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=[])
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    bl["lint"]["exit"] = 0
+    write(change / "gate-baseline.json", json.dumps(bl, ensure_ascii=False))
+    _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「基线为绿」的项；warnings 无「已按基线排除」
+    assert res["ok"] is False
+    assert any(f.startswith("G2 lint: exit 1") and "基线为绿" in f for f in res["failed"]), res["failed"]
+    assert not any("已按基线排除" in w for w in res["warnings"])
+
+
+def test_gate_lint_red_when_output_empty_with_red_baseline(git_repo):
+    # Given: 基线记了一行 lint 既有错误（exit 1）；本次 lint 退出 1 但无任何输出（静默型检查器）
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, lint_lines=["a.ts(#,#): error TS# x"])
+    _set_gate(change, "lint", "sh -c 'exit 1'")
+
+    # When: 运行切片门禁
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    res = json.loads(p.stdout)
+
+    # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「无输出可与基线比对」的项；warnings 无「已按基线排除」
+    assert res["ok"] is False
+    assert any(f.startswith("G2 lint: exit 1") and "无输出可与基线比对" in f for f in res["failed"]), res["failed"]
+    assert not any("已按基线排除" in w for w in res["warnings"])
+
+
+def test_baseline_records_empty_lines_for_green_lint(git_repo):
+    # Given: gate.lint 在当前树上退出 0 但打印 "All checks passed"
+    change = _baseline_repo(git_repo, lint="sh -c 'echo All checks passed; exit 0'")
+
+    # When: 运行 slice-gate.py baseline
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；gate-baseline.json 的 lint 为 {"exit": 0, "lines": []}，成功输出不记进基线行
+    assert p.returncode == 0, p.stderr
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    assert bl["lint"] == {"exit": 0, "lines": []}
+
+
+def test_final_typecheck_excludes_baseline_lines(git_repo):
+    # Given: 基线记了两行 typecheck 既有错误；final 时 typecheck 输出这两行（行号漂移）；之后再多一行
+    change = gate_repo(git_repo)
+    _write_baseline(change, git_repo, typecheck_lines=["a.ts(#,#): error TS# x", "b.ts(#,#): error TS# y"])
+    _set_gate(change, "typecheck", _lint_cmd(["a.ts(200,1): error TS2339 x", "b.ts(9,9): error TS2304 y"]))
+
+    # When: 运行 final 两次（第二次多一行新错误）
+    r1 = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+    _set_gate(change, "typecheck", _lint_cmd(["a.ts(200,1): error TS2339 x", "b.ts(9,9): error TS2304 y", "c.ts(1,1): error TS1005 z"]))
+    r2 = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: 第一次无 G2 typecheck 失败且 warnings 含「已按基线排除」；第二次 failed 有含「新增」的 G2 typecheck 项
+    assert not any(f.startswith("G2 typecheck") for f in r1["failed"]), r1["failed"]
+    assert any("已按基线排除" in w for w in r1["warnings"])
+    assert any(f.startswith("G2 typecheck") and "新增" in f for f in r2["failed"]), r2["failed"]
+
+
+def test_start_keeps_marker_for_same_slice(git_repo):
+    # Given: 标记为 S1、base 为 X、red_count 为 1；之后又有一个新 commit
+    change = gate_repo(git_repo)
+    marker_path = git_repo / ".openspec-slice"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    base_x = marker["base"]
+    marker["red_count"] = 1
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    write(git_repo / "src" / "more.py", "y = 2\n")
+    commit_all(git_repo, "more")
+
+    # When: 再次 start S1
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；base 与 red_count 不变；timeline 最后一行是 slice-start 且备注含 S1 与 resume
+    assert p.returncode == 0, p.stderr
+    after = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert after["base"] == base_x and after["red_count"] == 1
+    last = (change / "timeline.md").read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert "\tslice-start\t" in last and "S1" in last and "resume" in last
+
+
+def test_start_accepts_base_flag(git_repo):
+    # Given: 没有标记；X 是 HEAD 的父 commit
+    change = gate_repo(git_repo)
+    (git_repo / ".openspec-slice").unlink()
+    parent = git(git_repo, "rev-parse", "HEAD~1")
+
+    # When: start S1 --base X；删标记后再不带 --base start 一次
+    p1 = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--base", parent, cwd=git_repo)
+    m1 = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
+    (git_repo / ".openspec-slice").unlink()
+    run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+    m2 = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
+
+    # Then: 带 --base 时 base 为 X；不带时仍为 HEAD
+    assert p1.returncode == 0, p1.stderr
+    assert m1["base"] == parent
+    assert m2["base"] == git(git_repo, "rev-parse", "HEAD")
+
+
+def test_gate_json_carries_base(git_repo):
+    # Given: 已 start 的切片，标记 base 为 X
+    change = gate_repo(git_repo)
+    base_x = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+
+    # When: 运行切片门禁
+    res = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: JSON 含 base 等于 X；commit 仍为 HEAD
+    assert res["base"] == base_x
+    assert res["commit"] == git(git_repo, "rev-parse", "HEAD")

@@ -327,3 +327,60 @@ def test_route_audit_ignores_empty_attempt(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "❌" not in p.stdout
     assert "对账" in p.stdout and "未采样" in p.stdout
+
+
+# ---------------------------------------------------------------- flight-preflight-and-retry（scenario: evidence-change-resolution#*）
+# S2 已实现：标记 → 分支名 → 唯一候选 → 不写。
+
+import pytest  # noqa: E402
+from conftest import git  # noqa: E402
+
+
+def _changes(git_repo, names):
+    for n in names:
+        write(git_repo / "openspec" / "changes" / n / "tasks.md", "- [ ] S1 x\n")
+
+
+def test_evidence_resolves_change_from_branch(git_repo):
+    # Given: 无标记；分支 worktree-c；change a 与 c 的 tasks.md 都有未勾选项（a 按字母序在前）
+    _changes(git_repo, ["a", "c"])
+    git(git_repo, "checkout", "-q", "-b", "worktree-c")
+    event = bash_event("python3 -m pytest -q tests", stdout="1 passed", cwd=git_repo)
+
+    # When: 运行 test-evidence.py
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
+
+    # Then: 写进 c，切片列为 -；a 下没有 evidence.log
+    line = (git_repo / "openspec" / "changes" / "c" / "evidence.log").read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert "\t-\t" in line and "pytest" in line
+    assert not (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
+
+
+def test_evidence_skips_ambiguous_change(git_repo):
+    # Given: 无标记；分支 main；change a 与 b 都有未勾选项
+    _changes(git_repo, ["a", "b"])
+    event = bash_event("python3 -m pytest -q tests", stdout="1 passed", cwd=git_repo)
+
+    # When: 运行 test-evidence.py
+    p = run_hook("test-evidence", stdin=event, cwd=git_repo)
+
+    # Then: 两个目录都没有 evidence.log；退出 0
+    assert not (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
+    assert not (git_repo / "openspec" / "changes" / "b" / "evidence.log").exists()
+    assert p.returncode == 0
+
+
+def test_evidence_single_candidate_fallback(git_repo):  # 既有行为守卫：单候选回退与标记优先在改动前后都成立，故不标 xfail
+    # Given: 无标记；分支 main；只有 change a 有未勾选项
+    _changes(git_repo, ["a"])
+    event = bash_event("python3 -m pytest -q tests", stdout="1 passed", cwd=git_repo)
+
+    # When: 运行 test-evidence.py；再放标记指向 c 后运行一次
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
+    change_c = marker_repo(git_repo)
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
+
+    # Then: 单候选时写进 a；有标记时写进 c 且切片列为 S1
+    assert (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
+    line = (change_c / "evidence.log").read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert "\tS1\t" in line

@@ -159,3 +159,54 @@ def test_apply_checks_approval_gate():
     assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
     assert "takeoff-gate.py" in skill
     assert "record approve" in cmd and "批准证据" in cmd
+
+
+# ---------------------------------------------------------------- flight-preflight-and-retry（scenario: flight-doc-contracts#*）
+
+
+def test_pr_ship_asks_before_autofix():
+    # Given: template/.claude/commands/pr-ship.md
+    text = read(CMD / "pr-ship.md")
+
+    # When: 切出 step 10、step 11 与 Guardrails
+    step10 = text[text.index("10. **"):text.index("11. **")]
+    step11 = text[text.index("11. **"):text.index("**Output Summary")]
+    guard = text[text.index("**Guardrails**"):]
+
+    # Then: step 10 有 AskUserQuestion 且写明默认只贴评论；step 11 不再问询；Guardrails 不再把唯一问询指向 step 11；全文 AskUserQuestion ≤ 1
+    assert "AskUserQuestion" in step10
+    assert "默认" in step10 and "只贴评论" in step10
+    assert "AskUserQuestion" not in step11
+    assert "仅 step 11" not in guard
+    assert text.count("AskUserQuestion") <= 1
+
+
+def test_propose_baseline_red_stops():
+    # Given: opsx-propose.md 与 openspec-propose/SKILL.md
+    cmd = read(CMD / "opsx-propose.md")
+    skill = read(SKILLS / "openspec-propose" / "SKILL.md")
+
+    # When: 取两者的 step 4 段
+    def step4(t):
+        return t[t.index("slice-gate.py baseline"):t.index("spec_html.py")]
+
+    # Then: 两者都含 gate-baseline.json 与「停下报告」，并说明 verify 在基线上必须绿；hook 脚本集合一致
+    for t in (cmd, skill):
+        s = step4(t)
+        assert "gate-baseline.json" in s and "停下报告" in s
+        assert "verify" in s and "绿" in s
+    hooks = lambda t: set(re.findall(r"(slice-gate\.py|spec_html\.py|timeline\.py|session-decompose\.py)", t))
+    assert hooks(cmd) == hooks(skill)
+
+
+def test_schema_verify_excludes_typecheck():
+    # Given: schema.yaml 的 tasks 工件 instruction
+    schema = read(SCHEMA / "schema.yaml")
+
+    # When: 取 Slicing rules 段
+    tasks = schema[schema.index("- id: tasks"):schema.index("apply:")]
+    rules = tasks[tasks.index("Slicing rules"):]
+
+    # Then: 含 verify 只跑测试类规则，点名 typecheck 与 gate.lint / gate.typecheck
+    assert "verify" in rules and "typecheck" in rules
+    assert "gate.typecheck" in rules and "gate.lint" in rules
