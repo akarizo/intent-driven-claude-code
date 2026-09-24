@@ -111,7 +111,8 @@ const executorPrompt = (s, retryOf) => [
     ? `第一步运行 \`${startCmd(s, retryOf.base)}\`（\`--base\` 是上一轮的区间起点，start 对同片幂等；不要不带 --base 重跑）。`
     : `第一步运行 \`${startCmd(s)}\`。`,
   'start 非 0 退出（G0 基点校验未通过）→ 不做任何改动，把它打印的 JSON 原样作为最终输出。',
-  retryOf
+  // 上一轮无产出（start 以 G0 拒绝，commit 为空）→ 走首轮分支从头实现，而不是「只修门禁项」
+  retryOf && retryOf.commit
     ? `上一轮门禁未过：${JSON.stringify(retryOf.failed)}。只修这些门禁项，不扩大范围。`
     : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。',
   `收尾运行 \`${gateCmd(s)}\`，把它打印的 JSON 原样作为最终输出。`,

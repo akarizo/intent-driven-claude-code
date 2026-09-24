@@ -261,11 +261,12 @@ def test_workflow_start_carries_expect_branch(tmp_path):
     execs = {c["opts"]["label"]: c["prompt"] for c in out["calls"] if re.fullmatch(r"S\d+(:retry)?", c["opts"]["label"])}
     starts = {label: start_cmds(prompt) for label, prompt in execs.items()}
 
-    # Then: 五次执行体派发的 start 命令都带 --expect-branch worktree-c；S1 重派不 cherry-pick，S2 重派 cherry-pick 且 start 带上一轮 --base；脚本不再出现 expectHead
+    # Then: 五次执行体派发的 start 命令都带 --expect-branch worktree-c；S1 重派不 cherry-pick 且走首轮任务行（含「按切片包 TDD 实现」、不含「只修这些门禁项」），S2 重派 cherry-pick 且 start 带上一轮 --base；脚本不再出现 expectHead
     assert sorted(execs) == ["S1", "S1:retry", "S2", "S2:retry", "S3"], sorted(execs)
     for label, cmds in starts.items():
         assert cmds and all("--expect-branch worktree-c" in c for c in cmds), (label, cmds)
     assert "cherry-pick" not in execs["S1:retry"]
+    assert "按切片包 TDD 实现" in execs["S1:retry"] and "只修这些门禁项" not in execs["S1:retry"]
     assert "cherry-pick" in execs["S2:retry"] and any("--base " + "b" * 40 in c for c in starts["S2:retry"])
     assert "expectHead" not in WORKFLOW.read_text(encoding="utf-8")
 
