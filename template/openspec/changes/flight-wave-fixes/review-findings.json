@@ -1,14 +1,6 @@
 {
  "blocked": [],
- "blocking": [
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/workflows/opsx-apply.js",
-   "line": 115,
-   "summary": "首轮被 start 以 G0 拒绝时，执行体没有任何产出（commit 为空串，没写标记，也没动代码），但重派 prompt 只看 retryOf 是否为真值，于是给出「上一轮门禁未过：[\"G0 base: …\"]。只修这些门禁项，不扩大范围。」，不会出现「按切片包 TDD 实现」。本 change 最主要的恢复路径（首轮基点错，重派到新 worktree 后 start 通过）因此会让执行体只去「修 G0」而不实现切片，结果是再次门禁红或产出空。design D1 写明「retryOf.commit 为空 → 走首轮分支」，本实现只删掉了第零步，任务行没有跟着走首轮分支。test_workflow_start_carries_expect_branch 对 S1:retry 只断言了没有 cherry-pick，没覆盖这一点。",
-   "fix": "把任务行的判定改成按上一轮有没有产出来分：`retryOf && retryOf.commit ? '上一轮门禁未过：…只修这些门禁项…' : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。'`（G0 重派时可以另加一句「上一轮 start 基点校验被拒：<failed>，本轮从头实现」作说明）。同时在 test_workflow_start_carries_expect_branch 里补断言：execs['S1:retry'] 含「按切片包 TDD 实现」且不含「只修这些门禁项」。"
-  }
- ],
+ "blocking": [],
  "deferred": [
   {
    "severity": "MEDIUM",
