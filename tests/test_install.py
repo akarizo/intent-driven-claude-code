@@ -1,10 +1,8 @@
-"""install.sh 与模板 openspec/.gitignore：飞行起飞记录 .flight 不入库（scenario: flight-record-ignore#*）。
-骨架：xfail(strict) 直到 S4 实现；执行体去掉标记即解锁。"""
+"""install.sh 与模板 openspec/.gitignore：飞行起飞记录 .flight 不入库（scenario: flight-record-ignore#*）。"""
 import os
 import shutil
 import subprocess
 
-import pytest
 
 from conftest import ROOT
 
@@ -28,7 +26,6 @@ def ignored(repo, rel):
     return subprocess.run(["git", "check-ignore", "-q", rel], cwd=repo).returncode == 0
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S4 未实现：模板 openspec/.gitignore 忽略 .flight")
 def test_template_ignores_flight_marker(git_repo):
     # Given: 一个 git 仓库，openspec/.gitignore 是本模板的原文；某个 change 目录下有 .flight，openspec/ 下有 .mini-active
     (git_repo / "openspec" / "changes" / "x").mkdir(parents=True)
@@ -44,7 +41,6 @@ def test_template_ignores_flight_marker(git_repo):
     assert mini, "openspec/.mini-active 未被忽略"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="S4 未实现：install.sh 升级时幂等补 .flight 规则")
 def test_upgrade_appends_flight_ignore_once(tmp_path):
     # Given: 一个已安装的项目，其 openspec/.gitignore 是老版本（只有 .mini-active 一条规则）
     target = tmp_path / "proj"
