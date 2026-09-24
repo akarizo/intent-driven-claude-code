@@ -344,6 +344,15 @@ PY
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md"
 # openspec/：用户数据 + 种子目录，绝不覆盖
 copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec" 0
+# openspec/.gitignore：已装项目不会被 copy_tree 覆盖，幂等补飞行起飞记录规则（整行匹配）
+OPENSPEC_GITIGNORE="$TARGET/openspec/.gitignore"
+if grep -qxF 'changes/*/.flight' "$OPENSPEC_GITIGNORE" 2>/dev/null; then
+  log_skip "openspec/.gitignore (changes/*/.flight 已忽略, 跳过)"
+  SKIP_COUNT=$((SKIP_COUNT+1))
+else
+  printf '\n# 飞行起飞记录（apply 起飞到收口之间的每机瞬态，收口即删，不入库）\nchanges/*/.flight\n' >> "$OPENSPEC_GITIGNORE"
+  log_app "openspec/.gitignore (追加 changes/*/.flight)"
+fi
 # openspec/schemas/：库自有 schema，升级时刷新；同时迁移根 adr/
 if [[ "$UPGRADE" == 1 ]]; then
   copy_tree "$TEMPLATE_SRC/openspec/schemas" "$TARGET/openspec/schemas" 1

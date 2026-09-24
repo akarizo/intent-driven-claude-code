@@ -127,8 +127,10 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
    评审模式: full
    审查范围: 本 PR 相对 target 分支的完整 diff。
-   取 diff: `gh pr diff <num>`（GitHub）或 `glab mr diff <num>`（GitLab）。
-   diff 为空或拉不到 → 报告"无变更"并停止。
+   取 diff: 首选 `gh pr diff <num>`（GitHub）或 `glab mr diff <num>`（GitLab）。
+   拉取失败（例如 diff 过大 HTTP 406）→ `git fetch origin <target>` 后 `git diff origin/<target>...HEAD`。
+   diff 确实为空 → 报告"无变更"并停止。
+   两种都拉不到 → 报告"取 diff 失败"并停止，不得报告"无变更"。
 
    参考材料（不重跑测试套件，以此为准）：
    - openspec/changes/<name>/gate-report.md（各切片门禁 G1–G7 结论）

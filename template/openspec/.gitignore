@@ -1,2 +1,5 @@
 # intent-driven mini-task marker（每机瞬态，不入库）
 .mini-active
+
+# 飞行起飞记录（apply 起飞到收口之间的每机瞬态，收口即删，不入库）
+changes/*/.flight

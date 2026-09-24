@@ -4,8 +4,10 @@
 # 子命令：
 #   lint     --change-dir DIR                 校验 slices.json；stdout 打印 waves JSON；违规 exit 2 并在 stderr 点名规则
 #   waves    --change-dir DIR                 只打印 waves JSON
-#   start    S --change-dir DIR [--base REF]  在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base / started）；
-#                                              标记已是同一切片时不改（resume），保住区间与 red_count
+#   start    S --change-dir DIR [--base REF] [--expect-branch BRANCH]
+#                                              在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base / started）；
+#                                              标记已是同一切片时不改（resume），保住区间与 red_count；
+#                                              给了 --expect-branch 先校验 HEAD 是该分支最新 commit 的后代，否则打印 G0 JSON、exit 1、不写标记
 #   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
@@ -602,11 +604,36 @@ def cmd_lint(args, print_waves=True):
     return waves
 
 
+def _is_ancestor(root, anc, desc):
+    # 不能用 git()：--is-ancestor 不成立时退出 1，git() 会当成异常抛；任何非 0 都按「不成立」
+    return subprocess.run(["git", "merge-base", "--is-ancestor", anc, desc],
+                          cwd=root, capture_output=True, text=True).returncode == 0
+
+
+def _base_check(root, branch):
+    """G0：HEAD 必须是 branch 最新 commit 的后代（含相等）。通过返回 None，否则返回 failed 文案。"""
+    try:
+        tip = git(root, "rev-parse", "--verify", branch + "^{commit}")
+    except RuntimeError:
+        return "G0 base: 分支 %s 不存在" % branch
+    head = git(root, "rev-parse", "HEAD")
+    if not _is_ancestor(root, tip, head):
+        return "G0 base: HEAD %s 不是分支 %s（%s）的后代——worktree 不是从 change 分支最新 commit 分叉" % (
+            head[:10], branch, tip[:10])
+    return None
+
+
 def cmd_start(args):
     root = toplevel()
     data = load_plan(args.change_dir)
     if args.slice not in [s["id"] for s in data.get("slices") or []]:
         die("切片 %s 不在 slices.json 中" % args.slice)
+    if args.expect_branch:
+        msg = _base_check(root, args.expect_branch)
+        if msg:
+            print(json.dumps({"slice": args.slice, "ok": False, "commit": "", "failed": [msg],
+                              "warnings": [], "summary": "基点校验未通过"}, ensure_ascii=False))
+            sys.exit(1)
     existing = _read_marker(root)
     if existing and existing.get("slice") == args.slice:
         # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动
@@ -845,6 +872,22 @@ def report_latest(change_dir):
     return latest
 
 
+BOOKKEEPING = ("timeline.md", "gate-report.md", "evidence.log", "review-findings.json", "tasks.md")
+
+
+def _final_fresh(root, change_dir, final_commit):
+    """final 之后的 commit 只改了 change 目录的记账文件 → 仍算新鲜；任一 git 调用失败 → 不新鲜。"""
+    if not _is_ancestor(root, final_commit, "HEAD"):
+        return False
+    try:
+        names = git(root, "diff", "--name-only", final_commit, "HEAD").splitlines()
+    except RuntimeError:
+        return False
+    change_rel = os.path.relpath(os.path.abspath(change_dir), root).replace(os.sep, "/")
+    allowed = {"%s/%s" % (change_rel, n) for n in BOOKKEEPING}
+    return all(n in allowed for n in names if n)
+
+
 def cmd_ship(args):
     """draft / ready 裁决：只读 gate-report.md、HEAD、review-findings.json；工作流的 blocked 只作说明。"""
     root = toplevel()
@@ -870,7 +913,7 @@ def cmd_ship(args):
             reasons.append("final 未运行")
         elif not final["ok"]:
             reasons.append("final 红：%s" % final["failed"])
-        elif final["commit"] != head[:10]:
+        elif final["commit"] != head[:10] and not _final_fresh(root, args.change_dir, final["commit"]):
             reasons.append("final 过期：记录 %s，HEAD %s" % (final["commit"], head[:10]))
     # 铁律 4：CRITICAL/HIGH 未闭环不得非 draft —— 与是否飞行模式无关，无条件检查
     blocking = findings.get("blocking") or []
@@ -902,6 +945,7 @@ def main():
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
+    p.add_argument("--expect-branch", help="基点校验：HEAD 须是该分支最新 commit 的后代，否则 G0 拒绝起跑")
     p = sub.add_parser("gate")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)

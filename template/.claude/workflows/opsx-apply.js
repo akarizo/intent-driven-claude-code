@@ -1,13 +1,13 @@
 // opsx-apply · 飞行模式的确定性调度脚本（Claude Code 命名工作流）
 // 由 /opsx-apply 命令以 args 启动：
-//   { change, changeDir, hooksDir, agentsDir, waves, useAgentTypes, expectHead, models, efforts }
+//   { change, changeDir, hooksDir, agentsDir, waves, useAgentTypes, branch, models, efforts }
 //   change        change 名，如 "add-user-export"
 //   changeDir     相对仓库根，如 "openspec/changes/add-user-export"
 //   hooksDir      相对仓库根，如 ".claude/hooks"
 //   agentsDir     相对仓库根，如 ".claude/agents"（agent 定义未注册时让默认 subagent 先读定义）
 //   waves         slice-gate.py waves 的输出，如 [["S1","S2"],["S3"],["S4","S5"]]
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
-//   expectHead    可选，change 分支最新 commit 前缀；执行体第零步校验自己的 worktree 基分支
+//   branch        可选，change 分支名（起飞时 git branch --show-current）；每个执行体的 start 带 --expect-branch，据此做基点祖先校验
 //   deps          可选，{ S3: ["S1","S2"], ... }（来自 slices.json）；依赖已 blocked 的切片直接记 blocked，不白跑
 //                 blocked 条目形如 { slice, kind: 'gate' | 'infra', reason }：gate = 切片门禁红；infra = agent 未返回 / 依赖跳过 / integrator 合回失败。
 //                 blocked 只进 PR 正文作说明；draft / ready 由 slice-gate.py ship 按 gate-report.md 裁决，不看本列表。
@@ -31,7 +31,7 @@ export const meta = {
 
 const { change, changeDir, hooksDir, waves, useAgentTypes } = args
 const agentsDir = args.agentsDir || '.claude/agents'
-const expectHead = args.expectHead || null
+const branch = args.branch || null
 const deps = args.deps || {}   // 可选：{ S3: ["S1","S2"], ... }；依赖已 blocked 的切片不再派发，直接记 blocked
 
 // ---- 模型路由（铁律：按角色显式声明，缺一即拒绝起飞）
@@ -47,7 +47,9 @@ const typed = (name) => (useAgentTypes === false ? {} : { agentType: name })
 const rules = (name) => (useAgentTypes === false ? `先 Read ${agentsDir}/${name}.md，严格按它的纪律执行（它就是你的角色定义）。\n` : '')
 const gateCmd = (s) => `python3 ${hooksDir}/slice-gate.py gate ${s} --change-dir ${changeDir}`
 // base：重派时传上一轮 gate JSON 的 base，让 start 在接续 commit 后仍以同一基准算区间（start 对同片幂等）
-const startCmd = (s, base) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}` + (base ? ` --base ${base}` : '')
+// branch：start 校验 HEAD 是 change 分支的后代（基点校验），不是则非 0 退出并打印 G0 JSON
+const startCmd = (s, base) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}`
+  + (base ? ` --base ${base}` : '') + (branch ? ` --expect-branch ${branch}` : '')
 
 const GATE = {
   type: 'object',
@@ -86,20 +88,31 @@ const FINDINGS = {
     },
   },
 }
+// wave 合回的返回结构：合回不是切片，没有 slice / commit；只看 ok 与 failed
+const MERGE = {
+  type: 'object',
+  required: ['ok', 'failed'],
+  properties: {
+    ok: { type: 'boolean' },
+    merged: { type: 'array', items: { type: 'string' } },
+    failed: { type: 'array', items: { type: 'string' } },
+    warnings: { type: 'array', items: { type: 'string' } },
+  },
+}
 
 const executorPrompt = (s, retryOf) => [
   rules('slice-executor') + `你在仓库根（cwd）。为 OpenSpec change \`${change}\` 实现切片 ${s}。`,
-  // 重派：接着上一轮的 commit 继续（临时 worktree 可能是新开的，HEAD 不是上一轮 commit 就 cherry-pick 它）；首轮：expectHead 基分支校验
+  // 重派：接着上一轮的 commit 继续（临时 worktree 可能是新开的，HEAD 不是上一轮 commit 就 cherry-pick 它）；首轮无第零步，基点由 start --expect-branch 校验
   retryOf && retryOf.commit
     ? `第零步：运行 \`git rev-parse HEAD\`，若不等于上一轮的 commit ${retryOf.commit}，运行 \`git cherry-pick ${retryOf.commit}\` 把它接上；冲突则 \`git cherry-pick --abort\`，不做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: cherry-pick ${retryOf.commit} 冲突"]}。`
-    : expectHead
-      ? `第零步：运行 \`git rev-parse HEAD\`，若不是以 ${expectHead} 开头，说明你的 worktree 没有从 change 分支最新 commit 分叉——不要做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: worktree HEAD 不是 ${expectHead}"]}。`
-      : '',
+    : '',
   `切片包：${changeDir}/slices/${s}.md（scenario、owns、verify、接口摘要都在里面，先读它）。`,
   retryOf && retryOf.base
     ? `第一步运行 \`${startCmd(s, retryOf.base)}\`（\`--base\` 是上一轮的区间起点，start 对同片幂等；不要不带 --base 重跑）。`
     : `第一步运行 \`${startCmd(s)}\`。`,
-  retryOf
+  'start 非 0 退出（G0 基点校验未通过）→ 不做任何改动，把它打印的 JSON 原样作为最终输出。',
+  // 上一轮无产出（start 以 G0 拒绝，commit 为空）→ 走首轮分支从头实现，而不是「只修门禁项」
+  retryOf && retryOf.commit
     ? `上一轮门禁未过：${JSON.stringify(retryOf.failed)}。只修这些门禁项，不扩大范围。`
     : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。',
   `收尾运行 \`${gateCmd(s)}\`，把它打印的 JSON 原样作为最终输出。`,
@@ -152,8 +165,9 @@ for (const [i, allWave] of waves.entries()) {
       rules('integrator') + `按 agent 定义第 0 项先把 ${changeDir} 内未提交的飞行记录文件（timeline.md / gate-report.md / evidence.log）提交掉；` +
       `再按第 1 项把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（冲突则 abort 并返回 ok:false）。` +
       `合回后逐条运行（把临时 worktree 里的门禁结论写回分支）：\n${recordCmds.join('\n')}\n` +
-      `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`，最后再按第 0 项把飞行记录提交。返回 JSON。`,
-      { label: `integrate:w${i + 1}`, schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
+      `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`，最后再按第 0 项把飞行记录提交。` +
+      '本次只合回，不要运行第 3 项（全量门禁 final）——后续 wave 的 scenario 还没解锁，现在跑必然红。返回 JSON {ok, merged, failed, warnings}。',
+      { label: `integrate:w${i + 1}`, schema: MERGE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
     if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, kind: 'infra', reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
   }
   for (const s of merged) {
