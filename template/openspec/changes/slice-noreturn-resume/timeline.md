@@ -9,3 +9,5 @@
 2026-10-08T09:03:32Z	review	findings=6 blocking=2 deferred=4
 2026-10-08T09:04:54Z	final	ok
 2026-10-08T09:04:54Z	apply-done	blocked=0 blocking=2
+2026-10-08T09:05:27Z	apply-done	
+2026-10-08T09:06:00Z	ship	draft: 2 条 CRITICAL/HIGH 评审未闭环
