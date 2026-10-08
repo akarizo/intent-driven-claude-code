@@ -942,3 +942,20 @@ def test_gate_ok_deletes_checkpoint(git_repo):
     # Then: 门禁绿；refs/flight/c/S1 已删除
     assert res["ok"], res
     assert _ref(git_repo) == ""
+
+
+def test_start_resume_restores_non_ascii_path(git_repo, tmp_path):
+    # Given: S1 已 start，工作区新建未提交的 src/中文.py（内容 "Z = 1"，路径含非 ASCII，core.quotePath 默认开启），checkpoint 已拍快照；随后从基点 X 新开一个干净 worktree
+    change, base = _started(git_repo)
+    write(git_repo / "src" / "中文.py", "Z = 1\n")
+    _checkpoint(git_repo)
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
+
+    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 退出 0；src/中文.py 以快照内容出现在工作区；checkpoint.restored 恰为 ["src/中文.py"]
+    assert p.returncode == 0, p.stderr
+    assert (wt / "src" / "中文.py").read_text(encoding="utf-8") == "Z = 1\n"
+    assert json.loads(p.stdout)["checkpoint"]["restored"] == ["src/中文.py"], p.stdout

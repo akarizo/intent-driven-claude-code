@@ -721,7 +721,12 @@ def _ckpt_restore(root, ref, owns):
         return [], "无快照 %s，未恢复" % ref
     if not _is_ancestor(root, "HEAD", snap):
         return [], "快照 %s 的祖先链不含当前 HEAD（基点不符），未恢复" % snap[:10]
-    names = [x for x in git(root, "diff", "--name-only", "HEAD", snap).splitlines() if x]
+    # -z：免 core.quotePath 把非 ASCII 路径转义成带引号的八进制串；不经 git() 的 strip，按 \0 切分
+    p = subprocess.run(["git", "diff", "--name-only", "-z", "HEAD", snap], cwd=root,
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError("git diff: %s" % p.stderr.strip())
+    names = [x for x in p.stdout.split("\0") if x]
     restored = []
     for f in names:
         if f == MARKER or not any(glob_match(f, o) for o in owns):
