@@ -47,6 +47,15 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-evidence.py\""
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py\" checkpoint"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -56,6 +65,15 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-evidence.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py\" checkpoint"
           }
         ]
       }

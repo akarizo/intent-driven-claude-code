@@ -9,10 +9,12 @@
     "PostToolUse": [
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] },
       { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/claudemd-lint.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/claudemd-lint.py\" --hook || exit 0'" } ] },
-      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" --hook || exit 0'" } ] }
+      { "matcher": "Write|Edit", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/memory-lint.py\" --hook || exit 0'" } ] },
+      { "matcher": "Write|Edit|Bash", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/slice-gate.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/slice-gate.py\" checkpoint || exit 0'" } ] }
     ],
     "PostToolUseFailure": [
-      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] }
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/test-evidence.py\"" } ] },
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "sh -c '[ -f \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/slice-gate.py\" ] && exec python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/slice-gate.py\" checkpoint || exit 0'" } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/template/.claude/hooks/stop-gate.py\"" } ] }
