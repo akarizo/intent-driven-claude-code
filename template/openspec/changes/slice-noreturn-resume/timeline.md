@@ -4,3 +4,5 @@
 2026-10-08T08:56:13Z	gate	S1 ok
 2026-10-08T08:56:13Z	gate	S2 ok
 2026-10-08T08:56:19Z	integrate	wave 1
+2026-10-08T09:01:48Z	fix	blocking=2
+2026-10-08T09:03:20Z	final	ok
