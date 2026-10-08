@@ -6,3 +6,6 @@
 2026-10-08T08:56:19Z	integrate	wave 1
 2026-10-08T09:01:48Z	fix	blocking=2
 2026-10-08T09:03:20Z	final	ok
+2026-10-08T09:03:32Z	review	findings=6 blocking=2 deferred=4
+2026-10-08T09:04:54Z	final	ok
+2026-10-08T09:04:54Z	apply-done	blocked=0 blocking=2
