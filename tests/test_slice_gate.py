@@ -805,3 +805,146 @@ def test_start_expect_branch_refuses_stale_base(git_repo):
         assert res["failed"][0].startswith("G0 base") and name in res["failed"][0], res["failed"]
     assert not (git_repo / ".openspec-slice").exists()
     assert run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).returncode != 0
+
+
+# ---------------------------------------------------------------- slice-noreturn-resume（scenario: slice-checkpoint#*）
+# S1 待实现：checkpoint 子命令、start --resume-checkpoint、快照生命周期。
+
+CKPT_REF = "refs/flight/c/S1"
+
+
+def _started(git_repo):
+    """change c 的切片 S1（owns src/** 与 tests/test_mod.py）已 start；src/mod.py 已在基点里。返回 (change 目录, 基点 sha)。"""
+    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**", "tests/test_mod.py"])]))
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return 0\n")
+    base = commit_all(git_repo, "artifacts")
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+    assert p.returncode == 0, p.stderr
+    return change, base
+
+
+def _ref(repo, ref=CKPT_REF):
+    import subprocess
+    return subprocess.run(["git", "rev-parse", "-q", "--verify", ref], cwd=repo, capture_output=True, text=True).stdout.strip()
+
+
+def _checkpoint(repo):
+    return run_hook("slice-gate", "checkpoint", stdin=json.dumps({"hook_event_name": "PostToolUse", "cwd": str(repo)}), cwd=repo)
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：checkpoint 子命令")
+def test_checkpoint_snapshots_owned_changes(git_repo):
+    # Given: 已 start 的切片 S1；工作区改了已跟踪的 src/mod.py、新建未跟踪的 src/pkg/new.py，另在 owns 外新建 notes.txt，都未提交
+    change, base = _started(git_repo)
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
+    write(git_repo / "src" / "pkg" / "new.py", "X = 1\n")
+    write(git_repo / "notes.txt", "scratch\n")
+    status_before = git(git_repo, "status", "--porcelain")
+
+    # When: 以 PostToolUse 载荷（cwd 为仓库根）运行 checkpoint
+    p = _checkpoint(git_repo)
+
+    # Then: 退出 0、stdout 为空；refs/flight/c/S1 的树里 src/mod.py 与 src/pkg/new.py 是新内容、没有 notes.txt；HEAD 与工作区状态不变
+    assert p.returncode == 0 and p.stdout == "", (p.returncode, p.stdout, p.stderr)
+    snap = _ref(git_repo)
+    assert snap
+    assert "return a + b" in git(git_repo, "show", f"{snap}:src/mod.py")
+    assert git(git_repo, "show", f"{snap}:src/pkg/new.py") == "X = 1"
+    assert "notes.txt" not in git(git_repo, "ls-tree", "-r", "--name-only", snap).splitlines()
+    assert git(git_repo, "rev-parse", "HEAD") == base
+    assert git(git_repo, "status", "--porcelain") == status_before
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：checkpoint 子命令")
+def test_checkpoint_silent_without_marker(git_repo):
+    # Given: 有 change 计划、工作区有未提交改动，但没有 .openspec-slice 标记；另备一段非法 JSON 载荷
+    write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    commit_all(git_repo, "plan")
+    write(git_repo / "src" / "mod.py", "x = 1\n")
+
+    # When: 分别以合法载荷与非法载荷运行 checkpoint
+    runs = [run_hook("slice-gate", "checkpoint", stdin=s, cwd=git_repo) for s in (json.dumps({"cwd": str(git_repo)}), "{not json")]
+
+    # Then: 两次都退出 0、stdout 为空；仓库里没有任何 refs/flight/ 引用
+    assert all(p.returncode == 0 and p.stdout == "" for p in runs), [(p.returncode, p.stdout, p.stderr) for p in runs]
+    assert git(git_repo, "for-each-ref", "refs/flight/") == ""
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：start --resume-checkpoint")
+def test_start_resume_restores_checkpoint(git_repo, tmp_path):
+    # Given: S1 在基点 X 上已 commit 了 src/a.py、另有未提交的 src/mod.py 改动，checkpoint 已拍快照；随后从 X 新开一个干净 worktree（模拟隔离模式重派）
+    change, base = _started(git_repo)
+    write(git_repo / "src" / "a.py", "A = 1\n")
+    git(git_repo, "add", "src/a.py")
+    git(git_repo, "commit", "-q", "-m", "S1 wip")
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
+    _checkpoint(git_repo)
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
+    wt_change = wt / "openspec" / "changes" / "c"
+
+    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt_change), "--resume-checkpoint", cwd=wt)
+
+    # Then: 退出 0；src/a.py 与 src/mod.py 以快照内容出现在工作区、HEAD 仍是 X；stdout 的 base 为 X、checkpoint.restored 恰为这两个文件；timeline 最后一行是 slice-start 且备注含 checkpoint
+    assert p.returncode == 0, p.stderr
+    assert (wt / "src" / "a.py").read_text(encoding="utf-8") == "A = 1\n"
+    assert "return a + b" in (wt / "src" / "mod.py").read_text(encoding="utf-8")
+    assert git(wt, "rev-parse", "HEAD") == base
+    out = json.loads(p.stdout)
+    assert out["base"] == base and sorted(out["checkpoint"]["restored"]) == ["src/a.py", "src/mod.py"], out
+    last = (wt_change / "timeline.md").read_text(encoding="utf-8").strip().splitlines()[-1]
+    assert "\tslice-start\t" in last and "checkpoint" in last
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：start --resume-checkpoint")
+def test_start_resume_skips_foreign_base(git_repo, tmp_path):
+    # Given: S1 在基点 X 上的快照已存在；X 之后另有一个不在快照祖先链上的 commit Y，在 Y 上新开 worktree
+    change, base = _started(git_repo)
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
+    _checkpoint(git_repo)
+    (git_repo / ".openspec-slice").unlink()
+    git(git_repo, "checkout", "-q", "--", "src/mod.py")
+    write(git_repo / "src" / "other.py", "Z = 1\n")
+    other = commit_all(git_repo, "integrate elsewhere")
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), other)
+
+    # When: 在 Y 上运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 退出 0；src/mod.py 保持 Y 上的内容；checkpoint.restored 为空且 note 非空；base 为 Y
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout)
+    assert out["checkpoint"]["restored"] == [] and out["checkpoint"].get("note"), out
+    assert "return 0" in (wt / "src" / "mod.py").read_text(encoding="utf-8")
+    assert out["base"] == other
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：首轮 start 清理旧快照")
+def test_start_fresh_clears_stale_checkpoint(git_repo):
+    # Given: 切片 S1 留有旧快照引用 refs/flight/c/S1，工作区没有标记
+    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    commit_all(git_repo, "plan")
+    git(git_repo, "update-ref", CKPT_REF, "HEAD")
+
+    # When: 不带 --resume-checkpoint 运行 start S1
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；refs/flight/c/S1 已不存在
+    assert p.returncode == 0, p.stderr
+    assert _ref(git_repo) == ""
+
+
+@pytest.mark.xfail(strict=True, reason="S1 未实现：门禁绿删除快照")
+def test_gate_ok_deletes_checkpoint(git_repo):
+    # Given: 已 start 且实现完整的切片 S1（门禁会绿），存在快照引用 refs/flight/c/S1
+    change = gate_repo(git_repo)
+    git(git_repo, "update-ref", CKPT_REF, "HEAD")
+
+    # When: 运行切片门禁
+    res = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: 门禁绿；refs/flight/c/S1 已删除
+    assert res["ok"], res
+    assert _ref(git_repo) == ""

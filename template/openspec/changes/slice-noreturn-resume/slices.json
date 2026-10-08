@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "change": "slice-noreturn-resume",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 95.3
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "slice-gate：checkpoint 快照子命令 + start --resume-checkpoint 恢复 + 快照生命周期",
+      "scenarios": [
+        "slice-checkpoint#checkpoint-snapshots-owned-changes",
+        "slice-checkpoint#checkpoint-silent-without-marker",
+        "slice-checkpoint#start-resume-restores-checkpoint",
+        "slice-checkpoint#start-resume-skips-foreign-base",
+        "slice-checkpoint#start-fresh-clears-stale-checkpoint",
+        "slice-checkpoint#gate-ok-deletes-checkpoint"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "工作流未返回重派一次 + 回退路径 / 执行体契约 / hook 注册同改",
+      "scenarios": [
+        "noreturn-retry#workflow-retries-noreturn-with-checkpoint",
+        "noreturn-retry#workflow-noreturn-twice-blocks",
+        "noreturn-retry#apply-docs-mirror-noreturn-retry"
+      ],
+      "owns": [
+        "template/.claude/workflows/opsx-apply.js",
+        "template/.claude/agents/slice-executor.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/hooks/hooks.json",
+        ".claude/settings.json",
+        "tests/test_agents_workflow.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_agents_workflow.py",
+      "packet": "slices/S2.md"
+    }
+  ],
+  "scenario_tests": {
+    "slice-checkpoint#checkpoint-snapshots-owned-changes": "tests/test_slice_gate.py::test_checkpoint_snapshots_owned_changes",
+    "slice-checkpoint#checkpoint-silent-without-marker": "tests/test_slice_gate.py::test_checkpoint_silent_without_marker",
+    "slice-checkpoint#start-resume-restores-checkpoint": "tests/test_slice_gate.py::test_start_resume_restores_checkpoint",
+    "slice-checkpoint#start-resume-skips-foreign-base": "tests/test_slice_gate.py::test_start_resume_skips_foreign_base",
+    "slice-checkpoint#start-fresh-clears-stale-checkpoint": "tests/test_slice_gate.py::test_start_fresh_clears_stale_checkpoint",
+    "slice-checkpoint#gate-ok-deletes-checkpoint": "tests/test_slice_gate.py::test_gate_ok_deletes_checkpoint",
+    "noreturn-retry#workflow-retries-noreturn-with-checkpoint": "tests/test_agents_workflow.py::test_workflow_retries_noreturn_with_checkpoint",
+    "noreturn-retry#workflow-noreturn-twice-blocks": "tests/test_agents_workflow.py::test_workflow_noreturn_twice_blocks",
+    "noreturn-retry#apply-docs-mirror-noreturn-retry": "tests/test_agents_workflow.py::test_apply_docs_mirror_noreturn_retry"
+  }
+}

@@ -309,3 +309,71 @@ def test_integrator_final_only_when_named():
     # Then: 该段写明仅当 prompt 点名才运行、wave 合回不跑；仍给出 slice-gate.py final 命令
     assert "点名" in item3 and "合回" in item3
     assert "slice-gate.py final" in item3
+
+
+# ---------------------------------------------------------------- slice-noreturn-resume（scenario: noreturn-retry#*）
+# S2 待实现：执行体未返回重派一次、回退路径 / 执行体契约 / hook 注册同改。
+
+def exec_prompts(out):
+    return {c["opts"]["label"]: c["prompt"] for c in out["calls"] if re.fullmatch(r"S\d+(:retry)?", c["opts"]["label"])}
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：未返回重派")
+def test_workflow_retries_noreturn_with_checkpoint(tmp_path):
+    # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮 agent 得 null（未返回），重派后门禁绿；S2、S3 一次绿
+    replies = [["^S1:retry$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(deps={"S3": ["S1"]}), replies)
+    execs = exec_prompts(out)
+
+    # Then: 执行体派发恰为 S1、S1:retry、S2、S3；S1:retry 的 start 带 --resume-checkpoint 与 --expect-branch worktree-c，prompt 不含 cherry-pick、含「未返回」；S1 首轮 prompt 不含 --resume-checkpoint；blocked 为空
+    assert sorted(execs) == ["S1", "S1:retry", "S2", "S3"], sorted(execs)
+    cmds = start_cmds(execs["S1:retry"])
+    assert cmds and all("--resume-checkpoint" in c and "--expect-branch worktree-c" in c for c in cmds), cmds
+    assert "cherry-pick" not in execs["S1:retry"] and "未返回" in execs["S1:retry"]
+    assert "--resume-checkpoint" not in execs["S1"]
+    assert out["result"]["blocked"] == [], out["result"]["blocked"]
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：未返回重派")
+def test_workflow_noreturn_twice_blocks(tmp_path):
+    # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮与重派都得 null
+    replies = [["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(deps={"S3": ["S1"]}), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: S1 与 S1:retry 各派发一次；blocked 中 S1 的 kind 为 infra、reason 含「未返回」与「重派」；S3 因依赖记 blocked 且未派发
+    assert labels.count("S1") == 1 and labels.count("S1:retry") == 1, labels
+    assert blocked["S1"]["kind"] == "infra" and "未返回" in blocked["S1"]["reason"] and "重派" in blocked["S1"]["reason"], blocked
+    assert "S3" in blocked and "S3" not in labels
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：回退路径 / 执行体契约 / hook 注册")
+def test_apply_docs_mirror_noreturn_retry():
+    # Given: opsx-apply.md、openspec-apply-change/SKILL.md、slice-executor.md 与 hooks/hooks.json
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+    fm, body = frontmatter(AGENTS / "slice-executor.md")
+    hooks = json.loads((ROOT / "template" / ".claude" / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+
+    # When: 取两份回退路径段、执行体开工段，以及注册了 slice-gate.py checkpoint 的 hook 条目
+    def fallback(t):
+        i = t.index("Workflow 不可用")
+        return t[i:t.index("两条路径最终都产出", i)]
+
+    def entries(event):
+        return [e for e in hooks.get(event, []) if any("slice-gate.py" in h["command"] and "checkpoint" in h["command"] for h in e["hooks"])]
+
+    opening = body[body.index("## 开工"):body.index("## 纪律")]
+
+    # Then: 两份回退路径都含「未返回」与 --resume-checkpoint；开工段含 --resume-checkpoint 与 restored；PostToolUse 有一条 matcher 同时覆盖 Write、Edit、Bash，PostToolUseFailure 也注册了它
+    for t in (cmd, skill):
+        f = fallback(t)
+        assert "未返回" in f and "--resume-checkpoint" in f
+    assert "--resume-checkpoint" in opening and "restored" in opening
+    assert any(all(tool in e.get("matcher", "") for tool in ("Write", "Edit", "Bash")) for e in entries("PostToolUse"))
+    assert entries("PostToolUseFailure")
