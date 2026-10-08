@@ -9,12 +9,12 @@
 //   useAgentTypes false 时不传 agentType（agent 定义未注册的仓库回退为默认 workflow subagent）
 //   branch        可选，change 分支名（起飞时 git branch --show-current）；每个执行体的 start 带 --expect-branch，据此做基点祖先校验
 //   deps          可选，{ S3: ["S1","S2"], ... }（来自 slices.json）；依赖已 blocked 的切片直接记 blocked，不白跑
-//                 blocked 条目形如 { slice, kind: 'gate' | 'infra', reason }：gate = 切片门禁红；infra = agent 未返回 / 依赖跳过 / integrator 合回失败。
+//                 blocked 条目形如 { slice, kind: 'gate' | 'infra', reason }：gate = 切片门禁红；infra = agent 重派后仍未返回 / 依赖跳过 / integrator 合回失败。
 //                 blocked 只进 PR 正文作说明；draft / ready 由 slice-gate.py ship 按 gate-report.md 裁决，不看本列表。
 //   models        必填：{ executor, reviewer, integrator }，按角色显式路由（铁律：不得留空让 env 默认兜底）
 //                 executor / reviewer = 会话主模型别名（如 "opus" / "fable"）；integrator = 低档模型（"sonnet"）
 //   efforts       可选：{ executor: "high", reviewer: "high", integrator: "low" }
-// 结构：wave 内 parallel 派发切片 → 门禁红重试一次 → 多切片 wave 由 integrator 合回 →
+// 结构：wave 内 parallel 派发切片 → 门禁红或执行体未返回重试一次 →多切片 wave 由 integrator 合回 →
 //       评审只 push 不 await（离关键路径）→ Fix 阶段汇总 CRITICAL/HIGH 一次批量修复 → Finalize 全量门禁。
 // 不用时间戳与随机数（运行时为可续跑而禁止它们），脚本本身不碰文件系统，全部由 agent 执行。
 export const meta = {
@@ -47,9 +47,12 @@ const typed = (name) => (useAgentTypes === false ? {} : { agentType: name })
 const rules = (name) => (useAgentTypes === false ? `先 Read ${agentsDir}/${name}.md，严格按它的纪律执行（它就是你的角色定义）。\n` : '')
 const gateCmd = (s) => `python3 ${hooksDir}/slice-gate.py gate ${s} --change-dir ${changeDir}`
 // base：重派时传上一轮 gate JSON 的 base，让 start 在接续 commit 后仍以同一基准算区间（start 对同片幂等）
+// resume：上一轮执行体未返回时，start 带 --resume-checkpoint 把 hook 快照的半成品恢复为未提交改动
 // branch：start 校验 HEAD 是 change 分支的后代（基点校验），不是则非 0 退出并打印 G0 JSON
-const startCmd = (s, base) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}`
-  + (base ? ` --base ${base}` : '') + (branch ? ` --expect-branch ${branch}` : '')
+const startCmd = (s, base, resume) => `python3 ${hooksDir}/slice-gate.py start ${s} --change-dir ${changeDir}`
+  + (base ? ` --base ${base}` : '') + (resume ? ' --resume-checkpoint' : '') + (branch ? ` --expect-branch ${branch}` : '')
+// 执行体未返回（多为撞 maxTurns）时的重派标记：没有门禁结论，也没有 commit / base 可接
+const NO_RETURN = { noReturn: true }
 
 const GATE = {
   type: 'object',
@@ -107,14 +110,18 @@ const executorPrompt = (s, retryOf) => [
     ? `第零步：运行 \`git rev-parse HEAD\`，若不等于上一轮的 commit ${retryOf.commit}，运行 \`git cherry-pick ${retryOf.commit}\` 把它接上；冲突则 \`git cherry-pick --abort\`，不做任何改动，直接返回 {"slice":"${s}","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: cherry-pick ${retryOf.commit} 冲突"]}。`
     : '',
   `切片包：${changeDir}/slices/${s}.md（scenario、owns、verify、接口摘要都在里面，先读它）。`,
-  retryOf && retryOf.base
-    ? `第一步运行 \`${startCmd(s, retryOf.base)}\`（\`--base\` 是上一轮的区间起点，start 对同片幂等；不要不带 --base 重跑）。`
-    : `第一步运行 \`${startCmd(s)}\`。`,
+  retryOf && retryOf.noReturn
+    ? `第一步运行 \`${startCmd(s, null, true)}\`（\`--resume-checkpoint\` 从快照恢复上一轮半成品）。`
+    : retryOf && retryOf.base
+      ? `第一步运行 \`${startCmd(s, retryOf.base)}\`（\`--base\` 是上一轮的区间起点，start 对同片幂等；不要不带 --base 重跑）。`
+      : `第一步运行 \`${startCmd(s)}\`。`,
   'start 非 0 退出（G0 基点校验未通过）→ 不做任何改动，把它打印的 JSON 原样作为最终输出。',
   // 上一轮无产出（start 以 G0 拒绝，commit 为空）→ 走首轮分支从头实现，而不是「只修门禁项」
-  retryOf && retryOf.commit
-    ? `上一轮门禁未过：${JSON.stringify(retryOf.failed)}。只修这些门禁项，不扩大范围。`
-    : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。',
+  retryOf && retryOf.noReturn
+    ? '上一轮执行体未返回（多为撞 maxTurns 轮次上限），没有门禁结论；start 会把上一轮半成品恢复为未提交改动（看 start 输出的 checkpoint.restored），先 git status / git diff 看清已完成部分，在其上继续、不要重做；收尾仍按切片包 TDD、每切片一个 commit。'
+    : retryOf && retryOf.commit
+      ? `上一轮门禁未过：${JSON.stringify(retryOf.failed)}。只修这些门禁项，不扩大范围。`
+      : '按切片包 TDD 实现，只写 owns 内文件，每切片一个 commit。',
   `收尾运行 \`${gateCmd(s)}\`，把它打印的 JSON 原样作为最终输出。`,
 ].join('\n')
 
@@ -142,12 +149,12 @@ for (const [i, allWave] of waves.entries()) {
   const iso = wave.length > 1 ? 'worktree' : undefined
   const done = await parallel(wave.map((s) => () =>
     agent(executorPrompt(s), { label: s, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
-      .then((r) => (r && !r.ok)
-        ? agent(executorPrompt(s, r), { label: `${s}:retry`, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
+      .then((r) => (!r || !r.ok)
+        ? agent(executorPrompt(s, r || NO_RETURN),{ label: `${s}:retry`, isolation: iso, schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
         : r)))
   for (const [k, r] of done.entries()) {
     const s = wave[k]
-    if (!r) { blocked.push({ slice: s, kind: 'infra', reason: 'agent 未返回' }); continue }
+    if (!r) { blocked.push({ slice: s, kind: 'infra', reason: 'agent 未返回（已重派一次）' }); continue }
     results.push(r)
     if (!r.ok) { blocked.push({ slice: s, kind: 'gate', reason: r.failed.join('; ') }); continue }
   }

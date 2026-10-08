@@ -312,13 +312,12 @@ def test_integrator_final_only_when_named():
 
 
 # ---------------------------------------------------------------- slice-noreturn-resume（scenario: noreturn-retry#*）
-# S2 待实现：执行体未返回重派一次、回退路径 / 执行体契约 / hook 注册同改。
+# S2 已解锁（骨架标记已去）：执行体未返回重派一次、回退路径 / 执行体契约 / hook 注册同改。
 
 def exec_prompts(out):
     return {c["opts"]["label"]: c["prompt"] for c in out["calls"] if re.fullmatch(r"S\d+(:retry)?", c["opts"]["label"])}
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：未返回重派")
 def test_workflow_retries_noreturn_with_checkpoint(tmp_path):
     # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮 agent 得 null（未返回），重派后门禁绿；S2、S3 一次绿
     replies = [["^S1:retry$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
@@ -336,7 +335,6 @@ def test_workflow_retries_noreturn_with_checkpoint(tmp_path):
     assert out["result"]["blocked"] == [], out["result"]["blocked"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：未返回重派")
 def test_workflow_noreturn_twice_blocks(tmp_path):
     # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮与重派都得 null
     replies = [["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
@@ -352,7 +350,6 @@ def test_workflow_noreturn_twice_blocks(tmp_path):
     assert "S3" in blocked and "S3" not in labels
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：回退路径 / 执行体契约 / hook 注册")
 def test_apply_docs_mirror_noreturn_retry():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md、slice-executor.md 与 hooks/hooks.json
     cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
