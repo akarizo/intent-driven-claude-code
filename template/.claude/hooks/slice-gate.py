@@ -8,6 +8,9 @@
 #                                              在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base / started）；
 #                                              标记已是同一切片时不改（resume），保住区间与 red_count；
 #                                              给了 --expect-branch 先校验 HEAD 是该分支最新 commit 的后代，否则打印 G0 JSON、exit 1、不写标记
+#                                              无同片标记时：带 --resume-checkpoint 恢复 refs/flight/<change>/<S> 快照（stdout 追加 checkpoint），
+#                                              不带则清掉本片旧快照
+#   checkpoint                                 PostToolUse hook：有标记时把本片 owns 内改动快照到 refs/flight/<change>/<S>；静默、恒 exit 0
 #   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
@@ -31,6 +34,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
@@ -623,6 +627,118 @@ def _base_check(root, branch):
     return None
 
 
+def _ckpt_ref(change_dir, slice_id):
+    return "refs/flight/%s/%s" % (os.path.basename(os.path.abspath(change_dir).rstrip(os.sep)), slice_id)
+
+
+def _ckpt_delete(root, ref):
+    # 引用不存在时 update-ref -d 也可能非 0：一律忽略
+    subprocess.run(["git", "update-ref", "-d", ref], cwd=root, capture_output=True, text=True)
+
+
+def _slice_owns(change_dir, slice_id):
+    with open(os.path.join(change_dir, "slices.json"), "r", encoding="utf-8") as f:
+        data = json.load(f)
+    for s in data.get("slices") or []:
+        if s.get("id") == slice_id:
+            return s.get("owns") or []
+    return []
+
+
+def _checkpoint(root):
+    marker = _read_marker(root)
+    if not marker or not marker.get("slice") or not marker.get("change_dir"):
+        return
+    slice_id, change_dir = marker["slice"], marker["change_dir"]
+    owns = _slice_owns(change_dir, slice_id)
+    change_rel = os.path.relpath(change_dir, root).replace(os.sep, "/").rstrip("/") + "/"
+    # 按文件粒度：-uall 展开未跟踪目录；-z 免引号转义（重命名项后随原路径，跳过）
+    raw = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=root,
+                         capture_output=True, text=True).stdout
+    entries, files, skip = raw.split("\0"), [], False
+    for e in entries:
+        if skip:
+            skip = False
+            continue
+        if len(e) < 4:
+            continue
+        if e[0] in "RC":
+            skip = True
+        path = e[3:]
+        if path == MARKER or path.startswith(change_rel):
+            continue
+        if any(glob_match(path, o) for o in owns):
+            files.append(path)
+    head = git(root, "rev-parse", "HEAD")
+    if not files and head == marker.get("base"):
+        return
+    fd, index = tempfile.mkstemp(prefix="flight-ckpt-", suffix=".index")
+    os.close(fd)
+    try:
+        env = dict(os.environ, GIT_INDEX_FILE=index)
+
+        def g(*a):
+            p = subprocess.run(["git", *a], cwd=root, capture_output=True, text=True, env=env)
+            if p.returncode != 0:
+                raise RuntimeError("git %s: %s" % (" ".join(a), p.stderr.strip()))
+            return p.stdout.strip()
+
+        g("read-tree", head)
+        if files:
+            g("add", "-A", "--", *files)
+        tree = g("write-tree")
+        sha = g("commit-tree", tree, "-p", head, "-m", "flight checkpoint %s" % slice_id)
+    finally:
+        try:
+            os.remove(index)
+        except OSError:
+            pass
+    git(root, "update-ref", _ckpt_ref(change_dir, slice_id), sha)
+
+
+def cmd_checkpoint(args):
+    """PostToolUse hook：把本片 owns 内的工作区改动快照到 refs/flight/<change>/<S>。静默、永不阻断。"""
+    try:
+        try:
+            payload = json.loads(sys.stdin.read() or "{}")
+        except ValueError:
+            payload = {}
+        cwd = payload.get("cwd") if isinstance(payload, dict) else None
+        p = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd or os.getcwd(),
+                           capture_output=True, text=True)
+        if p.returncode == 0:
+            _checkpoint(p.stdout.strip())
+    except BaseException:
+        pass
+    sys.exit(0)
+
+
+def _ckpt_restore(root, ref, owns):
+    """把快照里相对 HEAD 有差异的 owns 文件放回工作区。返回 (restored, note)。"""
+    try:
+        snap = git(root, "rev-parse", "--verify", "-q", ref + "^{commit}")
+    except RuntimeError:
+        return [], "无快照 %s，未恢复" % ref
+    if not _is_ancestor(root, "HEAD", snap):
+        return [], "快照 %s 的祖先链不含当前 HEAD（基点不符），未恢复" % snap[:10]
+    names = [x for x in git(root, "diff", "--name-only", "HEAD", snap).splitlines() if x]
+    restored = []
+    for f in names:
+        if f == MARKER or not any(glob_match(f, o) for o in owns):
+            continue
+        exists = subprocess.run(["git", "cat-file", "-e", "%s:%s" % (snap, f)], cwd=root,
+                                capture_output=True, text=True).returncode == 0
+        if exists:
+            git(root, "checkout", snap, "--", f)
+        else:
+            try:
+                os.remove(os.path.join(root, f))
+            except OSError:
+                pass
+        restored.append(f)
+    return restored, ("" if restored else "快照与 HEAD 在 owns 内无差异，未恢复")
+
+
 def cmd_start(args):
     root = toplevel()
     data = load_plan(args.change_dir)
@@ -640,12 +756,22 @@ def cmd_start(args):
         timeline_record(args.change_dir, "slice-start", "%s (resume)" % args.slice)
         print(json.dumps(existing, ensure_ascii=False))
         return
+    ref = _ckpt_ref(args.change_dir, args.slice)
+    ckpt, note = None, args.slice
+    if args.resume_checkpoint:
+        owns = next((s.get("owns") or [] for s in data.get("slices") or [] if s["id"] == args.slice), [])
+        restored, why = _ckpt_restore(root, ref, owns)
+        ckpt = {"restored": restored, "note": why}
+        note = "%s (checkpoint %d files)" % (args.slice, len(restored))
+    else:
+        # 首轮起跑：上一次飞行残留的快照不属于本轮，清掉免得被误恢复
+        _ckpt_delete(root, ref)
     marker = {"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
               "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
     with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
         json.dump(marker, f, ensure_ascii=False)
-    timeline_record(args.change_dir, "slice-start", args.slice)
-    print(json.dumps(marker, ensure_ascii=False))
+    timeline_record(args.change_dir, "slice-start", note)
+    print(json.dumps(dict(marker, checkpoint=ckpt) if ckpt is not None else marker, ensure_ascii=False))
 
 
 def _read_marker(root):
@@ -725,6 +851,7 @@ def cmd_gate(args):
                 os.remove(os.path.join(root, MARKER))
             except OSError:
                 pass
+            _ckpt_delete(root, _ckpt_ref(marker.get("change_dir") or args.change_dir, args.slice))
         else:
             # 记红次数：连续 2 次红执行体按纪律停下上报，stop-gate 据此不再强制续跑
             marker["red_count"] = int(marker.get("red_count") or 0) + 1
@@ -946,6 +1073,9 @@ def main():
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
     p.add_argument("--expect-branch", help="基点校验：HEAD 须是该分支最新 commit 的后代，否则 G0 拒绝起跑")
+    p.add_argument("--resume-checkpoint", action="store_true",
+                   help="重派：无同片标记时把 refs/flight/<change>/<S> 快照恢复为未提交改动（基点须在快照祖先链上）")
+    sub.add_parser("checkpoint", help="PostToolUse hook：stdin 载荷取 cwd，把本片 owns 内改动快照到 refs/flight/<change>/<S>；永远静默 exit 0")
     p = sub.add_parser("gate")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
@@ -963,7 +1093,8 @@ def main():
     p.add_argument("--markdown", action="store_true", help="打印可贴入 PR 正文的段落而不是 JSON")
     args = ap.parse_args()
     {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
-     "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship}[args.cmd](args)
+     "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship,
+     "checkpoint": cmd_checkpoint}[args.cmd](args)
 
 
 if __name__ == "__main__":
