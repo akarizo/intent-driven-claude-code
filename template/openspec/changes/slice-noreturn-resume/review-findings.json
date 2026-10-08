@@ -1,21 +1,6 @@
 {
  "blocked": [],
- "blocking": [
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/hooks/slice-gate.py",
-   "line": 724,
-   "summary": "_ckpt_restore 用 `git diff --name-only HEAD <snap>` 取文件清单，未加 -z。core.quotePath 默认开启，含非 ASCII 的路径（如 src/中文.py）会输出成带引号的八进制转义串，glob_match 匹配不上 owns，于是被静默跳过。定向抽查已证实：快照树里有 src/中文.py，恢复后 restored 只列出 src/new.py，中文文件丢失，note 也没有任何提示。本仓库以中文为主，重派时会悄无声息地丢掉这部分本该保住的工作。",
-   "fix": "改为 `git diff --name-only -z --no-renames HEAD <snap>`，按 \\0 切分（不能经过 git() 助手的 strip 后再按行切，要按 \\0 split 并过滤空串）；补一条测试：owns 内含中文文件名，checkpoint 后在新 worktree 里 --resume-checkpoint，断言文件被恢复。"
-  },
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/hooks/slice-gate.py",
-   "line": 724,
-   "summary": "恢复清单受 diff.renames 影响（git diff 默认开启重命名检测）：快照链上如有重命名 src/old.py→src/new.py，--name-only 只列出新路径，旧文件既不 checkout 也不删除，恢复后的工作区里 old.py 和 new.py 同时存在。定向抽查已证实（restored=[src/new.py]，ls src 得到 new.py、old.py）。执行体之后提交时会把本已删除的文件带回 PR。",
-   "fix": "diff 时加 `--no-renames`（与上一条合并改成 `diff --name-only -z --no-renames HEAD <snap>`），让删除端以独立路径出现，再走现有的“快照中不存在就删除”分支；补一条测试：committed 的 git mv 经恢复后，旧路径不存在。"
-  }
- ],
+ "blocking": [],
  "deferred": [
   {
    "severity": "MEDIUM",
