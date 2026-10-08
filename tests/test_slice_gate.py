@@ -959,3 +959,23 @@ def test_start_resume_restores_non_ascii_path(git_repo, tmp_path):
     assert p.returncode == 0, p.stderr
     assert (wt / "src" / "中文.py").read_text(encoding="utf-8") == "Z = 1\n"
     assert json.loads(p.stdout)["checkpoint"]["restored"] == ["src/中文.py"], p.stdout
+
+
+def test_start_resume_drops_renamed_source(git_repo, tmp_path):
+    # Given: 基点 X 含 src/old.py（内容 "OLD = 1"）；S1 已 start 并 commit 了 git mv src/old.py src/new.py，checkpoint 已拍快照；随后从 X 新开一个干净 worktree
+    write(git_repo / "src" / "old.py", "OLD = 1\n")
+    change, base = _started(git_repo)
+    git(git_repo, "mv", "src/old.py", "src/new.py")
+    git(git_repo, "commit", "-q", "-m", "S1 rename")
+    _checkpoint(git_repo)
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
+
+    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 退出 0；src/old.py 不存在；src/new.py 为 "OLD = 1"；checkpoint.restored 恰为 src/new.py 与 src/old.py
+    assert p.returncode == 0, p.stderr
+    assert not (wt / "src" / "old.py").exists()
+    assert (wt / "src" / "new.py").read_text(encoding="utf-8") == "OLD = 1\n"
+    assert sorted(json.loads(p.stdout)["checkpoint"]["restored"]) == ["src/new.py", "src/old.py"], p.stdout

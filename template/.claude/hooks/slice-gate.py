@@ -722,7 +722,8 @@ def _ckpt_restore(root, ref, owns):
     if not _is_ancestor(root, "HEAD", snap):
         return [], "快照 %s 的祖先链不含当前 HEAD（基点不符），未恢复" % snap[:10]
     # -z：免 core.quotePath 把非 ASCII 路径转义成带引号的八进制串；不经 git() 的 strip，按 \0 切分
-    p = subprocess.run(["git", "diff", "--name-only", "-z", "HEAD", snap], cwd=root,
+    # --no-renames：重命名的删除端以独立路径出现，走下面"快照中不存在就删除"分支
+    p = subprocess.run(["git", "diff", "--name-only", "-z", "--no-renames", "HEAD", snap], cwd=root,
                        capture_output=True, text=True)
     if p.returncode != 0:
         raise RuntimeError("git diff: %s" % p.stderr.strip())
