@@ -21,7 +21,8 @@ const GUARDED_TOOLS = ['Bash', 'Monitor', 'Write', 'Edit', 'NotebookEdit'] as co
 const MAX_UPDATE_REF = 3
 const ZERO = '0'.repeat(40)
 
-const band = atom({ plugin: 'flight', key: 'band' } as const, { isDisabled: false, items: [] } as FlightBand)
+// 初值停用：版本未确认（读版本抛错、hook 被跳过）时批准带与写入不启用
+const band = atom({ plugin: 'flight', key: 'band' } as const, { isDisabled: true, items: [] } as FlightBand)
 
 /** 按数字逐段比较：a < b。 */
 function isOlder(a: string, b: string): boolean {
@@ -189,11 +190,13 @@ async function appendApprove($: Engine, item: FlightItem, surface: string): Prom
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // 热重载后 $.state 保留上次的值：每次启动先停用，确认版本后才启用
+    await update($, band, () => ({ isDisabled: true, items: [] }))
     const { version } = await $.session.version()
     if (isOlder(version, VERSION_FLOOR)) {
-      await update($, band, () => ({ isDisabled: true, items: [] }))
       $.ui.toast(`flight：Claude Code ${version} 低于 ${VERSION_FLOOR}，批准带与账本写入已停用`)
     } else {
+      await update($, band, b => ({ ...b, isDisabled: false }))
       await refresh($)
     }
     return next(e)

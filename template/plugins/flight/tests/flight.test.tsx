@@ -4,6 +4,8 @@ import type { On } from 'claude-code'
 // 测试用的「世界」：git / python3 / 文件系统 / 会话 都由测试的 hook 在插件之下作答。
 type World = {
   version?: string
+  /** 读会话版本的调用失败（旧引擎没有该 API） */
+  versionFails?: boolean
   /** `git worktree list --porcelain` 的输出 */
   worktrees: string
   /** 目录 → 子目录名 */
@@ -77,11 +79,13 @@ function useWorld(on: On, w: World) {
   mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) })
   on('session.version', () => {
     log.versionReads += 1
+    if (w.versionFails) throw new Error('session.version 不可用')
     return { value: { version: w.version ?? '2.1.295' } }
   })
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.cwd', () => ({ value: MAIN }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('turn.complete', () => ({ text: '' }))
   on('ui.toast', ($, e) => {
     log.toasts.push(e.text)
     return { value: undefined }
@@ -402,4 +406,20 @@ test('version-floor-disables-band', async ($, on) => {
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
   expect(await ui.find({ key: 'engine' })).toBeDefined()
   expect(log.toasts.some(t => t.includes('2.1.295'))).toBe(true)
+})
+
+test('version-unreadable-disables-band', async ($, on) => {
+  // Given: 读会话版本的调用失败（旧引擎没有该 API），主 worktree 里有待批准的 demo
+  const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await $.session.start(START)
+
+  // When: 主会话一轮结束后绘制输入框上方区域
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 插件读过版本；没有「批准起飞」按钮、引擎自己的带照常绘制，且没有为任何 change 算过指纹
+  expect(log.versionReads).toBeGreaterThan(0)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(await ui.find({ key: 'engine' })).toBeDefined()
+  expect(log.fpDirs).toEqual([])
 })

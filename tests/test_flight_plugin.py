@@ -96,3 +96,4 @@ def test_version_floor_disables_band():
     # When: 会话启动后绘制输入框上方区域
     # Then: 批准带不显示，出现含 2.1.295 的版本提示
     assert_ts_passed("version-floor-disables-band")
+    assert_ts_passed("version-unreadable-disables-band")

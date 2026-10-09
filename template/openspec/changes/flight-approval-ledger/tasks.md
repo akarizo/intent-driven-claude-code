@@ -31,4 +31,4 @@
 - [x] R0 账本不可读时起飞 hook 放行：非 git 目录 / ref 指向非提交改判 deny（51d0ad5）
 - [x] R1 守卫扩到 Monitor（命令文本）与 Write / Edit / NotebookEdit（目标路径含 `refs/flight/` 或为 `packed-refs`）；spec「模型侧没有写账本的路径」与 design D2 措辞同步
 - [x] R2 按压以被按下按钮所代表的项为准：按钮 key 携带 change 与指纹，按压时不再重取 topItem（实现对齐 spec「与批准带上显示的不一致」）
-- [ ] R3 版本下限 fail-closed：会话启动先停用，版本读取成功且 ≥ 2.1.295 才启用；spec「版本下限」同步
+- [x] R3 版本下限 fail-closed：会话启动先停用，版本读取成功且 ≥ 2.1.295 才启用；spec「版本下限」同步
