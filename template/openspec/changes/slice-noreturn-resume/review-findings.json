@@ -1,0 +1,42 @@
+{
+ "blocked": [],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 665,
+   "summary": "_checkpoint 处理 status -z 的 R/C 条目时，只取新路径，并直接跳过紧随其后的原路径。对于已暂存的重命名（git mv 后未提交），临时 index 由 read-tree HEAD 生成后仍保留原路径，`add -A -- 新路径` 不会删掉它，于是快照里新旧两个文件同时存在，恢复时旧文件会被复活。此结论由代码推理得出，未单独抽查（需进一步确认）。",
+   "fix": "遇到 R 条目时，把下一个 \\0 段（原路径）也按 owns 过滤后加入 files，交给 `add -A`，原路径在工作区已不存在，就会从临时 index 中移除；C 条目的原路径仍然存在，可以照常加入或跳过。补一条“已暂存 git mv”的快照测试。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/commands/opsx-apply.md",
+   "line": 59,
+   "summary": "回退路径里新增的「执行体未返回…重派仍无 JSON 记 blocked（infra）」插在了「仍红记 blocked，依赖它的切片直接记 blocked」前面。结果「仍红」紧跟在未返回分支之后，读起来指代不清。也容易被读成依赖跳过只适用于门禁红，而脚本里 infra 被 blocked 的切片同样会让依赖它的切片跳过（opsx-apply.js:144 用的是 blockedIds，不分 kind）。回退路径由模型照文执行（铁律 10 要求语义一致），这里有歧义。SKILL.md:67 有同样的问题。",
+   "fix": "两份文档同改：把未返回分支挪到「仍红记 blocked」之后作为并列项，或把末尾改成「门禁红重派后仍红记 blocked（gate）；无论 gate 还是 infra，依赖它的切片都直接记 blocked」。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/agents/slice-executor.md",
+   "line": 19,
+   "summary": "文档写的是带 --resume-checkpoint 时 start「已把半成品恢复…输出 checkpoint.restored」。但单切片 wave 不开 isolation，重派和首轮在同一个工作区，同片标记还在，start 走的是 resume 分支（slice-gate.py:754-758），直接原样返回标记，输出里根本没有 checkpoint 字段。半成品其实一直留在工作区里。opsx-apply.js 重派 prompt 里「看 start 输出的 checkpoint.restored」也有同样的问题。好在 prompt 同时要求先 git status / git diff，所以不会出错，只是描述不准确。",
+   "fix": "改成「若 start 输出含 checkpoint.restored 则看它；同一工作区重派时半成品本就以未提交改动留在原处，以 git status / git diff 为准」。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 17,
+   "summary": "排版小问题：头部注释「重试一次 →多切片」少了一个空格；第 153 行 `executorPrompt(s, r || NO_RETURN),{ label:` 逗号后少了一个空格，和同文件其他写法不一致。",
+   "fix": "补上空格：「重试一次 → 多切片」，以及 `NO_RETURN), { label:`。"
+  }
+ ],
+ "fix": {
+  "slice": "final",
+  "ok": true,
+  "commit": "deb95371749999ada932ba38be10dab76e2c941f",
+  "failed": [],
+  "warnings": [],
+  "summary": "final 通过：scenario 9/9"
+ }
+}
