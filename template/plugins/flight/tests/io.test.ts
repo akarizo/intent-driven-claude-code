@@ -71,6 +71,36 @@ const DISPATCH: FlightEvent = {
   worktree: SLICE,
 }
 
+// PR #39 评审 HIGH（R2）：写入方与读取方（ledger.py）的 schema 必须对称，坏事件一条就会让整条账本判损坏
+test('io-refuses-invalid-event', async () => {
+  // Given: 一条 takeoff 事件的 fp 为空串（plan_fp.py 失败时会出现）
+  const { io, calls } = world({ files: [] })
+  const bad: FlightEvent = {
+    v: 1, ev: 'takeoff', change: 'demo', at: '2026-10-10T00:00:00Z', by: { plugin: 'flight', session: 'sess' },
+    attempt: 1, fp: '', branch: 'worktree-demo', waves: [['S1']], model: 'opus',
+  }
+
+  // When: 追加它
+  const r = await appendEvent(io, flight(HOOKS), bad)
+
+  // Then: 返回 false，没有任何 git 调用
+  expect(r).toBe(false)
+  expect(calls).toEqual([])
+})
+
+test('io-refuses-invalid-event/dispatch-without-agent', async () => {
+  // Given: 一条 dispatch 事件缺 agent（派发结果没有 agentId 时 JSON 会丢掉这个字段）
+  const { io, calls } = world({ files: [] })
+  const { agent: _dropped, ...bad } = DISPATCH
+
+  // When: 追加它
+  const r = await appendEvent(io, flight(HOOKS), bad as FlightEvent)
+
+  // Then: 返回 false，没有任何 git 调用
+  expect(r).toBe(false)
+  expect(calls).toEqual([])
+})
+
 test('io-runs-judges-from-main-worktree', async () => {
   // Given: 主 worktree /repo 只有 template/.claude/hooks/slice-gate.py，change worktree /repo/.worktrees/demo 里也有一份；起飞时按主 worktree 解析判定器目录
   const { io, calls } = world({ files: [`${HOOKS}/slice-gate.py`, `${CHANGE_TREE}/template/.claude/hooks/slice-gate.py`] })

@@ -49,3 +49,11 @@ def test_io_cas_rereads_tip():
     # When: 追加一条事件
     # Then: 链尾读两次；第二次 commit-tree 以 T2 为父；两次 update-ref 旧值依次为 T1、T2
     assert_ts_passed("io-cas-rereads-tip")
+
+
+def test_io_refuses_invalid_event():
+    # Given: fp 为空串的 takeoff 事件；缺 agent 的 dispatch 事件（PR #39 评审 HIGH）
+    # When: 分别追加
+    # Then: 都返回 false，没有任何 git 调用
+    assert_ts_passed("io-refuses-invalid-event")
+    assert_ts_passed("io-refuses-invalid-event/dispatch-without-agent")

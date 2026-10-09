@@ -43,8 +43,53 @@ export async function readLedger(io: Io, f: Flight): Promise<{ events: FlightEve
   return { events }
 }
 
-/** 追加一条事件到 refs/flight/<change>/ledger（CAS：update-ref 带旧值，失败重读链尾，至多 3 次）。 */
+// 写入前按读取方（ledger.py 的 EVENTS）同一张表校验：链上一条坏事件就会让整条账本判损坏、起飞被永久拒绝（PR #39 评审 HIGH）
+type Check = [(x: unknown) => boolean, string]
+const isInt = (x: unknown) => typeof x === 'number' && Number.isInteger(x)
+const isStrs = (x: unknown) => Array.isArray(x) && x.every(i => typeof i === 'string')
+const oneOf = (...opts: string[]): Check => [x => typeof x === 'string' && opts.includes(x), `不在 ${opts.join(' / ')} 之内`]
+const FP: Check = [x => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x), '不是 64 位十六进制']
+const ATTEMPT: Check = [x => isInt(x) && (x as number) > 0, '不是正整数']
+const NONEMPTY: Check = [x => typeof x === 'string' && x !== '', '不是非空字符串']
+const STR: Check = [x => typeof x === 'string', '不是字符串']
+const BOOL: Check = [x => typeof x === 'boolean', '不是布尔']
+const STRS: Check = [isStrs, '不是字符串数组']
+const RESULT = { attempt: ATTEMPT, slice: NONEMPTY, ok: BOOL, commit: STR, failed: STRS }
+const isFinding = (f: unknown) => {
+  const x = f as Record<string, unknown> | null
+  return typeof x === 'object' && x !== null && oneOf('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')[0](x.severity) &&
+    typeof x.file === 'string' && isInt(x.line) && typeof x.summary === 'string' && typeof x.fix === 'string'
+}
+const EVENTS: Record<string, Record<string, Check>> = {
+  approve: { fp: FP },
+  takeoff: { attempt: ATTEMPT, fp: FP, branch: NONEMPTY, model: NONEMPTY, waves: [x => Array.isArray(x) && x.every(isStrs), '不是字符串数组的数组'] },
+  dispatch: { attempt: ATTEMPT, slice: NONEMPTY, role: oneOf('executor', 'reviewer', 'fixer', 'resolver'), agent: NONEMPTY, model: NONEMPTY, worktree: NONEMPTY },
+  gate: RESULT,
+  ended: { attempt: ATTEMPT, agent: NONEMPTY, reason: STR, model: [x => x === null || typeof x === 'string', '不是字符串或 null'] },
+  merge: RESULT,
+  review: { attempt: ATTEMPT, slice: NONEMPTY, agent: NONEMPTY, findings: [x => Array.isArray(x) && x.every(isFinding), '不是合法的 findings 数组'] },
+  blocked: { attempt: ATTEMPT, slice: NONEMPTY, kind: oneOf('gate', 'infra'), reason: STR },
+  final: { attempt: ATTEMPT, ok: BOOL, commit: STR, failed: STRS },
+  land: { attempt: ATTEMPT, verdict: oneOf('ready', 'draft') },
+  halt: { attempt: ATTEMPT, reason: STR },
+}
+
+/** 事件不合 ledger.py 的字段表时返回原因，合规返回 undefined。 */
+export function eventProblem(event: FlightEvent, change: string): string | undefined {
+  const e = event as Record<string, unknown>
+  if (e.v !== 1) return 'v 不是 1'
+  const fields = EVENTS[String(e.ev)]
+  if (fields === undefined) return 'ev 非法'
+  if (e.change !== change) return 'change 与目录名不符'
+  if (typeof e.at !== 'string') return 'at 不是字符串'
+  if (typeof e.by !== 'object' || e.by === null || !('plugin' in e.by)) return 'by 缺 plugin'
+  for (const [name, [ok, why]] of Object.entries(fields)) if (!ok(e[name])) return `${String(e.ev)} 的 ${name} ${why}`
+  return undefined
+}
+
+/** 追加一条事件到 refs/flight/<change>/ledger（CAS：update-ref 带旧值，失败重读链尾，至多 3 次）；不合规的事件不写。 */
 export async function appendEvent(io: Io, f: Flight, event: FlightEvent): Promise<boolean> {
+  if (eventProblem(event, f.change) !== undefined) return false
   const git = (args: string[], stdin?: string) =>
     io.run(['git', ...args], stdin === undefined ? { cwd: f.changeTree } : { cwd: f.changeTree, stdin })
   const blob = await git(['hash-object', '-w', '--stdin'], JSON.stringify(event))
