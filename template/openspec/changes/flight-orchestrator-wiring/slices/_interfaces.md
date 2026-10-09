@@ -151,3 +151,11 @@ template/plugins/flight/hooks/core.ts:230:export const ev: {
 ```
 
 S2 另改 agents/reviewer.md：评审员用 git diff <commit>^1 <commit>，取不到报 HIGH
+
+## S4 landing.tsx / core.ts / register.tsx (template/plugins/flight/hooks/)
+landing.tsx
+- `export const FINDINGS_TOOL` — submit_findings 工具定义
+- `export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }>` — 处理评审员提交的 findings
+- `export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined>` — 落地 Stop 判定
+- `export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void>` — 执行落地动作
+core.ts / register.tsx 本片仅小改，签名见源文件（`export const register: Register`）
