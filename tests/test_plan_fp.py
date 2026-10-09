@@ -108,7 +108,6 @@ def test_fp_cli_short_is_prefix(tmp_path):
 # ---------------------------------------------------------------- flight-integrity-fixes（scenario: approval-chain-hardening#plan-fp-escapes-glob-metachars）
 # 骨架：S4 实现后去掉 xfail 标记。
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现 glob 转义")
 def test_plan_fp_escapes_glob_metachars(tmp_path):
     # Given: change 目录位于路径含 [ 与 ] 的目录「My [Projects]」下
     d = make_change(tmp_path / "My [Projects]")

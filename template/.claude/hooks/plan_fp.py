@@ -30,10 +30,10 @@ def plan_files(change_dir):
     for name in ("proposal.md", "design.md", "slices.json"):
         if os.path.isfile(os.path.join(change_dir, name)):
             rels.add(name)
-    for path in glob.glob(os.path.join(change_dir, "specs", "**", "spec.md"), recursive=True):
+    for path in glob.glob(os.path.join(glob.escape(change_dir), "specs", "**", "spec.md"), recursive=True):
         if os.path.isfile(path):
             rels.add(os.path.relpath(path, change_dir).replace(os.sep, "/"))
-    for path in glob.glob(os.path.join(change_dir, "slices", "*.md")):
+    for path in glob.glob(os.path.join(glob.escape(change_dir), "slices", "*.md")):
         rel = os.path.relpath(path, change_dir).replace(os.sep, "/")
         if os.path.isfile(path) and rel != INTERFACES:
             rels.add(rel)
