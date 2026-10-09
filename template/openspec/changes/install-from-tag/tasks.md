@@ -10,4 +10,4 @@
 
 ## R PR #38 review 修复 · 2026-10-09 用户授权追加（不在切片计划内；来源：PR #38 评审与 S1 切片评审的 MEDIUM）
 
-- [ ] R0 交接前校验归档里有 `template/`：缺失则 `[err]` 并以 4 退出、不交接，防止子进程判不出本地模式而无界递归下载；spec「pipe 模式交给该版本自带的 install.sh」补 scenario `pipe-archive-without-template-exits-4`，design D4 同步
+- [x] R0 交接前校验归档里有 `template/`：缺失则 `[err]` 并以 4 退出、不交接，防止子进程判不出本地模式而无界递归下载；spec「pipe 模式交给该版本自带的 install.sh」补 scenario `pipe-archive-without-template-exits-4`，design D4 同步（ee37dd1）
