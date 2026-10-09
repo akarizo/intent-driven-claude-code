@@ -6,3 +6,4 @@
 2026-10-09T11:36:27Z	review	findings=3 blocking=0 deferred=3
 2026-10-09T11:37:52Z	final	ok
 2026-10-09T11:37:52Z	apply-done	blocked=0 blocking=0
+2026-10-09T11:39:54Z	ship	ready
