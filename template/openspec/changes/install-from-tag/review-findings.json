@@ -1,0 +1,28 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "install.sh",
+      "line": 166,
+      "summary": "交接前只检查了归档里有没有 install.sh，没有检查 template/ 在不在。如果某个 ref（老提交，或 IDT_REPO_URL 指向的 fork）的归档里有新版 install.sh 但没有 template/，子进程判不出本地模式，会再次进入 pipe 模式，按同一个 IDT_BRANCH 重新下载并再交接，形成无界递归：反复下载，每一层各占一个临时目录。正常归档不会触发，test_pipe_real_installer_runs_local_mode 断言「pipe 模式：下载」只出现 1 次，也只覆盖了正常情形。",
+      "fix": "在 `[[ -f \"$TMP/src/install.sh\" ]]` 之后加一行 `[[ -d \"$TMP/src/template\" ]] || { log_err \"归档里没有 template/：$got\"; exit 4; }`，保证交接后的子进程一定走本地模式。"
+    },
+    {
+      "severity": "LOW",
+      "file": "install.sh",
+      "line": 157,
+      "summary": "`curl ... 2>/dev/null` 把 curl 自己的报错全吞掉了，DNS 失败、TLS 错误、断网等情况最后都报成「分支与 tag 都没有找到」，会误导排查方向：用户以为 tag 名写错了，其实是网络问题。",
+      "fix": "去掉 `2>/dev/null`，让 curl 的 -S 报错照常输出（测试按 [err] 前缀找行，不受影响）；或者把 [err] 文案改成「下载失败（ref 不存在或网络错误）」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "install.sh",
+      "line": 169,
+      "summary": "pipe 模式下父进程已经做过 openspec 与 python3 两项前置检查，交接给归档里的 install.sh 后子进程会再查一遍。缺 python3 时，那条 [info] 提示会打印两次。不影响功能。",
+      "fix": "可以不改。想去掉重复的话，把 python3 软前置检查挪到模板源定位之后，只在本地模式下执行。"
+    }
+  ],
+  "fix": null
+}

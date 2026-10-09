@@ -228,3 +228,190 @@ def test_upgrade_adds_missing_template_settings_keys(tmp_path):
     assert p.returncode == 0, p.stderr
     assert data["env"] == {"MY_KEY": "1"} and data["custom"] is True, data
     assert data.get("worktree") == {"baseRef": "head"}, data
+
+
+# ---------------------------------------------------------------- install-from-tag（scenario: install-pinned-ref#*，S1 骨架）
+# pipe 模式 = install.sh 文本从 stdin 喂给 bash -s（与 curl | bash 同形）；源用 file:// 目录模拟 GitHub 的 archive 路径，全程离线。
+import pathlib  # noqa: E402
+import re  # noqa: E402
+import tarfile  # noqa: E402
+
+INSTALLER = ROOT / "install.sh"
+
+STUB_INSTALLER = """#!/usr/bin/env bash
+# 归档里的桩 install.sh：记录收到的参数与同目录 template/VERSION，按 STUB_RC 退出
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+{ printf 'args=%s\\n' "$*"; printf 'version=%s\\n' "$(cat "$here/template/VERSION")"; } > "$STUB_LOG"
+exit "${STUB_RC:-0}"
+"""
+
+
+def _skip_changes(info):
+    """打归档时略去 template/openspec/changes（历史 change 工件，与安装无关，只会拖慢测试）。"""
+    return None if "/template/openspec/changes" in info.name else info
+
+
+def make_source(tmp_path, ref, kind, files):
+    """在 tmp_path/src 下按 GitHub 路径放一个归档 archive/refs/<kind>/<ref>.tar.gz（kind = heads / tags），
+    顶层目录 idt-<ref>/；files = {归档内相对路径: 文本 或 本地 pathlib.Path（文件或目录）}。返回 file:// 源地址。"""
+    src = tmp_path / "src"
+    out = src / "archive" / "refs" / kind / (ref + ".tar.gz")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stage = tmp_path / ("stage-%s-%s" % (kind, ref))
+    top = "idt-" + ref
+    with tarfile.open(out, "w:gz") as tar:
+        for rel, val in files.items():
+            if isinstance(val, pathlib.Path):
+                tar.add(val, arcname="%s/%s" % (top, rel), filter=_skip_changes)
+            else:
+                p = stage / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(val, encoding="utf-8")
+                tar.add(p, arcname="%s/%s" % (top, rel))
+    return "file://" + str(src)
+
+
+def run_pipe(tmp_path, source, *args, ref=None, extra_env=None):
+    """把本仓库 install.sh 从 stdin 喂给 bash -s；PATH 前置 openspec 桩并剔除真实 claude；ref=None 表示不设 IDT_BRANCH。"""
+    bin_dir = tmp_path / "bin-pipe"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "openspec").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (bin_dir / "openspec").chmod(0o755)
+    env = {**os.environ, "PATH": path_without_real_claude(bin_dir), "IDT_REPO_URL": source,
+           "STUB_LOG": str(tmp_path / "stub.log")}
+    env.pop("IDT_BRANCH", None)
+    if ref is not None:
+        env["IDT_BRANCH"] = ref
+    env.update(extra_env or {})
+    return subprocess.run(["bash", "-s", "--", *args], input=INSTALLER.read_text(encoding="utf-8"),
+                          env=env, capture_output=True, text=True, timeout=180, cwd=tmp_path)
+
+
+def stub_log(tmp_path):
+    """桩 install.sh 留下的记录 {args, version}；桩没被执行则为空 dict。"""
+    p = tmp_path / "stub.log"
+    if not p.exists():
+        return {}
+    return dict(line.split("=", 1) for line in p.read_text(encoding="utf-8").splitlines() if "=" in line)
+
+
+def test_pipe_installs_tag_only_ref(tmp_path):
+    # Given: 源里只有 tag stable-v9.9 的归档（refs/tags 下），没有同名分支；归档里是桩 install.sh 与 template/VERSION=v9.9
+    source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
+    target = tmp_path / "proj"
+
+    # When: 以 IDT_BRANCH=stable-v9.9 用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target), ref="stable-v9.9")
+
+    # Then: 以 0 退出；归档里的 install.sh 被执行，读到的 VERSION 是 v9.9
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert stub_log(tmp_path).get("version") == "v9.9", p.stdout + p.stderr
+
+
+def test_pipe_default_ref_is_main_branch(tmp_path):
+    # Given: 源里只有分支 main 的归档（refs/heads 下），归档里是桩 install.sh 与 template/VERSION=main
+    source = make_source(tmp_path, "main", "heads", {"install.sh": STUB_INSTALLER, "template/VERSION": "main"})
+    target = tmp_path / "proj"
+
+    # When: 不设 IDT_BRANCH，用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target))
+
+    # Then: 以 0 退出；归档里的 install.sh 被执行，读到的 VERSION 是 main
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert stub_log(tmp_path).get("version") == "main", p.stdout + p.stderr
+
+
+def test_pipe_missing_ref_lists_both_urls(tmp_path):
+    # Given: 源里只有分支 main 的归档
+    source = make_source(tmp_path, "main", "heads", {"install.sh": STUB_INSTALLER, "template/VERSION": "main"})
+    target = tmp_path / "proj"
+
+    # When: 以 IDT_BRANCH=nope 用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target), ref="nope")
+
+    # Then: 以 4 退出；[err] 行里同时出现 refs/heads/nope 与 refs/tags/nope；目标目录没有被创建
+    err = [line for line in p.stderr.splitlines() if line.startswith("[err]")]
+    assert p.returncode == 4, p.stdout + p.stderr
+    assert any("refs/heads/nope" in line for line in err) and any("refs/tags/nope" in line for line in err), p.stderr
+    assert not target.exists()
+
+
+def test_pipe_delegates_args_to_archived_installer(tmp_path):
+    # Given: 源里有 tag stable-v9.9 的归档，其 install.sh 是记录参数的桩
+    source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
+    target = tmp_path / "proj"
+
+    # When: 以 IDT_BRANCH=stable-v9.9 用管道运行 install.sh --upgrade <target>
+    p = run_pipe(tmp_path, source, "--upgrade", str(target), ref="stable-v9.9")
+
+    # Then: 以 0 退出，桩收到的参数恰为 "--upgrade <target>"；目标目录里没有 .claude/（引导器自身没有复制模板）
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert stub_log(tmp_path).get("args") == "--upgrade " + str(target), p.stdout + p.stderr
+    assert not (target / ".claude").exists()
+
+
+def test_pipe_propagates_exit_and_cleans_temp(tmp_path):
+    # Given: 源里有 tag stable-v9.9 的归档，其 install.sh 是以 3 退出的桩；TMPDIR 指向一个空目录
+    source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
+    target = tmp_path / "proj"
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir()
+
+    # When: 以 IDT_BRANCH=stable-v9.9 用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target), ref="stable-v9.9", extra_env={"STUB_RC": "3", "TMPDIR": str(tmpdir)})
+
+    # Then: 以 3 退出；TMPDIR 目录仍为空
+    assert p.returncode == 3, p.stdout + p.stderr
+    assert list(tmpdir.iterdir()) == []
+
+
+def test_pipe_archive_without_template_exits_4(tmp_path):
+    # Given: 源里有 tag stable-v9.9 的归档，里面只有记录调用的桩 install.sh，没有 template/
+    #   （用桩而非真实 install.sh：修复前真实脚本会无界递归下载，测试不能触发它）
+    source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER})
+    target = tmp_path / "proj"
+
+    # When: 以 IDT_BRANCH=stable-v9.9 用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target), ref="stable-v9.9")
+
+    # Then: 以 4 退出，[err] 行指出归档里没有 template/；桩没有被执行，目标目录没有被创建
+    err = [line for line in p.stderr.splitlines() if line.startswith("[err]")]
+    assert p.returncode == 4, p.stdout + p.stderr
+    assert any("template/" in line for line in err), p.stderr
+    assert stub_log(tmp_path) == {}, stub_log(tmp_path)
+    assert not target.exists()
+
+
+def test_pipe_real_installer_runs_local_mode(tmp_path):
+    # Given: 源里分支 main 的归档由本仓库当前的 install.sh 与 template/ 打成；PATH 上有 openspec 桩，没有 claude
+    source = make_source(tmp_path, "main", "heads", {"install.sh": INSTALLER, "template": ROOT / "template"})
+    target = tmp_path / "proj"
+
+    # When: 用管道运行 install.sh <target>
+    p = run_pipe(tmp_path, source, str(target))
+    out = p.stdout + p.stderr
+
+    # Then: 以 0 退出，目标含 .claude/hooks/intent-gate.py，CLAUDE.md 含 intent-driven:begin 段；只下载一次，且交接后按本地模式运行
+    assert p.returncode == 0, out
+    assert (target / ".claude" / "hooks" / "intent-gate.py").is_file()
+    assert "intent-driven:begin" in (target / "CLAUDE.md").read_text(encoding="utf-8")
+    assert out.count("pipe 模式：下载") == 1, out
+    assert "模式: local" in out, out
+
+
+def test_readme_documents_pinned_install():
+    # Given: README.md 与 install.sh --help 的输出
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    help_out = subprocess.run(["bash", str(INSTALLER), "--help"], capture_output=True, text=True, timeout=30).stdout
+
+    # When: 取 README 中「### 安装指定版本」到下一个二级或三级标题之间的内容
+    rest = readme[readme.index("### 安装指定版本") + 1:]
+    m = re.search(r"\n#{2,3} ", rest)
+    section = rest[: m.start()] if m else rest
+
+    # Then: 这段含 main 的 install.sh 地址、IDT_BRANCH=stable-v2.0、--branch stable-v2.0 与「降级」；--help 输出含「分支或 tag」
+    assert "raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh" in section, section
+    assert "IDT_BRANCH=stable-v2.0" in section, section
+    assert "--branch stable-v2.0" in section, section
+    assert "降级" in section, section
+    assert "分支或 tag" in help_out, help_out

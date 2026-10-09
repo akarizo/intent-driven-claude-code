@@ -5,6 +5,7 @@
 #   首次安装 / Install : ./install.sh [TARGET_DIR]
 #   升级     / Upgrade : ./install.sh --upgrade [TARGET_DIR]
 #   管道     / Pipe    : curl -fsSL <raw-url>/install.sh | bash -s -- [--upgrade] [TARGET_DIR]
+#                        IDT_BRANCH=<分支或 tag> 指定版本（缺省 main）；下载后交给归档自带的 install.sh 执行
 #
 # TARGET_DIR 缺省为当前工作目录；不存在会自动创建。
 #
@@ -77,7 +78,7 @@ intent-driven-claude-code installer
 
 环境变量:
   IDT_REPO_URL   pipe 模式下载 tarball 的仓库地址 (默认 $REPO_URL)
-  IDT_BRANCH     pipe 模式下载的分支             (默认 $BRANCH)
+  IDT_BRANCH     pipe 模式下载的分支或 tag       (默认 ${BRANCH}；先按分支找，再按 tag 找)
 EOF
 }
 
@@ -147,12 +148,33 @@ if [[ -z "$TEMPLATE_SRC" ]]; then
   CLEANUP_TMP="$TMP"
   trap 'rm -rf "$CLEANUP_TMP"' EXIT
   log_info "pipe 模式：下载 $REPO_URL@$BRANCH"
-  if ! curl -fsSL "$REPO_URL/archive/refs/heads/$BRANCH.tar.gz" \
-       | tar -xz -C "$TMP" --strip-components=1; then
-    log_err "下载或解压失败：$REPO_URL@$BRANCH"
+  # 先按分支、再按 tag 取归档；先落盘再解压，避免第一个地址失败时留下半截内容
+  url_heads="$REPO_URL/archive/refs/heads/$BRANCH.tar.gz"
+  url_tags="$REPO_URL/archive/refs/tags/$BRANCH.tar.gz"
+  got=""
+  for url in "$url_heads" "$url_tags"; do
+    if curl -fsSL -o "$TMP/src.tar.gz" "$url" 2>/dev/null; then got="$url"; break; fi
+  done
+  if [[ -z "$got" ]]; then
+    log_err "下载失败（分支与 tag 都没有找到 ${BRANCH}）：$url_heads ；$url_tags"
     exit 4
   fi
-  TEMPLATE_SRC="$TMP/template"
+  mkdir -p "$TMP/src"
+  tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components=1 \
+    || { log_err "解压失败：$got"; exit 4; }
+  [[ -f "$TMP/src/install.sh" ]] || { log_err "归档里没有 install.sh：$got"; exit 4; }
+  # 缺 template/ 时子进程判不出本地模式，会按同一 ref 再下载、再交接，无界递归
+  [[ -d "$TMP/src/template" ]] || { log_err "归档里没有 template/：$got"; exit 4; }
+
+  # 交给归档自带的 install.sh（本地模式）执行：参数与退出码透传；
+  # 不用 exec（保留 EXIT trap 清理 $TMP），</dev/null 防止子进程吞掉 curl | bash 的剩余脚本
+  rc=0
+  if [[ "$UPGRADE" == 1 ]]; then
+    bash "$TMP/src/install.sh" --upgrade "$TARGET" </dev/null || rc=$?
+  else
+    bash "$TMP/src/install.sh" "$TARGET" </dev/null || rc=$?
+  fi
+  exit "$rc"
 fi
 
 [[ -d "$TEMPLATE_SRC" ]] || { log_err "找不到模板目录: $TEMPLATE_SRC"; exit 4; }
