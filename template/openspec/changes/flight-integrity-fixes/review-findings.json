@@ -1,28 +1,6 @@
 {
  "blocked": [],
- "blocking": [
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/workflows/opsx-apply.js",
-   "line": 195,
-   "summary": "fix 执行体的 agent() 没有包 .catch。D2 要求「执行体的每次 agent() 调用」都把抛错当未返回处理，D3 又把 fix 明确算作执行体，但 fix 仍是裸 await agent(...)。运行时实测：执行体没交回结构化结果时 agent() 会抛错，此时整个工作流直接 reject，Finalize 不会执行。而且本切片把 fix 改成了 isolation: worktree，它的 commit 只在临时 worktree 里，抛错后既不合回也不跑 final，修复成果停在临时分支上，比改动前（fix 在主 worktree 里提交，commit 已在分支上）更糟。属于症状修复：只修了 wave 执行体这一个调用点。",
-   "fix": "fix 的 agent(...) 也套 `.catch(() => null)`，最好与 run() 一样在空值或 !ok 时重派一次。fix 最终仍为空时，往 blocked 推 {slice:'fix', kind:'infra', reason:'fix agent 未返回（已重派一次）'}，并让 Finalize 照常执行（mergeFix 因 fix 为空自动跳过），保证 final 与 apply-done 仍会落盘。再补一条测试：fix 抛错时 Finalize 仍被派发，blocked 里含 fix。"
-  },
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/workflows/opsx-apply.js",
-   "line": 197,
-   "summary": "fix 改为在临时 worktree 里跑，但没有像切片执行体那样做基点校验（--expect-branch）。切片执行体专门用 start --expect-branch 校验 HEAD 是 change 分支最新 commit 的后代，原因是运行时开的临时 worktree 实测出现过基点不对的情况（缺陷 A：单片 wave 首轮加重试连续 G0）。fix 的 start 不带 --expect-branch，prompt 还允许「slices.json 无 fix 条目时跳过 start」，所以 fix 可能在一份没含已合回切片的旧代码上改。后果是：修复写在错误的代码上，temp worktree 里的 final 必红，或合回时冲突。（运行时给 fix 开的 worktree 基于哪个 commit，需进一步确认；但切片路径已经为同一风险设防，fix 路径少了这道防线。）",
-   "fix": "fix prompt 的第一步改为基点校验：有 branch 时运行 `git merge-base --is-ancestor $(git rev-parse <branch>) HEAD`，不满足就不做任何改动，直接返回 {slice:'fix', ok:false, commit:'<HEAD>', failed:['G0 base: …']}。也可以让 start fix 带 `--expect-branch ${branch}`，并要求 start 因无 fix 条目被拒时仍单独做这项校验。Agent 回退路径的文档同步写明。"
-  },
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/hooks/slice-gate.py",
-   "line": 590,
-   "summary": "实跑结果只靠解析 `-v` 终端逐条行。下游项目只要在 pytest 配置里写了 `addopts = -q`（很常见，如 `-ra -q`），`-q` 会把 `-v` 抵消到 verbosity 0，不再输出逐条行，所有 .py 目标都会被判「未被收集运行」，G7 全红，slice gate 与 final 都会被误拦。我做了一次定向抽查：在 pytest 8.4.2 下 `[pytest] addopts=-q` 加命令行 `-v`，只输出 `1 passed`，没有任何 nodeid 行。另外，若 addopts 含 xdist 的 `-n`，输出行格式变成 `[gw0] [ 50%] PASSED <nodeid>`，PYTEST_OUTCOME_RE 用 ^ 锚定 nodeid，同样匹配不上。这个缺陷来自切片契约本身，执行体是照契约实现的，但它是模板分发给其他项目的门禁，属于重大误判。",
-   "fix": "改为不依赖终端输出：加 `--junitxml=<临时文件>`（用 tempfile 生成，用完删除），解析 XML 里每个 testcase 的 classname/name 还原 nodeid；有 <failure>/<error> 判 FAILED/ERROR，<skipped type=\"pytest.xfail\"> 判 XFAIL，其他 <skipped> 判 SKIPPED，都没有判 PASSED。最小改法是改用 `-vv`（可抵消一个 -q），并给 PYTEST_OUTCOME_RE 放宽前缀 `^(?:\\[gw\\d+\\]\\s+(?:\\[\\s*\\d+%\\]\\s+)?(?P<out2>...)\\s+)?`，但仍不如 junitxml 稳。同时补一条用例：临时仓库带 `addopts = -q` 时，G7 仍能判 PASSED。"
-  }
- ],
+ "blocking": [],
  "deferred": [
   {
    "severity": "LOW",
