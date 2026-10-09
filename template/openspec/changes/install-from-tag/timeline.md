@@ -3,3 +3,6 @@
 2026-10-09T11:32:37Z	approve	2026-10-09T11:32:00.075Z · fp 4f9142b0 · ledger d213f96e
 2026-10-09T11:35:42Z	gate	S1 ok
 2026-10-09T11:35:45Z	integrate	wave 1
+2026-10-09T11:36:27Z	review	findings=3 blocking=0 deferred=3
+2026-10-09T11:37:52Z	final	ok
+2026-10-09T11:37:52Z	apply-done	blocked=0 blocking=0
