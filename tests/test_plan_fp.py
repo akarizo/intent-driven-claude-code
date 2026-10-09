@@ -6,7 +6,6 @@ import pytest
 
 from conftest import make_change, run_hook, write
 
-XF = pytest.mark.xfail(strict=True, reason="S1 未实现 plan_fp.py")
 
 EXECUTION_RECORDS = ("spec.html", "timeline.md", "gate-report.md", "gate-baseline.json", "evidence.log",
                      "review-findings.json", ".flight", "slices/_interfaces.md")
@@ -25,7 +24,6 @@ def edit_slices(change_dir, mutate):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-@XF
 def test_fp_ignores_execution_records(tmp_path):
     # Given: 计划工件齐全的 change 目录及其指纹 F
     d = make_change(tmp_path)
@@ -40,7 +38,6 @@ def test_fp_ignores_execution_records(tmp_path):
     assert fp(d) == before
 
 
-@XF
 def test_fp_changes_on_plan_edit(tmp_path):
     # Given: 五份相同的 change 目录，各自记下指纹
     def append(rel):
@@ -66,7 +63,6 @@ def test_fp_changes_on_plan_edit(tmp_path):
     assert changed == {label: True for label in edits}, changed
 
 
-@XF
 def test_fp_ignores_measured_suite_time(tmp_path):
     # Given: change 目录及其指纹 F（slices.json 的 gate.full_suite_sec 为 9.6）
     d = make_change(tmp_path)
@@ -79,7 +75,6 @@ def test_fp_ignores_measured_suite_time(tmp_path):
     assert fp(d) == before
 
 
-@XF
 def test_fp_normalizes_line_endings(tmp_path):
     # Given: 内容相同的两份 change，第二份所有计划文本改用 CRLF
     lf = make_change(tmp_path / "lf")
@@ -95,7 +90,6 @@ def test_fp_normalizes_line_endings(tmp_path):
     assert a == b
 
 
-@XF
 def test_fp_cli_short_is_prefix(tmp_path):
     # Given: 计划工件齐全的 change 目录，以及一个不存在的目录
     d = make_change(tmp_path)
