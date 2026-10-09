@@ -1224,7 +1224,6 @@ def test_mod_adds():
 '''
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：G7 未沿用 gate.test 的运行方式")
 def test_g7_uses_runner_from_gate_test(git_repo):
     # Given: scenario 测试导入的 envonly 只在 venv-bin/pytest 这个项目测试环境里可用；gate.test 是它加 -q tests
     change = gate_repo(git_repo, test_body=ENVONLY_TEST)
@@ -1240,7 +1239,6 @@ def test_g7_uses_runner_from_gate_test(git_repo):
     assert out["scenarios"]["passed"] == 1, out
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：未读取 gate.pytest")
 def test_g7_prefers_explicit_pytest_config(git_repo):
     # Given: gate.pytest 指向会留下调用记录的 pytest 包装脚本，gate.test 仍是 python3 -m pytest -q tests
     change = gate_repo(git_repo)
@@ -1256,7 +1254,6 @@ def test_g7_prefers_explicit_pytest_config(git_repo):
     assert out["ok"] is True, out
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：推导不出运行方式时未在 warnings 说明")
 def test_g7_falls_back_with_warning(git_repo):
     # Given: gate.test 是 cd . && python3 -m pytest -q tests（含 shell 语法），没有 gate.pytest
     change = gate_repo(git_repo)
@@ -1270,7 +1267,6 @@ def test_g7_falls_back_with_warning(git_repo):
     assert any(w.startswith("G7") and "gate.pytest" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：G7 实跑无超时")
 def test_g7_times_out(git_repo):
     # Given: gate.pytest 指向先睡 5 秒再运行的 pytest 包装脚本；环境变量 FLIGHT_G7_TIMEOUT 为 1
     change = gate_repo(git_repo)
@@ -1285,7 +1281,6 @@ def test_g7_times_out(git_repo):
     assert any(f.startswith("G7") and "运行超时" in f for f in out["failed"]), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：未被收集运行时没有诊断")
 def test_g7_reports_collection_failure_detail(git_repo):
     # Given: scenario 测试所在文件在模块级抛出 RuntimeError，收集即失败
     change = gate_repo(git_repo, test_body=COLLECT_ERROR_TEST)
