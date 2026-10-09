@@ -7,3 +7,7 @@
 2026-10-09T09:54:55Z	gate	S5 ok
 2026-10-09T09:54:55Z	gate	S6 ok
 2026-10-09T09:55:00Z	integrate	wave 1
+2026-10-09T09:55:10Z	slice-start	S2
+2026-10-09T09:58:01Z	gate	S2 ok
+2026-10-09T10:05:34Z	fix	blocking=3
+2026-10-09T10:06:37Z	final	ok
