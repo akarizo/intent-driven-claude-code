@@ -1,11 +1,7 @@
 """账本只读读取与结构校验（scenario: flight-ledger#*）。骨架：S2 实现 ledger.py 后逐条去掉 xfail 标记。"""
 import json
 
-import pytest
-
 from conftest import approve_event, commit_all, git, ledger_append, make_change, run_hook
-
-XF = pytest.mark.xfail(strict=True, reason="S2 未实现 ledger.py")
 
 F1, F2 = "a" * 64, "b" * 64
 
@@ -24,7 +20,6 @@ def new_repo(path):
     return path
 
 
-@XF
 def test_ledger_approved_returns_latest_fp(git_repo):
     # Given: 账本上依次有批准指纹 F1、F2 的两条事件
     d = make_change(git_repo)
@@ -39,7 +34,6 @@ def test_ledger_approved_returns_latest_fp(git_repo):
     assert p.stdout.strip() == F2
 
 
-@XF
 def test_ledger_absent_means_unapproved(git_repo):
     # Given: 仓库里没有 refs/flight/demo/ledger
     d = make_change(git_repo)
@@ -52,7 +46,6 @@ def test_ledger_absent_means_unapproved(git_repo):
     assert (s.returncode, s.stdout) == (0, ""), s.stderr
 
 
-@XF
 def test_ledger_show_lists_events(git_repo):
     # Given: 账本上依次有两条事件
     d = make_change(git_repo)
@@ -68,7 +61,6 @@ def test_ledger_show_lists_events(git_repo):
     assert [r["fp"] for r in rows] == [F1, F2]
 
 
-@XF
 def test_ledger_rejects_tampered_chain(tmp_path):
     # Given: 五个各只有一处违规的账本（多文件 / 非 JSON / change 不符 / 双父提交 / v 不是 1）
     good = approve_event("demo", F1)
@@ -84,7 +76,7 @@ def test_ledger_rejects_tampered_chain(tmp_path):
 
     def two_parents(repo):
         first = ledger_append(repo, "demo", good)
-        side = ledger_append(repo, "demo", good, ref="refs/flight/side/ledger", parents=[])
+        side = ledger_append(repo, "demo", approve_event("demo", F2), ref="refs/flight/side/ledger", parents=[])
         return ledger_append(repo, "demo", good, parents=[first, side])
 
     def bad_version(repo):
@@ -107,7 +99,6 @@ def test_ledger_rejects_tampered_chain(tmp_path):
         assert short in verify.stderr and short in approved.stderr, (label, verify.stderr)
 
 
-@XF
 def test_ledger_shared_across_worktrees(git_repo):
     # Given: 主仓库账本有批准指纹 F1，并从主仓库建出一个也含 demo 的 worktree
     make_change(git_repo)
