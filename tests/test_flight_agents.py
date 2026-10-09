@@ -31,7 +31,6 @@ def tools(meta):
     return [t.strip() for t in raw.split(",")] if isinstance(raw, str) else raw
 
 
-@pytest.mark.xfail(strict=True, reason="S3：插件 agents/ 尚未建立")
 def test_agent_files_declare_flight_types():
     # Given: template/plugins/flight/agents/ 下的三份文件
     parsed = {n: parse(n)[0] for n in ("executor", "reviewer", "fixer")}
@@ -53,7 +52,6 @@ def test_agent_files_declare_flight_types():
     assert "mcp__flight__submit_findings" in rv and "Edit" not in rv and "Write" not in rv, rv
 
 
-@pytest.mark.xfail(strict=True, reason="S3：插件 agents/ 尚未建立")
 def test_agent_bodies_leave_gate_to_control_plane():
     # Given: 同上三份文件
     bodies = {n: parse(n)[1] for n in ("executor", "reviewer", "fixer")}
@@ -68,7 +66,6 @@ def test_agent_bodies_leave_gate_to_control_plane():
     assert "submit_findings" in bodies["reviewer"] and "空列表" in bodies["reviewer"]
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_prompts_executor_and_continuation():
     # Given: change demo、切片 S2、切片包路径；上一个执行体未经收口结束，最近门禁 failed 为 G7 demo#s2
     # When: 分别生成首次与续接的执行体提示词
@@ -76,7 +73,6 @@ def test_prompts_executor_and_continuation():
     assert_ts_passed("prompts-executor-and-continuation")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_prompts_reviewer_resolver_fixer():
     # Given: S1 合回后的 commit c1、合回 S2 时的冲突文件 a.py、一条 HIGH finding
     # When: 分别生成评审员、解冲突与批量修复提示词
