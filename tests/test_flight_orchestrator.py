@@ -89,3 +89,11 @@ def test_drive_halts_on_action_exception():
     # When: 处理执行体的结束（turn.complete）
     # Then: 异常不冒到引擎；账本末条为 halt（原因含「动作异常」）
     assert_ts_passed("drive-halts-on-action-exception")
+
+
+def test_takeoff_refuses_bad_fingerprint():
+    # Given: 起飞检查都过，但 plan_fp.py 非 0 退出；另一情形输出不是 64 位十六进制（PR #39 评审 HIGH）
+    # When: 人发出 /opsx-apply demo
+    # Then: 回复含「计算计划指纹失败」；账本没有事件、没有派发、没有记 approve
+    assert_ts_passed("takeoff-refuses-bad-fingerprint")
+    assert_ts_passed("takeoff-refuses-bad-fingerprint/not-hex")

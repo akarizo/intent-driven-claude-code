@@ -309,6 +309,13 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
     if (live) return `flight：${name} 正在飞（attempt ${state.attempt}），不重复起飞`
   }
 
+  // 先算计划指纹再记任何东西：空 fp 写进 takeoff 事件会让整条账本判损坏（PR #39 评审 HIGH）
+  const fpRun = await judge(io, flight, 'plan_fp', ['--change-dir', abs], tree.path)
+  const fp = fpRun.stdout.trim()
+  if (fpRun.exitCode !== 0 || !/^[0-9a-f]{64}$/.test(fp)) {
+    return `flight：计算计划指纹失败，不起飞（${firstLine(fpRun.stderr) || firstLine(fpRun.stdout) || '无输出'}）`
+  }
+
   flights.set(name, flight)
   const attempt = ledger.events.filter(e => e.ev === 'takeoff').length + 1
   if (attempt === 1) {
@@ -320,7 +327,6 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
     const commit = await io.run(['git', '-C', tree.path, 'commit', '-m', 'chore(flight): approve', '--', timeline])
     if (commit.exitCode !== 0) return `flight：提交 approve 记录失败：${firstLine(commit.stderr || commit.stdout)}`
   }
-  const fp = (await judge(io, flight, 'plan_fp', ['--change-dir', abs], tree.path)).stdout.trim()
   const b = await base(ctx, flight)
   if (!(await appendEvent(io, flight, ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model })))) return 'flight：写 takeoff 事件失败，不起飞'
   await drive($, flight)

@@ -26,6 +26,8 @@ type World = {
   isResolved: boolean
   /** plan_fp.py 输出的当前指纹（缺省 F） */
   fp?: string
+  /** plan_fp.py 的整个结果（给了就覆盖 fp，用来模拟非 0 退出或输出格式不对） */
+  fpRun?: Run
   /** 派发 agent 时抛异常 */
   spawnThrows?: boolean
   /** update-ref 一直返回非 0（旧值不符，账本写入总失败） */
@@ -111,7 +113,7 @@ function useWorld(on: On, w: World) {
       const script = String(argv[1]).split('/').pop()
       const sub = argv[2]
       if (script === 'takeoff-gate.py') return wrap(w.takeoff)
-      if (script === 'plan_fp.py') return wrap(res(0, (w.fp ?? F) + '\n'))
+      if (script === 'plan_fp.py') return wrap(w.fpRun ?? res(0, (w.fp ?? F) + '\n'))
       if (script === 'session-model.py') return wrap(res(0, 'opus\n'))
       if (script === 'timeline.py') return wrap(res(0, ''))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
@@ -372,4 +374,33 @@ test('drive-halts-on-action-exception', async ($, on) => {
   // Then: 处理正常返回、异常不冒到引擎；账本末条为 halt，原因含「动作异常」
   expect(outcome).toBe('resolved')
   expect(log.events.at(-1)).toMatchObject({ ev: 'halt', reason: expect.stringContaining('动作异常') })
+})
+
+// PR #39 评审 HIGH（R1）：指纹算不出时写进账本的空 fp 会让整条账本判损坏、起飞被永久拒绝
+test('takeoff-refuses-bad-fingerprint', async ($, on) => {
+  // Given: 起飞检查都过，但 plan_fp.py 以 1 退出，stderr 为「读取 slices.json 失败」
+  const log = useWorld(on, demoWorld({ fpRun: res(1, '', '读取 slices.json 失败') }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「计算计划指纹失败」与 stderr；账本没有事件、没有派发、没有记 approve
+  expect(r.text).toContain('计算计划指纹失败')
+  expect(r.text).toContain('读取 slices.json 失败')
+  expect(log.events).toEqual([])
+  expect(log.spawns).toEqual([])
+  expect(log.runs.some(x => String(x.argv[1]).endsWith('timeline.py'))).toBe(false)
+})
+
+test('takeoff-refuses-bad-fingerprint/not-hex', async ($, on) => {
+  // Given: 起飞检查都过，plan_fp.py 以 0 退出，但输出不是 64 位十六进制
+  const log = useWorld(on, demoWorld({ fpRun: res(0, 'not-a-fingerprint\n') }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「计算计划指纹失败」；账本没有事件、没有派发
+  expect(r.text).toContain('计算计划指纹失败')
+  expect(log.events).toEqual([])
+  expect(log.spawns).toEqual([])
 })
