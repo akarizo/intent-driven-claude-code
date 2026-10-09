@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "change": "install-from-tag",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "bash -n install.sh && python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 67.9
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "install.sh pipe 模式认 tag 并交给归档自带的 install.sh + README 安装指定版本",
+      "scenarios": [
+        "install-pinned-ref#pipe-installs-tag-only-ref",
+        "install-pinned-ref#pipe-default-ref-is-main-branch",
+        "install-pinned-ref#pipe-missing-ref-lists-both-urls",
+        "install-pinned-ref#pipe-delegates-args-to-archived-installer",
+        "install-pinned-ref#pipe-propagates-exit-and-cleans-temp",
+        "install-pinned-ref#pipe-real-installer-runs-local-mode",
+        "install-pinned-ref#readme-documents-pinned-install"
+      ],
+      "owns": [
+        "install.sh",
+        "README.md",
+        "tests/test_install.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_install.py",
+      "packet": "slices/S1.md"
+    }
+  ],
+  "scenario_tests": {
+    "install-pinned-ref#pipe-installs-tag-only-ref": "tests/test_install.py::test_pipe_installs_tag_only_ref",
+    "install-pinned-ref#pipe-default-ref-is-main-branch": "tests/test_install.py::test_pipe_default_ref_is_main_branch",
+    "install-pinned-ref#pipe-missing-ref-lists-both-urls": "tests/test_install.py::test_pipe_missing_ref_lists_both_urls",
+    "install-pinned-ref#pipe-delegates-args-to-archived-installer": "tests/test_install.py::test_pipe_delegates_args_to_archived_installer",
+    "install-pinned-ref#pipe-propagates-exit-and-cleans-temp": "tests/test_install.py::test_pipe_propagates_exit_and_cleans_temp",
+    "install-pinned-ref#pipe-real-installer-runs-local-mode": "tests/test_install.py::test_pipe_real_installer_runs_local_mode",
+    "install-pinned-ref#readme-documents-pinned-install": "tests/test_install.py::test_readme_documents_pinned_install"
+  }
+}
