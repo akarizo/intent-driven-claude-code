@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-io（io-*）。io 函数跑在记录调用的假 Io 上；git / python3 / 文件系统由假 Io 作答。
 // 不经 ioOf($)：测试侧 $ 只有事件面（无 fs / process），测试 hook 里的 $ 调 fs / process 会被宿主扫描规则拒绝（2.1.295 实测）。
 import { expect, test } from 'claude-code/testing'
-import { appendEvent, ensureWorktree, judge, judgesDir } from '../hooks/io'
+import { appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir } from '../hooks/io'
 import type { Flight, FlightEvent, Io, RunResult } from '../hooks/core'
 
 const MAIN = '/repo'
@@ -134,4 +134,98 @@ test('io-reuses-existing-slice-worktree', async () => {
   // Then: 不运行任何 git 命令，返回同一路径且 created 为假
   expect(calls).toEqual([])
   expect(r).toEqual({ path: SLICE, created: false })
+})
+
+const TAKEOFF: FlightEvent = {
+  v: 1,
+  ev: 'takeoff',
+  change: 'demo',
+  at: '2026-10-09T00:00:00Z',
+  by: { plugin: 'flight', session: 'sess' },
+  attempt: 1,
+  fp: 'f'.repeat(64),
+  branch: 'worktree-demo',
+  waves: [['S1']],
+  model: 'opus',
+}
+
+/** 假 Io：仓库有 refs/flight/demo/ledger（takeoff + agent a1 的 dispatch），worktree 列表为 /repo 与 /repo/.worktrees/demo。 */
+function ledgerWorld(): Io {
+  const porcelain = `worktree ${MAIN}\nHEAD ${HEAD}\nbranch refs/heads/main\n\nworktree ${CHANGE_TREE}\nHEAD ${HEAD}\nbranch refs/heads/worktree-demo\n\n`
+  return {
+    async run(argv) {
+      if (argv[0] === 'python3' && argv[1] === `${HOOKS}/ledger.py`) return ok([TAKEOFF, DISPATCH].map(e => JSON.stringify(e)).join('\n') + '\n')
+      if (argv.join(' ') === 'git for-each-ref --format=%(refname) refs/flight/') return ok('refs/flight/demo/ledger\n')
+      if (argv.join(' ') === 'git -C . worktree list --porcelain') return ok(porcelain)
+      throw new Error(`unexpected argv: ${argv.join(' ')}`)
+    },
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: async path => [`${HOOKS}/slice-gate.py`, `${MAIN}/${CHANGE_DIR}`].includes(path),
+  }
+}
+
+test('io-finds-flight-from-ledger', async () => {
+  // Given: 进程内无登记飞行；仓库有 refs/flight/demo/ledger（takeoff branch worktree-demo、model opus、session sess，agent a1 的 dispatch）；worktree 列表 /repo 与 /repo/.worktrees/demo
+  flights.clear()
+  const io = ledgerWorld()
+
+  // When: 按 agent a1 查找飞行
+  const found = await flightOfAgent(io, 'a1')
+
+  // Then: 找到 demo，changeTree 为 /repo/.worktrees/demo、branch worktree-demo、model opus、hooksDir 为主 worktree 的判定器目录；事件即账本两条
+  expect(found?.flight).toEqual({ change: 'demo', mainTree: MAIN, changeTree: CHANGE_TREE, changeDir: CHANGE_DIR, branch: 'worktree-demo', hooksDir: HOOKS, model: 'opus', session: 'sess' })
+  expect(found?.events).toEqual([TAKEOFF, DISPATCH])
+})
+
+test('io-finds-flight-from-ledger/unknown-agent', async () => {
+  // Given: 同一仓库与账本，进程内无登记飞行；agent zz 从未被派发
+  flights.clear()
+  const io = ledgerWorld()
+
+  // When: 按 agent zz 查找飞行
+  const found = await flightOfAgent(io, 'zz')
+
+  // Then: 返回空
+  expect(found).toBeUndefined()
+})
+
+test('io-cas-rereads-tip', async () => {
+  // Given: 第 1 次 rev-parse 读到链尾 T1、update-ref 旧值不符；第 2 次 rev-parse 读到 T2、update-ref 成功
+  const T1 = '1'.repeat(40)
+  const T2 = '2'.repeat(40)
+  const calls: string[][] = []
+  let revParses = 0
+  let updateRefs = 0
+  const io: Io = {
+    async run(argv) {
+      calls.push([...argv])
+      switch (argv[1]) {
+        case 'hash-object':
+          return ok('b'.repeat(40) + '\n')
+        case 'mktree':
+          return ok('e'.repeat(40) + '\n')
+        case 'rev-parse':
+          revParses += 1
+          return ok((revParses === 1 ? T1 : T2) + '\n')
+        case 'commit-tree':
+          return ok('c'.repeat(40) + '\n')
+        case 'update-ref':
+          updateRefs += 1
+          return updateRefs === 1 ? fail('cannot lock ref: is at 2222 but expected 1111') : ok('')
+      }
+      throw new Error(`unexpected argv: ${argv.join(' ')}`)
+    },
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: async () => false,
+  }
+
+  // When: 追加一条 S1 的 dispatch 事件
+  await appendEvent(io, flight(HOOKS), DISPATCH)
+
+  // Then: rev-parse 调 2 次；第 2 次 commit-tree 以 T2 为父；两次 update-ref 旧值依次为 T1、T2
+  expect(calls.filter(c => c[1] === 'rev-parse')).toHaveLength(2)
+  expect(calls.filter(c => c[1] === 'commit-tree')[1]?.join(' ')).toContain(`-p ${T2}`)
+  expect(calls.filter(c => c[1] === 'update-ref').map(c => c[4])).toEqual([T1, T2])
 })
