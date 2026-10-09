@@ -168,7 +168,6 @@ def _load_hooks_ledger():
     return mod
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：非 UTF-8 事件判账本损坏")
 def test_ledger_non_utf8_event_is_corrupt(git_repo):
     # Given: demo 的账本唯一提交里，event.json 的内容是非 UTF-8 字节
     d = make_change(git_repo)
@@ -182,7 +181,6 @@ def test_ledger_non_utf8_event_is_corrupt(git_repo):
     assert "账本损坏" in p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：悬空 ref 判账本损坏")
 def test_ledger_dangling_ref_is_corrupt(git_repo):
     # Given: demo 的账本 ref 指向一个仓库里不存在的对象（git update-ref 拒绝这样写，故直接写 ref 文件）
     d = make_change(git_repo)
@@ -198,7 +196,6 @@ def test_ledger_dangling_ref_is_corrupt(git_repo):
     assert "账本损坏" in p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：链尾只解析一次")
 def test_ledger_tip_matches_read_chain(git_repo, monkeypatch):
     # Given: demo 的账本链尾是批准 F1 的提交 T1；读取过程中（rev-list 之后）另一个写入方追加了批准 F2 的提交 T2
     d = make_change(git_repo)

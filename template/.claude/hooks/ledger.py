@@ -32,11 +32,20 @@ def ref_for(change):
 
 
 def _git(change_dir, *args, check=True):
+    # 按字节取输出：非 UTF-8 内容不得在 subprocess 内部抛 UnicodeDecodeError；调用方需要文本时显式 decode
     # git 不可执行时 subprocess 抛 FileNotFoundError，原样上抛，由调用方按门禁故障处理
-    p = subprocess.run(["git", "-C", change_dir, *args], capture_output=True, text=True)
+    p = subprocess.run(["git", "-C", change_dir, *args], capture_output=True)
     if check and p.returncode != 0:
-        raise LedgerUnreadable("git %s 失败：%s" % (args[0], p.stderr.strip()))
+        raise LedgerUnreadable("git %s 失败：%s" % (args[0], _err(p)))
     return p
+
+
+def _err(p):
+    return p.stderr.decode("utf-8", "replace").strip()
+
+
+def _out(p):
+    return p.stdout.decode("utf-8", "replace")
 
 
 def _check_event(sha, ev, change):
@@ -57,52 +66,62 @@ def _check_event(sha, ev, change):
         raise LedgerInvalid(sha, "by 缺 plugin")
 
 
-def read_events(change_dir):
-    """按写入顺序返回账本事件；无引用 → []。链上任一提交非法 → LedgerInvalid。"""
+def _read(change_dir):
+    """返回 (按写入顺序的账本事件, 链尾 sha)；无引用 → ([], None)。链尾只解析一次，后续 git 调用都用它。"""
     change_dir = os.path.normpath(str(change_dir))
     change = os.path.basename(change_dir)
     ref = ref_for(change)
     p = _git(change_dir, "rev-parse", "-q", "--verify", ref, check=False)
     if p.returncode == 1:  # 引用不存在
-        return []
+        return [], None
     if p.returncode != 0:  # 128 等：目录不存在 / 不在仓库内，不得当成无账本
-        raise LedgerUnreadable("git rev-parse 失败：%s" % p.stderr.strip())
-    tip = p.stdout.strip()
+        raise LedgerUnreadable("git rev-parse 失败：%s" % _err(p))
+    tip = _out(p).strip()
     # rev-list 遇到树 / blob 不报错、只是无输出，不先验类型会把它当成合法的空账本
-    if _git(change_dir, "cat-file", "-t", tip).stdout.strip() != "commit":
+    t = _git(change_dir, "cat-file", "-t", tip, check=False)
+    if t.returncode != 0:
+        raise LedgerInvalid(tip, "引用指向不存在的对象")
+    if _out(t).strip() != "commit":
         raise LedgerInvalid(tip, "引用不指向提交")
     events = []
-    for line in _git(change_dir, "rev-list", "--reverse", "--parents", tip).stdout.splitlines():
+    for line in _out(_git(change_dir, "rev-list", "--reverse", "--parents", tip)).splitlines():
         shas = line.split()
         if not shas:
             continue
         sha = shas[0]
         if len(shas) - 1 > 1:
             raise LedgerInvalid(sha, "父提交数大于 1")
-        entries = _git(change_dir, "ls-tree", "--full-tree", sha).stdout.splitlines()
+        entries = _out(_git(change_dir, "ls-tree", "--full-tree", sha)).splitlines()
         if len(entries) != 1:
             raise LedgerInvalid(sha, "树内应恰一项 event.json，实有 %d 项" % len(entries))
         meta, _, name = entries[0].partition("\t")
         parts = meta.split()
         if name != "event.json" or len(parts) != 3 or parts[1] != "blob":
             raise LedgerInvalid(sha, "树内唯一项不是 event.json blob")
-        text = _git(change_dir, "cat-file", "-p", parts[2]).stdout
+        raw = _git(change_dir, "cat-file", "-p", parts[2]).stdout
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise LedgerInvalid(sha, "event.json 不是 UTF-8")
         try:
             ev = json.loads(text)
         except ValueError:
             raise LedgerInvalid(sha, "event.json 不是合法 JSON")
         _check_event(sha, ev, change)
         events.append(ev)
-    return events
+    return events, tip
+
+
+def read_events(change_dir):
+    """按写入顺序返回账本事件；无引用 → []。链上任一提交非法 → LedgerInvalid。"""
+    return _read(change_dir)[0]
 
 
 def latest_approval(change_dir):
-    """返回 (最新 approve 事件 | None, 账本 tip sha | None)。"""
-    events = read_events(change_dir)
+    """返回 (最新 approve 事件 | None, 账本 tip sha | None)；tip 与读到的事件出自同一次解析。"""
+    events, tip = _read(change_dir)
     if not events:
         return None, None
-    change = os.path.basename(os.path.normpath(str(change_dir)))
-    tip = _git(str(change_dir), "rev-parse", "-q", "--verify", ref_for(change)).stdout.strip()
     approvals = [e for e in events if e["ev"] == "approve"]
     return (approvals[-1] if approvals else None), tip
 
