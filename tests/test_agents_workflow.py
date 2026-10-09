@@ -565,3 +565,75 @@ def test_workflow_skips_merge_when_fix_base_rejected(tmp_path):
     assert labels.count("fix:retry") == 1, labels
     assert "8" * 40 not in final_prompt, final_prompt
     assert "G0 base" in blocked["fix"]["reason"], blocked
+
+
+# ---------------------------------------------------------------- flight-integrity-followups（scenario: workflow-agent-failure-tolerance#*）
+# 骨架：S2 实现后逐条去掉 xfail 标记。THROW / fallback_section 复用上方定义。
+
+ALL_GREEN = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]]
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：integrator / final-gate 抛错未重派")
+def test_mechanical_roles_retry_once(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；wave 1 的合回与 final-gate 的首次 agent 调用都抛错，重派后都成功
+    retried_final = {"slice": "final", "ok": True, "commit": "a" * 40, "failed": []}
+    replies = ALL_GREEN + [["^integrate:w1$", THROW], ["^final-gate$", THROW],
+                           ["^final-gate:retry$", retried_final]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+
+    # Then: 派发了 integrate:w1:retry 与 final-gate:retry；blocked 为空，返回的 final 是重派的结果
+    assert "integrate:w1:retry" in labels and "final-gate:retry" in labels, labels
+    assert out["result"]["blocked"] == [], out["result"]["blocked"]
+    assert out["result"]["final"] == retried_final, out["result"]["final"]
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：integrator / final-gate 抛错未兜住")
+def test_mechanical_roles_blocked_after_retry(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；wave 1 的合回与 final-gate 的首次和重派调用都抛错
+    replies = ALL_GREEN + [["^integrate:w1(:retry)?$", THROW], ["^final-gate(:retry)?$", THROW]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: 工作流正常结束，S3 仍被派发；blocked 里有 wave1 与 final，kind 为 infra，原因含「未返回」与「已重派」
+    assert "S3" in labels, labels
+    for key in ("wave1", "final"):
+        assert key in blocked, blocked
+        assert blocked[key]["kind"] == "infra" and "未返回" in blocked[key]["reason"] and "已重派" in blocked[key]["reason"], blocked
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：评审员抛错让整个工作流崩溃")
+def test_reviewer_failure_recorded(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审员调用抛错，S2 的评审给出 1 条 MEDIUM
+    medium = {"severity": "MEDIUM", "file": "b.py", "line": 2, "summary": "命名不一致", "fix": "统一命名"}
+    replies = ALL_GREEN + [["^review:S1$", THROW], ["^review:S2$", {"findings": [medium]}]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: blocked 里有 review:S1（infra、原因含「评审未返回」）；deferred 含 S2 的那条 MEDIUM；final-gate 已派发
+    assert blocked["review:S1"]["kind"] == "infra" and "评审未返回" in blocked["review:S1"]["reason"], blocked
+    assert medium in out["result"]["deferred"], out["result"]["deferred"]
+    assert "final-gate" in labels, labels
+
+
+@pytest.mark.xfail(strict=True, reason="S2 未实现：回退路径未写明 agent 失败的处理")
+def test_apply_docs_mirror_agent_failure_handling():
+    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 取两份回退路径段
+    fallbacks = [fallback_section(t) for t in (cmd, skill)]
+
+    # Then: 都写明 integrator 与 final 抛错或未返回时重派一次；都写明「评审未返回」只记录、不重派
+    for f in fallbacks:
+        assert "integrator 与 final" in f, f
+        assert "评审未返回" in f and "不重派" in f, f
