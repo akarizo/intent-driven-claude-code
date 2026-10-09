@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "change": "flight-orchestrator-core",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 78.7
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "账本接受并逐类校验飞行事件，approve 判定不变",
+      "scenarios": [
+        "flight-ledger-events#ledger-accepts-flight-events",
+        "flight-ledger-events#ledger-rejects-malformed-flight-event",
+        "flight-ledger-events#approved-ignores-flight-events"
+      ],
+      "owns": [
+        "template/.claude/hooks/ledger.py",
+        "tests/test_ledger.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_ledger.py tests/test_approval_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "状态机核心：账本事件归约、下一批动作、续修上限与兜底、事件构造、路由对账",
+      "scenarios": [
+        "flight-state-machine#core-dispatches-first-wave",
+        "flight-state-machine#core-blocks-dependents-of-blocked",
+        "flight-state-machine#core-limits-stop-blocks-to-two",
+        "flight-state-machine#core-respawns-once-after-silent-end",
+        "flight-state-machine#core-reviews-fixes-then-finals",
+        "flight-state-machine#core-halts-on-final-red",
+        "flight-state-machine#core-halts-on-plan-change",
+        "flight-state-machine#core-continues-from-previous-attempt",
+        "flight-state-machine#core-builds-ledger-events",
+        "flight-state-machine#core-reports-routing-mismatch"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/tests/core.test.ts",
+        "tests/test_flight_core.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_core.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "随插件发布的 agent 类型与提示词纯函数",
+      "scenarios": [
+        "flight-agent-types#agent-files-declare-flight-types",
+        "flight-agent-types#agent-bodies-leave-gate-to-control-plane",
+        "flight-agent-types#prompts-executor-and-continuation",
+        "flight-agent-types#prompts-reviewer-resolver-fixer"
+      ],
+      "owns": [
+        "template/plugins/flight/agents/executor.md",
+        "template/plugins/flight/agents/reviewer.md",
+        "template/plugins/flight/agents/fixer.md",
+        "template/plugins/flight/hooks/prompts.ts",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "tests/test_flight_agents.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_agents.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "/opsx-apply 命令与同名 skill 写明插件接管、显式旧引擎与停飞",
+      "scenarios": [
+        "opsx-apply-plugin-engine#apply-docs-describe-plugin-engine"
+      ],
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "tests/test_opsx_apply_engine.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_opsx_apply_engine.py tests/test_template_docs.py tests/test_agents_workflow.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "副作用层：判定器路径、账本读写、切片 worktree；register.tsx 接入两个注册函数（空壳）",
+      "scenarios": [
+        "flight-io#io-runs-judges-from-main-worktree",
+        "flight-io#io-appends-event-with-cas-retry",
+        "flight-io#io-creates-or-reuses-slice-worktree"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_io.py"
+      ],
+      "deps": [
+        "S2"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "合回、冲突交接与快进、findings 校验、落地收口的机械过程",
+      "scenarios": [
+        "flight-integration#land-merges-green-slice",
+        "flight-integration#land-aborts-conflict-and-prepares-resolver",
+        "flight-integration#land-fast-forwards-after-resolution",
+        "flight-integration#land-validates-findings",
+        "flight-integration#land-closeout-writes-records"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/land.ts",
+        "template/plugins/flight/tests/land.test.ts",
+        "tests/test_flight_land.py"
+      ],
+      "deps": [
+        "S2"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_land.py",
+      "packet": "slices/S6.md"
+    },
+    {
+      "id": "S7",
+      "title": "编排接线：接管 /opsx-apply、收口现跑门禁、结束兜底、合回与解冲突、状态行、类型隐藏",
+      "scenarios": [
+        "flight-orchestrator#opsx-apply-taken-over",
+        "flight-orchestrator#takeoff-refused-without-approval",
+        "flight-orchestrator#engine-workflow-passes-through",
+        "flight-orchestrator#stop-gate-blocks-red-executor",
+        "flight-orchestrator#silent-end-runs-gate-and-respawns",
+        "flight-orchestrator#conflict-spawns-resolver",
+        "flight-orchestrator#flight-status-line",
+        "flight-orchestrator#flight-types-hidden-from-model"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py"
+      ],
+      "deps": [
+        "S3",
+        "S5",
+        "S6"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py",
+      "packet": "slices/S7.md"
+    },
+    {
+      "id": "S8",
+      "title": "评审回收与落地接线：submit_findings、评审员与修复 agent 收口、final、落地接 /pr-ship、停飞",
+      "scenarios": [
+        "flight-findings-intake#findings-tool-accepts-flight-reviewer",
+        "flight-findings-intake#findings-tool-denies-others",
+        "flight-findings-intake#reviewer-stop-without-findings-blocks-once",
+        "flight-findings-intake#fixer-stop-runs-final",
+        "flight-findings-intake#landing-runs-pr-ship",
+        "flight-findings-intake#final-red-halts",
+        "flight-findings-intake#only-findings-tool-registered"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/tests/landing.test.tsx",
+        "tests/test_flight_landing.py",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "tests/test_flight_plugin.py",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json"
+      ],
+      "deps": [
+        "S3",
+        "S5",
+        "S6"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py",
+      "packet": "slices/S8.md"
+    }
+  ],
+  "scenario_tests": {
+    "flight-ledger-events#ledger-accepts-flight-events": "tests/test_ledger.py::test_ledger_accepts_flight_events",
+    "flight-ledger-events#ledger-rejects-malformed-flight-event": "tests/test_ledger.py::test_ledger_rejects_malformed_flight_event",
+    "flight-ledger-events#approved-ignores-flight-events": "tests/test_ledger.py::test_approved_ignores_flight_events",
+    "flight-state-machine#core-dispatches-first-wave": "tests/test_flight_core.py::test_core_dispatches_first_wave",
+    "flight-state-machine#core-blocks-dependents-of-blocked": "tests/test_flight_core.py::test_core_blocks_dependents_of_blocked",
+    "flight-state-machine#core-limits-stop-blocks-to-two": "tests/test_flight_core.py::test_core_limits_stop_blocks_to_two",
+    "flight-state-machine#core-respawns-once-after-silent-end": "tests/test_flight_core.py::test_core_respawns_once_after_silent_end",
+    "flight-state-machine#core-reviews-fixes-then-finals": "tests/test_flight_core.py::test_core_reviews_fixes_then_finals",
+    "flight-state-machine#core-halts-on-final-red": "tests/test_flight_core.py::test_core_halts_on_final_red",
+    "flight-state-machine#core-halts-on-plan-change": "tests/test_flight_core.py::test_core_halts_on_plan_change",
+    "flight-state-machine#core-continues-from-previous-attempt": "tests/test_flight_core.py::test_core_continues_from_previous_attempt",
+    "flight-state-machine#core-builds-ledger-events": "tests/test_flight_core.py::test_core_builds_ledger_events",
+    "flight-state-machine#core-reports-routing-mismatch": "tests/test_flight_core.py::test_core_reports_routing_mismatch",
+    "flight-agent-types#agent-files-declare-flight-types": "tests/test_flight_agents.py::test_agent_files_declare_flight_types",
+    "flight-agent-types#agent-bodies-leave-gate-to-control-plane": "tests/test_flight_agents.py::test_agent_bodies_leave_gate_to_control_plane",
+    "flight-agent-types#prompts-executor-and-continuation": "tests/test_flight_agents.py::test_prompts_executor_and_continuation",
+    "flight-agent-types#prompts-reviewer-resolver-fixer": "tests/test_flight_agents.py::test_prompts_reviewer_resolver_fixer",
+    "opsx-apply-plugin-engine#apply-docs-describe-plugin-engine": "tests/test_opsx_apply_engine.py::test_apply_docs_describe_plugin_engine",
+    "flight-io#io-runs-judges-from-main-worktree": "tests/test_flight_io.py::test_io_runs_judges_from_main_worktree",
+    "flight-io#io-appends-event-with-cas-retry": "tests/test_flight_io.py::test_io_appends_event_with_cas_retry",
+    "flight-io#io-creates-or-reuses-slice-worktree": "tests/test_flight_io.py::test_io_creates_or_reuses_slice_worktree",
+    "flight-integration#land-merges-green-slice": "tests/test_flight_land.py::test_land_merges_green_slice",
+    "flight-integration#land-aborts-conflict-and-prepares-resolver": "tests/test_flight_land.py::test_land_aborts_conflict_and_prepares_resolver",
+    "flight-integration#land-fast-forwards-after-resolution": "tests/test_flight_land.py::test_land_fast_forwards_after_resolution",
+    "flight-integration#land-validates-findings": "tests/test_flight_land.py::test_land_validates_findings",
+    "flight-integration#land-closeout-writes-records": "tests/test_flight_land.py::test_land_closeout_writes_records",
+    "flight-orchestrator#opsx-apply-taken-over": "tests/test_flight_orchestrator.py::test_opsx_apply_taken_over",
+    "flight-orchestrator#takeoff-refused-without-approval": "tests/test_flight_orchestrator.py::test_takeoff_refused_without_approval",
+    "flight-orchestrator#engine-workflow-passes-through": "tests/test_flight_orchestrator.py::test_engine_workflow_passes_through",
+    "flight-orchestrator#stop-gate-blocks-red-executor": "tests/test_flight_orchestrator.py::test_stop_gate_blocks_red_executor",
+    "flight-orchestrator#silent-end-runs-gate-and-respawns": "tests/test_flight_orchestrator.py::test_silent_end_runs_gate_and_respawns",
+    "flight-orchestrator#conflict-spawns-resolver": "tests/test_flight_orchestrator.py::test_conflict_spawns_resolver",
+    "flight-orchestrator#flight-status-line": "tests/test_flight_orchestrator.py::test_flight_status_line",
+    "flight-orchestrator#flight-types-hidden-from-model": "tests/test_flight_orchestrator.py::test_flight_types_hidden_from_model",
+    "flight-findings-intake#findings-tool-accepts-flight-reviewer": "tests/test_flight_landing.py::test_findings_tool_accepts_flight_reviewer",
+    "flight-findings-intake#findings-tool-denies-others": "tests/test_flight_landing.py::test_findings_tool_denies_others",
+    "flight-findings-intake#reviewer-stop-without-findings-blocks-once": "tests/test_flight_landing.py::test_reviewer_stop_without_findings_blocks_once",
+    "flight-findings-intake#fixer-stop-runs-final": "tests/test_flight_landing.py::test_fixer_stop_runs_final",
+    "flight-findings-intake#landing-runs-pr-ship": "tests/test_flight_landing.py::test_landing_runs_pr_ship",
+    "flight-findings-intake#final-red-halts": "tests/test_flight_landing.py::test_final_red_halts",
+    "flight-findings-intake#only-findings-tool-registered": "tests/test_flight_plugin.py::test_only_findings_tool_registered"
+  }
+}

@@ -129,3 +129,14 @@ def test_guard_denies_gate_record_writes():
     # When: 模型发起 Bash `git update-ref refs/flight/demo/gate-S1 abc`，再发起 slice-gate.py gate 命令
     # Then: 前者被拒绝、理由含 ledger.py show，后者照常执行
     assert_ts_passed("guard-denies-gate-record-writes")
+
+
+# ---------------------------------------------------------------- flight-orchestrator-core（scenario: flight-findings-intake#only-findings-tool-registered）
+# 骨架：S8 注册 submit_findings、收窄 no-model-callable-approval-path 并写同名 TS 测试后去掉 xfail 标记。
+
+@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
+def test_only_findings_tool_registered():
+    # Given: 插件已加载、会话已启动
+    # When: 列出插件注册的工具与斜杠命令，并以各种输入调用 submit_findings
+    # Then: 工具只有 submit_findings、没有斜杠命令；任何调用都不追加 approve 事件
+    assert_ts_passed("only-findings-tool-registered")

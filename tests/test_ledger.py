@@ -218,3 +218,92 @@ def test_ledger_tip_matches_read_chain(git_repo, monkeypatch):
     # Then: 确实发生了并发追加；返回的事件是 F1，返回的链尾是 T1
     assert raced and raced[0] != t1, raced
     assert event["fp"] == F1 and tip == t1, (event, tip, t1)
+
+
+# ---------------------------------------------------------------- flight-orchestrator-core（scenario: flight-ledger-events#*）
+# 骨架：S1 让 ledger.py 逐类校验飞行事件后逐条去掉 xfail 标记。
+
+def flight_events(change="demo", fp=F1):
+    """flight-ledger-events 表中每类事件各一条（字段合法），按一次飞行的顺序排列。"""
+    base = {"v": 1, "change": change, "at": "2026-10-09T10:00:00Z", "by": {"plugin": "flight", "session": "test"}}
+    rows = [
+        {"ev": "approve", "fp": fp},
+        {"ev": "takeoff", "attempt": 1, "fp": fp, "branch": "worktree-demo", "waves": [["S1"]], "model": "opus"},
+        {"ev": "dispatch", "attempt": 1, "slice": "S1", "role": "executor", "agent": "a1", "model": "opus",
+         "worktree": "/repo/.claude/worktrees/flight-demo-S1"},
+        {"ev": "gate", "attempt": 1, "slice": "S1", "ok": True, "commit": "c" * 40, "failed": []},
+        {"ev": "ended", "attempt": 1, "agent": "a1", "reason": "answer", "model": "claude-opus-5-5"},
+        {"ev": "merge", "attempt": 1, "slice": "S1", "ok": True, "commit": "d" * 40, "failed": []},
+        {"ev": "review", "attempt": 1, "slice": "S1", "agent": "r1",
+         "findings": [{"severity": "LOW", "file": "a.py", "line": 3, "summary": "s", "fix": "f"}]},
+        {"ev": "blocked", "attempt": 1, "slice": "S2", "kind": "infra", "reason": "依赖已 blocked：S1"},
+        {"ev": "final", "attempt": 1, "ok": True, "commit": "d" * 40, "failed": []},
+        {"ev": "land", "attempt": 1, "verdict": "ready"},
+    ]
+    return [dict(base, **r) for r in rows]
+
+
+@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
+def test_ledger_accepts_flight_events(git_repo):
+    # Given: demo 的账本依次有 approve、takeoff、dispatch、gate、ended、merge、review、blocked、final、land 十条合法事件
+    d = make_change(git_repo)
+    events = flight_events()
+    for ev in events:
+        ledger_append(git_repo, "demo", ev)
+
+    # When: 分别运行 verify 与 show
+    v, s = ledger("verify", d), ledger("show", d)
+
+    # Then: 都以 0 退出；show 恰打印十行，ev 的顺序与写入顺序一致
+    assert v.returncode == 0, v.stderr
+    assert s.returncode == 0, s.stderr
+    assert [json.loads(line)["ev"] for line in s.stdout.splitlines()] == [e["ev"] for e in events]
+
+
+@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
+def test_ledger_rejects_malformed_flight_event(tmp_path):
+    # Given: 两个账本——一个链尾是 ok 为字符串 "yes" 的 gate 事件，一个链尾是 ev 为 "teleport" 的事件
+    events = flight_events()
+    bad_gate = dict(events[3], ok="yes")
+    bad_ev = dict(events[1], ev="teleport")
+    results = []
+    for i, bad in enumerate([bad_gate, bad_ev]):
+        repo = new_repo(tmp_path / ("r%d" % i))
+        d = make_change(repo)
+        ledger_append(repo, "demo", events[0])
+        tip = ledger_append(repo, "demo", bad)
+
+        # When: 运行 verify
+        results.append((ledger("verify", d), tip))
+
+    # 对照：链尾换成字段合法的 gate 事件
+    repo = new_repo(tmp_path / "ok")
+    d = make_change(repo)
+    for ev in (events[0], events[3]):
+        ledger_append(repo, "demo", ev)
+    control = ledger("verify", d)
+
+    # Then: 两个坏账本都以 4 退出，stderr 含「账本损坏」与链尾提交的前 8 位；对照以 0 退出
+    for p, tip in results:
+        assert p.returncode == 4, (p.returncode, p.stderr)
+        assert "账本损坏" in p.stderr and tip[:8] in p.stderr, p.stderr
+    assert control.returncode == 0, control.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
+def test_approved_ignores_flight_events(git_repo):
+    # Given: 账本上 approve（当前计划指纹 F）之后又有 takeoff、dispatch、gate 三条事件
+    d = make_change(git_repo)
+    p = run_hook("plan_fp", "--change-dir", str(d))
+    assert p.returncode == 0, p.stderr
+    fp = p.stdout.strip()
+    for ev in flight_events(fp=fp)[:4]:
+        ledger_append(git_repo, "demo", ev)
+
+    # When: 运行 ledger.py approved 与 takeoff-gate.py --change-dir
+    a = ledger("approved", d)
+    t = run_hook("takeoff-gate", "--change-dir", str(d), env={"CLAUDE_CODE_SESSION_ID": ""})
+
+    # Then: approved 只打印 F；takeoff-gate 以 0 退出
+    assert (a.returncode, a.stdout.strip()) == (0, fp), a.stderr
+    assert t.returncode == 0, t.stderr

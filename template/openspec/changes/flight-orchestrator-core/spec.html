@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-orchestrator-core · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-orchestrator-core
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-agent-types</span><span class="chip" data-state="done">specs/flight-findings-intake</span><span class="chip" data-state="done">specs/flight-integration</span><span class="chip" data-state="done">specs/flight-io</span><span class="chip" data-state="done">specs/flight-ledger-events</span><span class="chip" data-state="done">specs/flight-orchestrator</span><span class="chip" data-state="done">specs/flight-state-machine</span><span class="chip" data-state="done">specs/opsx-apply-plugin-engine</span><span class="chip" data-state="done">计划指纹 56c213eb</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">飞行的编排器是 Workflow 脚本 <code>opsx-apply.js</code>，它按设计不能碰文件系统。合回、跑门禁、记账只能派模型去做，门禁结论也只能由执行体转述。2026-10-09 的三次真实飞行（PR #35 / #36 / #37）里出的问题都源于此：</p><p class="why-body">- 执行体撞上轮次上限，门禁结论随之丢失，只好加「门禁结论 ref」去找回；
+- integrator 是一个 sonnet agent，它抛错整个 wave 就合不回去；
+- 执行体隔离之后，evidence.log 回不到分支。</p><p class="why-body"><code>DRAFT-flight-control-plane-in-mod</code> 已决定把控制权迁进 flight 插件。阶段 3 设计评审（<code>docs/flight-orchestrator.html</code>，D1–D10 全按推荐）把编排迁移拆成三个 change，本 change 是第一个（3a）：用插件里的状态机取代 Workflow 与 integrator，派发、跑门禁、合回、记账全部由插件代码完成，模型只写代码、评审、修复、解冲突。</p><p class="why-body">动手前在 Claude Code 2.1.295 上补测了 X1–X11，结论都已落实到本设计：</p><p class="why-body">- 插件声明的 agent 类型能强制工具白名单、effort、maxTurns；
+- 收口 hook 里跑 65 秒的门禁不超时，连续 block 能让同一 agent 续修；
+- 撞 maxTurns 时不触发收口 hook，需要在 agent 结束时兜底；
+- 插件能零 token 接管 <code>/opsx-apply</code>，落地后能用 <code>$.command.run</code> 接上 <code>/pr-ship</code>；
+- <code>claude plugin test</code> 能模拟整个流程。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>账本事件扩展</strong>：<code>ledger.py</code> 接受飞行事件 takeoff / dispatch / gate / ended / merge / review / blocked / final / land / halt，逐类校验字段；approve 的判定不变。</li><li><strong>状态机核心</strong>（纯函数，不调用 <code>$</code>）：</li><li>从账本事件推出飞行状态，再给出下一批动作；</li><li>收口门禁红时，同一 agent 续修至多 2 次；</li><li>agent 没经过收口就结束时，补跑门禁，红则在同一 worktree 上重派一次；</li><li>依赖被阻断的切片直接记阻断；</li><li>合回后评审，有 CRITICAL / HIGH 就批量修复一次，然后跑 final；</li><li>final 绿则落地，final 红或计划指纹变了则停飞；</li><li>再次起飞时接着上一次飞：已合回的切片跳过。</li><li><strong>随插件发布的 agent 类型</strong>：<code>flight:executor</code>、<code>flight:reviewer</code>、<code>flight:fixer</code>（插件目录 <code>agents/*.md</code>），由插件派发、对模型隐藏；提示词由纯函数生成。</li><li><strong>副作用层</strong>：</li><li>判定器一律从主 worktree 运行；</li><li>账本追加带 CAS 重试；</li><li>切片 worktree 由控制面创建并持有。</li><li><strong>合回与收口</strong>：</li><li>合回前提交飞行记录，<code>merge --no-ff</code> 之后用 <code>record</code> 写回门禁结论，并刷新接口摘要；</li><li>冲突时退出合并，另开 worktree 交给解冲突 agent，判门禁后快进 change 分支；</li><li>收口时写 <code>review-findings.json</code>、勾选 tasks.md、提交飞行记录、跑 ship 裁决。</li><li><strong>接管 <code>/opsx-apply</code></strong>：</li><li>起飞检查（批准、干净工作区、lint / preflight、主模型）由插件完成；</li><li>派发执行体，在执行体收口时跑门禁，在它结束时兜底；</li><li>状态行显示进度。</li><li><strong>评审回收</strong>：</li><li>插件注册 <code>submit_findings</code> 工具，只认本次飞行派发的评审员，只能写 review 事件；</li><li>评审员没提交就收口时，提醒它一次；</li><li>修复 agent 收口时跑 final；</li><li>落地后运行 <code>/pr-ship</code>；final 红时停飞。</li><li><strong>文档</strong>：<code>/opsx-apply</code> 命令与同名 skill 写明插件接管。旧 Workflow 引擎只能用 <code>--engine=workflow</code> 显式选择，插件缺席即停飞。</li></ul><div class="impact"><span class="tag"><strong>插件</strong> <code>template/plugins/flight/</code>：</span><span class="tag">新增 <code>hooks/core.ts</code>、<code>hooks/prompts.ts</code>、<code>hooks/io.ts</code>、<code>hooks/land.ts</code>、<code>hooks/orchestrator.tsx</code>、<code>hooks/landing.tsx</code>；</span><span class="tag">新增 <code>agents/executor.md</code>、<code>agents/reviewer.md</code>、<code>agents/fixer.md</code>；</span><span class="tag"><code>hooks/register.tsx</code> 只加两行接入；</span><span class="tag">测试 <code>tests/*.test.ts(x)</code>；版本升到 0.2.0。</span><span class="tag"><strong>判定器</strong>：<code>template/.claude/hooks/ledger.py</code>。</span><span class="tag"><strong>文档</strong>：</span><span class="tag"><code>template/.claude/commands/opsx-apply.md</code>；</span><span class="tag"><code>template/.claude/skills/openspec-apply-change/SKILL.md</code>；</span><span class="tag">新 ADR <code>DRAFT-flight-orchestrator-state-machine</code>（取代 <code>DRAFT-apply-as-flight</code>）。</span><span class="tag"><strong>测试</strong>：</span><span class="tag"><code>tests/test_ledger.py</code>；</span><span class="tag">新增 <code>tests/test_flight_core.py</code>、<code>test_flight_agents.py</code>、<code>test_flight_io.py</code>、<code>test_flight_land.py</code>、<code>test_flight_orchestrator.py</code>、<code>test_flight_landing.py</code>、<code>test_opsx_apply_engine.py</code>；</span><span class="tag"><code>tests/test_flight_plugin.py</code> 收窄一条断言。</span><span class="tag"><strong>不在范围</strong>（留给 3b / 3c）：</span><span class="tag">测量协议、按 agentId 限写与 <code>tool.check</code> 权限策略、主会话只读、<code>agent.spawn</code> 路由守卫（3b）；</span><span class="tag"><code>/flight status | abort | resume</code>、飞行面板、删除 <code>opsx-apply.js</code> / integrator / Workflow 回退段 / 门禁结论 ref 找回 / 快照机制、改写铁律 10（3c）。</span><span class="tag"><strong>自举</strong>：本 change 在旧机制上飞；合入并升级插件之后，3b 是新状态机的第一次实战。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ledger-events</code>：账本接受并逐类校验飞行事件，approve 判定不受影响。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-state-machine</code>：飞行状态由账本事件推出，下一步动作由纯函数决定（续修上限、兜底重派、依赖阻断、评审 / 修复 / final / 落地 / 停飞、接着上一次飞）。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-agent-types</code>：执行体、评审员、修复 agent 的定义随插件发布，提示词由纯函数生成。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>opsx-apply-plugin-engine</code>：命令与 skill 写明插件接管、显式旧引擎与停飞语义。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-io</code>：判定器从主 worktree 运行、账本追加 CAS 重试、切片 worktree 由控制面持有。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-integration</code>：合回、冲突交接、findings 校验、落地收口的机械过程。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-orchestrator</code>：插件接管 <code>/opsx-apply</code>，收口时现跑门禁，结束时兜底，冲突派解冲突 agent，状态行，类型对模型隐藏。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-findings-intake</code>：评审回收工具只认本次飞行的评审员；修复 agent 收口跑 final；落地接 <code>/pr-ship</code>，final 红停飞。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-agent-types <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 执行体、评审员、修复 agent 的定义随插件发布</p><p>flight 插件 SHALL 在 <code>agents/</code> 下发布三份 agent 定义，类型名分别为 <code>flight:executor</code>、<code>flight:reviewer</code>、<code>flight:fixer</code>：
+- <strong>executor</strong>：tools 恰为 Read、Edit、Write、Bash、Grep、Glob；effort 为 high；maxTurns 为 40；预加载 test-driven-development skill。
+- <strong>fixer</strong>：tools 与 executor 相同；effort 为 high；maxTurns 为 40。它同时承担批量修复和解合回冲突两种任务。
+- <strong>reviewer</strong>：tools 为 Read、Grep、Glob、Bash 与 <code>mcp__flight__submit_findings</code>，不含 Edit、Write；effort 为 high。</p><p>三份定义都 SHALL NOT 写 <code>model</code> 字段：模型由每次派发显式指定。定义正文 SHALL 写明：
+- 门禁由控制面在收口时运行，agent 不自己跑 <code>slice-gate.py start</code> / <code>gate</code> / <code>record</code>；
+- executor 与 fixer 只写 owns 内文件、每切片一个 commit，不 push、不 merge、不切分支；
+- reviewer 必须用 <code>submit_findings</code> 提交，没有问题也提交空列表。
+Feature: 定义放在插件里，不放在模型可改的仓库里</p><div class="scenario"><p class="scenario-name">Scenario: agent-files-declare-flight-types</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/plugins/flight/agents/</code> 下的三份文件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>解析它们的 frontmatter</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>name 分别为 executor、reviewer、fixer，effort 都是 high，都没有 model 字段</span></li><li><span class="step-key" data-kw="AND">AND</span><span>executor 与 fixer 的 tools 恰为 Read、Edit、Write、Bash、Grep、Glob，maxTurns 为 40</span></li><li><span class="step-key" data-kw="AND">AND</span><span>reviewer 的 tools 含 <code>mcp__flight__submit_findings</code>，不含 Edit 与 Write</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: agent-bodies-leave-gate-to-control-plane</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同上三份文件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读它们的正文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>executor 与 fixer 的正文含「控制面」，且不含 <code>slice-gate.py start</code>、<code>slice-gate.py gate</code>、<code>slice-gate.py record</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>reviewer 的正文含 <code>submit_findings</code> 与「空列表」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 提示词由纯函数生成</p><p>插件 SHALL 用不调用 <code>$</code> 的函数生成每次派发的提示词：
+- <strong>执行体</strong>：首次与续接两种。都含切片包路径、owns 纪律和「门禁由控制面在你收口时运行」。续接提示词 SHALL 另含上一个执行体未正常收口的原因，以及最近一次门禁的 failed 项。
+- <strong>评审员</strong>：含被审 commit、切片包路径和 <code>submit_findings</code>。
+- <strong>解冲突</strong>：含冲突文件列表与 <code>git commit --no-edit</code>。
+- <strong>批量修复</strong>：含 findings 清单。
+Feature: 提示词是协议的一部分，要能被测试钉住</p><div class="scenario"><p class="scenario-name">Scenario: prompts-executor-and-continuation</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo、切片 S2、切片包 <code>template/openspec/changes/demo/slices/S2.md</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>上一个执行体未经收口结束，最近一次门禁的 failed 为 [&quot;G7 demo#s2&quot;]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别生成首次与续接的执行体提示词</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两者都含该切片包路径，以及「门禁由控制面在你收口时运行」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>只有续接提示词含「未正常收口」与 &quot;G7 demo#s2&quot;</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: prompts-reviewer-resolver-fixer</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 合回后的 commit c1、合回 S2 时的冲突文件 [a.py]、一条 HIGH finding</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别生成评审员、解冲突与批量修复提示词</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>评审员提示词含 c1、S1 的切片包路径与 <code>submit_findings</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>解冲突提示词含 a.py 与 <code>git commit --no-edit</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>批量修复提示词含该 finding 的 summary</span></li></ul></div></div></div><div class="spec-card"><h3>flight-findings-intake <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 评审回收工具只认本次飞行的评审员</p><p>插件 SHALL 注册工具 <code>submit_findings</code>（模型看到的名字是 <code>mcp__flight__submit_findings</code>），输入为 <code>{findings: [...]}</code>。处理规则：
+- 调用者的 agentId 在当前飞行的 dispatch 事件中、role 为 reviewer，且 findings 校验通过时：SHALL 追加一条 review 事件（含该评审员的 slice 与 agent），返回一行确认文本。
+- 其他任何调用者（主会话、执行体、修复 agent、别的飞行的评审员）：SHALL 拒绝，SHALL NOT 写账本。
+- findings 不合法时：SHALL 返回校验错误，SHALL NOT 写账本。</p><p>这个工具 SHALL NOT 写 review 以外的任何事件。
+Feature: 评审结论结构化进账本；模型可调的工具碰不到批准与门禁</p><div class="scenario"><p class="scenario-name">Scenario: findings-tool-accepts-flight-reviewer</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>当前飞行里 agent R 以 role reviewer、slice S1 被派发</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>R 调用 submit_findings，findings 含 1 条 HIGH</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本追加一条 review 事件，slice 为 S1，agent 为 R，findings 即那 1 条</span></li><li><span class="step-key" data-kw="AND">AND</span><span>工具返回字符串结果</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: findings-tool-denies-others</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>当前飞行里 agent A 是 S1 的执行体</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>主会话与 A 各调用一次 submit_findings</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都被拒绝，理由含「只有本次飞行派发的评审员」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本没有新增事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 评审员不提交就收口时提醒一次</p><p>评审员收口时，若账本里还没有它的 review 事件，插件 SHALL 回答 block 一次，要求它调用 submit_findings（没有问题就提交空列表）。之后再收口 SHALL 放行。评审员结束时仍没有 review 事件，SHALL 记该切片评审的阻断（kind 为 infra，slice 为 <code>review:&lt;S&gt;</code>，原因含「评审未返回」）。
+Feature: 评审缺失要留痕，但不拖住飞行；整 PR 评审由 /pr-ship 兜底</p><div class="scenario"><p class="scenario-name">Scenario: reviewer-stop-without-findings-blocks-once</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的评审员 R 没有调用过 submit_findings</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>R 第一次与第二次收口</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次回答 block，文本含 submit_findings 与「空列表」，第二次放行</span></li><li><span class="step-key" data-kw="AND">AND</span><span>R 结束后，账本追加 blocked：slice 为 review:S1，kind 为 infra</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 修复 agent 收口时跑 final，落地后接上 /pr-ship</p><p>- <strong>派发修复 agent</strong>：状态机要求批量修复时，插件 SHALL 在基于 change 分支尖端的修复 worktree（分支 <code>flight/&lt;change&gt;/fix</code>）里，以 <code>flight:fixer</code>（role 为 fixer）、主模型派发。
+- <strong>修复 agent 收口</strong>：SHALL 在修复 worktree 里跑 <code>slice-gate.py final</code>，记 gate 事件（slice 为 fix）；按状态机的续修上限回答 block 或放行。
+- <strong>跑 final</strong>：状态机要求跑 final 时，SHALL 在 change worktree 里运行 <code>slice-gate.py final</code> 并记 final 事件。
+- <strong>落地</strong>：SHALL 执行落地收口，记 land 事件（verdict 取 ship 裁决），清除状态行，然后用 <code>$.command.run</code> 运行 <code>/pr-ship &lt;change&gt;</code>。
+- <strong>停飞</strong>：SHALL 记 halt 事件并提示原因，SHALL NOT 运行 <code>/pr-ship</code>。
+Feature: 批准到 PR 之间零问询保持不变；final 红不收口（铁律 5）</p><div class="scenario"><p class="scenario-name">Scenario: fixer-stop-runs-final</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>修复 agent F 正在收口</span></li><li><span class="step-key" data-kw="AND">AND</span><span>修复 worktree 里的 <code>slice-gate.py final</code> 输出 ok 为 false、failed 为 [&quot;G7 demo#s3&quot;]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>处理 F 的收口</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回答 block，文本含 &quot;G7 demo#s3&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本追加 slice 为 fix 的 gate 事件（ok 为 false）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: landing-runs-pr-ship</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>全部切片已合回且评审有结果，没有阻断项，change worktree 里的 final 绿，ship 裁决为 ready</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>推进飞行</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本依次追加 final（ok 为 true）与 land（verdict 为 ready）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>运行了 <code>/pr-ship demo</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: final-red-halts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change worktree 里的 final 输出 ok 为 false、failed 为 [&quot;G2 lint&quot;]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>推进飞行</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本追加 final（ok 为 false）与 halt，原因含 &quot;G2 lint&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有运行 <code>/pr-ship</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 唯一的模型可调工具写不了批准</p><p>插件注册的工具 SHALL 只有 <code>submit_findings</code>，且 SHALL NOT 注册任何斜杠命令；<code>submit_findings</code> 写入的事件 SHALL 只能是 review。approve 事件仍只由人按批准按钮写入。
+Feature: 收窄批准带 change 的「没有任何工具」：多了一个工具，但它碰不到批准</p><div class="scenario"><p class="scenario-name">Scenario: only-findings-tool-registered</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件已加载、会话已启动</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>列出插件注册的工具与斜杠命令</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>工具只有 submit_findings，没有斜杠命令</span></li><li><span class="step-key" data-kw="AND">AND</span><span>以任何输入调用 submit_findings，都不会追加 approve 事件</span></li></ul></div></div></div><div class="spec-card"><h3>flight-integration <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 合回由控制面执行</p><p>合回门禁绿的切片 S 时，控制面 SHALL 在 change worktree 里依次执行：
+1. change 目录内有未提交的飞行记录（timeline.md、gate-report.md、evidence.log、slices/_interfaces.md）时，只 add 这些文件并提交 <code>chore(flight): 记录</code>；
+2. <code>git merge --no-ff flight/&lt;change&gt;/&lt;S&gt; -m &quot;integrate: &lt;S&gt;&quot;</code>；
+3. <code>slice-gate.py record --change-dir &lt;dir&gt; --json &lt;S 的门禁 JSON&gt;</code>；
+4. 刷新 <code>slices/_interfaces.md</code> 中 S 的一节：对 S 的 owns 里存在的源文件，取匹配 <code>^(def |class |export |func |pub )</code> 的行，只要签名、不要函数体。</p><p>成功时 SHALL 返回 ok 与合并后的 commit。
+Feature: integrator 的四件机械活变成代码，零 token</p><div class="scenario"><p class="scenario-name">Scenario: land-merges-green-slice</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 门禁绿，change 目录里有未提交的 gate-report.md，S1 的 owns 含 <code>src/a.py</code>，其中有一行 <code>def run(x):</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>合回 S1</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>依次运行：只 add 飞行记录的提交、<code>git merge --no-ff flight/demo/S1 -m &quot;integrate: S1&quot;</code>、<code>slice-gate.py record … --json &lt;S1 门禁 JSON&gt;</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>slices/_interfaces.md</code> 的 S1 一节含 <code>def run(x):</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>返回 ok 与合并后的 commit</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 合回冲突交给解冲突 agent</p><p><code>git merge</code> 因冲突失败时，控制面 SHALL：
+1. 在 change worktree 里 <code>git merge --abort</code>，change 分支保持原样；
+2. 基于 change 分支尖端，建解冲突 worktree <code>&lt;主 worktree&gt;/.claude/worktrees/flight-&lt;change&gt;-&lt;S&gt;-resolve</code>（分支 <code>flight/&lt;change&gt;/&lt;S&gt;-resolve</code>）；
+3. 在其中重做同一合并，留下冲突；
+4. 返回冲突文件列表。</p><p>解冲突完成时，SHALL 先确认解冲突 worktree 里没有未合并的文件、HEAD 是合并提交，再在 change worktree 里 <code>git merge --ff-only flight/&lt;change&gt;/&lt;S&gt;-resolve</code>；任一条件不满足 SHALL 返回失败，不动 change 分支。
+Feature: 解冲突是创造性工作交给模型；冲突现场不放在人所在的 worktree</p><div class="scenario"><p class="scenario-name">Scenario: land-aborts-conflict-and-prepares-resolver</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>合回 S2 时 <code>git merge</code> 退出非 0，未合并文件为 a.py</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>合回 S2</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>change worktree 里运行了 <code>git merge --abort</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>建了 flight-demo-S2-resolve worktree，并在其中运行 <code>git merge --no-ff flight/demo/S2</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>返回冲突文件 [a.py]</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: land-fast-forwards-after-resolution</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>解冲突 worktree 里没有未合并文件，HEAD 有两个父提交</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>完成 S2 的合回</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>change worktree 里运行 <code>git merge --ff-only flight/demo/S2-resolve</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>若仍有未合并文件，则返回失败，且没有运行 <code>--ff-only</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: findings 校验</p><p>评审回收的输入 SHALL 是 <code>{findings: [...]}</code>，每项：
+- <code>severity</code> ∈ CRITICAL / HIGH / MEDIUM / LOW；
+- <code>file</code> 为非空字符串；
+- <code>line</code> 为整数；
+- <code>summary</code>、<code>fix</code> 为字符串。</p><p>不合法 SHALL 拒绝并点名第几项的哪个字段；空列表合法。
+Feature: findings 进账本之前必须是结构化的</p><div class="scenario"><p class="scenario-name">Scenario: land-validates-findings</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份 findings，第 2 项的 severity 为 &quot;SEVERE&quot;</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>校验</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>拒绝，理由含「第 2 项」与 severity</span></li><li><span class="step-key" data-kw="AND">AND</span><span>校验 <code>{findings: []}</code> 时接受</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 落地收口</p><p>final 绿之后，控制面 SHALL 在 change worktree 里：
+1. 写 <code>review-findings.json</code>，内容为 <code>{blocked, blocking, deferred, fix}</code>。blocking 含 CRITICAL / HIGH 与路由对账的 HIGH；deferred 含 MEDIUM / LOW。
+2. 在 tasks.md 里把已合回切片的 <code>- [ ] &lt;S&gt; </code> 行勾为 <code>- [x] &lt;S&gt; </code>，被阻断的切片不勾。
+3. <code>timeline.py record apply-done</code>。
+4. 提交飞行记录与 review-findings.json、tasks.md（<code>chore(flight): 收口</code>）。
+5. 运行 <code>slice-gate.py ship</code>，返回裁决（退出 0 为 ready，1 为 draft）。
+Feature: 原来由主会话手做的收口变成代码</p><div class="scenario"><p class="scenario-name">Scenario: land-closeout-writes-records</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1、S2 已合回，S3 被阻断（gate），阻断项为 0，deferred 有 1 条 LOW，没有修复</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>落地收口</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>review-findings.json 的 blocked 含 S3，blocking 为空，deferred 含那条 LOW，fix 为 null</span></li><li><span class="step-key" data-kw="AND">AND</span><span>tasks.md 里 S1、S2 的行已勾选，S3 未勾选</span></li><li><span class="step-key" data-kw="AND">AND</span><span>运行了 <code>timeline.py record apply-done</code>、收口提交与 <code>slice-gate.py ship</code>，返回 ship 的裁决</span></li></ul></div></div></div><div class="spec-card"><h3>flight-io <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 判定器从主 worktree 运行</p><p>控制面运行判定器（takeoff-gate、plan_fp、ledger、slice-gate、timeline、session-model）时，SHALL 使用主 worktree（<code>git worktree list</code> 的第一项）里的副本：
+- 优先 <code>&lt;主 worktree&gt;/.claude/hooks</code>；
+- 没有则用 <code>&lt;主 worktree&gt;/template/.claude/hooks</code>。</p><p>SHALL NOT 使用 change worktree 或切片 worktree 里的副本。命令的工作目录是被判定的那个 worktree。
+Feature: 判定器不能被它要判定的 change 改掉（ADR：飞行永远运行已安装的稳定版本）</p><div class="scenario"><p class="scenario-name">Scenario: io-runs-judges-from-main-worktree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>主 worktree /repo 只有 <code>template/.claude/hooks/slice-gate.py</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>change worktree /repo/.worktrees/demo 里也有一份 slice-gate.py</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对切片 worktree /repo/.claude/worktrees/flight-demo-S1 跑 S1 的门禁</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>运行的是 <code>python3 /repo/template/.claude/hooks/slice-gate.py gate S1 --change-dir …</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>工作目录是 /repo/.claude/worktrees/flight-demo-S1</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 账本追加带 CAS 重试</p><p>控制面追加账本事件时，SHALL 用 git plumbing 依次执行：
+1. <code>hash-object -w --stdin</code> 写入事件 JSON；
+2. <code>mktree</code> 建只含 <code>event.json</code> 的树；
+3. <code>commit-tree</code> 以当前链尾为父；
+4. <code>update-ref</code> 带旧值。</p><p><code>update-ref</code> 失败时 SHALL 重读链尾再试，至多 3 次；3 次都失败 SHALL 返回失败，不伪造成功。
+Feature: 同一账本可能有多个 hook 并发追加（实测 S4：CAS 天然防写坏）</p><div class="scenario"><p class="scenario-name">Scenario: io-appends-event-with-cas-retry</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>第一次 <code>update-ref</code> 因旧值不符失败，第二次成功</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>追加一条 dispatch 事件</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>重读链尾后成功，写入的 blob 内容就是该事件的 JSON</span></li><li><span class="step-key" data-kw="AND">AND</span><span>在 3 次都失败的情形下，返回失败，且恰好尝试了 3 次</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 切片 worktree 由控制面持有</p><p>切片 S 的 worktree SHALL 位于 <code>&lt;主 worktree&gt;/.claude/worktrees/flight-&lt;change&gt;-&lt;S&gt;</code>，分支为 <code>flight/&lt;change&gt;/&lt;S&gt;</code>，基于 change 分支尖端创建：
+- 不存在时，SHALL 用 <code>git worktree add -b</code> 创建；
+- 已存在时，SHALL 原样复用（续接），SHALL NOT 重建或删除。
+Feature: worktree 不随 agent 消失，续接不需要快照</p><div class="scenario"><p class="scenario-name">Scenario: io-creates-or-reuses-slice-worktree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo 的分支为 worktree-demo，切片 S1 的 worktree 不存在</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>准备 S1 的 worktree</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>运行 <code>git worktree add -b flight/demo/S1 /repo/.claude/worktrees/flight-demo-S1 worktree-demo</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>该路径已存在时，不运行 <code>git worktree add</code>，返回同一路径</span></li></ul></div></div></div><div class="spec-card"><h3>flight-ledger-events <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 账本接受飞行事件并逐类校验</p><p><code>ledger.py</code> SHALL 接受下表的事件类型，并按类型校验必需字段。公共字段不变：<code>v</code> 为 1、<code>ev</code>、<code>change</code> 与目录名一致、<code>at</code> 为字符串、<code>by</code> 含 <code>plugin</code>。允许出现表外的额外字段。</p><p>| ev | 必需字段（除公共字段外） |
+|---|---|
+| approve | <code>fp</code>：64 位十六进制 |
+| takeoff | <code>attempt</code>：正整数；<code>fp</code>：64 位十六进制；<code>branch</code>：非空字符串；<code>waves</code>：字符串数组的数组；<code>model</code>：非空字符串 |
+| dispatch | <code>attempt</code>；<code>slice</code>：非空字符串；<code>role</code>：executor / reviewer / fixer / resolver；<code>agent</code>：非空字符串；<code>model</code>：非空字符串；<code>worktree</code>：非空字符串 |
+| gate | <code>attempt</code>；<code>slice</code>；<code>ok</code>：布尔；<code>commit</code>：字符串；<code>failed</code>：字符串数组 |
+| ended | <code>attempt</code>；<code>agent</code>；<code>reason</code>：字符串；<code>model</code>：字符串或 null |
+| merge | <code>attempt</code>；<code>slice</code>；<code>ok</code>：布尔；<code>commit</code>：字符串；<code>failed</code>：字符串数组 |
+| review | <code>attempt</code>；<code>slice</code>；<code>agent</code>；<code>findings</code>：数组，每项 <code>severity</code> ∈ CRITICAL / HIGH / MEDIUM / LOW，<code>file</code> 字符串，<code>line</code> 整数，<code>summary</code> 与 <code>fix</code> 字符串 |
+| blocked | <code>attempt</code>；<code>slice</code>；<code>kind</code>：gate / infra；<code>reason</code>：字符串 |
+| final | <code>attempt</code>；<code>ok</code>：布尔；<code>commit</code>：字符串；<code>failed</code>：字符串数组 |
+| land | <code>attempt</code>；<code>verdict</code>：ready / draft |
+| halt | <code>attempt</code>；<code>reason</code>：字符串 |</p><p>未知的 <code>ev</code>，或任一必需字段缺失、类型不符，SHALL 判为账本损坏（exit 4），stderr 点名该提交的前 8 位与原因。
+Feature: 账本是飞行状态的唯一来源，坏事件必须被挡在读取端</p><div class="scenario"><p class="scenario-name">Scenario: ledger-accepts-flight-events</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo 的账本依次有 approve、takeoff、dispatch、gate、ended、merge、review、blocked、final、land 十条字段合法的事件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 <code>ledger.py verify</code> 与 <code>ledger.py show</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两者都以 0 退出</span></li><li><span class="step-key" data-kw="AND">AND</span><span>show 恰打印十行 JSON，<code>ev</code> 的顺序与写入顺序一致</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: ledger-rejects-malformed-flight-event</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两个账本：一个的链尾是 <code>ok</code> 为字符串 &quot;yes&quot; 的 gate 事件，另一个的链尾是 <code>ev</code> 为 &quot;teleport&quot; 的事件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对两者分别运行 <code>ledger.py verify</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>都以 4 退出</span></li><li><span class="step-key" data-kw="AND">AND</span><span>stderr 含「账本损坏」与链尾提交的前 8 位</span></li><li><span class="step-key" data-kw="BUT">BUT</span><span>链尾换成字段合法的 gate 事件时，verify 以 0 退出</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 批准判定只看 approve 事件</p><p><code>ledger.py approved</code> 与 <code>takeoff-gate.py</code> SHALL 只以最新一条 approve 事件的 <code>fp</code> 为批准判据；其后追加的飞行事件 SHALL NOT 改变判定结果。
+Feature: 飞行中写账本不会让批准失效，也不会凭空产生批准</p><div class="scenario"><p class="scenario-name">Scenario: approved-ignores-flight-events</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本上 approve（指纹 F）之后又有 takeoff、dispatch、gate 三条事件，当前计划指纹也是 F</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>ledger.py approved</code> 与 <code>takeoff-gate.py --change-dir &lt;demo&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>approved 只打印 F</span></li><li><span class="step-key" data-kw="AND">AND</span><span>takeoff-gate 以 0 退出</span></li></ul></div></div></div><div class="spec-card"><h3>flight-orchestrator <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 插件接管 /opsx-apply</p><p>插件 SHALL 在 <code>command.run</code> 上接管 <code>/opsx-apply</code>。版本不低于下限、且参数不含 <code>--engine=workflow</code> 或 <code>--gate=per-task</code> 时，由插件作答，SHALL NOT 交给模型。起飞检查依次为：
+1. 定位 change：参数给的 change 名；没有参数时，取会话所在 worktree 的 <code>worktree-&lt;name&gt;</code> 分支。
+2. <code>takeoff-gate.py</code> 以 0 退出。
+3. change worktree 干净。
+4. <code>slice-gate.py lint</code> 与 <code>preflight</code> 绿，从 preflight 取 waves。
+5. 主模型：<code>--model=</code> 优先，否则由 <code>session-model.py</code> 判定。</p><p>任一项不过 SHALL 回复原因，SHALL NOT 写账本、派发 agent。全部通过后 SHALL：
+- 第一次起飞时，用 takeoff-gate 的批准证据记 timeline 的 approve 事件并提交；
+- 追加 takeoff 事件（attempt 为已有 takeoff 数加 1）；
+- 为可派发的切片准备 worktree、在其中运行 <code>slice-gate.py start &lt;S&gt; --expect-branch &lt;change 分支&gt;</code>，再以 <code>flight:executor</code>、主模型、cwd 为切片 worktree 派发，每次派发记 dispatch 事件。</p><p>参数含 <code>--engine=workflow</code> 或 <code>--gate=per-task</code> 时，插件 SHALL 原样交给命令文档。
+Feature: 起飞是机械检查，零 token；旧引擎只能显式选择</p><div class="scenario"><p class="scenario-name">Scenario: opsx-apply-taken-over</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准，change worktree 干净，lint 与 preflight 绿，waves 为 [[S1, S2], [S3]]，session-model.py 输出 opus</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>命令由插件作答，模型没有回合</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本依次追加 takeoff（attempt 1、model opus）、S1 与 S2 的 dispatch</span></li><li><span class="step-key" data-kw="AND">AND</span><span>S1、S2 各以 subagentType flight:executor、model opus、cwd 为各自的切片 worktree 派发</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: takeoff-refused-without-approval</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>takeoff-gate.py 以 3 退出，stderr 为「未批准」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「未批准」与 demo 的 spec.html 路径</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有追加账本事件，没有派发 agent</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: engine-workflow-passes-through</p><ul class="steps"><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo --engine=workflow</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>插件不作答，命令照旧交给模型</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有追加账本事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 执行体收口时现跑门禁，结束时兜底</p><p>- 本次飞行派发的执行体或解冲突 agent 收口（<code>classic.SubagentStop</code>）时，插件 SHALL 在它的 worktree 里跑该切片的门禁，并记 gate 事件；状态机判「续修」时，SHALL 回答 block，文本含 failed 项。
+- 这些 agent 结束（<code>turn.complete</code>）时，插件 SHALL 记 ended 事件，实际模型取自 usage.model；然后推进状态机。状态机要求补跑门禁时补跑；要求续接重派时，在同一 worktree 上用续接提示词派发。
+Feature: 门禁结论来自控制面自己跑的门禁，不来自 agent 的转述</p><div class="scenario"><p class="scenario-name">Scenario: stop-gate-blocks-red-executor</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的执行体 A 正在收口，门禁输出 ok 为 false、failed 为 [&quot;G7 demo#s1&quot;]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>处理 A 的收口</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回答 block，文本含 &quot;G7 demo#s1&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本追加 S1 的 gate 事件（ok 为 false）</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: silent-end-runs-gate-and-respawns</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的执行体 A 没有经过收口就结束（answer 为空）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>补跑的门禁为红</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>处理 A 的结束</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本依次追加 ended、gate（ok 为 false）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>在 S1 原 worktree 上派发新执行体，提示词含「未正常收口」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 门禁绿就合回，冲突派解冲突 agent</p><p>切片门禁绿、执行体结束后，插件 SHALL 合回该切片，记 merge 事件。合回冲突时，SHALL 以 <code>flight:fixer</code>（role 为 resolver）、主模型、cwd 为解冲突 worktree 派发。它收口时同样现跑该切片门禁；绿且结束后，快进 change 分支并记 merge 事件。
+Feature: 合回是机械动作，解冲突交给模型，结果仍由控制面判</p><div class="scenario"><p class="scenario-name">Scenario: conflict-spawns-resolver</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S2 门禁绿，合回时冲突，冲突文件为 a.py</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>处理 S2 执行体的结束</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>以 flight:fixer 派发解冲突 agent，cwd 为 flight-demo-S2-resolve，提示词含 a.py</span></li><li><span class="step-key" data-kw="AND">AND</span><span>它收口时门禁绿、随后结束，change worktree 里运行 <code>git merge --ff-only flight/demo/S2-resolve</code>，账本追加 S2 的 merge（ok 为 true）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 飞行进度可见，飞行类型对模型隐藏</p><p>- 飞行中，插件 SHALL 用状态行显示 change 名、wave 进度、运行中的切片数与阻断数；落地或停飞时 SHALL 清除状态行。
+- <code>flight:executor</code>、<code>flight:reviewer</code>、<code>flight:fixer</code> SHALL 对模型隐藏（<code>agent.offer</code> 回答不提供），只由插件派发。
+Feature: 人看得到飞行在动；模型派不出飞行角色</p><div class="scenario"><p class="scenario-name">Scenario: flight-status-line</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>/opsx-apply demo</code> 已起飞，waves 为 [[S1, S2], [S3]]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>派发完第一个 wave</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>状态行含 demo、&quot;W1/2&quot; 与「运行 2」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: flight-types-hidden-from-model</p><ul class="steps"><li><span class="step-key" data-kw="WHEN">WHEN</span><span>引擎询问是否向模型提供 flight:executor、flight:reviewer、flight:fixer</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三者都回答不提供</span></li><li><span class="step-key" data-kw="AND">AND</span><span>询问 general-purpose 时不干预</span></li></ul></div></div></div><div class="spec-card"><h3>flight-state-machine <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 状态由账本事件推出，动作由纯函数决定</p><p>插件的状态机核心 SHALL 是两个不调用任何 <code>$</code> 接口的纯函数：
+- 一个从账本事件序列推出飞行状态；
+- 一个从状态、计划（waves、deps）和当前计划指纹给出下一批动作。</p><p>动作只有这几类：派发 agent（executor / reviewer / fixer / resolver）、跑门禁、合回、跑 final、落地、停飞、记阻断。依赖了已阻断切片的切片 SHALL 直接记阻断（infra），SHALL NOT 派发。
+Feature: 可信计算基里最容易出错的部分是纯函数，可以穷举测试</p><div class="scenario"><p class="scenario-name">Scenario: core-dispatches-first-wave</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>计划 waves 为 [[S1, S2], [S3]]，S3 依赖 S1</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本只有 approve 与 attempt 1 的 takeoff</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>恰为派发 S1 与 S2 的执行体</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有任何关于 S3 的动作</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: core-blocks-dependents-of-blocked</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>计划同上</span></li><li><span class="step-key" data-kw="AND">AND</span><span>attempt 1 里 S1 已记 blocked（gate），S2 已合回</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>含一条 S3 的阻断，kind 为 infra，原因含「依赖已 blocked：S1」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不派发 S3</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 收口门禁的续修上限与未收口兜底</p><p>执行体每次收口都有一条门禁结论，状态机 SHALL 按下面的规则决定续修、放行、补跑门禁或重派。结论为红时：
+- 该 agent 已被续修的次数少于 2，状态机 SHALL 判「续修」，带上 failed 项；
+- 否则 SHALL 判「放行收口」，agent 结束后切片记 blocked（gate）。</p><p>执行体结束时本轮没有任何收口门禁结论（如撞 maxTurns）：
+- 状态机 SHALL 先给出「跑该切片门禁」的动作；
+- 门禁红且该切片在本次飞行里还没有兜底重派过，SHALL 在同一切片 worktree 上重派执行体（续接）；
+- 否则 SHALL 记 blocked。
+Feature: 同一 agent 带着上下文续修，比冷启动重派便宜；但次数有上限</p><div class="scenario"><p class="scenario-name">Scenario: core-limits-stop-blocks-to-two</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的执行体 A 已有两条收口门禁红结论，两次都被续修</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>A 第三次收口，门禁仍红（failed 为 [&quot;G7 x&quot;]）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>判定为放行收口</span></li><li><span class="step-key" data-kw="AND">AND</span><span>A 结束后，S1 记 blocked（gate），原因含 &quot;G7 x&quot;</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: core-respawns-once-after-silent-end</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的执行体 A 结束，本轮没有收口门禁结论</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>为「跑 S1 门禁」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>记入门禁红结论后，下一批动作是在 S1 原 worktree 上派发执行体，并标为续接</span></li><li><span class="step-key" data-kw="AND">AND</span><span>续接的执行体同样未经收口就结束、门禁仍红时，S1 记 blocked</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 合回之后依次评审、批量修复、final、落地</p><p>- 门禁绿的切片 SHALL 被合回；合回后 SHALL 为它派发一个评审员。
+- 全部 wave 结束且全部评审都有结果（提交了 findings，或记了阻断）后：
+  - 有 CRITICAL / HIGH 时，SHALL 派发一个修复 agent，findings 只含这些阻断项；
+  - 否则 SHALL 跑 final。
+- 修复 agent 的 final 绿则合回修复，再跑 final。
+- final 绿 SHALL 落地；final 红 SHALL 停飞。
+- 计划指纹与起飞时不同，SHALL 停飞。
+Feature: 评审离关键路径，修复一次批量完成，停飞只有两个原因</p><div class="scenario"><p class="scenario-name">Scenario: core-reviews-fixes-then-finals</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>全部切片已合回</span></li><li><span class="step-key" data-kw="AND">AND</span><span>S1 的评审给出 1 条 HIGH，S2 的评审给出 1 条 LOW</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>依次推进状态机</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>先派发修复 agent，其 findings 只含那条 HIGH</span></li><li><span class="step-key" data-kw="AND">AND</span><span>修复 agent 的 final 绿、修复合回后，动作为跑 final</span></li><li><span class="step-key" data-kw="AND">AND</span><span>final 绿后，动作为落地</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: core-halts-on-final-red</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本里最新的 final 事件 ok 为 false，failed 为 [&quot;G2 lint&quot;]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>恰为停飞，原因含 &quot;G2 lint&quot;</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有落地动作</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: core-halts-on-plan-change</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>takeoff 记录的指纹是 F，当前计划指纹是 G</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>恰为停飞，原因含「计划指纹已变」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 再次起飞时接着上一次飞</p><p>新一次 takeoff（attempt 加 1）之后，状态机 SHALL 接着已有的账本继续，而不是从头再飞：
+- 此前任一次飞行里已合回的切片，SHALL NOT 再派发，也 SHALL NOT 再评审；
+- 已派发但没有结论的切片，SHALL 在原 worktree 上续接派发；
+- 上一次被阻断的切片，SHALL 在本次重新派发。
+Feature: 会话中断时 agent 一并终止（实测 X4），恢复只能靠账本</p><div class="scenario"><p class="scenario-name">Scenario: core-continues-from-previous-attempt</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>attempt 1 里 S1 已合回且有评审结果，S2 已派发但没有结论</span></li><li><span class="step-key" data-kw="AND">AND</span><span>之后有 attempt 2 的 takeoff</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>只在 S2 的原 worktree 上派发执行体，并标为续接</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有派发 S1 的执行体，也没有派发 S1 的评审员</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 事件形状与路由对账</p><p>状态机核心 SHALL 提供账本事件的构造函数，产出的字段与 flight-ledger-events 的表逐项一致。收口时 SHALL 把各 agent 的实际模型与起飞时的主模型对账：实际模型 id 不含期望模型名（别名，如 opus），或实际模型缺失，SHALL 生成一条 HIGH 阻断项。
+Feature: TS 写的事件必须能被 Python 判定器读；路由偏差机械发现，不靠自述</p><div class="scenario"><p class="scenario-name">Scenario: core-builds-ledger-events</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一次派发、一次门禁结论、一次 agent 结束</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>用事件构造函数生成三条事件</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三条事件的字段与类型与 flight-ledger-events 表中 dispatch、gate、ended 三行一致</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: core-reports-routing-mismatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>takeoff 记录主模型为 opus</span></li><li><span class="step-key" data-kw="AND">AND</span><span>一个执行体的 ended 事件中，实际模型为 claude-sonnet-5-5</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求收口阻断项</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>含一条 HIGH，summary 含「路由不符」、角色 executor、期望 opus、实际 claude-sonnet-5-5</span></li></ul></div></div></div><div class="spec-card"><h3>opsx-apply-plugin-engine <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 命令与 skill 写明插件接管</p><p><code>/opsx-apply</code> 的命令文档 <code>opsx-apply.md</code> 与同名 skill <code>openspec-apply-change/SKILL.md</code> SHALL 在开头写明以下三点，两份文档同改：
+1. 装了 flight 插件（0.2.0 及以上）时，<code>/opsx-apply</code> 由插件的状态机执行；起飞检查与整个飞行都不经模型，模型不执行文档里的步骤。
+2. 只有人显式加 <code>--engine=workflow</code> 时，才由模型按文档步骤用旧的 Workflow 引擎飞；插件不会自动回退到旧引擎。
+3. 插件缺席即停飞：没有插件，批准无从写入账本，<code>takeoff-gate.py</code> 必然拒绝。
+Feature: 文档与实际执行者一致，不让模型以为自己要手走 step 0–7</p><div class="scenario"><p class="scenario-name">Scenario: apply-docs-describe-plugin-engine</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读两份文档在第一个步骤之前的部分</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份都含「插件」与「状态机」，都含 <code>--engine=workflow</code>，都含「停飞」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两份都写明插件不会自动回退到旧引擎</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><ul><li><strong>现状</strong>：<code>/opsx-apply</code> 由主会话的模型手走命令 step 0–7。它启动命名工作流 <code>opsx-apply.js</code>，脚本派发执行体、integrator（sonnet）、评审员、修复 agent，所有机械动作都经模型完成。根因诊断与原则见 <code>docs/flight-control-plane.html</code>，阶段 3 决策 D1–D10 与补测 X1–X11 见 <code>docs/flight-orchestrator.html</code>。</li><li><strong>在用的 ADR</strong>：</li><li><code>DRAFT-flight-control-plane-in-mod</code>：控制面迁入插件、判定器保持纯 Python、账本放在 git ref、控制面缺席即停飞、分阶段迁移、飞行运行已安装的稳定版本；</li><li><code>DRAFT-approval-bound-to-plan-fingerprint</code>：批准即按钮写入账本、绑定计划指纹；</li><li><code>DRAFT-apply-as-flight</code>：本 change 以新 ADR <code>DRAFT-flight-orchestrator-state-machine</code> 取代它，第 1、2、4、5 条继承。</li><li><strong>约束</strong>：</li><li>插件只能挂一个 hooks 模块（X11）；</li><li><code>$.process.run</code> 单次最长 10 分钟；</li><li>hook 自身预算 10 秒，<code>$</code> 调用在途不计（X2）；</li><li>撞 maxTurns 不触发 SubagentStop（X1）；</li><li>会话结束时 agent 一并终止，续接后看不到（X4）。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong> - 装了插件 0.2.0 后，<code>/opsx-apply</code> 从起飞检查到 <code>/pr-ship</code> 都由插件执行，主会话的模型 0 回合。 - 门禁结论只来自控制面自己跑的门禁；机械动作零 token；飞行状态只来自账本。 - 状态机核心是纯函数，整个流程可以用 <code>claude plugin test</code> 模拟（X6）。</p><p><strong>Non-Goals</strong>（3b / 3c） - 测量协议、按 agentId 限写、<code>tool.check</code> 权限策略、主会话只读、<code>agent.spawn</code> 路由守卫； - <code>/flight</code> 命令与面板； - 删除 <code>opsx-apply.js</code>、integrator、快照与门禁结论 ref 机制； - 改写铁律 10。</p></div><div class="design-block"><h3>Decisions</h3><details><summary>纯核心与副作用分开</summary><p>状态机的判断能穷举测试；副作用层用测试世界（mock）测。</p></details><details><summary>只有一个 hooks 模块，所以 <code>register.tsx</code> 引入两个注册函数（X11）。</summary></details><details><summary><strong>否决</strong></summary><p>所有逻辑写在 <code>register.tsx</code> 里。不可测，切片之间所有权冲突。</p></details><details><summary><strong>事件表</strong></summary><p>见 spec <code>flight-ledger-events</code>。每次状态转移都先写账本、再动手，或者动手后立即补记，<code>reduce</code> 的输入只有账本。</p></details><details><summary><strong>attempt</strong></summary><p>每次 takeoff 加 1。</p></details><details><summary>合回与评审跨 attempt 生效</summary><p>已合回的切片不再飞；</p></details><details><summary>派发、门禁、阻断只在本 attempt 内生效</summary><p>上次被阻断的切片重新派发；</p></details><details><summary>上次派发了、没有结论的切片，在原 worktree 上续接。</summary></details><details><summary><strong>agent 映射</strong></summary><p>靠 dispatch 事件里的 <code>agent</code>（agentId）把 agent 对应到 slice / role / worktree，不靠模块内存。所以模块重载、或两个注册函数各自处理事件，都不需要共享内存。</p></details><details><summary><strong>读账本</strong></summary><p>经 <code>ledger.py show</code>，它顺带校验整条链。账本损坏时停飞。</p></details><details><summary><strong>写账本</strong></summary><p>io.ts 的 CAS 追加（与批准带同一套 plumbing）。approve 只由批准带写；本 change 的代码 SHALL NOT 构造 approve 事件。</p></details><details><summary><strong>否决</strong></summary><p>状态放在 <code>$.state</code>。明文、模型可改，会话中断即丢。</p></details><details><summary><strong>执行体 / 解冲突 agent 收口</strong></summary><p>SubagentStop → io 跑 <code>slice-gate.py gate &lt;S&gt; --change-dir &lt;dir&gt;</code>（cwd 为切片或解冲突 worktree，判定器取主 worktree 的副本，超时 600 秒）→ 记 gate 事件 → <code>core.stopVerdict</code>：</p></details><details><summary>红且本 agent 被续修少于 2 次 → block，文本含 failed；</summary></details><details><summary>否则放行。</summary></details><details><summary><strong>结束</strong></summary><p>turn.complete（带 agentId 且在账本里）→ 记 ended（<code>usage.model</code>）→ drive。</p></details><details><summary><strong>drive</strong></summary><p>循环执行 <code>core.next</code> 给出的动作，每轮重读账本，直到没有新动作为止。没有收口结论的执行体，会得到「跑门禁」动作；红则续接重派一次。</p></details><details><summary><strong>串行</strong></summary><p>drive 经模块内的 Promise 队列串行，避免同一时刻两次合回。账本另有 CAS 兜底。</p></details><details><summary><strong>门禁 JSON</strong></summary><p>完整记入 gate 事件（含 <code>warnings</code>、<code>ceilings</code>、<code>base</code>），合回后原样交给 <code>record --json</code>。</p></details><details><summary><strong>否决</strong></summary><p>在 turn.complete 判红后派新 agent 重做（D2-B）。冷启动成本高。</p></details><details><summary>门禁绿的切片，在它的执行体结束后立即合回，不等整个 wave；合回后立即派发评审员。下一个 wave 在本 wave 全部合回或阻断之后才派发。</summary></details><details><summary><strong>冲突</strong></summary></details><details><summary><strong>接口摘要</strong></summary><p>用 grep 级的正则抽取，由插件完成（integrator 第 2 项本来就是 <code>cx symbols</code> 或 grep 的回退）。</p></details><details><summary><strong>评审员</strong></summary></details><details><summary><code>flight:reviewer</code> 的 cwd 为 change worktree，提示词给出被审 commit；</summary></details><details><summary>用 <code>submit_findings</code> 提交，事件进账本；</summary></details><details><summary>未提交就收口时 block 一次，结束时仍未提交，记 <code>review:&lt;S&gt;</code> 阻断（infra）。</summary></details><details><summary><strong>修复</strong></summary></details><details><summary>全部 wave 结束、全部评审都有结果后，有 CRITICAL / HIGH 就在 <code>flight-&lt;change&gt;-fix</code> worktree 里派一个 <code>flight:fixer</code>；</summary></details><details><summary>它收口时跑 <code>slice-gate.py final</code>，续修上限同执行体；</summary></details><details><summary>绿且结束后 <code>--no-ff</code> 合回，并记 timeline 的 fix 事件。</summary></details><details><summary><strong>final</strong></summary><p>在 change worktree 里跑 <code>slice-gate.py final</code>。</p></details><details><summary>绿 → land.closeout（写 review-findings.json、勾选、apply-done、收口提交、ship 裁决）→ land 事件 → 清除状态行 → <code>$.command.run({command: &#x27;pr-ship&#x27;, args: change})</code>（X10）。</summary></details><details><summary>红 → halt（铁律 5</summary><p>final 红不收口），提示原因。</p></details><details><summary><strong>路由对账</strong></summary><p>收口时，对每个 ended 事件比较实际模型与 takeoff 的 model：实际 id 含期望别名即一致，不一致或缺失 → HIGH 进 blocking。这取代 <code>session-decompose --expect-models</code> 在新引擎里的作用。</p></details><details><summary>command.run 接管 <code>/opsx-apply</code>（X7）。检查依次是</summary></details><details><summary><strong>主模型</strong></summary><p><code>session-model.py</code> 由插件运行，传入 <code>CLAUDE_CODE_SESSION_ID=$.session.id()</code>；不改铁律 11 的判定来源（3b 再迁到引擎事实）。</p></details><details><summary><strong>正在飞</strong></summary><p>账本里本 attempt 未落地或停飞，且 <code>$.agent.list()</code> 里有运行中的本次飞行 agent → 回复「正在飞」，不重复起飞。</p></details><details><summary><strong>回复</strong></summary><p>一行起飞摘要（change、切片数、wave 数、主模型）。之后整个飞行由事件驱动，主会话空闲。</p></details><details><summary>插件目录 <code>agents/*.md</code> 声明类型（X8），安装后的副本不在仓库里，模型改不到。</summary></details><details><summary>每次派发显式传 model，它优先于类型里的 model（X1）；所以定义里不写 model，避免两处真相。</summary></details><details><summary>effort、maxTurns、tools 写在定义里（spawn 不接受这三项）。</summary></details><details><summary><code>agent.offer</code> 对三个类型回答不提供，模型派不出飞行角色。</summary></details><details><summary>执行体权限仍随会话模式；<code>tool.check</code> 权限策略在 3b。</summary></details><details><summary><code>claude plugin test</code> 的配方（X6）</summary></details><details><summary>测试侧 <code>agent.spawn</code> 底层收到的是 Agent 工具参数（<code>subagent_type</code>），答复须带 <code>{model, agentId, result: {status: &#x27;async_launched&#x27;, agentId, ...}}</code>；</summary></details><details><summary>op 类（process.run、fs.*、session.*）答复包在 <code>{value}</code> 里；</summary></details><details><summary><code>classic.SubagentStop</code> 底层答 <code>{}</code>。</summary></details><details><summary>每个 scenario 对应一个同名 TS 测试；pytest 侧用 <code>tests/test_flight_plugin.py</code> 的 <code>assert_ts_passed</code> 断言它通过。这一做法沿用批准带 change，因为 <code>claude plugin test</code> 没有 xfail。</summary></details><details><summary>Python 判定器（ledger.py）仍是 pytest 直测。</summary></details><details><summary>TS 事件形状与 Python 校验的一致性，由两侧各自对照 spec 表的测试保证（core-builds-ledger-events 与 ledger-accepts-flight-events）。</summary></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary>[状态机成为可信计算基] → 纯核心 + 41 个 scenario 测试；3a 合入后的第一次实战（3b）由人盯着；旧引擎可用 <code>--engine=workflow</code> 显式回退。</summary></details><details><summary>[hook 在用户按 Esc 时被放弃，动作做了一半] → 每个动作都先查事实、可重复执行（worktree 复用、<code>record</code> 防重复、合回前查是否已合回）。drive 从账本重算，再发一次 <code>/opsx-apply</code> 即可接着飞。</summary></details><details><summary>[门禁超过 10 分钟] → 本仓库全量约 63 秒；超时按门禁红记（failed 写明超时），不伪造绿；大型下游的流式子进程留到 3b。</summary></details><details><summary>[TS 写出 ledger.py 不认的事件] → 账本损坏会让 takeoff-gate 停飞（fail-closed）；两侧都对照同一张表测试。</summary></details><details><summary>[评审员 cwd 为 change worktree，与人共享] → 评审员只读（无 Edit / Write）；Bash 越界写入的硬限制在 3b。</summary></details><details><summary>[会话在飞行中关闭] → agent 全部终止（X4）；worktree 与账本都在，再发 <code>/opsx-apply</code> 即接着飞。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><p>1. 本 change 在旧机制（Workflow + 插件 0.1.1 批准带）上飞，状态机只由测试验证。 2. 合入后发布插件 0.2.0；人执行 <code>claude plugin marketplace update intent-driven &amp;&amp; claude plugin update flight@intent-driven</code>。 3. 3b 用新状态机飞，这是第一次实战。出问题时，人可以用 <code>--engine=workflow</code> 显式改用旧引擎；3c 删除旧引擎。 4. <strong>回滚</strong>：降回插件 0.1.1。账本里多出的飞行事件，旧版 ledger.py 会判损坏，所以回滚时要连同 ledger.py 一起回退；也可以删除对应的 <code>refs/flight/&lt;change&gt;/ledger</code>（由人执行）。</p></div><div class="design-block"><h3>Open Questions</h3><ul><li>被阻断切片的 worktree 与已合回切片的 worktree 都不删（铁律 6）。落地报告会列出它们，清理命令交给人。是否由控制面在落地后自动清理自己建的 worktree，留到 3c 与铁律 10 一并讨论。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+      <p class="placeholder">design.md 含关键 Mermaid 流程图时自动填入；否则保留占位。</p>
+      <!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>账本接受并逐类校验飞行事件，approve 判定不变</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/ledger.py<br>tests/test_ledger.py</td><td><code>python3 -m pytest -q tests/test_ledger.py tests/test_approval_gate.py</code></td></tr><tr><td class="mono">S2</td><td>状态机核心：账本事件归约、下一批动作、续修上限与兜底、事件构造、路由对账</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/tests/core.test.ts<br>tests/test_flight_core.py</td><td><code>python3 -m pytest -q tests/test_flight_core.py</code></td></tr><tr><td class="mono">S3</td><td>随插件发布的 agent 类型与提示词纯函数</td><td>wave 1</td><td>-</td><td>template/plugins/flight/agents/executor.md<br>template/plugins/flight/agents/reviewer.md<br>template/plugins/flight/agents/fixer.md<br>template/plugins/flight/hooks/prompts.ts<br>template/plugins/flight/tests/prompts.test.ts<br>tests/test_flight_agents.py</td><td><code>python3 -m pytest -q tests/test_flight_agents.py</code></td></tr><tr><td class="mono">S4</td><td>/opsx-apply 命令与同名 skill 写明插件接管、显式旧引擎与停飞</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>tests/test_opsx_apply_engine.py</td><td><code>python3 -m pytest -q tests/test_opsx_apply_engine.py tests/test_template_docs.py tests/test_agents_workflow.py</code></td></tr><tr><td class="mono">S5</td><td>副作用层：判定器路径、账本读写、切片 worktree；register.tsx 接入两个注册函数（空壳）</td><td>wave 2</td><td>S2</td><td>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/hooks/register.tsx<br>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/landing.tsx<br>template/plugins/flight/tests/io.test.ts<br>tests/test_flight_io.py</td><td><code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S6</td><td>合回、冲突交接与快进、findings 校验、落地收口的机械过程</td><td>wave 2</td><td>S2</td><td>template/plugins/flight/hooks/land.ts<br>template/plugins/flight/tests/land.test.ts<br>tests/test_flight_land.py</td><td><code>python3 -m pytest -q tests/test_flight_land.py</code></td></tr><tr><td class="mono">S7</td><td>编排接线：接管 /opsx-apply、收口现跑门禁、结束兜底、合回与解冲突、状态行、类型隐藏</td><td>wave 3</td><td>S3, S5, S6</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/tests/orchestrator.test.tsx<br>tests/test_flight_orchestrator.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S8</td><td>评审回收与落地接线：submit_findings、评审员与修复 agent 收口、final、落地接 /pr-ship、停飞</td><td>wave 3</td><td>S3, S5, S6</td><td>template/plugins/flight/hooks/landing.tsx<br>template/plugins/flight/tests/landing.test.tsx<br>tests/test_flight_landing.py<br>template/plugins/flight/tests/flight.test.tsx<br>tests/test_flight_plugin.py<br>template/plugins/flight/.claude-plugin/plugin.json<br>.claude-plugin/marketplace.json</td><td><code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-ledger-events#ledger-accepts-flight-events</td><td><code>tests/test_ledger.py::test_ledger_accepts_flight_events</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-events#ledger-rejects-malformed-flight-event</td><td><code>tests/test_ledger.py::test_ledger_rejects_malformed_flight_event</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-events#approved-ignores-flight-events</td><td><code>tests/test_ledger.py::test_approved_ignores_flight_events</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-dispatches-first-wave</td><td><code>tests/test_flight_core.py::test_core_dispatches_first_wave</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-blocks-dependents-of-blocked</td><td><code>tests/test_flight_core.py::test_core_blocks_dependents_of_blocked</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-limits-stop-blocks-to-two</td><td><code>tests/test_flight_core.py::test_core_limits_stop_blocks_to_two</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-respawns-once-after-silent-end</td><td><code>tests/test_flight_core.py::test_core_respawns_once_after_silent_end</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-reviews-fixes-then-finals</td><td><code>tests/test_flight_core.py::test_core_reviews_fixes_then_finals</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-halts-on-final-red</td><td><code>tests/test_flight_core.py::test_core_halts_on_final_red</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-halts-on-plan-change</td><td><code>tests/test_flight_core.py::test_core_halts_on_plan_change</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-continues-from-previous-attempt</td><td><code>tests/test_flight_core.py::test_core_continues_from_previous_attempt</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-builds-ledger-events</td><td><code>tests/test_flight_core.py::test_core_builds_ledger_events</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-state-machine#core-reports-routing-mismatch</td><td><code>tests/test_flight_core.py::test_core_reports_routing_mismatch</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-agent-types#agent-files-declare-flight-types</td><td><code>tests/test_flight_agents.py::test_agent_files_declare_flight_types</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-agent-types#agent-bodies-leave-gate-to-control-plane</td><td><code>tests/test_flight_agents.py::test_agent_bodies_leave_gate_to_control_plane</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-agent-types#prompts-executor-and-continuation</td><td><code>tests/test_flight_agents.py::test_prompts_executor_and_continuation</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-agent-types#prompts-reviewer-resolver-fixer</td><td><code>tests/test_flight_agents.py::test_prompts_reviewer_resolver_fixer</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>opsx-apply-plugin-engine#apply-docs-describe-plugin-engine</td><td><code>tests/test_opsx_apply_engine.py::test_apply_docs_describe_plugin_engine</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-io#io-runs-judges-from-main-worktree</td><td><code>tests/test_flight_io.py::test_io_runs_judges_from_main_worktree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-io#io-appends-event-with-cas-retry</td><td><code>tests/test_flight_io.py::test_io_appends_event_with_cas_retry</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-io#io-creates-or-reuses-slice-worktree</td><td><code>tests/test_flight_io.py::test_io_creates_or_reuses_slice_worktree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-integration#land-merges-green-slice</td><td><code>tests/test_flight_land.py::test_land_merges_green_slice</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-integration#land-aborts-conflict-and-prepares-resolver</td><td><code>tests/test_flight_land.py::test_land_aborts_conflict_and_prepares_resolver</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-integration#land-fast-forwards-after-resolution</td><td><code>tests/test_flight_land.py::test_land_fast_forwards_after_resolution</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-integration#land-validates-findings</td><td><code>tests/test_flight_land.py::test_land_validates_findings</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-integration#land-closeout-writes-records</td><td><code>tests/test_flight_land.py::test_land_closeout_writes_records</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#opsx-apply-taken-over</td><td><code>tests/test_flight_orchestrator.py::test_opsx_apply_taken_over</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#takeoff-refused-without-approval</td><td><code>tests/test_flight_orchestrator.py::test_takeoff_refused_without_approval</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#engine-workflow-passes-through</td><td><code>tests/test_flight_orchestrator.py::test_engine_workflow_passes_through</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#stop-gate-blocks-red-executor</td><td><code>tests/test_flight_orchestrator.py::test_stop_gate_blocks_red_executor</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#silent-end-runs-gate-and-respawns</td><td><code>tests/test_flight_orchestrator.py::test_silent_end_runs_gate_and_respawns</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#conflict-spawns-resolver</td><td><code>tests/test_flight_orchestrator.py::test_conflict_spawns_resolver</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#flight-status-line</td><td><code>tests/test_flight_orchestrator.py::test_flight_status_line</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-orchestrator#flight-types-hidden-from-model</td><td><code>tests/test_flight_orchestrator.py::test_flight_types_hidden_from_model</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#findings-tool-accepts-flight-reviewer</td><td><code>tests/test_flight_landing.py::test_findings_tool_accepts_flight_reviewer</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#findings-tool-denies-others</td><td><code>tests/test_flight_landing.py::test_findings_tool_denies_others</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#reviewer-stop-without-findings-blocks-once</td><td><code>tests/test_flight_landing.py::test_reviewer_stop_without_findings_blocks_once</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#fixer-stop-runs-final</td><td><code>tests/test_flight_landing.py::test_fixer_stop_runs_final</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#landing-runs-pr-ship</td><td><code>tests/test_flight_landing.py::test_landing_runs_pr_ship</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#final-red-halts</td><td><code>tests/test_flight_landing.py::test_final_red_halts</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-findings-intake#only-findings-tool-registered</td><td><code>tests/test_flight_plugin.py::test_only_findings_tool_registered</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-10-09T12:32:28Z</td><td>baseline</td><td>exit 0, 78.7s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 账本接受并逐类校验飞行事件，approve 判定不变 （deps: - · verify: <code>python3 -m pytest -q tests/test_ledger.py tests/test_approval_gate.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 状态机核心：账本事件归约、下一批动作、续修上限与兜底、事件构造、路由对账 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_core.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 随插件发布的 agent 类型与提示词纯函数 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_agents.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 /opsx-apply 命令与同名 skill 写明插件接管、显式旧引擎与停飞 （deps: - · verify: <code>python3 -m pytest -q tests/test_opsx_apply_engine.py tests/test_template_docs.py tests/test_agents_workflow.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S5 副作用层：判定器路径、账本读写、切片 worktree；register.tsx 接入两个注册函数（空壳） （deps: S2 · verify: <code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S6 合回、冲突交接与快进、findings 校验、落地收口的机械过程 （deps: S2 · verify: <code>python3 -m pytest -q tests/test_flight_land.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S7 编排接线：接管 /opsx-apply、收口现跑门禁、结束兜底、合回与解冲突、状态行、类型隐藏 （deps: S3, S5, S6 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S8 评审回收与落地接线：submit_findings、评审员与修复 agent 收口、final、落地接 /pr-ship、停飞 （deps: S3, S5, S6 · verify: <code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-09 12:32 · 章节 8 · 图示 0 · 任务 8
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>
