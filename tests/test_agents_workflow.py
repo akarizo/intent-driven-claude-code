@@ -517,3 +517,51 @@ def test_workflow_retries_fix_after_throw(tmp_path):
     assert calls["fix:retry"]["opts"].get("isolation") == "worktree", calls["fix:retry"]["opts"]
     assert "9" * 40 in calls["final-gate"]["prompt"], calls["final-gate"]["prompt"]
     assert out["result"]["blocked"] == [], out["result"]["blocked"]
+
+
+def test_fix_prompt_checks_base_first(tmp_path):
+    # Given: branch=worktree-c，waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
+               ["^review:S1$", REVIEW_HIGH], ["^fix$", gate_json("final", commit="9" * 40)]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流，取 fix 派发的 prompt
+    out = run_workflow(tmp_path, flight_args(), replies)
+    prompt = next(c["prompt"] for c in out["calls"] if c["opts"]["label"] == "fix")
+
+    # Then: prompt 含基点校验命令 git merge-base --is-ancestor $(git rev-parse worktree-c) HEAD 且它先于 start；不成立时返回 G0 base；start fix 带 --expect-branch worktree-c
+    check = "git merge-base --is-ancestor $(git rev-parse worktree-c) HEAD"
+    assert check in prompt and prompt.index(check) < prompt.index("slice-gate.py start fix"), prompt
+    assert "G0 base" in prompt, prompt
+    assert all("--expect-branch worktree-c" in c for c in start_cmds(prompt)) and start_cmds(prompt), prompt
+
+
+def test_apply_docs_mirror_fix_base_check():
+    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 取两份回退路径段
+    fallbacks = [fallback_section(t) for t in (cmd, skill)]
+
+    # Then: 两份回退路径都写明 fix 先做 merge-base --is-ancestor 基点校验，且 fix 抛错 / 未返回时重派一次后仍跑 final
+    for f in fallbacks:
+        assert "merge-base --is-ancestor" in f, f
+        assert "fix 未返回" in f, f
+
+
+def test_workflow_skips_merge_when_fix_base_rejected(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH；fix 首轮与重派都以 G0 base 拒绝，返回的 commit 为 8…8
+    g0 = {"slice": "fix", "ok": False, "commit": "8" * 40, "failed": ["G0 base: HEAD 不是分支 worktree-c 的后代"]}
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
+               ["^review:S1$", REVIEW_HIGH], ["^fix(:retry)?$", g0]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    final_prompt = next(c["prompt"] for c in out["calls"] if c["opts"]["label"] == "final-gate")
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: fix:retry 派发了一次；finalize 的 prompt 不含 8…8；blocked 中 fix 的原因含 G0 base
+    assert labels.count("fix:retry") == 1, labels
+    assert "8" * 40 not in final_prompt, final_prompt
+    assert "G0 base" in blocked["fix"]["reason"], blocked

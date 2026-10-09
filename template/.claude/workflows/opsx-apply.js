@@ -195,15 +195,23 @@ if (blocking.length) {
   // fix 也是执行体：agent 调用抛错与未返回同样处理，重派一次；仍为空记 blocked（infra），Finalize 照常跑（mergeFix 自动跳过）
   const runFix = (retry) => agent([
     rules('slice-executor') + `你在仓库根。一次性修复 OpenSpec change \`${change}\` 评审挡下的 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit（fix: 前缀），不 push。`,
-    retry ? '上一轮 fix 执行体未返回（多为撞 maxTurns），它在临时 worktree 里的半成品没有合回：从头按 finding 清单修复。' : '',
-    `先运行 \`python3 ${hooksDir}/slice-gate.py start fix --change-dir ${changeDir}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start）。`,
+    retry ? '上一轮 fix 执行体未返回（多为撞 maxTurns）或被 G0 基点校验拒绝，没有可合回的修复：从头按 finding 清单修复。' : '',
+    // 与切片执行体同一道防线：临时 worktree 可能不是从 change 分支最新 commit 分叉；start 可能因无 fix 条目被拒，所以先单独校验
+    branch
+      ? `第一步做基点校验：运行 \`git merge-base --is-ancestor $(git rev-parse ${branch}) HEAD\`；非 0 退出（HEAD 不是分支 ${branch} 最新 commit 的后代）→ 不做任何改动，直接返回 {"slice":"fix","ok":false,"commit":"<实际 HEAD>","failed":["G0 base: HEAD 不是分支 ${branch} 的后代"]}。`
+      : '',
+    `${branch ? '再' : '先'}运行 \`${startCmd('fix')}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start${branch ? '；基点已由上一步校验' : ''}）。`,
     `finding 清单：${JSON.stringify(blocking)}`,
     // fix 在临时 worktree 里跑，timeline 记录进不了分支：record fix 由 finalize 合回后写
     `每条修复都要有先失败的测试；修完运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
   ].filter(Boolean).join('\n'), { label: retry ? 'fix:retry' : 'fix', isolation: 'worktree', schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
     .catch(() => null)
-  fix = (await runFix(false)) || (await runFix(true))
+  // G0 基点拒绝的 commit 是旧基点上的 HEAD，不能合回：与未返回同样重派一次（新开的临时 worktree 可能基点正确）
+  const baseRejected = (r) => !!r && (r.failed || []).some((f) => f.startsWith('G0'))
+  fix = await runFix(false)
+  if (!fix || baseRejected(fix)) fix = (await runFix(true)) || fix
   if (!fix) blocked.push({ slice: 'fix', kind: 'infra', reason: 'fix agent 未返回（已重派一次）' })
+  else if (baseRejected(fix)) { blocked.push({ slice: 'fix', kind: 'infra', reason: fix.failed.join('; ') }); fix = null }
 }
 
 phase('Finalize')
