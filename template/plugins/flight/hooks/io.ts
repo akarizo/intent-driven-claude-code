@@ -91,7 +91,17 @@ export const flights: Map<string, Flight> = new Map()
 
 const dispatched = (events: readonly FlightEvent[], agentId: string) => events.some(e => e.ev === 'dispatch' && e.agent === agentId)
 
-/** 先查本进程登记的飞行；未命中再只靠账本：遍历 refs/flight/<change>/ledger，在主 worktree 上读账本、重建 Flight 并登记。 */
+/** change 目录所在的 worktree（主 worktree 排第一）：未合入的 change 只在 change worktree 上有目录；refs/flight 是共享 ref，从哪个 worktree 读账本都一样。 */
+async function locateChangeDir(io: Io, all: readonly Tree[], change: string): Promise<{ changeTree: string; changeDir: string } | undefined> {
+  for (const t of all) {
+    for (const dir of [`template/openspec/changes/${change}`, `openspec/changes/${change}`]) {
+      if (await io.exists(`${t.path}/${dir}`)) return { changeTree: t.path, changeDir: dir }
+    }
+  }
+  return undefined
+}
+
+/** 先查本进程登记的飞行；未命中再只靠账本：遍历 refs/flight/<change>/ledger，在含该 change 目录的 worktree 上读账本、重建 Flight 并登记。 */
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
   for (const flight of flights.values()) {
     const ledger = await readLedger(io, flight)
@@ -111,15 +121,9 @@ export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: 
   const hooksDir = await judgesDir(io, mainTree)
   // ceiling: 未命中（含非飞行 agent）时逐个读全部未登记 change 的账本 -> 非飞行 subagent 频繁或账本数多时，按 change 缓存负结果
   for (const change of changes) {
-    let changeDir = ''
-    for (const dir of [`template/openspec/changes/${change}`, `openspec/changes/${change}`]) {
-      if (await io.exists(`${mainTree}/${dir}`)) {
-        changeDir = dir
-        break
-      }
-    }
-    if (changeDir === '') continue
-    const probe: Flight = { change, mainTree, changeTree: mainTree, changeDir, branch: '', hooksDir, model: '', session: '' }
+    const at = await locateChangeDir(io, all, change)
+    if (at === undefined) continue
+    const probe: Flight = { change, mainTree, ...at, branch: '', hooksDir, model: '', session: '' }
     const ledger = await readLedger(io, probe)
     if (!('events' in ledger)) continue
     const { events } = ledger
@@ -128,7 +132,7 @@ export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: 
     if (events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === Number(takeoff.attempt))) continue
     if (!dispatched(events, agentId)) continue
     const branch = String(takeoff.branch ?? '')
-    const changeTree = all.find(t => t.branch === branch)?.path ?? mainTree
+    const changeTree = all.find(t => t.branch === branch)?.path ?? probe.changeTree
     const flight: Flight = { ...probe, changeTree, branch, model: String(takeoff.model ?? ''), session: takeoff.by.session }
     flights.set(change, flight)
     return { flight, events }

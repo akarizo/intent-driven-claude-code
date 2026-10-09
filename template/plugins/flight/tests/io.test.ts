@@ -150,18 +150,21 @@ const TAKEOFF: FlightEvent = {
 }
 
 /** 假 Io：仓库有 refs/flight/demo/ledger（takeoff + agent a1 的 dispatch），worktree 列表为 /repo 与 /repo/.worktrees/demo。 */
-function ledgerWorld(): Io {
+/** changeDirs：磁盘上存在的 change 目录；ledger.py 与真实一样 git -C change 目录，目录不存在即失败。 */
+function ledgerWorld(changeDirs: string[] = [`${MAIN}/${CHANGE_DIR}`]): Io {
   const porcelain = `worktree ${MAIN}\nHEAD ${HEAD}\nbranch refs/heads/main\n\nworktree ${CHANGE_TREE}\nHEAD ${HEAD}\nbranch refs/heads/worktree-demo\n\n`
+  const present = [`${HOOKS}/slice-gate.py`, ...changeDirs]
   return {
     async run(argv) {
-      if (argv[0] === 'python3' && argv[1] === `${HOOKS}/ledger.py`) return ok([TAKEOFF, DISPATCH].map(e => JSON.stringify(e)).join('\n') + '\n')
+      if (argv[0] === 'python3' && argv[1] === `${HOOKS}/ledger.py`)
+        return present.includes(String(argv[4])) ? ok([TAKEOFF, DISPATCH].map(e => JSON.stringify(e)).join('\n') + '\n') : fail(`fatal: cannot change to '${argv[4]}'`)
       if (argv.join(' ') === 'git for-each-ref --format=%(refname) refs/flight/') return ok('refs/flight/demo/ledger\n')
       if (argv.join(' ') === 'git -C . worktree list --porcelain') return ok(porcelain)
       throw new Error(`unexpected argv: ${argv.join(' ')}`)
     },
     read: async () => undefined,
     write: async () => undefined,
-    exists: async path => [`${HOOKS}/slice-gate.py`, `${MAIN}/${CHANGE_DIR}`].includes(path),
+    exists: async path => present.includes(path),
   }
 }
 
@@ -188,6 +191,19 @@ test('io-finds-flight-from-ledger/unknown-agent', async () => {
 
   // Then: 返回空
   expect(found).toBeUndefined()
+})
+
+test('io-finds-flight-from-ledger/change-dir-only-in-change-worktree', async () => {
+  // Given: 进程内无登记飞行；同一账本；change 目录只在 change worktree /repo/.worktrees/demo 下存在，主 worktree /repo 下没有（未合入的活跃飞行）
+  flights.clear()
+  const io = ledgerWorld([`${CHANGE_TREE}/${CHANGE_DIR}`])
+
+  // When: 按 agent a1 查找飞行
+  const found = await flightOfAgent(io, 'a1')
+
+  // Then: 找到 demo，changeTree 为 /repo/.worktrees/demo、changeDir 为 template/openspec/changes/demo
+  expect(found?.flight.changeTree).toBe(CHANGE_TREE)
+  expect(found?.flight.changeDir).toBe(CHANGE_DIR)
 })
 
 test('io-cas-rereads-tip', async () => {

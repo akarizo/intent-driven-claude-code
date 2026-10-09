@@ -37,6 +37,13 @@ def test_io_finds_flight_from_ledger():
     assert_ts_passed("io-finds-flight-from-ledger/unknown-agent")
 
 
+def test_io_finds_flight_when_change_dir_only_in_change_worktree():
+    # Given: 进程内无登记；change 目录只在 change worktree /repo/.worktrees/demo 下存在，主 worktree 下没有
+    # When: 按 agent a1 查找飞行
+    # Then: 找到 demo，changeTree 为 /repo/.worktrees/demo
+    assert_ts_passed("io-finds-flight-from-ledger/change-dir-only-in-change-worktree")
+
+
 def test_io_cas_rereads_tip():
     # Given: 第一次读到链尾 T1、update-ref 旧值不符；第二次读到 T2、update-ref 成功
     # When: 追加一条事件
