@@ -141,6 +141,25 @@ agents/executor.md · reviewer.md · fixer.md   → flight:executor / flight:rev
 - [评审员 cwd 为 change worktree，与人共享] → 评审员只读（无 Edit / Write）；Bash 越界写入的硬限制在 3b。
 - [会话在飞行中关闭] → agent 全部终止（X4）；worktree 与账本都在，再发 `/opsx-apply` 即接着飞。
 
+## 第一次飞行的结果与范围调整（2026-10-09）
+
+- **结果**：
+  - S1–S7 门禁绿并已合回；
+  - S8（评审回收与落地接线）门禁红，修复 agent 两次撞 40 轮上限未返回；
+  - final 为 34/41，缺的 7 条都属于 S8；
+  - 第一次 final 的 35 条假红，来自 mod 灰度开关被存成关闭（联网启动 claude 后恢复）。
+- **实测出的两条平台约束**（本节之前的接线设计没有考虑到）：
+  - **X12**：`$` 只能传进同一文件里声明的函数，跨 import 会被 `claude plugin validate` 拒绝。所以 D1 里 drive 调 `landing.tsx` 的 `runLandingAction($, …)` 不成立，S7 只能用空壳承接落地动作。
+  - **X13**：`claude plugin test` 里测试与插件是两个隔离的模块实例。S8 靠模块内存登记飞行的写法测不通。
+- **评审给出 5 条 HIGH**：
+  1. 评审员 `git show` 合并提交看不到 diff；
+  2. CAS 重试测试拦不住回归；
+  3. final 前接口摘要没提交，导致 ship 必判 draft；
+  4. drive 没接上落地逻辑；
+  5. 起飞异常会落回模型。
+- **范围调整（用户决定）**：剩余工作排不进本 change 的切片配额（上限 9 片、深度 3，S1–S7 已占满 3 层）。原 S8、上述接线与 5 条 HIGH 的修复移至后续 change `flight-orchestrator-wiring`，它基于本分支，按 X12 / X13 改写：只在编排文件里造上下文闭包，落地逻辑不碰 `$`，查飞行只靠账本。两个 change 合成一个 PR 进 main；本 change 不单独合入，因为 S7 接管 `/opsx-apply` 之后还缺落地。
+- **新增风险**：mod 灰度开关可被远端或缓存关闭。关闭时插件整体不加载，按 ADR 即停飞；门禁大面积红时要先排除它。
+
 ## Migration Plan
 
 1. 本 change 在旧机制（Workflow + 插件 0.1.1 批准带）上飞，状态机只由测试验证。

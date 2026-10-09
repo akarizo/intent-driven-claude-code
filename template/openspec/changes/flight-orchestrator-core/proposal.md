@@ -40,14 +40,11 @@
   - 起飞检查（批准、干净工作区、lint / preflight、主模型）由插件完成；
   - 派发执行体，在执行体收口时跑门禁，在它结束时兜底；
   - 状态行显示进度。
-- **评审回收**：
-  - 插件注册 `submit_findings` 工具，只认本次飞行派发的评审员，只能写 review 事件；
-  - 评审员没提交就收口时，提醒它一次；
-  - 修复 agent 收口时跑 final；
-  - 落地后运行 `/pr-ship`；final 红时停飞。
 - **文档**：`/opsx-apply` 命令与同名 skill 写明插件接管。旧 Workflow 引擎只能用 `--engine=workflow` 显式选择，插件缺席即停飞。
 
-**BREAKING**（对使用者）：装了 flight 插件 0.2.0 之后，`/opsx-apply` 默认由插件状态机执行；旧引擎需要显式加 `--engine=workflow`。
+**范围调整（2026-10-09，第一次飞行后经用户决定）**：评审回收、落地接线、版本升到 0.2.0，以及第一次飞行评审出的 5 条 HIGH，都移到后续 change `flight-orchestrator-wiring`（基于本分支），原因见 design.md「第一次飞行的结果与范围调整」。两个 change 合成一个 PR 进 main；本 change 不单独合入。
+
+**BREAKING**（对使用者，两个 change 合入后生效）：装了 flight 插件 0.2.0 之后，`/opsx-apply` 默认由插件状态机执行；旧引擎需要显式加 `--engine=workflow`。
 
 ## Capabilities
 
@@ -59,18 +56,18 @@
 - `flight-io`：判定器从主 worktree 运行、账本追加 CAS 重试、切片 worktree 由控制面持有。
 - `flight-integration`：合回、冲突交接、findings 校验、落地收口的机械过程。
 - `flight-orchestrator`：插件接管 `/opsx-apply`，收口时现跑门禁，结束时兜底，冲突派解冲突 agent，状态行，类型对模型隐藏。
-- `flight-findings-intake`：评审回收工具只认本次飞行的评审员；修复 agent 收口跑 final；落地接 `/pr-ship`，final 红停飞。
+- （`flight-findings-intake` 已移至 `flight-orchestrator-wiring`。）
 
 ### Modified Capabilities
-（无。`openspec/specs/` 下没有已归档的规格。批准带 change 的「没有模型可调的工具」由 `flight-findings-intake` 收窄为「唯一的工具是评审回收工具，且写不了 approve」。）
+（无。`openspec/specs/` 下没有已归档的规格。）
 
 ## Impact
 
 - **插件** `template/plugins/flight/`：
-  - 新增 `hooks/core.ts`、`hooks/prompts.ts`、`hooks/io.ts`、`hooks/land.ts`、`hooks/orchestrator.tsx`、`hooks/landing.tsx`；
+  - 新增 `hooks/core.ts`、`hooks/prompts.ts`、`hooks/io.ts`、`hooks/land.ts`、`hooks/orchestrator.tsx`、`hooks/landing.tsx`（空壳，由后续 change 填）；
   - 新增 `agents/executor.md`、`agents/reviewer.md`、`agents/fixer.md`；
   - `hooks/register.tsx` 只加两行接入；
-  - 测试 `tests/*.test.ts(x)`；版本升到 0.2.0。
+  - 测试 `tests/*.test.ts(x)`。
 - **判定器**：`template/.claude/hooks/ledger.py`。
 - **文档**：
   - `template/.claude/commands/opsx-apply.md`；
@@ -78,8 +75,8 @@
   - 新 ADR `DRAFT-flight-orchestrator-state-machine`（取代 `DRAFT-apply-as-flight`）。
 - **测试**：
   - `tests/test_ledger.py`；
-  - 新增 `tests/test_flight_core.py`、`test_flight_agents.py`、`test_flight_io.py`、`test_flight_land.py`、`test_flight_orchestrator.py`、`test_flight_landing.py`、`test_opsx_apply_engine.py`；
-  - `tests/test_flight_plugin.py` 收窄一条断言。
+  - 新增 `tests/test_flight_core.py`、`test_flight_agents.py`、`test_flight_io.py`、`test_flight_land.py`、`test_flight_orchestrator.py`、`test_opsx_apply_engine.py`；
+  - `tests/test_flight_landing.py` 与 `tests/test_flight_plugin.py` 末尾的评审回收骨架留在分支里，由后续 change 解锁。
 - **不在范围**（留给 3b / 3c）：
   - 测量协议、按 agentId 限写与 `tool.check` 权限策略、主会话只读、`agent.spawn` 路由守卫（3b）；
   - `/flight status | abort | resume`、飞行面板、删除 `opsx-apply.js` / integrator / Workflow 回退段 / 门禁结论 ref 找回 / 快照机制、改写铁律 10（3c）。

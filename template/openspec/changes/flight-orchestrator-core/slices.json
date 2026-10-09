@@ -152,35 +152,6 @@
       ],
       "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py",
       "packet": "slices/S7.md"
-    },
-    {
-      "id": "S8",
-      "title": "评审回收与落地接线：submit_findings、评审员与修复 agent 收口、final、落地接 /pr-ship、停飞",
-      "scenarios": [
-        "flight-findings-intake#findings-tool-accepts-flight-reviewer",
-        "flight-findings-intake#findings-tool-denies-others",
-        "flight-findings-intake#reviewer-stop-without-findings-blocks-once",
-        "flight-findings-intake#fixer-stop-runs-final",
-        "flight-findings-intake#landing-runs-pr-ship",
-        "flight-findings-intake#final-red-halts",
-        "flight-findings-intake#only-findings-tool-registered"
-      ],
-      "owns": [
-        "template/plugins/flight/hooks/landing.tsx",
-        "template/plugins/flight/tests/landing.test.tsx",
-        "tests/test_flight_landing.py",
-        "template/plugins/flight/tests/flight.test.tsx",
-        "tests/test_flight_plugin.py",
-        "template/plugins/flight/.claude-plugin/plugin.json",
-        ".claude-plugin/marketplace.json"
-      ],
-      "deps": [
-        "S3",
-        "S5",
-        "S6"
-      ],
-      "verify": "python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py",
-      "packet": "slices/S8.md"
     }
   ],
   "scenario_tests": {
@@ -217,13 +188,6 @@
     "flight-orchestrator#silent-end-runs-gate-and-respawns": "tests/test_flight_orchestrator.py::test_silent_end_runs_gate_and_respawns",
     "flight-orchestrator#conflict-spawns-resolver": "tests/test_flight_orchestrator.py::test_conflict_spawns_resolver",
     "flight-orchestrator#flight-status-line": "tests/test_flight_orchestrator.py::test_flight_status_line",
-    "flight-orchestrator#flight-types-hidden-from-model": "tests/test_flight_orchestrator.py::test_flight_types_hidden_from_model",
-    "flight-findings-intake#findings-tool-accepts-flight-reviewer": "tests/test_flight_landing.py::test_findings_tool_accepts_flight_reviewer",
-    "flight-findings-intake#findings-tool-denies-others": "tests/test_flight_landing.py::test_findings_tool_denies_others",
-    "flight-findings-intake#reviewer-stop-without-findings-blocks-once": "tests/test_flight_landing.py::test_reviewer_stop_without_findings_blocks_once",
-    "flight-findings-intake#fixer-stop-runs-final": "tests/test_flight_landing.py::test_fixer_stop_runs_final",
-    "flight-findings-intake#landing-runs-pr-ship": "tests/test_flight_landing.py::test_landing_runs_pr_ship",
-    "flight-findings-intake#final-red-halts": "tests/test_flight_landing.py::test_final_red_halts",
-    "flight-findings-intake#only-findings-tool-registered": "tests/test_flight_plugin.py::test_only_findings_tool_registered"
+    "flight-orchestrator#flight-types-hidden-from-model": "tests/test_flight_orchestrator.py::test_flight_types_hidden_from_model"
   }
 }
