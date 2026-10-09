@@ -6,7 +6,6 @@ import pytest
 from test_flight_plugin import assert_ts_passed
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_opsx_apply_taken_over():
     # Given: demo 已批准、worktree 干净、lint/preflight 绿、waves [[S1, S2], [S3]]、session-model.py 输出 opus
     # When: 人发出 /opsx-apply demo
@@ -14,7 +13,6 @@ def test_opsx_apply_taken_over():
     assert_ts_passed("opsx-apply-taken-over")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_takeoff_refused_without_approval():
     # Given: takeoff-gate.py 以 3 退出，stderr 为「未批准」
     # When: 人发出 /opsx-apply demo
@@ -22,7 +20,6 @@ def test_takeoff_refused_without_approval():
     assert_ts_passed("takeoff-refused-without-approval")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_engine_workflow_passes_through():
     # Given: 插件已加载
     # When: 人发出 /opsx-apply demo --engine=workflow
@@ -30,7 +27,6 @@ def test_engine_workflow_passes_through():
     assert_ts_passed("engine-workflow-passes-through")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_stop_gate_blocks_red_executor():
     # Given: S1 的执行体 A 收口，门禁 ok false、failed [G7 demo#s1]
     # When: 处理 A 的收口
@@ -38,7 +34,6 @@ def test_stop_gate_blocks_red_executor():
     assert_ts_passed("stop-gate-blocks-red-executor")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_silent_end_runs_gate_and_respawns():
     # Given: A 未经收口就结束（answer 为空），补跑的门禁为红
     # When: 处理 A 的结束
@@ -46,7 +41,6 @@ def test_silent_end_runs_gate_and_respawns():
     assert_ts_passed("silent-end-runs-gate-and-respawns")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_conflict_spawns_resolver():
     # Given: S2 门禁绿，合回时冲突（a.py）
     # When: 处理 S2 执行体的结束，再处理解冲突 agent 的收口与结束
@@ -54,7 +48,6 @@ def test_conflict_spawns_resolver():
     assert_ts_passed("conflict-spawns-resolver")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_flight_status_line():
     # Given: /opsx-apply demo 已起飞，waves [[S1, S2], [S3]]
     # When: 派发完第一个 wave
@@ -62,7 +55,6 @@ def test_flight_status_line():
     assert_ts_passed("flight-status-line")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_flight_types_hidden_from_model():
     # Given: 插件已加载
     # When: 引擎询问是否向模型提供 flight:executor / reviewer / fixer 与 general-purpose
