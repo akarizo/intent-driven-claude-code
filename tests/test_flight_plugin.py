@@ -6,8 +6,6 @@ import re
 import shutil
 import subprocess
 
-import pytest
-
 from conftest import ROOT
 
 PLUGIN = ROOT / "template" / "plugins" / "flight"
@@ -88,7 +86,7 @@ def test_bash_guard_denies_ledger_writes():
 def test_no_model_callable_approval_path():
     # Given: 插件已加载、会话已启动
     # When: 列出插件注册的工具与斜杠命令
-    # Then: 没有任何工具，也没有会写账本的命令
+    # Then: 工具恰为 submit_findings（只能写 review 事件），没有斜杠命令
     assert_ts_passed("no-model-callable-approval-path")
 
 
@@ -132,9 +130,8 @@ def test_guard_denies_gate_record_writes():
 
 
 # ---------------------------------------------------------------- flight-orchestrator-core（scenario: flight-findings-intake#only-findings-tool-registered）
-# 骨架：S8 注册 submit_findings、收窄 no-model-callable-approval-path 并写同名 TS 测试后去掉 xfail 标记。
+# orchestrator.tsx 注册 submit_findings 并收窄 no-model-callable-approval-path；同名 TS 测试在 tests/flight.test.tsx。
 
-@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
 def test_only_findings_tool_registered():
     # Given: 插件已加载、会话已启动
     # When: 列出插件注册的工具与斜杠命令，并以各种输入调用 submit_findings

@@ -2,9 +2,10 @@
 // 状态只来自账本：每轮 drive 重读账本，经 core.next 得出动作再执行。
 import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
-import type { Action, Flight, FlightEvent, GateJson, Io, Role, State } from './core'
+import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
 import { agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, readLedger, trees } from './io'
 import { finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
+import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt } from './prompts'
 
 type Engine = EngineInterface
@@ -30,10 +31,10 @@ function isOlder(a: string, b: string): boolean {
 }
 
 const firstLine = (s: string) => s.trim().split('\n')[0] ?? ''
+const argsOf = (raw: string | undefined) => (raw ?? '').split(/\s+/).filter(Boolean)
 const absChangeDir = (f: Flight) => `${f.changeTree}/${f.changeDir}`
 
-// 引擎规则：$ 只能传进本文件声明的函数，不能跨 import。io.ts 的 ioOf / spawnAgent 与 landing.tsx 的 runLandingAction
-// 都以 $ 为参数，在 hook 里调用会让模块加载失败；这里按同一语义在本文件内组合（接口缺口，见 commit 说明）。
+// 引擎规则（实测 X12）：$ 只能传进本文件声明的函数，不能跨 import；其他模块只收这里由 $ 造的闭包（Io / Ctx）。
 const IO_TIMEOUT_MS = 30000
 
 function ioHere($: Engine): Io {
@@ -54,16 +55,26 @@ function ioHere($: Engine): Io {
   }
 }
 
-async function spawnHere($: Engine, f: Flight, role: Role, cwd: string, prompt: string, description: string): Promise<{ agentId?: string; deny?: string }> {
-  const r = await $.agent.spawn({ prompt, description, subagentType: agentType(role), model: f.model, cwd })
-  return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
+function ctxOf($: Engine): Ctx {
+  return {
+    io: ioHere($),
+    now: () => $.clock.now(),
+    async spawn({ f, role, cwd, prompt, description }) {
+      const r = await $.agent.spawn({ prompt, description, subagentType: agentType(role), model: f.model, cwd })
+      return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
+    },
+    async status(text) {
+      await $.ui.status(text)
+    },
+    async toast(text) {
+      await $.ui.toast(text)
+    },
+    runCommand: (command, args) => $.command.run({ command, args }).then(() => undefined),
+  }
 }
 
-/** reviewer / fixer 派发、final、land、halt 归 S8 的 runLandingAction；其签名带 $，不能跨 import 调用，S8 落地前此处不做事（与 S5 空壳同语义）。 */
-async function landingHere($: Engine, f: Flight, a: Action): Promise<void> {}
-
-async function base($: Engine, f: Flight) {
-  return { change: f.change, at: new Date(await $.clock.now()).toISOString(), session: f.session }
+async function base(ctx: Ctx, f: Flight) {
+  return { change: f.change, at: new Date(await ctx.now()).toISOString(), session: f.session }
 }
 
 type SliceInfo = { deps: string[]; owns: string[] }
@@ -120,10 +131,11 @@ function showStatus($: Engine, f: Flight, state: State): void {
 }
 
 /** 执行一个动作；账本写入失败返回 false（drive 随即停下，避免同一动作重复执行）。 */
-async function perform($: Engine, io: Io, f: Flight, state: State, a: Action, slices: Record<string, SliceInfo>): Promise<boolean> {
+async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Record<string, SliceInfo>): Promise<boolean> {
   const A = state.attempt
+  const io = ctx.io
   const record = async (event: FlightEvent) => appendEvent(io, f, event)
-  const b = await base($, f)
+  const b = await base(ctx, f)
   const blocked = (slice: string, reason: string) => record(ev.blocked(b, { attempt: A, slice, kind: 'infra', reason }))
   const merged = (slice: string, r: { ok: true; commit: string } | { ok: false; failed: string[] }) =>
     record(ev.merge(b, { attempt: A, slice, ok: r.ok, commit: r.ok ? r.commit : '', failed: r.ok ? [] : r.failed }))
@@ -137,7 +149,7 @@ async function perform($: Engine, io: Io, f: Flight, state: State, a: Action, sl
     const st = await judge(io, f, 'slice-gate', args, wt.path)
     if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
     const prompt = executorPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, continuation: a.continuation })
-    const r = await spawnHere($, f, 'executor', wt.path, prompt, `${f.change} ${a.slice}`)
+    const r = await ctx.spawn({ f, role: 'executor', cwd: wt.path, prompt, description: `${f.change} ${a.slice}` })
     if (r.agentId === undefined) return blocked(a.slice, `派发执行体被拒：${r.deny ?? '没有 agentId'}`)
     return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'executor', agent: r.agentId, model: f.model, worktree: wt.path }))
   }
@@ -148,7 +160,7 @@ async function perform($: Engine, io: Io, f: Flight, state: State, a: Action, sl
     if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
     const conflicts = p.conflicts.length ? p.conflicts : a.conflicts
     const prompt = resolverPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, conflicts })
-    const r = await spawnHere($, f, 'resolver', p.path, prompt, `${f.change} ${a.slice} 解冲突`)
+    const r = await ctx.spawn({ f, role: 'resolver', cwd: p.path, prompt, description: `${f.change} ${a.slice} 解冲突` })
     if (r.agentId === undefined) return blocked(a.slice, `派发解冲突 agent 被拒：${r.deny ?? '没有 agentId'}`)
     return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'resolver', agent: r.agentId, model: f.model, worktree: p.path }))
   }
@@ -174,18 +186,24 @@ async function perform($: Engine, io: Io, f: Flight, state: State, a: Action, sl
     return merged('fix', await mergeFix(io, f, `blocking=${blocking}`))
   }
   if (a.kind === 'blocked') return record(ev.blocked(b, { attempt: A, slice: a.slice, kind: a.blockKind, reason: a.reason }))
-  await landingHere($, f, a)
+  // dispatch reviewer / fixer、final、land、halt
+  await runLandingAction(ctx, f, a)
   return true
 }
 
 async function driveNow($: Engine, f: Flight): Promise<void> {
-  const io = ioHere($)
+  const ctx = ctxOf($)
+  const io = ctx.io
+  let seen = -1
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const ledger = await readLedger(io, f)
     if ('error' in ledger) {
-      await landingHere($, f, { kind: 'halt', reason: `账本读取失败：${firstLine(ledger.error)}` })
+      await runLandingAction(ctx, f, { kind: 'halt', reason: `账本读取失败：${firstLine(ledger.error)}` })
       return
     }
+    // 防空转：上一轮的动作没让账本多出事件（如写入总失败）→ 停下，不重复执行同一批动作
+    if (ledger.events.length === seen) return
+    seen = ledger.events.length
     const state = reduce(ledger.events)
     if (state.takeoff === undefined) return
     showStatus($, f, state)
@@ -194,7 +212,7 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     const fpNow = (await judge(io, f, 'plan_fp', ['--change-dir', absChangeDir(f)], f.changeTree)).stdout.trim()
     const actions = nextActions(state, { waves: state.takeoff.waves as string[][], deps }, fpNow)
     if (!actions.length) return
-    for (const a of actions) if (!(await perform($, io, f, state, a, slices))) return
+    for (const a of actions) if (!(await perform(ctx, f, state, a, slices))) return
   }
 }
 
@@ -219,7 +237,8 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   }
   if (isOlder(version, VERSION_FLOOR)) return `flight：Claude Code ${version} 低于 ${VERSION_FLOOR}，不起飞`
 
-  const io = ioHere($)
+  const ctx = ctxOf($)
+  const io = ctx.io
   const cwd = await $.session.cwd()
   const all = await trees(io, cwd)
   const main = all[0]
@@ -291,7 +310,7 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
     if (commit.exitCode !== 0) return `flight：提交 approve 记录失败：${firstLine(commit.stderr || commit.stdout)}`
   }
   const fp = (await judge(io, flight, 'plan_fp', ['--change-dir', abs], tree.path)).stdout.trim()
-  const b = await base($, flight)
+  const b = await base(ctx, flight)
   if (!(await appendEvent(io, flight, ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model })))) return 'flight：写 takeoff 事件失败，不起飞'
   await drive($, flight)
   return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · attempt ${attempt}`
@@ -300,21 +319,47 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
 export function registerOrchestrator(on: On): void {
   on('agent.offer', ($, e, next) => (HIDDEN.includes(e.agent) ? { isOffered: false } : next(e)))
 
+  // 起飞异常一律留在地面作答，不把命令交给模型；只有 PASS_THROUGH 参数才 next(e)
   on('command.run', { command: 'opsx-apply' }, async ($, e, next) => {
-    const args = (e.args ?? '').split(/\s+/).filter(Boolean)
+    const args = argsOf(e.args)
     if (args.some(a => PASS_THROUGH.includes(a))) return next(e)
-    return { text: await takeoff($, args) }
+    try {
+      return { text: await takeoff($, args) }
+    } catch (err) {
+      return { text: `flight：起飞异常，不起飞（${firstLine(err instanceof Error ? err.message : String(err))}）` }
+    }
+  }).catch(($, e, next) => (argsOf(e.args).some(a => PASS_THROUGH.includes(a)) && !next.called ? next(e) : { text: 'flight：起飞异常，不起飞' }))
+
+  // register.tsx 已有无 matcher 的 session.start；同事件第二个 hook 须带 matcher（3a S8 实测），用恒真的 cwd matcher
+  on('session.start', { cwd: /^/ }, async ($, e, next) => {
+    try {
+      await $.tool.register({ ...FINDINGS_TOOL, isDeferred: false })
+    } catch {
+      // 注册不了时评审员收口被提醒一次后放行，结束时状态机记 review:<S> 阻断，不拖住飞行
+    }
+    return next(e)
   })
 
+  on('tool.call', { tool: `mcp__flight__${FINDINGS_TOOL.name}` }, async ($, e) => {
+    const ctx = ctxOf($)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    return onFindings(ctx, agentId ? await flightOfAgent(ctx.io, agentId) : undefined, agentId, e)
+  }).catch(() => ({ deny: 'flight：评审回收失败' }))
+
   on('classic.SubagentStop', async ($, e, next) => {
-    const io = ioHere($)
+    const ctx = ctxOf($)
+    const io = ctx.io
     const found = await flightOfAgent(io, e.agent_id)
     if (found === undefined) return next(e)
     const who = agentOf(reduce(found.events), e.agent_id)
-    if (who === undefined || (who.role !== 'executor' && who.role !== 'resolver')) return next(e)
+    if (who === undefined) return next(e)
+    if (who.role !== 'executor' && who.role !== 'resolver') {
+      const r = await onLandingStop(ctx, found, e.agent_id)
+      return r?.block ? { ...(await next(e)), block: r.block } : next(e)
+    }
     const f = found.flight
     const gate = await runGate(io, f, who.slice, who.worktree)
-    const event = ev.gate(await base($, f), { attempt: who.attempt, agent: e.agent_id, ...gate })
+    const event = ev.gate(await base(ctx, f), { attempt: who.attempt, agent: e.agent_id, ...gate })
     await appendEvent(io, f, event)
     const verdict = stopVerdict(reduce([...found.events, event]), e.agent_id, gate)
     if (verdict.kind === 'block') return { ...(await next(e)), block: verdict.text }
@@ -324,14 +369,14 @@ export function registerOrchestrator(on: On): void {
   // register.tsx 已有无 matcher 的 turn.complete（主会话刷新批准带）；同事件第二个 hook 须带 matcher，这里只接子 agent 的结束
   on('turn.complete', { agentId: /./ }, async ($, e, next) => {
     if (!e.agentId) return next(e)
-    const io = ioHere($)
-    const found = await flightOfAgent(io, e.agentId)
+    const ctx = ctxOf($)
+    const found = await flightOfAgent(ctx.io, e.agentId)
     if (found === undefined) return next(e)
     const r = await next(e)
     const f = found.flight
     const who = agentOf(reduce(found.events), e.agentId)
     const model = (e.usage as { model?: string } | undefined)?.model ?? null
-    await appendEvent(io, f, ev.ended(await base($, f), { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
+    await appendEvent(ctx.io, f, ev.ended(await base(ctx, f), { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
     await drive($, f)
     return r
   })
