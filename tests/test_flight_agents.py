@@ -78,3 +78,26 @@ def test_prompts_reviewer_resolver_fixer():
     # When: 分别生成评审员、解冲突与批量修复提示词
     # Then: 评审员含 c1、S1 切片包路径与 submit_findings；解冲突含 a.py 与 git commit --no-edit；修复含该 finding 的 summary
     assert_ts_passed("prompts-reviewer-resolver-fixer")
+
+# ---------------------------------------------------------------- flight-orchestrator-wiring
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_prompts_reviewer_diffs_against_first_parent():
+    # Given: S1 合回后的合并提交 c1
+    # When: 生成评审员提示词
+    # Then: 含 git diff c1^1 c1，不含 git show c1
+    assert_ts_passed("prompts-reviewer-diffs-against-first-parent")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：reviewer.md 仍用 git show")
+def test_reviewer_body_treats_missing_diff_as_high():
+    # Given: template/plugins/flight/agents/reviewer.md
+    body = parse("reviewer")[1]
+
+    # When: 读它的正文
+    found = {w: (w in body) for w in ("^1", "取 diff 失败", "HIGH", "git show")}
+
+    # Then: 含 ^1、「取 diff 失败」与 HIGH，不含 git show
+    assert found == {"^1": True, "取 diff 失败": True, "HIGH": True, "git show": False}, found

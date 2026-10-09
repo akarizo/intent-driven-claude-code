@@ -60,3 +60,30 @@ def test_flight_types_hidden_from_model():
     # When: 引擎询问是否向模型提供 flight:executor / reviewer / fixer 与 general-purpose
     # Then: 三个飞行类型都不提供；general-purpose 不干预
     assert_ts_passed("flight-types-hidden-from-model")
+
+# ---------------------------------------------------------------- flight-orchestrator-wiring
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_takeoff_exception_stays_grounded():
+    # Given: 起飞检查全部通过，派发 agent 时抛异常
+    # When: 人发出 /opsx-apply demo
+    # Then: 插件回复含「异常」，命令没有交给模型
+    assert_ts_passed("takeoff-exception-stays-grounded")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_drive_hands_landing_actions():
+    # Given: S1 门禁绿，合回成功
+    # When: 处理 S1 执行体的结束
+    # Then: 以 flight:reviewer 在 change worktree 派发评审员；账本追加 role reviewer、slice S1 的 dispatch
+    assert_ts_passed("drive-hands-landing-actions")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_drive_stops_without_progress():
+    # Given: update-ref 一直旧值不符（账本写入总失败）
+    # When: 处理一个执行体的结束
+    # Then: drive 读账本不超过 2 次就停止
+    assert_ts_passed("drive-stops-without-progress")
