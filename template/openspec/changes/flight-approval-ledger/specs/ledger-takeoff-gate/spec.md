@@ -27,7 +27,7 @@ Rule: 证据只来自账本，判不出就不放行
 - **THEN** 以 3 退出，stderr 含「账本损坏」
 
 ### Requirement: PreToolUse 拦截未批准的起飞派发
-hook 模式（无参数、stdin 为 PreToolUse 载荷）SHALL 沿用现有的起飞类派发识别（Workflow 带 `args.changeDir`；Agent / Task 派 `slice-executor` 或 `integrator`）与 change 目录定位；判定不成立时输出 `permissionDecision: deny`，理由与 CLI 一致。载荷里的转录 SHALL NOT 影响判定。hook 自身异常 SHALL 放行（坏门禁不锁死派发）；但「没有批准记录」是判定结果而不是异常，SHALL 拒绝。
+hook 模式（无参数、stdin 为 PreToolUse 载荷）SHALL 沿用现有的起飞类派发识别（Workflow 带 `args.changeDir`；Agent / Task 派 `slice-executor` 或 `integrator`）与 change 目录定位；判定不成立时输出 `permissionDecision: deny`，理由与 CLI 一致。载荷里的转录 SHALL NOT 影响判定。hook 自身异常（git 不可执行、脚本异常）SHALL 放行（坏门禁不锁死派发）；但「没有批准记录」与「git 能执行却读不了账本」（change 目录不在仓库内等）是判定结果而不是异常，SHALL 拒绝。
 Feature: 派发点上机械强制
 
 #### Scenario: takeoff-hook-denies-despite-transcript-approval

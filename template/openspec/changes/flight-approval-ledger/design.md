@@ -109,7 +109,7 @@ flowchart LR
 
 - 判据：`approved_fp(change_dir) == plan_fingerprint(change_dir)`，两侧都 import 判定器模块的同一函数（`takeoff-gate.py` 与 `plan_fp.py` / `ledger.py` 同目录，按路径加载）。
 - 删除：`human_text` / `approval_of` / `latest_approval` / `plan_mtime` / `locate_*` 与 `--session`。保留：`is_takeoff_dispatch`、`find_change_dir`、`emit_deny`、`main` 的参数分流。
-- fail 语义（沿用在役原则）：**没有批准记录 = 判定结果 → 拒绝**；git 不可用、脚本异常 = 门禁自身故障 → hook 放行、CLI 以 3 退出并说明。旧实现「拿不到转录就放行」的缺口随转录一起消失。
+- fail 语义（沿用在役原则）：**没有批准记录、账本不可读（git 能执行但返回非 0，如不在仓库内）= 判定结果 → 拒绝**；ref 指向非提交 = 账本损坏 → 拒绝；git 不可执行、脚本异常 = 门禁自身故障 → hook 放行、CLI 以 3 退出并说明。（2026-10-09 PR #35 评审补：账本不可读原被当作故障放行）旧实现「拿不到转录就放行」的缺口随转录一起消失。
 - 拒绝文案给出：`spec.html` 绝对路径、「在批准带按批准起飞」、`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project && claude plugin install flight@intent-driven -s project`。
 - 这是对原 `takeoff-approval` 能力（mechanical-takeoff-gates change）的整体取代；因 `openspec/specs/` 无已归档规格，以新能力 `ledger-takeoff-gate` 落规格，旧测试由 S4 改写。
 
