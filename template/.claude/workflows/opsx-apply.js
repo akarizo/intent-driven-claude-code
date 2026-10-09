@@ -192,13 +192,18 @@ const deferred = findings.filter((f) => f.severity !== 'CRITICAL' && f.severity 
 log(`评审 finding：阻断 ${blocking.length}，非阻断 ${deferred.length}`)
 let fix = null
 if (blocking.length) {
-  fix = await agent([
+  // fix 也是执行体：agent 调用抛错与未返回同样处理，重派一次；仍为空记 blocked（infra），Finalize 照常跑（mergeFix 自动跳过）
+  const runFix = (retry) => agent([
     rules('slice-executor') + `你在仓库根。一次性修复 OpenSpec change \`${change}\` 评审挡下的 ${blocking.length} 条 CRITICAL/HIGH，逐条 commit（fix: 前缀），不 push。`,
+    retry ? '上一轮 fix 执行体未返回（多为撞 maxTurns），它在临时 worktree 里的半成品没有合回：从头按 finding 清单修复。' : '',
     `先运行 \`python3 ${hooksDir}/slice-gate.py start fix --change-dir ${changeDir}\` 记录起点（fix 不受单切片所有权限制：slices.json 若无 fix 条目，start 会拒绝，此时跳过 start）。`,
     `finding 清单：${JSON.stringify(blocking)}`,
     // fix 在临时 worktree 里跑，timeline 记录进不了分支：record fix 由 finalize 合回后写
     `每条修复都要有先失败的测试；修完运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，把 JSON 原样返回。`,
-  ].join('\n'), { label: 'fix', isolation: 'worktree', schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
+  ].filter(Boolean).join('\n'), { label: retry ? 'fix:retry' : 'fix', isolation: 'worktree', schema: GATE, model: models.executor, effort: efforts.executor, ...typed('slice-executor') })
+    .catch(() => null)
+  fix = (await runFix(false)) || (await runFix(true))
+  if (!fix) blocked.push({ slice: 'fix', kind: 'infra', reason: 'fix agent 未返回（已重派一次）' })
 }
 
 phase('Finalize')

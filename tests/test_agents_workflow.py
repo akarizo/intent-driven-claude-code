@@ -484,3 +484,36 @@ def test_apply_docs_mirror_always_isolate():
         assert "isolation: worktree" in f and "单片" in f and "fix" in f, f
         assert "同 wave 多切片各自" not in f and "多切片 wave 各自" not in f, f
     assert "单片" in isolation and "fix" in isolation, isolation
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes 评审修复（fix 执行体抛错兜底 · fix 基点校验）
+
+def test_workflow_finalizes_when_fix_throws(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH；fix 首轮与重派的 agent 调用都抛错
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
+               ["^review:S1$", REVIEW_HIGH], ["^fix(:retry)?$", THROW]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: fix 与 fix:retry 各派发一次；final-gate 仍被派发；blocked 中 fix 的 kind 为 infra、原因含「未返回」与「已重派」
+    assert labels.count("fix") == 1 and labels.count("fix:retry") == 1, labels
+    assert "final-gate" in labels, labels
+    assert blocked["fix"]["kind"] == "infra" and "未返回" in blocked["fix"]["reason"] and "已重派" in blocked["fix"]["reason"], blocked
+
+
+def test_workflow_retries_fix_after_throw(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH；fix 首轮 agent 调用抛错，重派返回 commit 9…9
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
+               ["^review:S1$", REVIEW_HIGH], ["^fix$", THROW], ["^fix:retry$", gate_json("final", commit="9" * 40)]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    calls = {c["opts"]["label"]: c for c in out["calls"]}
+
+    # Then: fix:retry 带 isolation worktree；finalize 派发的 prompt 含 9…9；blocked 为空
+    assert calls["fix:retry"]["opts"].get("isolation") == "worktree", calls["fix:retry"]["opts"]
+    assert "9" * 40 in calls["final-gate"]["prompt"], calls["final-gate"]["prompt"]
+    assert out["result"]["blocked"] == [], out["result"]["blocked"]
