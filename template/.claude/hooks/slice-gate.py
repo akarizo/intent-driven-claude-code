@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -557,20 +558,76 @@ def _py_decorators(source, func):
     return None
 
 
-def _pytest_outcomes(root, targets):
-    """实跑 targets，返回 [(nodeid, PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)]；nodeid 以 root 为 rootdir。"""
+def _g7_runner(gate):
+    """G7 实跑用的 pytest 命令前缀：gate.pytest > 从 gate.test 推导 > 退回本解释器（附 warning）。"""
+    if gate.get("pytest"):
+        return shlex.split(gate["pytest"]), None
+    try:
+        toks = shlex.split(gate.get("test") or "")
+    except ValueError:
+        toks = []
+    for i, tok in enumerate(toks):
+        if os.path.basename(tok) in ("pytest", "py.test") or (tok == "pytest" and i > 0 and toks[i - 1] == "-m"):
+            head = toks[:i + 1]
+            if not any(t in ("&&", "||", ";", "|", "cd") or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t) for t in head):
+                return head, None
+            break
+    return [sys.executable, "-m", "pytest"], (
+        "G7：无法从 gate.test 推导 pytest 运行方式，已退回 %s -m pytest；可在 slices.json 的 gate.pytest 指定" % sys.executable)
+
+
+def _g7_timeout(gate):
+    try:
+        return float(os.environ["FLIGHT_G7_TIMEOUT"])
+    except (KeyError, ValueError):
+        pass
+    sec = gate.get("full_suite_sec")
+    if isinstance(sec, (int, float)) and not isinstance(sec, bool):
+        return max(120, 3 * sec)
+    return 600
+
+
+def _pytest_outcomes(root, targets, gate=None):
+    """实跑 targets，返回 (outcomes, rc, out_text, timed_out)；outcomes = [(nodeid, PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)]，nodeid 以 root 为 rootdir。"""
+    gate = gate or {}
+    prefix, _ = _g7_runner(gate)
+    timeout = _g7_timeout(gate)
     with tempfile.TemporaryDirectory(prefix="flight-g7-") as tmp:
         with open(os.path.join(tmp, "flight_g7_outcomes.py"), "w", encoding="utf-8") as f:
             f.write(G7_PLUGIN)
         out = os.path.join(tmp, "outcomes.jsonl")
         env = dict(os.environ, FLIGHT_G7_OUT=out,
                    PYTHONPATH=os.pathsep.join(p for p in (tmp, os.environ.get("PYTHONPATH")) if p))
-        subprocess.run([sys.executable, "-m", "pytest", "-p", "flight_g7_outcomes", "-p", "no:cacheprovider",
-                        "--rootdir", root, *targets], cwd=root, env=env, capture_output=True, text=True)
-        if not os.path.isfile(out):
-            return []
-        with open(out, "r", encoding="utf-8") as f:
-            return [tuple(json.loads(line)) for line in f if line.strip()]
+        argv = prefix + ["-p", "flight_g7_outcomes", "-p", "no:cacheprovider", "--rootdir", root, *targets]
+        timed_out, rc, text = False, None, ""
+        try:
+            # 独立进程组：超时整组杀掉，免得包装脚本的孙进程占住输出管道
+            p = subprocess.Popen(argv, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, start_new_session=True)
+        except OSError as e:
+            return [], None, str(e), False
+        try:
+            text, _ = p.communicate(timeout=timeout)
+            rc = p.returncode
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(p.pid, 9)
+            except OSError:
+                pass
+            p.communicate()
+            rc = p.returncode
+        outcomes = []
+        if os.path.isfile(out):
+            with open(out, "r", encoding="utf-8") as f:
+                outcomes = [tuple(json.loads(line)) for line in f if line.strip()]
+        return outcomes, rc, text or "", timed_out
+
+
+def _g7_diag(text):
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    hit = next((ln for ln in lines if "Error" in ln), lines[-1] if lines else "")
+    return hit[:200]
 
 
 def scenario_status(root, data, slice_ids=None):
@@ -620,19 +677,26 @@ def scenario_status(root, data, slice_ids=None):
             py_targets.append((sid, target))
         else:
             passed += 1
+    warnings = []
     if py_targets:
         # 文本检查认不出别名装饰器 / 测试体内 pytest.skip()：对 .py 目标实跑一次，只认 PASSED
-        outcomes = _pytest_outcomes(root, [t for _, t in py_targets])
+        gate = data.get("gate") or {}
+        _, warn = _g7_runner(gate)
+        if warn:
+            warnings.append(warn)
+        outcomes, rc, text, timed_out = _pytest_outcomes(root, [t for _, t in py_targets], gate)
         for sid, target in py_targets:
             outs = [o for i, o in outcomes if i == target or i.startswith(target + "[")]
-            if not outs:
-                violations.append("G7 scenario: %s → %s 未被收集运行" % (sid, target))
+            if timed_out:
+                violations.append("G7 scenario: %s → %s 运行超时（%g 秒）" % (sid, target, _g7_timeout(gate)))
+            elif not outs:
+                violations.append("G7 scenario: %s → %s 未被收集运行（pytest rc=%s：%s）" % (sid, target, rc, _g7_diag(text)))
             elif any(o != "PASSED" for o in outs):
                 bad = next(o for o in outs if o != "PASSED")
                 violations.append("G7 scenario: %s → %s 实际结果 %s（未真正通过）" % (sid, target, bad))
             else:
                 passed += 1
-    return violations, len(wanted), passed
+    return violations, len(wanted), passed, warnings
 
 
 def detect_test_cmd(root):
@@ -933,8 +997,9 @@ def cmd_gate(args):
     elif ev == "no_red":
         warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
     failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel, committed))
-    v7, _, _ = scenario_status(root, data, {args.slice})
+    v7, _, _, w7 = scenario_status(root, data, {args.slice})
     failed.extend(v7)
+    warnings.extend(w7)
     v8, ceilings = ceiling_rows(root, base)
     failed.extend(v8)
 
@@ -1018,8 +1083,9 @@ def cmd_final(args):
                 failed.append(f2)
             if w2:
                 warnings.append(w2)
-    v7, total, passed = scenario_status(root, data)
+    v7, total, passed, w7 = scenario_status(root, data)
     failed.extend(v7)
+    warnings.extend(w7)
     result = {"slice": "final", "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
               "failed": failed, "warnings": warnings,
               "scenarios": {"total": total, "passed": passed if not failed else min(passed, total - len(v7))},
