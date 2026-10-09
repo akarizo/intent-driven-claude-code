@@ -35,7 +35,8 @@ export function executorPrompt(x: {
 
 export function reviewerPrompt(x: { change: string; changeDir: string; slice: string; commit: string }): string {
   return [
-    `评审 OpenSpec change \`${x.change}\` 切片 ${x.slice} 合回后的 commit ${x.commit}（\`git show ${x.commit}\` 取回改动）。`,
+    `评审 OpenSpec change \`${x.change}\` 切片 ${x.slice} 合回后的 commit ${x.commit}（\`git diff ${x.commit}^1 ${x.commit}\` 取回改动：它是合并提交，必须对第一父取 diff）。`,
+    '取不到 diff 或 diff 为空：提交一条 severity 为 HIGH 的 finding，summary 写「取 diff 失败」，不得提交空列表。',
     `切片包：${slicePack(x.changeDir, x.slice)}（scenario 与 owns 是验收依据）。`,
     '只读；不重跑测试套件，至多 1 次定向抽查。',
     '必须调用 submit_findings 提交（severity / file / line / summary / fix），没有问题也提交空列表；提交后一行结束。',

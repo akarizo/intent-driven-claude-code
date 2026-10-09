@@ -44,3 +44,17 @@ test('prompts-reviewer-resolver-fixer', async () => {
   expect(resolve).toContain('git commit --no-edit')
   expect(fix).toContain('空 body 未校验')
 })
+
+test('prompts-reviewer-diffs-against-first-parent', async () => {
+  // Given: S1 合回后的 --no-ff 合并提交 c1
+  const x = { change: 'demo', changeDir: CHANGE_DIR, slice: 'S1', commit: 'c1' }
+
+  // When: 生成评审员提示词
+  const review = reviewerPrompt(x)
+
+  // Then: 含 git diff c1^1 c1；不含 git show；写明「取 diff 失败」；写明按 HIGH 提交
+  expect(review).toContain('git diff c1^1 c1')
+  expect(review).not.toContain('git show')
+  expect(review).toContain('取 diff 失败')
+  expect(review).toContain('HIGH')
+})
