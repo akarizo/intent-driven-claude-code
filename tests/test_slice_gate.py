@@ -991,7 +991,6 @@ def _gate(change, repo):
     return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=repo).stdout)
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现门禁结论留存")
 def test_gate_ok_records_result_ref(git_repo):
     # Given: 已 start 且实现完整的切片 S1（门禁会绿）
     change = gate_repo(git_repo)
@@ -1008,7 +1007,6 @@ def test_gate_ok_records_result_ref(git_repo):
     assert git(git_repo, "rev-parse", GATE_REF + "^") == out["commit"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现重派起跑找回门禁结论")
 def test_resume_start_returns_recorded_gate(git_repo, tmp_path):
     # Given: 切片 S1 在基点 X 上提交并门禁通过（结论已留存），随后从 X 新开一个干净 worktree（模拟隔离模式重派）
     change = gate_repo(git_repo)
@@ -1028,7 +1026,6 @@ def test_resume_start_returns_recorded_gate(git_repo, tmp_path):
     assert not (wt / ".openspec-slice").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现重派起跑找回门禁结论")
 def test_resume_start_ignores_foreign_gate_record(git_repo, tmp_path):
     # Given: 切片 S1 的门禁结论已留存（base X、commit C）；C 之后又有提交 Y，在 Y 上新开 worktree
     change = gate_repo(git_repo)
@@ -1050,7 +1047,6 @@ def test_resume_start_ignores_foreign_gate_record(git_repo, tmp_path):
     assert _ref(git_repo, GATE_REF) == recorded
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现门禁结论引用的生命周期")
 def test_record_and_fresh_start_clear_gate_ref(git_repo):
     # Given: 切片 S1 门禁通过、结论已留存
     change = gate_repo(git_repo)
