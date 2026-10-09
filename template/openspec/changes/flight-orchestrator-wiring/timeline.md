@@ -15,3 +15,5 @@
 2026-10-09T16:05:23Z	apply-done	blocked=0 blocking=3
 2026-10-09T16:08:57Z	apply-done	blocked=0 blocking=3（fix 已修）
 2026-10-09T16:09:06Z	ship	draft: 3 条 CRITICAL/HIGH 评审未闭环
+2026-10-09T16:11:07Z	ship	draft: final 过期：记录 406bc67099，HEAD e83119fe65; 3 条 CRITICAL/HIGH 评审未闭环
+2026-10-09T16:12:36Z	final	ok
