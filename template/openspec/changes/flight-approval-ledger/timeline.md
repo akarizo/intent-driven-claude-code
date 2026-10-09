@@ -10,3 +10,6 @@
 2026-10-09T05:07:49Z	gate	S4 ok
 2026-10-09T05:11:01Z	fix	blocking=1
 2026-10-09T05:12:05Z	final	ok
+2026-10-09T05:12:12Z	review	findings=12 blocking=1 deferred=11
+2026-10-09T05:13:14Z	final	ok
+2026-10-09T05:13:16Z	apply-done	blocked=3 blocking=1
