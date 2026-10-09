@@ -2,8 +2,6 @@
 骨架：S4 改两份文档后去掉 xfail 标记。"""
 import re
 
-import pytest
-
 from conftest import ROOT
 
 COMMAND = ROOT / "template" / ".claude" / "commands" / "opsx-apply.md"
@@ -17,7 +15,6 @@ def preamble(path):
     return text[: m.start()] if m else text
 
 
-@pytest.mark.xfail(strict=True, reason="S4：文档尚未写明插件接管")
 def test_apply_docs_describe_plugin_engine():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     docs = {p.name: preamble(p) for p in (COMMAND, SKILL)}
