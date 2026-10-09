@@ -5,8 +5,8 @@
 
 ## 切片
 
-- [ ] S1 land.ts 导出只提交飞行记录的函数；准备解冲突现场不吞非冲突的合并失败 （deps: - · verify: `python3 -m pytest -q tests/test_flight_land.py tests/test_flight_plugin.py`）
-- [ ] S2 评审员看第一父 diff：提示词与 reviewer 定义改用 git diff <commit>^1 <commit>，取不到报 HIGH （deps: - · verify: `python3 -m pytest -q tests/test_flight_agents.py tests/test_flight_plugin.py`）
-- [ ] S3 io.ts：按 agent 找飞行只靠账本；删除收 $ 的 ioOf / spawnAgent；CAS 测试改验以新链尾为父 （deps: - · verify: `python3 -m pytest -q tests/test_flight_io.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py`）
-- [ ] S4 landing.tsx 改为只收 Ctx 的落地逻辑：评审回收、评审员与修复收口、派评审员与修复、final（先提交记录）、落地接 /pr-ship、停飞 （deps: S1 · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_core.py tests/test_flight_plugin.py`）
-- [ ] S5 接线：orchestrator.tsx 造 Ctx、注册 submit_findings、收口与落地动作转给 landing、起飞异常不落回模型、drive 不空转；收窄批准带断言；版本 0.2.0 （deps: S3, S4 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_landing.py tests/test_flight_io.py`）
+- [x] S1 land.ts 导出只提交飞行记录的函数；准备解冲突现场不吞非冲突的合并失败 （deps: - · verify: `python3 -m pytest -q tests/test_flight_land.py tests/test_flight_plugin.py`）
+- [x] S2 评审员看第一父 diff：提示词与 reviewer 定义改用 git diff <commit>^1 <commit>，取不到报 HIGH （deps: - · verify: `python3 -m pytest -q tests/test_flight_agents.py tests/test_flight_plugin.py`）
+- [x] S3 io.ts：按 agent 找飞行只靠账本；删除收 $ 的 ioOf / spawnAgent；CAS 测试改验以新链尾为父 （deps: - · verify: `python3 -m pytest -q tests/test_flight_io.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py`）
+- [x] S4 landing.tsx 改为只收 Ctx 的落地逻辑：评审回收、评审员与修复收口、派评审员与修复、final（先提交记录）、落地接 /pr-ship、停飞 （deps: S1 · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_core.py tests/test_flight_plugin.py`）
+- [x] S5 接线：orchestrator.tsx 造 Ctx、注册 submit_findings、收口与落地动作转给 landing、起飞异常不落回模型、drive 不空转；收窄批准带断言；版本 0.2.0 （deps: S3, S4 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_landing.py tests/test_flight_io.py`）

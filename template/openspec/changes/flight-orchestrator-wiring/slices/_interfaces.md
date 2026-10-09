@@ -159,3 +159,40 @@ landing.tsx
 - `export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined>` — 落地 Stop 判定
 - `export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void>` — 执行落地动作
 core.ts / register.tsx 本片仅小改，签名见源文件（`export const register: Register`）
+
+## S5 orchestrator.tsx (template/plugins/flight/hooks/)
+
+[33]{name,kind,signature}:
+  Engine,type,type Engine = EngineInterface
+  Ev,type,"type Ev = State['events'][number]"
+  SliceInfo,type,type SliceInfo =
+  absChangeDir,fn,"const absChangeDir = (f: Flight) => `$"
+  argsOf,fn,"const argsOf = (raw: string | undefined) =>"
+  base,fn,"async function base(ctx: Ctx, f: Flight)"
+  blocked,fn,"const blocked = (slice: string, reason: string) => record(ev.blocked(b,"
+  ctxOf,fn,"function ctxOf($: Engine): Ctx"
+  done,fn,"const done = (s: string) =>"
+  drive,fn,"function drive($: Engine, f: Flight): Promise<void>"
+  driveNow,fn,"async function driveNow($: Engine, f: Flight): Promise<void>"
+  firstLine,fn,"const firstLine = (s: string) =>"
+  gateJsonOf,fn,"function gateJsonOf(e: Ev): GateJson"
+  inA,fn,"const inA = (e: Ev) =>"
+  ioHere,fn,"function ioHere($: Engine): Io"
+  isOlder,fn,"function isOlder(a: string, b: string): boolean"
+  lastOkGate,fn,"function lastOkGate(state: State, slice: string): GateJson | undefined"
+  merged,fn,"const merged = (slice: string, r:"
+  ofA,fn,"const ofA = (e: FlightEvent) =>"
+  owns,fn,"const owns = (slice: string) =>"
+  perform,fn,"async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Record<string, SliceInfo>): Promise<boolean>"
+  read,fn,async read(path)
+  record,fn,"const record = async (event: FlightEvent) =>"
+  registerOrchestrator,fn,"function registerOrchestrator(on: On): void"
+  run,fn,"async run(argv, opts ="
+  runGate,fn,"async function runGate(io: Io, f: Flight, slice: string, worktree: string): Promise<GateJson>"
+  showStatus,fn,"function showStatus($: Engine, f: Flight, state: State): void"
+  slicesOf,fn,"async function slicesOf(io: Io, f: Flight): Promise<Record<string, SliceInfo>>"
+  spawn,fn,async spawn(
+  status,fn,async status(text)
+  takeoff,fn,"async function takeoff($: Engine, args: string[]): Promise<string>"
+  toast,fn,async toast(text)
+  write,fn,"async write(path, text)"

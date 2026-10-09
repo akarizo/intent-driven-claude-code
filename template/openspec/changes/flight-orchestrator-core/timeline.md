@@ -17,3 +17,4 @@
 2026-10-09T13:45:56Z	final	red
 2026-10-09T13:48:05Z	apply-done	halted: final 34/41（S8 blocked；fix 未返回；首次 final 红因 mod 灰度开关被存成关闭）
 2026-10-09T14:31:52Z	final	ok
+2026-10-09T16:08:57Z	final	ok
