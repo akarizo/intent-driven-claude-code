@@ -1,12 +1,9 @@
 """flight 状态机核心（scenario: flight-state-machine#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
-骨架：S2 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
+S2 已实现：骨架的 xfail 标记已去。"""
 from test_flight_plugin import assert_ts_passed
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_dispatches_first_wave():
     # Given: waves [[S1, S2], [S3]]，S3 依赖 S1；账本只有 approve 与 attempt 1 的 takeoff
     # When: 求下一批动作
@@ -14,7 +11,6 @@ def test_core_dispatches_first_wave():
     assert_ts_passed("core-dispatches-first-wave")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_blocks_dependents_of_blocked():
     # Given: attempt 1 里 S1 已 blocked（gate），S2 已合回
     # When: 求下一批动作
@@ -22,15 +18,15 @@ def test_core_blocks_dependents_of_blocked():
     assert_ts_passed("core-blocks-dependents-of-blocked")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_limits_stop_blocks_to_two():
     # Given: 执行体 A 已有两条收口门禁红结论且都被续修
     # When: A 第三次收口门禁仍红（G7 x）
     # Then: 判放行；A 结束后 S1 记 blocked（gate），原因含 G7 x
     assert_ts_passed("core-limits-stop-blocks-to-two")
+    assert_ts_passed("core-limits-stop-blocks-to-two/after-end")
+    assert_ts_passed("core-limits-stop-blocks-to-two/second-red-blocks")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_respawns_once_after_silent_end():
     # Given: 执行体 A 结束，本轮没有收口门禁结论
     # When: 求下一批动作，再记入门禁红结论
@@ -38,7 +34,6 @@ def test_core_respawns_once_after_silent_end():
     assert_ts_passed("core-respawns-once-after-silent-end")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_reviews_fixes_then_finals():
     # Given: 全部切片已合回；S1 评审 1 条 HIGH，S2 评审 1 条 LOW
     # When: 依次推进
@@ -46,7 +41,6 @@ def test_core_reviews_fixes_then_finals():
     assert_ts_passed("core-reviews-fixes-then-finals")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_halts_on_final_red():
     # Given: 最新 final 事件 ok 为 false，failed 为 G2 lint
     # When: 求下一批动作
@@ -54,7 +48,6 @@ def test_core_halts_on_final_red():
     assert_ts_passed("core-halts-on-final-red")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_halts_on_plan_change():
     # Given: takeoff 指纹 F，当前计划指纹 G
     # When: 求下一批动作
@@ -62,7 +55,6 @@ def test_core_halts_on_plan_change():
     assert_ts_passed("core-halts-on-plan-change")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_continues_from_previous_attempt():
     # Given: attempt 1 里 S1 已合回且有评审，S2 已派发无结论；之后有 attempt 2 的 takeoff
     # When: 求下一批动作
@@ -70,7 +62,6 @@ def test_core_continues_from_previous_attempt():
     assert_ts_passed("core-continues-from-previous-attempt")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_builds_ledger_events():
     # Given: 一次派发、一次门禁结论、一次 agent 结束
     # When: 用事件构造函数生成三条事件
@@ -78,7 +69,6 @@ def test_core_builds_ledger_events():
     assert_ts_passed("core-builds-ledger-events")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_core_reports_routing_mismatch():
     # Given: takeoff 主模型 opus，一个执行体 ended 的实际模型为 claude-sonnet-5-5
     # When: 求收口阻断项
