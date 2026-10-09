@@ -1,7 +1,11 @@
 """账本只读读取与结构校验（scenario: flight-ledger#*）。骨架：S2 实现 ledger.py 后逐条去掉 xfail 标记。"""
+import importlib.util
 import json
+import subprocess
 
-from conftest import approve_event, commit_all, git, ledger_append, make_change, run_hook
+import pytest
+
+from conftest import ROOT, approve_event, commit_all, git, ledger_append, make_change, run_hook
 
 F1, F2 = "a" * 64, "b" * 64
 
@@ -140,3 +144,80 @@ def test_ledger_verify_rejects_ref_to_non_commit(git_repo):
     # Then: 以 4 退出（账本损坏），stderr 含「引用不指向提交」
     assert p.returncode == 4, (p.stdout, p.stderr)
     assert "引用不指向提交" in p.stderr
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: approval-chain-hardening#ledger-*）
+# 骨架：S4 实现后逐条去掉 xfail 标记。
+
+def _raw_event_commit(repo, change, raw):
+    """往账本追加一个 event.json 为原始字节 raw 的提交（造非 UTF-8 事件），返回提交 sha。"""
+    def plumb(*args, data=None):
+        return subprocess.run(["git", *args], cwd=repo, input=data, capture_output=True, check=True).stdout.decode().strip()
+
+    blob = plumb("hash-object", "-w", "--stdin", data=raw)
+    tree = plumb("mktree", data=("100644 blob %s\tevent.json\n" % blob).encode())
+    commit = plumb("commit-tree", tree, "-m", "raw")
+    plumb("update-ref", "refs/flight/%s/ledger" % change, commit)
+    return commit
+
+
+def _load_hooks_ledger():
+    spec = importlib.util.spec_from_file_location("hooks_ledger_under_test", ROOT / "template" / ".claude" / "hooks" / "ledger.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：非 UTF-8 事件判账本损坏")
+def test_ledger_non_utf8_event_is_corrupt(git_repo):
+    # Given: demo 的账本唯一提交里，event.json 的内容是非 UTF-8 字节
+    d = make_change(git_repo)
+    _raw_event_commit(git_repo, "demo", b"\xff\xfe{}")
+
+    # When: 运行 ledger.py verify
+    p = ledger("verify", d)
+
+    # Then: 以 4 退出，stderr 含「账本损坏」
+    assert p.returncode == 4, (p.returncode, p.stderr)
+    assert "账本损坏" in p.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：悬空 ref 判账本损坏")
+def test_ledger_dangling_ref_is_corrupt(git_repo):
+    # Given: demo 的账本 ref 指向一个仓库里不存在的对象（git update-ref 拒绝这样写，故直接写 ref 文件）
+    d = make_change(git_repo)
+    ref_file = git_repo / ".git" / "refs" / "flight" / "demo" / "ledger"
+    ref_file.parent.mkdir(parents=True)
+    ref_file.write_text("1" * 40 + "\n", encoding="utf-8")
+
+    # When: 运行 ledger.py verify
+    p = ledger("verify", d)
+
+    # Then: 以 4 退出，stderr 含「账本损坏」
+    assert p.returncode == 4, (p.returncode, p.stderr)
+    assert "账本损坏" in p.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现：链尾只解析一次")
+def test_ledger_tip_matches_read_chain(git_repo, monkeypatch):
+    # Given: demo 的账本链尾是批准 F1 的提交 T1；读取过程中（rev-list 之后）另一个写入方追加了批准 F2 的提交 T2
+    d = make_change(git_repo)
+    t1 = ledger_append(git_repo, "demo", approve_event("demo", F1))
+    mod = _load_hooks_ledger()
+    real = mod._git
+    raced = []
+
+    def racing(change_dir, *args, **kwargs):
+        out = real(change_dir, *args, **kwargs)
+        if args and args[0] == "rev-list" and not raced:
+            raced.append(ledger_append(git_repo, "demo", approve_event("demo", F2)))
+        return out
+
+    monkeypatch.setattr(mod, "_git", racing)
+
+    # When: 调用 latest_approval
+    event, tip = mod.latest_approval(str(d))
+
+    # Then: 确实发生了并发追加；返回的事件是 F1，返回的链尾是 T1
+    assert raced and raced[0] != t1, raced
+    assert event["fp"] == F1 and tip == t1, (event, tip, t1)

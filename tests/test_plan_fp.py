@@ -103,3 +103,21 @@ def test_fp_cli_short_is_prefix(tmp_path):
     assert re.fullmatch(r"[0-9a-f]{64}", full), full
     assert short == full[:8]
     assert bad.returncode == 2 and bad.stderr.strip()
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: approval-chain-hardening#plan-fp-escapes-glob-metachars）
+# 骨架：S4 实现后去掉 xfail 标记。
+
+@pytest.mark.xfail(strict=True, reason="S4 未实现 glob 转义")
+def test_plan_fp_escapes_glob_metachars(tmp_path):
+    # Given: change 目录位于路径含 [ 与 ] 的目录「My [Projects]」下
+    d = make_change(tmp_path / "My [Projects]")
+
+    # When: 先算一次指纹，再改 specs/cap/spec.md 后再算一次
+    before = fp(d)
+    spec = d / "specs" / "cap" / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "- **AND** 新增一步\n", encoding="utf-8")
+    after = fp(d)
+
+    # Then: 两次指纹不同
+    assert before != after

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "change": "flight-integrity-fixes",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 50.0
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "门禁结论留存到 git ref，重派起跑时找回",
+      "scenarios": [
+        "executor-noreturn-recovery#gate-ok-records-result-ref",
+        "executor-noreturn-recovery#resume-start-returns-recorded-gate",
+        "executor-noreturn-recovery#resume-start-ignores-foreign-gate-record",
+        "executor-noreturn-recovery#record-and-fresh-start-clear-gate-ref"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "G7 以 scenario 测试的实际运行结果为准",
+      "scenarios": [
+        "scenario-outcome-gate#g7-rejects-aliased-xfail",
+        "scenario-outcome-gate#g7-rejects-imperative-skip",
+        "scenario-outcome-gate#g7-gate-checks-own-slice-outcome"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "工作流：抛错按未返回重派、执行体一律隔离、fix 合回后再 final；文档同步",
+      "scenarios": [
+        "executor-noreturn-recovery#workflow-retries-when-executor-throws",
+        "executor-noreturn-recovery#workflow-blocks-after-retry-throws",
+        "executor-noreturn-recovery#apply-docs-describe-recovered-gate",
+        "executor-isolation#single-slice-wave-runs-isolated",
+        "executor-isolation#fix-runs-isolated-and-merges-before-final",
+        "executor-isolation#apply-docs-mirror-always-isolate"
+      ],
+      "owns": [
+        "template/.claude/workflows/opsx-apply.js",
+        "tests/test_agents_workflow.py",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/skills/openspec-git-discipline/SKILL.md",
+        "template/.claude/agents/slice-executor.md",
+        "template/.claude/agents/integrator.md"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_agents_workflow.py tests/test_template_docs.py tests/test_ship_verdict.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "批准链 Python 侧：指纹 glob 转义、账本异常对象判损坏与链尾单次解析、Workflow 派发守卫测试",
+      "scenarios": [
+        "approval-chain-hardening#plan-fp-escapes-glob-metachars",
+        "approval-chain-hardening#ledger-non-utf8-event-is-corrupt",
+        "approval-chain-hardening#ledger-dangling-ref-is-corrupt",
+        "approval-chain-hardening#ledger-tip-matches-read-chain",
+        "approval-chain-hardening#takeoff-hook-guards-workflow-dispatch"
+      ],
+      "owns": [
+        "template/.claude/hooks/plan_fp.py",
+        "template/.claude/hooks/ledger.py",
+        "tests/test_plan_fp.py",
+        "tests/test_ledger.py",
+        "tests/test_approval_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_plan_fp.py tests/test_ledger.py tests/test_approval_gate.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "flight 插件：可批准项优先、读不到版本给提示、路径规范化、守卫覆盖门禁结论 ref",
+      "scenarios": [
+        "approval-chain-hardening#band-prefers-approvable-item",
+        "approval-chain-hardening#version-unreadable-shows-notice",
+        "approval-chain-hardening#guard-normalizes-ledger-paths",
+        "approval-chain-hardening#guard-denies-gate-record-writes"
+      ],
+      "owns": [
+        "template/plugins/flight/**",
+        "tests/test_flight_plugin.py",
+        ".claude-plugin/marketplace.json"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_plugin.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "install.sh：插件两步互不阻断、升级补缺失的 settings 顶层键",
+      "scenarios": [
+        "install-plugin-robustness#plugin-install-continues-after-marketplace-failure",
+        "install-plugin-robustness#plugin-install-failure-keeps-exit-zero",
+        "install-plugin-robustness#upgrade-adds-missing-template-settings-keys"
+      ],
+      "owns": [
+        "install.sh",
+        "tests/test_install.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_install.py",
+      "packet": "slices/S6.md"
+    }
+  ],
+  "scenario_tests": {
+    "executor-noreturn-recovery#gate-ok-records-result-ref": "tests/test_slice_gate.py::test_gate_ok_records_result_ref",
+    "executor-noreturn-recovery#resume-start-returns-recorded-gate": "tests/test_slice_gate.py::test_resume_start_returns_recorded_gate",
+    "executor-noreturn-recovery#resume-start-ignores-foreign-gate-record": "tests/test_slice_gate.py::test_resume_start_ignores_foreign_gate_record",
+    "executor-noreturn-recovery#record-and-fresh-start-clear-gate-ref": "tests/test_slice_gate.py::test_record_and_fresh_start_clear_gate_ref",
+    "executor-noreturn-recovery#workflow-retries-when-executor-throws": "tests/test_agents_workflow.py::test_workflow_retries_when_executor_throws",
+    "executor-noreturn-recovery#workflow-blocks-after-retry-throws": "tests/test_agents_workflow.py::test_workflow_blocks_after_retry_throws",
+    "executor-noreturn-recovery#apply-docs-describe-recovered-gate": "tests/test_agents_workflow.py::test_apply_docs_describe_recovered_gate",
+    "executor-isolation#single-slice-wave-runs-isolated": "tests/test_agents_workflow.py::test_single_slice_wave_runs_isolated",
+    "executor-isolation#fix-runs-isolated-and-merges-before-final": "tests/test_agents_workflow.py::test_fix_runs_isolated_and_merges_before_final",
+    "executor-isolation#apply-docs-mirror-always-isolate": "tests/test_agents_workflow.py::test_apply_docs_mirror_always_isolate",
+    "scenario-outcome-gate#g7-rejects-aliased-xfail": "tests/test_slice_gate.py::test_g7_rejects_aliased_xfail",
+    "scenario-outcome-gate#g7-rejects-imperative-skip": "tests/test_slice_gate.py::test_g7_rejects_imperative_skip",
+    "scenario-outcome-gate#g7-gate-checks-own-slice-outcome": "tests/test_slice_gate.py::test_g7_gate_checks_own_slice_outcome",
+    "approval-chain-hardening#plan-fp-escapes-glob-metachars": "tests/test_plan_fp.py::test_plan_fp_escapes_glob_metachars",
+    "approval-chain-hardening#ledger-non-utf8-event-is-corrupt": "tests/test_ledger.py::test_ledger_non_utf8_event_is_corrupt",
+    "approval-chain-hardening#ledger-dangling-ref-is-corrupt": "tests/test_ledger.py::test_ledger_dangling_ref_is_corrupt",
+    "approval-chain-hardening#ledger-tip-matches-read-chain": "tests/test_ledger.py::test_ledger_tip_matches_read_chain",
+    "approval-chain-hardening#takeoff-hook-guards-workflow-dispatch": "tests/test_approval_gate.py::test_takeoff_hook_guards_workflow_dispatch",
+    "approval-chain-hardening#band-prefers-approvable-item": "tests/test_flight_plugin.py::test_band_prefers_approvable_item",
+    "approval-chain-hardening#version-unreadable-shows-notice": "tests/test_flight_plugin.py::test_version_unreadable_shows_notice",
+    "approval-chain-hardening#guard-normalizes-ledger-paths": "tests/test_flight_plugin.py::test_guard_normalizes_ledger_paths",
+    "approval-chain-hardening#guard-denies-gate-record-writes": "tests/test_flight_plugin.py::test_guard_denies_gate_record_writes",
+    "install-plugin-robustness#plugin-install-continues-after-marketplace-failure": "tests/test_install.py::test_plugin_install_continues_after_marketplace_failure",
+    "install-plugin-robustness#plugin-install-failure-keeps-exit-zero": "tests/test_install.py::test_plugin_install_failure_keeps_exit_zero",
+    "install-plugin-robustness#upgrade-adds-missing-template-settings-keys": "tests/test_install.py::test_upgrade_adds_missing_template_settings_keys"
+  }
+}

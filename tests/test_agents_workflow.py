@@ -195,10 +195,16 @@ const calls = [];
 async function agent(prompt, opts) {
   calls.push({ prompt, opts });
   const label = (opts && opts.label) || '';
-  for (const [pat, reply] of input.replies) if (new RegExp(pat).test(label)) return reply;
+  for (const [pat, reply] of input.replies) {
+    if (!new RegExp(pat).test(label)) continue;
+    // 运行时实测（2.1.295，wf_393c81e6-c64）：执行体没调结构化输出时 agent() 抛错，不是返回 null
+    if (reply && reply.__throw__) throw new Error(reply.__throw__);
+    return reply;
+  }
   return null;
 }
-const parallel = (thunks) => Promise.all(thunks.map((t) => t()));
+// 同一实测：parallel 不因单个 thunk 抛错整体 reject，失败的位置得空值
+const parallel = (thunks) => Promise.all(thunks.map((t) => Promise.resolve().then(t).catch(() => null)));
 const phase = () => {};
 const log = () => {};
 (async () => { __BODY__ })()
@@ -374,3 +380,113 @@ def test_apply_docs_mirror_noreturn_retry():
     assert "--resume-checkpoint" in opening and "restored" in opening
     assert any(all(tool in e.get("matcher", "") for tool in ("Write", "Edit", "Bash")) for e in entries("PostToolUse"))
     assert entries("PostToolUseFailure")
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: executor-noreturn-recovery#workflow-* / apply-docs-describe-recovered-gate · executor-isolation#*）
+# 骨架：S3 实现后逐条去掉 xfail 标记。上方 HARNESS 已按运行时实测改为 agent() 可抛错、parallel 逐个兜底。
+
+THROW = {"__throw__": "agent({schema}): subagent completed without calling StructuredOutput (after in-conversation nudge)"}
+REVIEW_HIGH = {"findings": [{"severity": "HIGH", "file": "a.py", "line": 1, "summary": "漏判空值", "fix": "补判空"}]}
+
+
+def fallback_section(text):
+    i = text.index("Workflow 不可用")
+    return text[i:text.index("两条路径最终都产出", i)]
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：agent() 抛错未触发重派")
+def test_workflow_retries_when_executor_throws(tmp_path):
+    # Given: waves [[S1, S2], [S3]]；S1 首轮 agent 调用抛错（执行体没交回结构化结果），重派后门禁绿；S2、S3 一次绿
+    replies = [["^S1$", THROW], ["^S1:retry$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    execs = exec_prompts(out)
+
+    # Then: 派发了 S1:retry，其 start 带 --resume-checkpoint；blocked 为空
+    assert "S1:retry" in execs, sorted(execs)
+    cmds = start_cmds(execs["S1:retry"])
+    assert cmds and all("--resume-checkpoint" in c for c in cmds), cmds
+    assert out["result"]["blocked"] == [], out["result"]["blocked"]
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：agent() 抛错未触发重派")
+def test_workflow_blocks_after_retry_throws(tmp_path):
+    # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮与重派的 agent 调用都抛错
+    replies = [["^S1(:retry)?$", THROW], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(deps={"S3": ["S1"]}), replies)
+    labels = [c["opts"]["label"] for c in out["calls"]]
+    blocked = {b["slice"]: b for b in out["result"]["blocked"]}
+
+    # Then: S1 与 S1:retry 各派发一次；blocked 中 S1 的 kind 为 infra、原因含「未返回」与「已重派」；S3 记 blocked 且未派发
+    assert labels.count("S1") == 1 and labels.count("S1:retry") == 1, labels
+    s1 = blocked["S1"]
+    assert s1["kind"] == "infra" and "未返回" in s1["reason"] and "已重派" in s1["reason"], blocked
+    assert "S3" in blocked and "S3" not in labels
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：执行体与回退路径文档未写明找回的门禁结论与抛错重派")
+def test_apply_docs_describe_recovered_gate():
+    # Given: slice-executor.md、opsx-apply.md 与 openspec-apply-change/SKILL.md
+    fm, body = frontmatter(AGENTS / "slice-executor.md")
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 取执行体开工段与两份回退路径段
+    opening = body[body.index("## 开工"):body.index("## 纪律")]
+    fallbacks = [fallback_section(t) for t in (cmd, skill)]
+
+    # Then: 开工段写明「以 3 退出」时打印的是已留存的门禁结论、原样返回；两份回退路径都写明 agent 调用抛错与未返回同样重派
+    assert "以 3 退出" in opening and "留存" in opening and "原样" in opening, opening
+    assert all("抛错" in f for f in fallbacks), fallbacks
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：单片 wave 未隔离")
+def test_single_slice_wave_runs_isolated(tmp_path):
+    # Given: waves [[S1, S2], [S3]]，全部一次门禁绿，S3 的 commit 为 f…f
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3", commit="f" * 40)]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    calls = {c["opts"]["label"]: c for c in out["calls"]}
+    merges = [c for c in out["calls"] if c["opts"]["label"].startswith("integrate:")]
+
+    # Then: S3 的派发带 isolation worktree；wave 2 之后有一次合回派发，其 prompt 含 f…f
+    assert calls["S3"]["opts"].get("isolation") == "worktree", calls["S3"]["opts"]
+    assert any("f" * 40 in c["prompt"] for c in merges), [c["opts"]["label"] for c in merges]
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：fix 未隔离、final 前未合回")
+def test_fix_runs_isolated_and_merges_before_final(tmp_path):
+    # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH；fix 返回的 commit 为 9…9
+    replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
+               ["^review:S1$", REVIEW_HIGH], ["^fix$", gate_json("final", commit="9" * 40)]] + TAIL_REPLIES
+
+    # When: 用 mock agent 跑完整个工作流
+    out = run_workflow(tmp_path, flight_args(), replies)
+    calls = {c["opts"]["label"]: c for c in out["calls"]}
+    prompt = calls["final-gate"]["prompt"]
+
+    # Then: fix 的派发带 isolation worktree；finalize 派发的 prompt 含 9…9，且它出现在 slice-gate.py final 之前
+    assert calls["fix"]["opts"].get("isolation") == "worktree", calls["fix"]["opts"]
+    assert "9" * 40 in prompt and prompt.index("9" * 40) < prompt.index("slice-gate.py final"), prompt
+
+
+@pytest.mark.xfail(strict=True, reason="S3 未实现：回退路径与 git 纪律未同步一律隔离")
+def test_apply_docs_mirror_always_isolate():
+    # Given: opsx-apply.md、openspec-apply-change/SKILL.md 与 openspec-git-discipline/SKILL.md
+    cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
+    skill = (SKILLS / "openspec-apply-change" / "SKILL.md").read_text(encoding="utf-8")
+    rules = (SKILLS / "openspec-git-discipline" / "SKILL.md").read_text(encoding="utf-8")
+
+    # When: 取两份回退路径段与 git 纪律的 Worktree Isolation 节（临时 worktree 例外条款在其中）
+    fallbacks = [fallback_section(t) for t in (cmd, skill)]
+    isolation = rules[rules.index("## Worktree Isolation"):rules.index("## Gates")]
+
+    # Then: 两份回退路径都含 isolation: worktree 并点明单片 wave 与 fix 也隔离，且不再有「同 wave 多切片各自」「多切片 wave 各自」的限定；例外条款点明单片 wave 与 fix 同样适用
+    for f in fallbacks:
+        assert "isolation: worktree" in f and "单片" in f and "fix" in f, f
+        assert "同 wave 多切片各自" not in f and "多切片 wave 各自" not in f, f
+    assert "单片" in isolation and "fix" in isolation, isolation

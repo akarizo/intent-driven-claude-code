@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 
+import pytest
 
 from conftest import ROOT
 
@@ -157,3 +158,76 @@ def test_install_skips_enabled_plugin(tmp_path):
     assert p.returncode == 0, p.stderr
     assert plugin_calls(calls) == [], calls
     assert "flight@intent-driven 已启用" in p.stdout + p.stderr
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: install-plugin-robustness#*）
+# 骨架：S6 实现后逐条去掉 xfail 标记。
+
+def run_install_claude_failing(tmp_path, target, failing, *flags):
+    """claude 桩对 failing 里的 plugin 子命令（"marketplace" / "install"）返回 1，其余返回 0，逐行记录「工作目录|参数」。
+    返回 (CompletedProcess, 调用记录)。"""
+    bin_dir = tmp_path / "bin-stub"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "openspec").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (bin_dir / "openspec").chmod(0o755)
+    log = tmp_path / "claude-calls.log"
+    lines = ["#!/bin/sh", 'echo "$PWD|$*" >> "%s"' % log]
+    lines += ['[ "$2" = "%s" ] && exit 1' % word for word in failing]
+    lines.append("exit 0")
+    shim = bin_dir / "claude"
+    shim.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    shim.chmod(0o755)
+    env = {**os.environ, "PATH": path_without_real_claude(bin_dir)}
+    p = subprocess.run(["bash", str(ROOT / "install.sh"), *flags, str(target)],
+                       env=env, capture_output=True, text=True, timeout=120)
+    calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return p, calls
+
+
+@pytest.mark.xfail(strict=True, reason="S6 未实现：marketplace add 失败后仍执行 install")
+def test_plugin_install_continues_after_marketplace_failure(tmp_path):
+    # Given: 目标仓库未启用 flight 插件；claude 桩对 plugin marketplace add 返回 1、对 plugin install 返回 0
+    target = tmp_path / "proj"
+
+    # When: 运行 install.sh
+    p, calls = run_install_claude_failing(tmp_path, target, ["marketplace"])
+    out = p.stdout + p.stderr
+
+    # Then: 以 0 退出，plugin install flight@intent-driven -s project 仍被调用；输出里没有手动执行的指引
+    assert p.returncode == 0, out
+    assert any(PLUGIN_INSTALL in c for c in calls), calls
+    assert "手动执行" not in out, out
+
+
+@pytest.mark.xfail(strict=True, reason="S6 未实现：两步都失败时仍须都尝试")
+def test_plugin_install_failure_keeps_exit_zero(tmp_path):
+    # Given: 目标仓库未启用 flight 插件；claude 桩对 plugin marketplace add 与 plugin install 都返回 1
+    target = tmp_path / "proj"
+
+    # When: 运行 install.sh
+    p, calls = run_install_claude_failing(tmp_path, target, ["marketplace", "install"])
+    out = p.stdout + p.stderr
+
+    # Then: 以 0 退出，两条命令都被调用；输出含两条完整的手动命令
+    assert p.returncode == 0, out
+    assert any(MARKET_ADD in c for c in calls) and any(PLUGIN_INSTALL in c for c in calls), calls
+    assert "claude " + MARKET_ADD in out and "claude " + PLUGIN_INSTALL in out, out
+
+
+@pytest.mark.xfail(strict=True, reason="S6 未实现：升级补缺失的 settings 顶层键")
+def test_upgrade_adds_missing_template_settings_keys(tmp_path):
+    # Given: 已安装的目标仓库，用户把 .claude/settings.json 改成 {"env": {"MY_KEY": "1"}, "custom": true}
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    settings = target / ".claude" / "settings.json"
+    settings.write_text(json.dumps({"env": {"MY_KEY": "1"}, "custom": True}), encoding="utf-8")
+
+    # When: 运行 install.sh --upgrade
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+    data = json.loads(settings.read_text(encoding="utf-8"))
+
+    # Then: env 仍恰为 {"MY_KEY": "1"}、custom 仍为 true；补上了模板的 worktree 键 {"baseRef": "head"}
+    assert p.returncode == 0, p.stderr
+    assert data["env"] == {"MY_KEY": "1"} and data["custom"] is True, data
+    assert data.get("worktree") == {"baseRef": "head"}, data

@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 
+import pytest
 
 from conftest import ROOT
 
@@ -97,3 +98,38 @@ def test_version_floor_disables_band():
     # Then: 批准带不显示，出现含 2.1.295 的版本提示
     assert_ts_passed("version-floor-disables-band")
     assert_ts_passed("version-unreadable-disables-band")
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: approval-chain-hardening#band-* / version-* / guard-*）
+# 骨架：S5 在插件里写同名 TS 测试并实现后逐条去掉 xfail 标记。
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现")
+def test_band_prefers_approvable_item():
+    # Given: demo 可批准（spec.html 较早修改），zeta 所在 worktree 找不到 plan_fp.py（spec.html 较晚修改）
+    # When: 会话启动后绘制批准带
+    # Then: 显示 demo 与它的批准按钮，并注明另有 1 个无法批准
+    assert_ts_passed("band-prefers-approvable-item")
+
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现")
+def test_version_unreadable_shows_notice():
+    # Given: 读会话版本的调用失败
+    # When: 会话启动
+    # Then: 出现含「无法确认 Claude Code 版本」的提示，且批准带不显示
+    assert_ts_passed("version-unreadable-shows-notice")
+
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现")
+def test_guard_normalizes_ledger_paths():
+    # Given: 插件已加载
+    # When: 模型对反斜杠路径、含 // 的路径、含 /./ 的账本 ref 路径各发起一次 Write
+    # Then: 三次都被拒绝，理由含 ledger.py show
+    assert_ts_passed("guard-normalizes-ledger-paths")
+
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现")
+def test_guard_denies_gate_record_writes():
+    # Given: 插件已加载
+    # When: 模型发起 Bash `git update-ref refs/flight/demo/gate-S1 abc`，再发起 slice-gate.py gate 命令
+    # Then: 前者被拒绝、理由含 ledger.py show，后者照常执行
+    assert_ts_passed("guard-denies-gate-record-writes")
