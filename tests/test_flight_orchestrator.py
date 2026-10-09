@@ -82,3 +82,10 @@ def test_drive_stops_without_progress():
     # When: 处理一个执行体的结束
     # Then: drive 读账本不超过 2 次就停止
     assert_ts_passed("drive-stops-without-progress")
+
+
+def test_drive_halts_on_action_exception():
+    # Given: S1 合回后派发评审员时 agent.spawn 抛异常
+    # When: 处理执行体的结束（turn.complete）
+    # Then: 异常不冒到引擎；账本末条为 halt（原因含「动作异常」）
+    assert_ts_passed("drive-halts-on-action-exception")

@@ -354,3 +354,22 @@ test('drive-stops-without-progress', async ($, on) => {
   // Then: 本次处理调用 ledger.py show 至多 4 次（查 A 所属飞行 1 次 + 停飞动作 1 次 + drive 至多 2 轮），没有跑满 MAX_ROUNDS
   expect(log.runs.slice(before).filter(x => String(x.argv[1]).endsWith('/ledger.py') && x.argv[2] === 'show').length).toBeLessThanOrEqual(4)
 })
+
+test('drive-halts-on-action-exception', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；A 收口时 S1 门禁绿、合回无冲突；之后派发 agent 时 agent.spawn 抛出「spawn 炸了」
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+  w.spawnThrows = true
+
+  // When: 处理 A 的结束（turn.complete），drive 合回 S1 后派发评审员
+  const outcome = await $.turn.complete(ended('agent-1') as never).then(
+    () => 'resolved',
+    (err: unknown) => `rejected: ${String(err)}`,
+  )
+
+  // Then: 处理正常返回、异常不冒到引擎；账本末条为 halt，原因含「动作异常」
+  expect(outcome).toBe('resolved')
+  expect(log.events.at(-1)).toMatchObject({ ev: 'halt', reason: expect.stringContaining('动作异常') })
+})

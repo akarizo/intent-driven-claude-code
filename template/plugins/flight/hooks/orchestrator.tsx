@@ -212,7 +212,18 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     const fpNow = (await judge(io, f, 'plan_fp', ['--change-dir', absChangeDir(f)], f.changeTree)).stdout.trim()
     const actions = nextActions(state, { waves: state.takeoff.waves as string[][], deps }, fpNow)
     if (!actions.length) return
-    for (const a of actions) if (!(await perform(ctx, f, state, a, slices))) return
+    for (const a of actions) {
+      let progressed: boolean
+      try {
+        progressed = await perform(ctx, f, state, a, slices)
+      } catch (err) {
+        // 任一触发路径（起飞 / turn.complete / SubagentStop）的动作异常都先尽力停飞留痕，再抛给调用方
+        const msg = firstLine(err instanceof Error ? err.message : String(err))
+        await runLandingAction(ctx, f, { kind: 'halt', reason: `动作异常：${msg}` }).catch(() => undefined)
+        throw err
+      }
+      if (!progressed) return
+    }
   }
 }
 
@@ -379,5 +390,5 @@ export function registerOrchestrator(on: On): void {
     await appendEvent(ctx.io, f, ev.ended(await base(ctx, f), { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
     await drive($, f)
     return r
-  })
+  }).catch(($, e, next) => next(e))
 }
