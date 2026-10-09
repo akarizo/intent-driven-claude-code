@@ -161,7 +161,7 @@ def test_install_skips_enabled_plugin(tmp_path):
 
 
 # ---------------------------------------------------------------- flight-integrity-fixes（scenario: install-plugin-robustness#*）
-# 骨架：S6 实现后逐条去掉 xfail 标记。
+# S6 已实现：xfail 标记已去。
 
 def run_install_claude_failing(tmp_path, target, failing, *flags):
     """claude 桩对 failing 里的 plugin 子命令（"marketplace" / "install"）返回 1，其余返回 0，逐行记录「工作目录|参数」。
@@ -184,7 +184,6 @@ def run_install_claude_failing(tmp_path, target, failing, *flags):
     return p, calls
 
 
-@pytest.mark.xfail(strict=True, reason="S6 未实现：marketplace add 失败后仍执行 install")
 def test_plugin_install_continues_after_marketplace_failure(tmp_path):
     # Given: 目标仓库未启用 flight 插件；claude 桩对 plugin marketplace add 返回 1、对 plugin install 返回 0
     target = tmp_path / "proj"
@@ -199,7 +198,6 @@ def test_plugin_install_continues_after_marketplace_failure(tmp_path):
     assert "手动执行" not in out, out
 
 
-@pytest.mark.xfail(strict=True, reason="S6 未实现：两步都失败时仍须都尝试")
 def test_plugin_install_failure_keeps_exit_zero(tmp_path):
     # Given: 目标仓库未启用 flight 插件；claude 桩对 plugin marketplace add 与 plugin install 都返回 1
     target = tmp_path / "proj"
@@ -214,7 +212,6 @@ def test_plugin_install_failure_keeps_exit_zero(tmp_path):
     assert "claude " + MARKET_ADD in out and "claude " + PLUGIN_INSTALL in out, out
 
 
-@pytest.mark.xfail(strict=True, reason="S6 未实现：升级补缺失的 settings 顶层键")
 def test_upgrade_adds_missing_template_settings_keys(tmp_path):
     # Given: 已安装的目标仓库，用户把 .claude/settings.json 改成 {"env": {"MY_KEY": "1"}, "custom": true}
     target = tmp_path / "proj"
