@@ -18,7 +18,7 @@ const resolvePath = (f: Flight, slice: string) => `${f.mainTree}/.claude/worktre
 const resolveBranch = (f: Flight, slice: string) => `flight/${f.change}/${slice}-resolve`
 
 /** change 目录下这些文件有未提交改动时只 add 它们并提交；返回错误信息，无错为 undefined。 */
-async function commitRecords(io: Io, f: Flight, message: string, extra: readonly string[] = []): Promise<string | undefined> {
+export async function commitRecords(io: Io, f: Flight, message: string, extra: readonly string[] = []): Promise<string | undefined> {
   const rels = [...RECORD_FILES, ...extra].map(r => `${f.changeDir}/${r}`)
   const st = await git(io, f.changeTree, 'status', '--porcelain', '--untracked-files=all', '--', ...rels.map(r => `${f.changeTree}/${r}`))
   if (st.exitCode !== 0) return `git status 失败：${firstLine(st)}`
@@ -111,8 +111,11 @@ export async function prepareResolve(io: Io, f: Flight, slice: string): Promise<
   // ceiling: 解冲突 worktree 已存在（上次中断留下）时直接报错 -> 需要续用时改为检测 worktree list 并复用现场
   const add = await git(io, f.changeTree, 'worktree', 'add', '-b', resolveBranch(f, slice), path, f.branch)
   if (add.exitCode !== 0) return { error: `建解冲突 worktree 失败：${firstLine(add)}` }
-  await git(io, path, 'merge', '--no-ff', `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
-  return { path, conflicts: await unmerged(io, path) }
+  const m = await git(io, path, 'merge', '--no-ff', `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
+  if (m.exitCode === 0) return { error: '解冲突现场合并意外成功：无需解冲突' }
+  const conflicts = await unmerged(io, path)
+  if (!conflicts.length) return { error: `git merge 失败：${firstLine(m)}` }
+  return { path, conflicts }
 }
 
 /** 解冲突完成：无未合并文件且 HEAD 有两个父 → change worktree 里 merge --ff-only flight/<change>/<S>-resolve；之后同 mergeSlice 的 record 与接口摘要 */

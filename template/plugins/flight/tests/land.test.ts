@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-integration（land-*）。land.ts 只经 Io 做副作用，这里用假 Io 记录调用、按 argv 返回预设结果。
 import { expect, test } from 'claude-code/testing'
-import { closeout, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
+import { closeout, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
 import type { Flight, GateJson, Io, RunResult } from '../hooks/core'
 
 const CT = '/repo/.worktrees/demo'
@@ -106,6 +106,56 @@ test('land-aborts-conflict-and-prepares-resolver', async () => {
   expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S2-resolve', RESOLVE, 'worktree-demo'])
   expect(calls[find(calls, RESOLVE, 'merge', '--no-ff')].argv).toEqual(['git', '-C', RESOLVE, 'merge', '--no-ff', 'flight/demo/S2', '-m', 'integrate: S2'])
   expect(result).toEqual({ path: RESOLVE, conflicts: ['a.py'] })
+})
+
+test('land-prepare-resolve-reports-non-conflict-failure', async () => {
+  // Given: 解冲突 worktree 里重做 S2 合并时 git merge 退出 1，stderr 首行为 merge: flight/demo/S2 - not something we can merge；diff --diff-filter=U 无输出
+  const { io } = fakeIo({}, argv =>
+    has(argv, RESOLVE, 'merge', '--no-ff') ? { exitCode: 1, stderr: 'merge: flight/demo/S2 - not something we can merge\nmore' } : undefined,
+  )
+
+  // When: 准备 S2 的解冲突现场
+  const result = await prepareResolve(io, F, 'S2')
+
+  // Then: 返回 error「git merge 失败：<stderr 首行>」，不含冲突列表
+  expect(result).toEqual({ error: 'git merge 失败：merge: flight/demo/S2 - not something we can merge' })
+})
+
+test('land-prepare-resolve-rejects-clean-merge', async () => {
+  // Given: 解冲突 worktree 里重做 S2 合并时 git merge 退出 0（意外地无冲突）
+  const { io } = fakeIo({}, () => undefined)
+
+  // When: 准备 S2 的解冲突现场
+  const result = await prepareResolve(io, F, 'S2')
+
+  // Then: 返回 error「解冲突现场合并意外成功：无需解冲突」
+  expect(result).toEqual({ error: '解冲突现场合并意外成功：无需解冲突' })
+})
+
+test('land-commits-only-records', async () => {
+  // Given: status 报 change 目录的 slices/_interfaces.md 有改动，以及 change 目录外的 src/x.py 有改动
+  const status = ` M ${CD}/slices/_interfaces.md\n M src/x.py\n`
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status') ? { stdout: status } : undefined))
+
+  // When: 以「chore(flight): 记录」提交飞行记录
+  const result = await commitRecords(io, F, 'chore(flight): 记录')
+
+  // Then: 只 add change 目录内的 _interfaces.md；commit 带同一路径与该消息；返回 undefined
+  expect(calls[find(calls, 'add')].argv).toEqual(['git', '-C', CT, 'add', '--', `${CT}/${CD}/slices/_interfaces.md`])
+  expect(calls[find(calls, 'commit')].argv).toEqual(['git', '-C', CT, 'commit', '-m', 'chore(flight): 记录', '--', `${CT}/${CD}/slices/_interfaces.md`])
+  expect(result).toBeUndefined()
+})
+
+test('land-commits-only-records/no-changes', async () => {
+  // Given: status 无输出（没有未提交的飞行记录）
+  const { io, calls } = fakeIo({}, () => undefined)
+
+  // When: 以「chore(flight): 记录」提交飞行记录
+  const result = await commitRecords(io, F, 'chore(flight): 记录')
+
+  // Then: 不运行 git commit；返回 undefined
+  expect(find(calls, 'commit')).toBe(-1)
+  expect(result).toBeUndefined()
 })
 
 test('land-fast-forwards-after-resolution', async () => {
