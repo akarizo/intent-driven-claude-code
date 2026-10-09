@@ -197,7 +197,6 @@ import pytest  # noqa: E402
 from conftest import make_change  # noqa: E402
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未在 spec.html 显示计划指纹")
 def test_spec_html_shows_fingerprint(tmp_path):
     # Given: 计划工件齐全的 change 目录，及 plan_fp.py --short 给出的 8 位指纹
     d = make_change(tmp_path)
