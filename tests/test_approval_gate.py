@@ -2,7 +2,7 @@
 转录只作反证（人类在转录里批准过也不再放行）。"""
 import json
 
-from conftest import approve_event, ledger_append, make_change, run_hook
+from conftest import approve_event, git, ledger_append, make_change, run_hook
 
 NO_SID = {"CLAUDE_CODE_SESSION_ID": ""}  # 防止实现借环境变量读到当前会话转录
 
@@ -220,3 +220,36 @@ def test_takeoff_tasks_tick_keeps_approval(git_repo, tmp_path):
     assert after_tick.returncode == 0 and after_tick.stdout.strip() == "", after_tick.stdout
     replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
     assert replan["permissionDecision"] == "deny" and "重新批准" in replan["permissionDecisionReason"]
+
+
+def slice_dispatch(cwd, change_dir):
+    return json.dumps({"tool_name": "Agent", "cwd": str(cwd),
+                       "tool_input": {"subagent_type": "slice-executor",
+                                      "prompt": "切片包：%s/slices/S1.md" % change_dir}}, ensure_ascii=False)
+
+
+def test_takeoff_hook_denies_change_outside_git_repo(tmp_path):
+    # Given: demo 位于不在任何 git 仓库内的目录（GIT_CEILING_DIRECTORIES 截断向上查找），slice-executor 派发指向它
+    d = make_change(tmp_path / "outside")
+    env = {**NO_SID, "GIT_CEILING_DIRECTORIES": str(tmp_path)}
+
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=slice_dispatch(tmp_path, d), env=env)
+
+    # Then: deny（账本不可读是判定结果，不是门禁故障），理由含「账本不可读」
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and "账本不可读" in r["permissionDecisionReason"]
+
+
+def test_takeoff_hook_denies_ledger_ref_to_non_commit(git_repo):
+    # Given: demo 的账本引用 refs/flight/demo/ledger 指向一棵空树（不是提交）
+    d = make_change(git_repo)
+    tree = git(git_repo, "hash-object", "-w", "-t", "tree", "/dev/null")
+    git(git_repo, "update-ref", "refs/flight/demo/ledger", tree)
+
+    # When: 以 hook 模式运行 slice-executor 派发
+    p = run_hook("takeoff-gate", stdin=slice_dispatch(git_repo, d), env=NO_SID)
+
+    # Then: deny，理由含「账本损坏」
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and "账本损坏" in r["permissionDecisionReason"]

@@ -5,7 +5,7 @@
 #   takeoff-gate.py --change-dir DIR
 #     stdout  批准证据一行：<批准时间> · fp <指纹前 8 位> · ledger <账本 tip 前 8 位>
 #     exit 0  批准成立
-#     exit 3  未批准 / 计划已变 / 账本损坏 / 门禁故障；stderr 给 spec.html 绝对路径、批准带与插件安装指引
+#     exit 3  未批准 / 计划已变 / 账本损坏 / 账本不可读 / 门禁故障；stderr 给 spec.html 绝对路径、批准带与插件安装指引
 #
 # hook 模式（无参数，从 stdin 收 PreToolUse JSON）：
 #   1. 非起飞类派发（Workflow 带 args.changeDir / Agent·Task 派 slice-executor·integrator 之外）→ 静默放行
@@ -53,6 +53,8 @@ def verdict(change_dir):
         event, tip = ledger.latest_approval(change_dir)
     except ledger.LedgerInvalid as e:
         return False, "", "账本损坏：%s %s。%s" % (e.sha8, e.reason, hint)
+    except ledger.LedgerUnreadable as e:
+        return False, "", "账本不可读：%s。%s" % (e, hint)
     if event is None:
         return False, "", "未批准：账本里没有这个 change 的批准记录。%s" % hint
     if event["fp"] != fp:

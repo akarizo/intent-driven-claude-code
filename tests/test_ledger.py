@@ -126,3 +126,17 @@ def test_ledger_change_dir_outside_repo_exits_5(tmp_path):
 
     # Then: 以 5 退出（配置错误，不得当成无账本放行）
     assert p.returncode == 5, (p.stdout, p.stderr)
+
+
+def test_ledger_verify_rejects_ref_to_non_commit(git_repo):
+    # Given: demo 的账本引用 refs/flight/demo/ledger 指向一棵空树（不是提交）
+    d = make_change(git_repo)
+    tree = git(git_repo, "hash-object", "-w", "-t", "tree", "/dev/null")
+    git(git_repo, "update-ref", "refs/flight/demo/ledger", tree)
+
+    # When: 运行 verify
+    p = ledger("verify", d)
+
+    # Then: 以 4 退出（账本损坏），stderr 含「引用不指向提交」
+    assert p.returncode == 4, (p.stdout, p.stderr)
+    assert "引用不指向提交" in p.stderr

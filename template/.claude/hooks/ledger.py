@@ -3,7 +3,7 @@
 
 只读：本文件不含任何写 git 对象或引用的命令；写入只在插件进程内。
 CLI：ledger.py {show|approved|verify} --change-dir DIR
-  LedgerInvalid → exit 4；其他异常（git 不可用等）→ exit 5。
+  LedgerInvalid → exit 4；LedgerUnreadable（不在仓库内等）与其他异常（git 不可执行等）→ exit 5。
 """
 import argparse
 import json
@@ -23,14 +23,19 @@ class LedgerInvalid(Exception):
         self.reason = reason
 
 
+class LedgerUnreadable(Exception):
+    """git 能执行但读不了账本（目录不在仓库内、仓库归属不安全等）：是判定结果，不是门禁故障。"""
+
+
 def ref_for(change):
     return "refs/flight/%s/ledger" % change
 
 
 def _git(change_dir, *args, check=True):
+    # git 不可执行时 subprocess 抛 FileNotFoundError，原样上抛，由调用方按门禁故障处理
     p = subprocess.run(["git", "-C", change_dir, *args], capture_output=True, text=True)
     if check and p.returncode != 0:
-        raise RuntimeError("git %s 失败：%s" % (args[0], p.stderr.strip()))
+        raise LedgerUnreadable("git %s 失败：%s" % (args[0], p.stderr.strip()))
     return p
 
 
@@ -61,9 +66,13 @@ def read_events(change_dir):
     if p.returncode == 1:  # 引用不存在
         return []
     if p.returncode != 0:  # 128 等：目录不存在 / 不在仓库内，不得当成无账本
-        raise RuntimeError("git rev-parse 失败：%s" % p.stderr.strip())
+        raise LedgerUnreadable("git rev-parse 失败：%s" % p.stderr.strip())
+    tip = p.stdout.strip()
+    # rev-list 遇到树 / blob 不报错、只是无输出，不先验类型会把它当成合法的空账本
+    if _git(change_dir, "cat-file", "-t", tip).stdout.strip() != "commit":
+        raise LedgerInvalid(tip, "引用不指向提交")
     events = []
-    for line in _git(change_dir, "rev-list", "--reverse", "--parents", ref).stdout.splitlines():
+    for line in _git(change_dir, "rev-list", "--reverse", "--parents", tip).stdout.splitlines():
         shas = line.split()
         if not shas:
             continue
