@@ -11,13 +11,14 @@ RULE = "changes/*/.flight"
 
 
 def run_install(tmp_path, target, *flags):
-    """用本仓库的 install.sh 安装 / 升级到 target；PATH 前置一个 openspec 桩（install.sh 只检查它是否存在）。"""
+    """用本仓库的 install.sh 安装 / 升级到 target；PATH 前置 openspec 与 claude 桩，并剔除真实 claude（免改本机插件记录）。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    stub = bin_dir / "openspec"
-    stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    stub.chmod(0o755)
-    env = {**os.environ, "PATH": "%s%s%s" % (bin_dir, os.pathsep, os.environ.get("PATH", ""))}
+    for name in ("openspec", "claude"):
+        stub = bin_dir / name
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+    env = {**os.environ, "PATH": path_without_real_claude(bin_dir)}
     return subprocess.run(["bash", str(ROOT / "install.sh"), *flags, str(target)],
                           env=env, capture_output=True, text=True, timeout=120)
 
@@ -63,9 +64,6 @@ def test_upgrade_appends_flight_ignore_once(tmp_path):
 #   否则测试会真实改动开发者本机的用户级插件记录（design D9）。
 import json  # noqa: E402
 
-import pytest  # noqa: E402
-
-PX = pytest.mark.xfail(strict=True, reason="S5 未实现插件分发")
 MARKET_ADD = "plugin marketplace add akarizo/intent-driven-claude-code --scope project"
 PLUGIN_INSTALL = "plugin install flight@intent-driven -s project"
 
@@ -101,7 +99,6 @@ def plugin_calls(calls):
     return [c.split("|", 1) for c in calls if "|plugin " in c]
 
 
-@PX
 def test_marketplace_lists_flight_plugin():
     # Given: 仓库根的 .claude-plugin/marketplace.json
     market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
@@ -116,7 +113,6 @@ def test_marketplace_lists_flight_plugin():
     assert manifest["name"] == "flight"
 
 
-@PX
 def test_install_registers_plugin_at_project_scope(tmp_path):
     # Given: PATH 上有记录参数与工作目录的 claude 桩
     target = tmp_path / "proj"
@@ -131,7 +127,6 @@ def test_install_registers_plugin_at_project_scope(tmp_path):
     assert all(os.path.realpath(cwd) == os.path.realpath(target) for cwd, _args in got), calls
 
 
-@PX
 def test_install_without_claude_prints_manual_steps(tmp_path):
     # Given: PATH 上没有 claude
     target = tmp_path / "proj"
@@ -145,7 +140,6 @@ def test_install_without_claude_prints_manual_steps(tmp_path):
     assert "claude " + MARKET_ADD in out and "claude " + PLUGIN_INSTALL in out
 
 
-@PX
 def test_install_skips_enabled_plugin(tmp_path):
     # Given: 已安装的目标目录，其 .claude/settings.json 的 enabledPlugins 已含 flight@intent-driven
     target = tmp_path / "proj"

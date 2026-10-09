@@ -186,7 +186,7 @@ MOVE_COUNT=0
 # ---------------------------------------------------------------------------
 # 幂等复制：BSD/GNU 双兼容；统计在循环外维护
 #   注意：用 process substitution 而非 pipe，以便 while 体里能修改外层变量
-#   $3 overwrite=1 时覆盖已存在文件(升级用)；$4 preserve 命中的 basename 永不覆盖
+#   $3 overwrite=1 时覆盖已存在文件(升级用)；$4 preserve（空格分隔）命中的 basename 永不覆盖
 # ---------------------------------------------------------------------------
 copy_tree() {
   local src="$1" dst="$2" overwrite="${3:-0}" preserve="${4:-}" rel out base
@@ -199,7 +199,7 @@ copy_tree() {
       mkdir -p "$out"
     elif [[ -e "$out" ]]; then
       base="$(basename "$rel")"
-      if [[ "$overwrite" == 1 && ( -z "$preserve" || "$base" != "$preserve" ) ]]; then
+      if [[ "$overwrite" == 1 && " $preserve " != *" $base "* ]]; then
         cp "$src/$rel" "$out"
         log_upd "${out#$TARGET/}"
         UPD_COUNT=$((UPD_COUNT+1))
@@ -336,12 +336,59 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# flight 插件安装（design D9）：已在 settings.json 启用则跳过；有 claude 则在 TARGET 内按 project 作用域注册；
+#   否则打印手动命令。任何失败只告警，不改变 install.sh 的退出码
+# ---------------------------------------------------------------------------
+flight_plugin_enabled() {
+  local settings="$TARGET/.claude/settings.json"
+  [[ -f "$settings" ]] || return 1
+  if [[ "${PYTHON_OK:-0}" == 1 ]]; then
+    python3 -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except (ValueError, OSError):
+    sys.exit(1)
+ok = isinstance(d, dict) and isinstance(d.get("enabledPlugins"), dict) and d["enabledPlugins"].get("flight@intent-driven") is True
+sys.exit(0 if ok else 1)' "$settings"
+  else
+    grep -q '"flight@intent-driven": *true' "$settings"
+  fi
+}
+
+install_flight_plugin() {
+  local owner_repo="${REPO_URL#https://github.com/}"
+  owner_repo="${owner_repo%.git}"
+  local cmd_market="claude plugin marketplace add $owner_repo --scope project"
+  local cmd_install="claude plugin install flight@intent-driven -s project"
+  if flight_plugin_enabled; then
+    log_skip "flight@intent-driven 已启用，跳过"
+    SKIP_COUNT=$((SKIP_COUNT+1))
+    return 0
+  fi
+  if command -v claude >/dev/null 2>&1; then
+    if (cd "$TARGET" && claude plugin marketplace add "$owner_repo" --scope project) \
+       && (cd "$TARGET" && claude plugin install flight@intent-driven -s project); then
+      log_add "flight@intent-driven 插件（project 作用域）"
+      ADD_COUNT=$((ADD_COUNT+1))
+    else
+      log_err "flight 插件安装失败（起飞批准需要它），请在 $TARGET 内手动执行："
+      log_err "  $cmd_market"
+      log_err "  $cmd_install"
+    fi
+  else
+    log_info "起飞批准需要 flight 插件，请在 $TARGET 内执行："
+    log_info "  $cmd_market"
+    log_info "  $cmd_install"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # 复制：库自有文件 vs 用户数据
 # ---------------------------------------------------------------------------
-# .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md）
+# .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md 与用户数据 settings.json）
 # 递归复制已覆盖 commands/ · skills/（含 legacy/）· agents/（slice-executor / integrator / code-reviewer）
 # · workflows/（opsx-apply.js 飞行调度器）· hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新
-copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md"
+copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md settings.json"
 # openspec/：用户数据 + 种子目录，绝不覆盖
 copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec" 0
 # openspec/.gitignore：已装项目不会被 copy_tree 覆盖，幂等补飞行起飞记录规则（整行匹配）
@@ -363,6 +410,11 @@ fi
 # settings.json：合并 intent-driven hooks（门禁 intent-gate + 提醒 intent-reminder）
 # ---------------------------------------------------------------------------
 merge_settings
+
+# ---------------------------------------------------------------------------
+# flight 插件：起飞批准带（takeoff-gate 的账本指纹判据依赖它）；项目作用域安装，不改退出码
+# ---------------------------------------------------------------------------
+install_flight_plugin
 
 # ---------------------------------------------------------------------------
 # CLAUDE.md 注入 (marker 包裹，幂等；升级时刷新段内内容)
@@ -444,7 +496,7 @@ cat <<EOF
   - 3 个 agent 见 .claude/agents/（slice-executor / integrator / code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定），integrator = sonnet）
   - apply 默认飞行模式（slices.json 切片 + wave 并行 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
-  - PreToolUse takeoff-gate 拦未获人类批准的飞行派发（校验会话转录里的人类消息证据与新鲜度，模型自证无效；对 Workflow 工具是否触发待实测，未触发时由 /opsx-apply step 0 自检兜底）
+  - PreToolUse takeoff-gate 拦未获人类批准的飞行派发（以账本指纹为判据：人在批准带按下「批准起飞」才写入账本，模型自证无效；需 flight@intent-driven 插件）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-commit·/claudemd-distill·claudemd-lint 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
   - Worktree 隔离：每个 change 从 propose 起在自己的 .worktrees/<change>/ (branch worktree-<change>) 里进行，工件+实现全落其中，项目根保持干净；权威见 .claude/skills/openspec-git-discipline/
