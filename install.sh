@@ -13,7 +13,8 @@
 #   --upgrade    ：刷新「库自有文件」(.claude/ 与 openspec/schemas/)，
 #                  迁移根 adr/ → openspec/adr/，刷新 CLAUDE.md 的 intent-driven 段；
 #                  「用户数据」(openspec/changes、specs、adr、superpower、config.yaml、
-#                  ADR 风格 preferences.md、CLAUDE.md 正文) 一律保留不动。
+#                  ADR 风格 preferences.md、.claude/settings.json、CLAUDE.md 正文) 一律保留不动；
+#                  settings.json 升级只补模板里用户缺失的顶层键（已有键不动）。
 #
 # 退出码:
 #   0  成功
@@ -269,10 +270,12 @@ refresh_marker_block() {
 # settings.json hooks 合并：把 .claude/hooks/hooks.json 的 hooks 幂等并入目标 settings.json
 #   settings.json 属用户数据，绝不 copy_tree 覆盖——故 hooks 配置以独立 fragment 下发再合并
 #   按 command 串去重，保留用户其余 key；install / upgrade 都跑；缺 python3 则打印手动指引
+#   另补模板 settings.json 中用户缺失的顶层键（hooks 除外；已有键不动、不深合并）
 # ---------------------------------------------------------------------------
 merge_settings() {
   local settings="$TARGET/.claude/settings.json"
   local fragment="$TARGET/.claude/hooks/hooks.json"
+  local template_settings="$TEMPLATE_SRC/.claude/settings.json"
   [[ -f "$fragment" ]] || return 0
   if [[ "${PYTHON_OK:-0}" != 1 ]]; then
     log_info ".claude/settings.json: 无 python3，跳过 hooks 自动合并（门禁/提醒暂不生效）"
@@ -280,9 +283,9 @@ merge_settings() {
     return 0
   fi
   local status
-  status=$(python3 - "$settings" "$fragment" <<'PY'
-import json, os, sys
-settings_path, fragment_path = sys.argv[1], sys.argv[2]
+  status=$(python3 - "$settings" "$fragment" "$template_settings" <<'PY'
+import copy, json, os, sys
+settings_path, fragment_path, template_path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(fragment_path, encoding="utf-8") as f:
     frag = json.load(f)
 existed = os.path.isfile(settings_path)
@@ -309,6 +312,15 @@ for event, entries in frag.get("hooks", {}).items():
         if key(e) not in seen:
             bucket.append(e)
             seen.add(key(e))
+            changed = True
+
+# 补模板中用户缺失的顶层键（只补顶层，已存在的键原样保留）
+if os.path.isfile(template_path):
+    with open(template_path, encoding="utf-8") as f:
+        tmpl = json.load(f)
+    for k, v in tmpl.items():
+        if k != "hooks" and k not in data:
+            data[k] = copy.deepcopy(v)
             changed = True
 
 if not existed:
@@ -366,8 +378,9 @@ install_flight_plugin() {
     return 0
   fi
   if command -v claude >/dev/null 2>&1; then
-    if (cd "$TARGET" && claude plugin marketplace add "$owner_repo" --scope project) \
-       && (cd "$TARGET" && claude plugin install flight@intent-driven -s project); then
+    (cd "$TARGET" && claude plugin marketplace add "$owner_repo" --scope project) \
+      || log_info "marketplace add 失败（可能已声明），继续安装"
+    if (cd "$TARGET" && claude plugin install flight@intent-driven -s project); then
       log_add "flight@intent-driven 插件（project 作用域）"
       ADD_COUNT=$((ADD_COUNT+1))
     else
