@@ -21,3 +21,6 @@
 2026-10-09T23:35:24Z	ship	draft: final 过期：记录 436dce03ff，HEAD 226d6e6151
 2026-10-09T23:36:42Z	final	ok
 2026-10-09T23:36:42Z	ship	ready
+2026-10-09T23:36:55Z	ship	draft: final 过期：记录 226d6e6151，HEAD 9c2afd3365
+2026-10-09T23:39:37Z	final	ok
+2026-10-09T23:39:37Z	ship	ready
