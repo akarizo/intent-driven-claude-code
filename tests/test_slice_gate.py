@@ -1,5 +1,7 @@
 """slice-gate.py：切片规划 lint 与切片门禁（scenario: slice-gate#*）。"""
 import json
+import os
+import sys
 
 import pytest
 
@@ -1147,3 +1149,146 @@ def test_g7_reads_outcome_despite_addopts_quiet(git_repo):
 
     # Then: failed 里没有任何 G7 条目
     assert not [f for f in out["failed"] if f.startswith("G7")], out["failed"]
+
+
+# ---------------------------------------------------------------- flight-integrity-followups（scenario: executor-noreturn-recovery#resume-start-refuses-record-after-replan）
+
+def test_resume_start_refuses_record_after_replan(git_repo, tmp_path):  # 既有行为守卫：基点核对已挡住该路径，故不标 xfail
+    # Given: 切片 S1 门禁绿、结论已留存，随后飞行中断；人改了计划（proposal.md）并提交，又按批准提交了一次，再从新的分支尖端开 worktree
+    change = gate_repo(git_repo)
+    gated = _gate(change, git_repo)
+    write(change / "proposal.md", "## Why\n\n改过的计划。\n")
+    commit_all(git_repo, "replan")
+    write(change / "timeline.md", "approve\n")
+    tip = commit_all(git_repo, "chore(flight): approve")
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), tip)
+
+    # When: 新一轮飞行里，首轮执行体未返回，重派在新 worktree 里运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 结论确实还留着；但不找回（以 0 退出、输出不含 recovered），旧计划下的 commit 不会被交出
+    assert gated["ok"] is True and _ref(git_repo, GATE_REF), gated
+    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)
+    out = json.loads(p.stdout)
+    assert "recovered" not in out and out.get("commit") != gated["commit"], out
+
+
+# ---------------------------------------------------------------- flight-integrity-followups（scenario: g7-runner-environment#*）
+# 骨架：S1 实现后逐条去掉 xfail 标记。
+
+def _update_gate(change, **fields):
+    path = change / "slices.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["gate"].update(fields)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _pytest_wrapper(path, before="", pythonpath=None):
+    """写一个可执行的 pytest 包装脚本：先执行 before 这段 shell，再用当前解释器跑 pytest（可在原 PYTHONPATH 前追加一段）。"""
+    lines = ["#!/bin/sh", before]
+    if pythonpath:
+        lines.append('export PYTHONPATH="%s${PYTHONPATH:+:$PYTHONPATH}"' % pythonpath)
+    lines.append('exec "%s" -m pytest "$@"' % sys.executable)
+    write(path, "\n".join(lines) + "\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+def _final(change, repo, env=None):
+    return json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=repo, env=env).stdout)
+
+
+ENVONLY_TEST = '''
+import envonly
+
+
+def test_mod_adds():
+    # Given: 只在项目测试环境里可导入的模块 envonly
+    module = envonly
+    # When: 读取它的常量 VALUE
+    value = module.VALUE
+    # Then: 等于 1
+    assert value == 1
+'''
+
+COLLECT_ERROR_TEST = '''
+raise RuntimeError("故意的收集错误")
+
+
+def test_mod_adds():
+    # Given: 模块级已经抛错
+    # When: 收集本文件
+    # Then: 不会走到这里
+    assert False
+'''
+
+
+def test_g7_uses_runner_from_gate_test(git_repo):
+    # Given: scenario 测试导入的 envonly 只在 venv-bin/pytest 这个项目测试环境里可用；gate.test 是它加 -q tests
+    change = gate_repo(git_repo, test_body=ENVONLY_TEST)
+    write(git_repo / "envlib" / "envonly.py", "VALUE = 1\n")
+    runner = _pytest_wrapper(git_repo / "venv-bin" / "pytest", pythonpath=git_repo / "envlib")
+    _update_gate(change, test="%s -q tests" % runner)
+
+    # When: 运行 slice-gate.py final
+    out = _final(change, git_repo)
+
+    # Then: ok 为 true，scenarios.passed 为 1
+    assert out["ok"] is True, out
+    assert out["scenarios"]["passed"] == 1, out
+
+
+def test_g7_prefers_explicit_pytest_config(git_repo):
+    # Given: gate.pytest 指向会留下调用记录的 pytest 包装脚本，gate.test 仍是 python3 -m pytest -q tests
+    change = gate_repo(git_repo)
+    log = git_repo / "runner-used.log"
+    runner = _pytest_wrapper(git_repo / "bin" / "logged-pytest", before='echo used >> "%s"' % log)
+    _update_gate(change, pytest=str(runner))
+
+    # When: 运行 slice-gate.py final
+    out = _final(change, git_repo)
+
+    # Then: 包装脚本被调用过；ok 为 true
+    assert log.exists(), "gate.pytest 没有被使用"
+    assert out["ok"] is True, out
+
+
+def test_g7_falls_back_with_warning(git_repo):
+    # Given: gate.test 是 cd . && python3 -m pytest -q tests（含 shell 语法），没有 gate.pytest
+    change = gate_repo(git_repo)
+    _update_gate(change, test="cd . && python3 -m pytest -q tests")
+
+    # When: 运行 slice-gate.py final
+    out = _final(change, git_repo)
+
+    # Then: ok 为 true；warnings 里有一条以 G7 开头、含 gate.pytest 的说明
+    assert out["ok"] is True, out
+    assert any(w.startswith("G7") and "gate.pytest" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_g7_times_out(git_repo):
+    # Given: gate.pytest 指向先睡 5 秒再运行的 pytest 包装脚本；环境变量 FLIGHT_G7_TIMEOUT 为 1
+    change = gate_repo(git_repo)
+    runner = _pytest_wrapper(git_repo / "bin" / "slow-pytest", before="sleep 5")
+    _update_gate(change, pytest=str(runner))
+
+    # When: 运行 slice-gate.py final
+    out = _final(change, git_repo, env={"FLIGHT_G7_TIMEOUT": "1"})
+
+    # Then: ok 为 false，failed 里有一条 G7 含「运行超时」
+    assert out["ok"] is False, out
+    assert any(f.startswith("G7") and "运行超时" in f for f in out["failed"]), out["failed"]
+
+
+def test_g7_reports_collection_failure_detail(git_repo):
+    # Given: scenario 测试所在文件在模块级抛出 RuntimeError，收集即失败
+    change = gate_repo(git_repo, test_body=COLLECT_ERROR_TEST)
+
+    # When: 运行 slice-gate.py final
+    out = _final(change, git_repo)
+
+    # Then: ok 为 false，failed 里有一条 G7 含「未被收集运行」、rc= 与 RuntimeError
+    assert out["ok"] is False, out
+    assert any(f.startswith("G7") and "未被收集运行" in f and "rc=" in f and "RuntimeError" in f
+               for f in out["failed"]), out["failed"]
