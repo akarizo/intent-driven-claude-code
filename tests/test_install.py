@@ -295,7 +295,6 @@ def stub_log(tmp_path):
     return dict(line.split("=", 1) for line in p.read_text(encoding="utf-8").splitlines() if "=" in line)
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：pipe 模式只认 refs/heads")
 def test_pipe_installs_tag_only_ref(tmp_path):
     # Given: 源里只有 tag stable-v9.9 的归档（refs/tags 下），没有同名分支；归档里是桩 install.sh 与 template/VERSION=v9.9
     source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
@@ -309,7 +308,6 @@ def test_pipe_installs_tag_only_ref(tmp_path):
     assert stub_log(tmp_path).get("version") == "v9.9", p.stdout + p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：pipe 模式不交给归档自带的 install.sh")
 def test_pipe_default_ref_is_main_branch(tmp_path):
     # Given: 源里只有分支 main 的归档（refs/heads 下），归档里是桩 install.sh 与 template/VERSION=main
     source = make_source(tmp_path, "main", "heads", {"install.sh": STUB_INSTALLER, "template/VERSION": "main"})
@@ -323,7 +321,6 @@ def test_pipe_default_ref_is_main_branch(tmp_path):
     assert stub_log(tmp_path).get("version") == "main", p.stdout + p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：失败时不列出 refs/tags 地址")
 def test_pipe_missing_ref_lists_both_urls(tmp_path):
     # Given: 源里只有分支 main 的归档
     source = make_source(tmp_path, "main", "heads", {"install.sh": STUB_INSTALLER, "template/VERSION": "main"})
@@ -339,7 +336,6 @@ def test_pipe_missing_ref_lists_both_urls(tmp_path):
     assert not target.exists()
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：pipe 模式不交给归档自带的 install.sh")
 def test_pipe_delegates_args_to_archived_installer(tmp_path):
     # Given: 源里有 tag stable-v9.9 的归档，其 install.sh 是记录参数的桩
     source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
@@ -354,7 +350,6 @@ def test_pipe_delegates_args_to_archived_installer(tmp_path):
     assert not (target / ".claude").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：退出码不来自归档自带的 install.sh")
 def test_pipe_propagates_exit_and_cleans_temp(tmp_path):
     # Given: 源里有 tag stable-v9.9 的归档，其 install.sh 是以 3 退出的桩；TMPDIR 指向一个空目录
     source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER, "template/VERSION": "v9.9"})
@@ -370,7 +365,6 @@ def test_pipe_propagates_exit_and_cleans_temp(tmp_path):
     assert list(tmpdir.iterdir()) == []
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：pipe 模式用自身逻辑安装")
 def test_pipe_real_installer_runs_local_mode(tmp_path):
     # Given: 源里分支 main 的归档由本仓库当前的 install.sh 与 template/ 打成；PATH 上有 openspec 桩，没有 claude
     source = make_source(tmp_path, "main", "heads", {"install.sh": INSTALLER, "template": ROOT / "template"})
@@ -388,7 +382,6 @@ def test_pipe_real_installer_runs_local_mode(tmp_path):
     assert "模式: local" in out, out
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：README 无「安装指定版本」一节")
 def test_readme_documents_pinned_install():
     # Given: README.md 与 install.sh --help 的输出
     readme = (ROOT / "README.md").read_text(encoding="utf-8")

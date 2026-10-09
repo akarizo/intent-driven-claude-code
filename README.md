@@ -83,6 +83,25 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 
 安装器**幂等**：重复运行已存在的文件全部 `[skip]`，CLAUDE.md 通过 `<!-- intent-driven:begin -->` marker 跳过追加。**默认模式只增不改，绝不覆盖你的文件。**
 
+### 安装指定版本
+
+`IDT_BRANCH` 可以填分支或 tag（先按分支找，再按 tag 找）；脚本下载对应归档后，交给归档自带的 `install.sh` 执行，装上的就是那个版本自己的安装逻辑与模板。
+
+```bash
+# 管道写法：脚本始终取 main 上的 install.sh，版本由 IDT_BRANCH 指定
+curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/main/install.sh | IDT_BRANCH=stable-v2.0 bash -s -- ~/path/to/your-project
+
+# 克隆写法：直接 clone 对应 tag 后本地运行
+git clone --depth 1 --branch stable-v2.0 https://github.com/akarizo/intent-driven-claude-code.git /tmp/idt
+/tmp/idt/install.sh ~/path/to/your-project
+```
+
+可用 tag 去 GitHub 仓库的 Tags 页查，或运行 `git ls-remote --tags https://github.com/akarizo/intent-driven-claude-code`。
+
+> ⚠ 不要从 tag 路径（`raw.githubusercontent.com/.../<tag>/install.sh`）取脚本走管道：老版本的脚本不认 tag，缺省装的仍是 main。始终用 main 上的 `install.sh` 加 `IDT_BRANCH`。
+>
+> ⚠ 不支持用 `--upgrade` 把已装新版的项目降级到老版本：新版多出的文件不会被删除，`settings.json` 里已合入的 hooks 也会保留。
+
 ### 一键更新（已装项目）
 
 默认安装是「只增不改」，**重复跑 `install.sh` 不会更新已装的 skill / 命令 / schema**。库演进后给老项目推更新，加 `--upgrade` 即可（三种形态任选其一）：
