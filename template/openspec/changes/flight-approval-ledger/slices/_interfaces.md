@@ -51,3 +51,9 @@
 55:def read_events(change_dir):
 87:def latest_approval(change_dir):
 98:def main(argv=None):
+
+## S3
+
+- `template/plugins/flight/hooks/register.tsx`：`export const register: Register = on => {...}`，flight 插件入口，注册 hook 并刷新/追加审批账本
+- `template/plugins/flight/hooks/hooks.json`、`.claude-plugin/plugin.json`：插件清单
+- `template/plugins/flight/types/index.d.ts`：引擎类型声明
