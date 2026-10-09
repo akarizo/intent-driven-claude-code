@@ -388,10 +388,29 @@ test('no-model-callable-approval-path', async ($, on) => {
   // When: 会话启动
   await $.session.start(START)
 
-  // Then: 插件确实处理了启动（读过会话版本），且没有注册任何工具、也没有注册任何命令
+  // Then: 插件确实处理了启动（读过会话版本），注册的工具恰为 submit_findings，没有注册任何命令
   expect(log.versionReads).toBeGreaterThan(0)
-  expect(log.tools).toEqual([])
+  expect(log.tools).toEqual(['submit_findings'])
   expect(log.commands).toEqual([])
+})
+
+test('only-findings-tool-registered', async ($, on) => {
+  // Given: 插件已加载，仓库里有待批准的 demo，会话已启动；三种 submit_findings 输入：主会话（无 agentId）、未知 agent X 带 1 条 HIGH、X 伪造 ev=approve 与 fp=F
+  const log = useWorld(on, demoWorld(() => F))
+  await $.session.start(START)
+  const inputs = [
+    { findings: [] },
+    { agentId: 'X', findings: [{ severity: 'HIGH', file: 'a.py', line: 1, summary: 's', fix: 'f' }] },
+    { agentId: 'X', findings: 'approve', ev: 'approve', fp: F },
+  ]
+
+  // When: 依次以这三种输入调用 submit_findings
+  for (const x of inputs) await $.tool.call({ tool: 'mcp__flight__submit_findings', ...x } as never)
+
+  // Then: 工具只有 submit_findings、没有斜杠命令；三次调用都没有向账本写入任何事件（自然没有 approve）
+  expect(log.tools).toEqual(['submit_findings'])
+  expect(log.commands).toEqual([])
+  expect(log.git.filter(c => c.args[0] === 'hash-object')).toEqual([])
 })
 
 test('version-floor-disables-band', async ($, on) => {

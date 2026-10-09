@@ -8,6 +8,7 @@ const TREE = '/repo/.worktrees/demo'
 const CD = 'template/openspec/changes/demo'
 const HOOKS = `${MAIN}/template/.claude/hooks`
 const F = '3f9a1c07' + 'a'.repeat(56)
+const G = '9b0e44d2' + 'b'.repeat(56)
 const SLICE1 = `${MAIN}/.claude/worktrees/flight-demo-S1`
 const SLICE2 = `${MAIN}/.claude/worktrees/flight-demo-S2`
 const RESOLVE2 = `${MAIN}/.claude/worktrees/flight-demo-S2-resolve`
@@ -23,6 +24,12 @@ type World = {
   conflicts: Record<string, string[]>
   /** 解冲突 agent 已解完（解冲突 worktree 里不再有未合并文件） */
   isResolved: boolean
+  /** plan_fp.py 输出的当前指纹（缺省 F） */
+  fp?: string
+  /** 派发 agent 时抛异常 */
+  spawnThrows?: boolean
+  /** update-ref 一直返回非 0（旧值不符，账本写入总失败） */
+  updateRefFails?: boolean
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -60,6 +67,7 @@ function useWorld(on: On, w: World) {
   const files: Record<string, string> = { [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES) }
   let agents = 0
   let conflicted = ''
+  let pending: Record<string, unknown> | undefined
   mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) })
   on('session.version', () => ({ value: { version: '2.1.295' } }))
   on('session.id', () => ({ value: 'sess-1' }))
@@ -79,6 +87,7 @@ function useWorld(on: On, w: World) {
   on('agent.offer', () => ({ isOffered: true }))
   on('agent.spawn', ($, e) => {
     const x = e as unknown as Omit<Spawn, 'agentId'>
+    if (w.spawnThrows) throw new Error('spawn 炸了')
     agents += 1
     const agentId = `agent-${agents}`
     log.spawns.push({ subagent_type: x.subagent_type, model: x.model, cwd: x.cwd, prompt: x.prompt, agentId })
@@ -102,7 +111,7 @@ function useWorld(on: On, w: World) {
       const script = String(argv[1]).split('/').pop()
       const sub = argv[2]
       if (script === 'takeoff-gate.py') return wrap(w.takeoff)
-      if (script === 'plan_fp.py') return wrap(res(0, F + '\n'))
+      if (script === 'plan_fp.py') return wrap(res(0, (w.fp ?? F) + '\n'))
       if (script === 'session-model.py') return wrap(res(0, 'opus\n'))
       if (script === 'timeline.py') return wrap(res(0, ''))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
@@ -130,8 +139,13 @@ function useWorld(on: On, w: World) {
       case 'status':
         return wrap(res(0, ''))
       case 'hash-object':
-        log.events.push(JSON.parse(String(e.init?.stdin)))
+        pending = JSON.parse(String(e.init?.stdin))
         return wrap(res(0, 'b'.repeat(40) + '\n'))
+      case 'update-ref':
+        if (w.updateRefFails) return wrap(res(1, '', 'cannot lock ref: is at dddd but expected 0000'))
+        if (pending) log.events.push(pending)
+        pending = undefined
+        return wrap(res(0, ''))
       case 'mktree':
         return wrap(res(0, 'e'.repeat(40) + '\n'))
       case 'rev-parse':
@@ -155,7 +169,6 @@ function useWorld(on: On, w: World) {
       }
       case 'add':
       case 'commit':
-      case 'update-ref':
         return wrap(res(0, ''))
     }
     throw new Error(`unexpected git: ${args.join(' ')}`)
@@ -297,4 +310,47 @@ test('flight-types-hidden-from-model', async ($, on) => {
 
   // Then: 三个飞行类型都不提供；general-purpose 照常提供
   expect(answers.map(a => a.isOffered)).toEqual([false, false, false, true])
+})
+
+test('takeoff-exception-stays-grounded', async ($, on) => {
+  // Given: demo 已批准、起飞检查全部通过（takeoff-gate 0、worktree 干净、lint / preflight 绿），但派发 agent 时 agent.spawn 抛出「spawn 炸了」
+  const log = useWorld(on, demoWorld({ spawnThrows: true }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 插件作答且回复含「起飞异常」；命令没有交给模型
+  expect(r.text).toContain('起飞异常')
+  expect(log.commands).toEqual([])
+})
+
+test('drive-hands-landing-actions', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；A 收口时 S1 门禁绿，在 change worktree 合回 S1 无冲突
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+
+  // When: 处理 A 的结束（turn.complete）
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: 最后一次派发是 flight:reviewer、cwd 为 change worktree；账本有 role reviewer、slice S1 的 dispatch
+  expect(log.spawns.at(-1)?.subagent_type).toBe('flight:reviewer')
+  expect(log.spawns.at(-1)?.cwd).toBe(TREE)
+  expect(log.events.some(x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'S1')).toBe(true)
+})
+
+test('drive-stops-without-progress', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；之后 plan_fp 输出变为 G（drive 会得出停飞动作），且 update-ref 一直返回非 0（账本写入总失败）
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.fp = G
+  w.updateRefFails = true
+  const before = log.runs.length
+
+  // When: 处理 A 的结束（turn.complete）
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: 本次处理调用 ledger.py show 至多 4 次（查 A 所属飞行 1 次 + 停飞动作 1 次 + drive 至多 2 轮），没有跑满 MAX_ROUNDS
+  expect(log.runs.slice(before).filter(x => String(x.argv[1]).endsWith('/ledger.py') && x.argv[2] === 'show').length).toBeLessThanOrEqual(4)
 })

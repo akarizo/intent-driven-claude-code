@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -62,10 +60,9 @@ def test_flight_types_hidden_from_model():
     assert_ts_passed("flight-types-hidden-from-model")
 
 # ---------------------------------------------------------------- flight-orchestrator-wiring
-# 骨架：S5 实现后去掉 xfail 标记。
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_takeoff_exception_stays_grounded():
     # Given: 起飞检查全部通过，派发 agent 时抛异常
     # When: 人发出 /opsx-apply demo
@@ -73,7 +70,6 @@ def test_takeoff_exception_stays_grounded():
     assert_ts_passed("takeoff-exception-stays-grounded")
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_drive_hands_landing_actions():
     # Given: S1 门禁绿，合回成功
     # When: 处理 S1 执行体的结束
@@ -81,7 +77,6 @@ def test_drive_hands_landing_actions():
     assert_ts_passed("drive-hands-landing-actions")
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_drive_stops_without_progress():
     # Given: update-ref 一直旧值不符（账本写入总失败）
     # When: 处理一个执行体的结束
