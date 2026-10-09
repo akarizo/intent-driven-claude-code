@@ -1,0 +1,215 @@
+{
+  "blocked": [
+    {
+      "slice": "S8",
+      "kind": "gate",
+      "reason": "G1 verify: exit 1\ntests/test_flight_plugin.py:27: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_flight_landing.py::test_findings_tool_accepts_flight_reviewer\nFAILED tests/test_flight_landing.py::test_reviewer_stop_without_findings_blocks_once\nFAILED tests/test_flight_landing.py::test_fixer_stop_runs_final - AssertionEr...\n3 failed, 17 passed in 2.96s; G7 scenario: flight-findings-intake#findings-tool-accepts-flight-reviewer → tests/test_flight_landing.py::test_findings_tool_accepts_flight_reviewer 实际结果 FAILED（未真正通过）; G7 scenario: flight-findings-intake#reviewer-stop-without-findings-blocks-once → tests/test_flight_landing.py::test_reviewer_stop_without_findings_blocks_once 实际结果 FAILED（未真正通过）; G7 scenario: flight-findings-intake#fixer-stop-runs-final → tests/test_flight_landing.py::test_fixer_stop_runs_final 实际结果 FAILED（未真正通过）; spec 自相矛盾（切片依赖缺口）：经 hook 触发的 scenario 要求 hook 侧 io.flights 里已登记飞行，但 claude plugin test 中 hook 模块与测试模块是两个隔离实例。已实测：测试里 flights.set('demo', ...) 之后，hook 内 flights.size === 0。按 io.ts 的设计，hook 侧唯一的登记入口是 S7 的起飞（orchestrator.tsx）；而 S8 只依赖 S3/S5/S6、与 S7 同属 wave 3 并行，基点上 orchestrator.tsx 还是空壳。因此在本切片可改范围内无法打通这 3 条 scenario。可选出路：S7 合入后，改由测试先走 /opsx-apply 起飞再触发 hook；或者给 S8 加上对 S7 的依赖后重派"
+    },
+    {
+      "slice": "fix",
+      "kind": "infra",
+      "reason": "fix agent 未返回（已重派一次）"
+    }
+  ],
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/prompts.ts",
+      "line": 38,
+      "summary": "reviewerPrompt 让评审员用 `git show ${commit}` 取回改动，但控制面传入的 commit 是合回后的 `--no-ff` 合并提交（core.ts:145 取 merged 事件的 commit；flight-integration spec 写明返回合并后的 commit）。对没有冲突的合并提交，`git show` 只输出组合 diff，结果是空的（已实测：`git show 712f5d9`，即 integrate: S3，只有提交头，没有任何 diff）。评审员因此看到「无变更」，很可能提交空列表放行，独立评审实际失效（违反仓库铁律 4）。reviewer.md:13 与 :22 写的是同一条指令，问题相同。",
+      "fix": "把取 diff 的命令改成相对第一父提交：在 prompts.ts 里写成 `git diff ${x.commit}^1 ${x.commit}`（或 `git show --first-parent -m ${x.commit}`），reviewer.md 第 13、22 行同步改。另外写明：被审 commit 是合并提交时 diff 为空不等于无变更，要按「取 diff 失败」处理。prompts.test.ts 里补一条断言，确认评审员提示词含 `${commit}^1`。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/tests/io.test.ts",
+      "line": 87,
+      "summary": "io-appends-event-with-cas-retry 验证不了这条 scenario 的核心要求「update-ref 失败后重读链尾再试」。假 Io 里的 rev-parse（第 41 行）每次都返回同一个 HEAD（dddd…），断言只检查两次 update-ref 的旧值都是 HEAD。所以把 rev-parse 提到循环外、只读一次链尾的错误实现照样能通过；commit-tree 的 -p 父值也没有断言。现在的实现（io.ts:76，在循环内重读）是对的，但这个测试拦不住回归，和 Then 里的「重读链尾后成功」不对应。",
+      "fix": "让假 Io 的 rev-parse 按调用次数返回不同的链尾：第 1 次 dddd…，第 2 次 ffff…（模拟被别人抢先追加）。断言改为：rev-parse 调了 2 次；第 2 次 commit-tree 的参数里有 ['-p', 'f'.repeat(40)]；两次 update-ref 的旧值依次是 HEAD 和 'f'.repeat(40)。gives-up 测试顺手断言 rev-parse 和 commit-tree 也各调了 3 次。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 178,
+      "summary": "正常路径下收口必然判成 draft。mergeSlice/finishResolve 在 afterMerge 里刷新 slices/_interfaces.md 后不提交，要等下一次 commitRecords 才进提交。按 S8.md 第 32 行，final 直接在 changeTree 里跑，前面没有提交记录这一步。所以没有修复轮时（mergeFix 才会先提交记录），最后一个切片合回留下的 _interfaces.md 改动，会在 final 之后由 closeout 的「chore(flight): 收口」提交进去。而 slice-gate.py 的 _final_fresh 只放行 BOOKKEEPING 里的文件（slice-gate.py:1175，不含 slices/_interfaces.md），于是 cmd_ship 报「final 过期」、退出 1，飞行永远落成 draft。根因是 RECORD_FILES 与 BOOKKEEPING 两份清单不一致，跨 S6/S8/slice-gate；本条为对照代码推出，未实际运行验证。",
+      "fix": "二选一：(a) 在 slice-gate.py 的 BOOKKEEPING 里加入 'slices/_interfaces.md'，与 RECORD_FILES 对齐，并补一条 _final_fresh 测试（需扩所有权或另开任务）；(b) land.ts 导出一个提交飞行记录的函数（复用 commitRecords），S8 在跑 final 之前先在 changeTree 调用它，让 final 的 HEAD 已包含 _interfaces.md。另外加一条集成测试覆盖：合回、final、closeout、ship 依次执行后结果为 ready。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 63,
+      "summary": "drive 里 dispatch reviewer/fixer、final、land、halt 全部交给本文件的空壳 landingHere，它什么都不做，也没有调用 landing.tsx 的 runLandingAction。按 slices.json，orchestrator.tsx 只归 S7，S8 的 owns 里没有它，而且 S8 与 S7 同层并行，所以 S8 落地后也接不上这条线。两片都合入后：飞行永远不派评审员、不跑 final、不落地；指纹已变时的 halt、账本读不出时的 halt（第 186 行）也会被静默吞掉。commit 说明里申报了这个缺口，但没有按切片约束『在本切片内用组合解决』，等于把 spec 第 3 节表格最后一行留成了死路。引擎是否真的禁止把 $ 传给跨 import 的函数，我没有在 2.1.295 的 plugin-authoring reference 里找到原文，需进一步确认。",
+      "fix": "S8 开工前先改计划，二选一：(a) 改 S8 切片包，让 landing.tsx 导出不带 $ 的接口，例如 runLandingAction(io, spawn, ui, f, action)（spawn / ui 用闭包注入），同时把 orchestrator.tsx 第 63 行这一处接线写进 S8 的 owns（或追加一个 S9 专门接线）；(b) 如果 $ 跨 import 的限制并不存在，S7 直接 import runLandingAction 并在 perform / driveNow 里 await runLandingAction($, f, a)。不管选哪种，都要补一条测试，断言 S1/S2 合回后账本里出现 reviewer 的 dispatch 事件。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 303,
+      "summary": "接管 /opsx-apply 的 command.run hook 会读 next，也没有 .catch。按引擎规则，它在这里算 gating hook，抛异常就被跳过，命令照常落到模型，也就是走旧的 Workflow 引擎。takeoff 在写完 takeoff 事件、开始 drive 之后，任何异常（$.agent.spawn 抛错、readLedger 遇到坏行时 JSON.parse 抛错、process.run 超时抛错等）都会让同一个 change 同时被插件派出的执行体和旧引擎各飞一遍，与 ADR『控制面缺席即停飞』相反（fail-open）。",
+      "fix": "给这个 hook 加 .catch(($, err) => ({ text: `flight：起飞异常，不起飞（${String(err).split('\\n')[0]}）` }))；同时在 takeoff / drive 外层 try/catch，异常时返回明确文本，不能落到 next(e)。另补一条测试：spawn 抛错时，log.commands 为空，回复里含『异常』。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_ledger.py",
+      "line": 261,
+      "summary": "负向用例只覆盖了「gate.ok 为字符串」和「未知 ev」两种情况。切片包点名的几个边界都没有测试兜底：attempt/line 为 True 时应被拒（排除 bool）、findings 某项 severity 非法或 line 缺失、role/kind/verdict 取表外的值、ended.model 为 null 时应被接受。另外 halt 是表里唯一一个从未被任何用例实际走过（包括正向）的事件类型。以后有人重构校验表时，这些规则悄悄失效也不会有测试变红。",
+      "fix": "在 scenario 骨架之外补一条参数化单测，直接调用 mod._check_event 断言 LedgerInvalid 和 reason 文案。至少覆盖这些输入：attempt=True、attempt=0、review.findings=[{...,'line':True}]、severity='INFO'、role='boss'、verdict='merged'。再加两条正向：{'ev':'halt','attempt':1,'reason':'x'} 和 ended.model=None。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/ledger.py",
+      "line": 37,
+      "summary": "新增的 takeoff.fp 校验复用了 FP_RE（^[0-9a-f]{64}$）配 re.match。Python 的 $ 能匹配到末尾换行之前，所以 64 位十六进制后面跟一个 \\n 的 fp 也能通过校验。approve 那边同样有这个问题，属于既有问题，但这次又扩散到了 takeoff 事件。目前 takeoff-gate 用 != 做精确比较，结果是拒绝放行（fail-closed），所以不构成放行漏洞，只是校验比 spec 写的「64 位十六进制」宽松。",
+      "fix": "把 FP 判定改成 FP_RE.fullmatch(x)，或者把正则改成 r\"\\A[0-9a-f]{64}\\Z\"。这样 approve 和 takeoff 会一起收紧。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/ledger.py",
+      "line": 111,
+      "summary": "必需字段缺失时报错文案是「gate 的 ok 不是布尔」，读的人分不清是字段缺了还是类型不对，排查损坏账本时要多绕一步。",
+      "fix": "循环里先判断 field not in ev，缺失时报「<ev> 缺 <field>」；字段存在再调用判定函数，失败时沿用现有 desc 文案。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 104,
+      "summary": "纯函数核心有不少分支没有任何测试覆盖：afterMergeFailed 整条路径（冲突时派解冲突 agent、非冲突失败记 infra、解冲突收口绿就 merge via resolve、红就记阻断、解冲突后再合回失败）、reviewActions 里评审员结束却没交评审就记 review:<S> 阻断、closing() 里修复 agent 红或未收口就记 fix 阻断、修复合回失败、上次被阻断的切片在新 attempt 里重新派发（spec 的 SHALL 条款，没有对应 scenario）。spec 的 Feature 写的是「纯函数，可以穷举测试」，而这些分支正是 S6 编排器要依赖的行为。",
+      "fix": "在 core.test.ts 里为上面每个分支各补一个单动作测试（不必绑定 scenario id），断言 next() 返回的 Action 字面量；至少覆盖：conflict 派 resolver、resolver 绿就 merge via resolve、review:<S> infra 阻断、fixer 红就记 blocked fix、attempt 2 里对上次 blocked 的切片做无 continuation 的新派发。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 99,
+      "summary": "firstDispatch 只检查「prev 那个 attempt」有没有 blocked。切片如果在 attempt 1 派发后中断，attempt 2 又因依赖被阻断（这一轮没有派发），到 attempt 3 会被当成「上一次飞行中断」续接派发。实际上它上一次是被阻断，按语义应当重新派发，不带这个续接原因。",
+      "fix": "把判断改为只要存在 attempt 不小于 prev.attempt 的同切片 blocked 事件就返回 fresh：evs.some(e => e.ev === 'blocked' && e.slice === s && Number(e.attempt) >= Number(prev.attempt))。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 74,
+      "summary": "stopVerdict 默认调用方已经先记了 gate 事件，Math.max(1, …) 会掩盖调用顺序错误：如果 S5/S6 先判定后记事件，第 3 条红只会被算成第 2 条，于是再 block 一次，续修上限悄悄变成 3，而且没有任何报错。（需进一步确认：取决于 S6 的实现顺序。）",
+      "fix": "在 stopVerdict 的 JSDoc 里写明前置条件「gate 已记入 state」；另外在 S6 的编排测试里断言 gate 事件写入发生在 stopVerdict 调用之前。也可以检查 state 中该 agent 最后一条 gate 的 commit/failed 是否与传入的 gate 一致，不一致时按「未记入」处理，即计数加 1。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 187,
+      "summary": "attempt 比较方式不统一：第 99 行和第 187 行用的是 ===，其余地方都用 Number(e.attempt) 归一后再比。账本事件从 JSON 读入时 attempt 一定是数字，所以目前不会出错，但风格不一致，容易埋雷。",
+      "fix": "统一改成 Number(x.attempt) === Number(y.attempt)，或者在 reduce 里把 attempt 归一成 number 后保存。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/agents/reviewer.md",
+      "line": 13,
+      "summary": "「取不到 → 提交一条说明『取 diff 失败』的 finding」没有指定 severity。评审员如果标成 MEDIUM/LOW，这条不会阻断，未经评审的切片会被静默放行进入 PR。",
+      "fix": "写死该 finding 的 severity 为 HIGH（或 CRITICAL），file 填切片包路径，确保进入阻断与批量修复流程。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_agents.py",
+      "line": 4,
+      "summary": "去掉 4 个 xfail 装饰器后，`import pytest` 在本文件里已无引用，成了本切片自己造出的 orphan import（ruff F401 会报）。",
+      "fix": "删除第 4 行 `import pytest`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/prompts.test.ts",
+      "line": 11,
+      "summary": "续接用例传入的 reason 本身就含「未正常收口」，`continuation.reason` 为空时回退到默认文案的分支没有被覆盖；就算回退文案被改坏，测试也能通过。",
+      "fix": "补一条断言：`executorPrompt({...base, continuation: {reason: '', failed: []}})` 含「未正常收口」与「（无）」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 7,
+      "summary": "「执行引擎」段写的是「只有人显式加 `--engine=workflow` 时，才由模型按下面的步骤……飞」。但 flight-orchestrator spec 规定，参数含 `--gate=per-task` 时插件同样原样交给命令文档、由模型执行（走 legacy 逐 task 路径）。「只有」措辞过强，和同一文档 Input 段的 `--gate=per-task` 分支相矛盾。SKILL.md 第 14 行同样如此。措辞照搬自 opsx-apply-plugin-engine spec，scenario 本身已满足，不阻断。",
+      "fix": "两份文档同改：把这句改成「只有人显式加 `--engine=workflow`（或 `--gate=per-task` 走 legacy）时，才由模型执行」，或在句末注明「`--gate=per-task` 见 Input 段」，消除和 Input 段的矛盾。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 67,
+      "summary": "appendEvent 写入前不校验事件，ledger.py 的 _check_event 却是严格校验：v=1、ev 必须在 EVENTS 里、change 要和目录名一致，各事件的必填字段也要合法。链上只要有一条不合法，整条账本就判为 LedgerInvalid（exit 4），之后 readLedger、takeoff-gate、批准判定全部失败，而且 refs/flight 受 Bash 守卫保护，模型没法修复。账本只追加，写进去一条坏事件就再也读不出来了。比如 S7 派发时 agentId 是 undefined，JSON.stringify 会把 agent 字段直接去掉；或者 event.change 和 f.change 不一致。（S7 侧是否已经校验，需进一步确认。）",
+      "fix": "在 hash-object 之前至少检查 event.change === f.change，event.ev 也属于已知事件集合，不满足就直接返回 false。更稳的做法是在 core.ts 提供一个和 ledger.py EVENTS 字段表一致的纯函数校验器，appendEvent 先过它再写。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 97,
+      "summary": "ensureWorktree 只区分「路径存在」和「路径不存在」两种情况。有一种续接情形会直接报错：目录被删了，但分支 flight/<change>/<name> 还在，或者 git 的 worktree 元数据没 prune。这时 `git worktree add -b` 会因为分支已存在或路径已登记而失败。spec 只定义了这两种情况，所以这里不算违约，只作提醒。",
+      "fix": "留给 S7/S8 处理时再决定。可以选的做法：add 失败时，如果分支已经存在，就先 `git worktree prune` 再用不带 -b 的 `git worktree add <path> flight/<change>/<name>` 复用这个分支；或者在 error 里写明原因，交给 halt 处理。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/io.test.ts",
+      "line": 74,
+      "summary": "有两处没有测试覆盖。一是 judgesDir 的优先级：<main>/.claude/hooks 和 template/.claude/hooks 同时存在时，应该选前者，这条分支没测。二是 ioOf 整个没测，timeoutMs 缺省 30000、透传 cwd/stdin 都没验证。ioOf 没测的原因已经申报（测试侧 $ 不能调 fs / process），可以接受，但值得在后续切片的集成测试里补上。",
+      "fix": "补一条 judgesDir 测试：两个目录都有 slice-gate.py 时，断言返回 /repo/.claude/hooks。ioOf 的透传语义等 S7/S8 的端到端测试来覆盖，或者在 tasks 里记一条待补。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 113,
+      "summary": "prepareResolve 忽略了在解冲突 worktree 里重做 merge 的退出码。merge 因非冲突原因失败时（例如切片分支不存在、worktree 状态异常），diff --diff-filter=U 为空，函数返回 {path, conflicts: []}，看起来像「无冲突、可以收尾」。调用方会拿着空冲突列表去派发解冲突 agent，问题要等 finishResolve 检查 rev-list 父提交数时才暴露，原因信息也丢了。",
+      "fix": "保存这次 merge 的结果：退出码非 0 且未合并文件为空时，返回 { error: `解冲突 worktree 重做合并失败：${firstLine(r)}` }。补一条对应的 TS 测试。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 67,
+      "summary": "refreshInterfaces 里「已有 ## <S> 节就整节替换」的分支，是逐行扫描加拼接 before/after 的手写逻辑，而 land-merges-green-slice 只覆盖了「追加新节」。替换分支涉及几种情况都没有测试：保留其他节、空行处理、S1 不误伤 S10，后续改动容易回归。",
+      "fix": "补一条 TS 测试：_interfaces.md 预置 `## S1`（旧内容）、`## S10`、`## S2` 三节，合回 S1 后断言 S1 节被替换、S10 与 S2 原样保留、节之间只有一个空行。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 58,
+      "summary": "判断是否为测试文件的条件区分大小写，且只认 tests/ 目录。`FooTest.java`、`src/test/java/...` 这类常见测试路径会被当成源文件写进接口摘要。这符合 spec 的字面要求，但与「非测试」的本意有出入。",
+      "fix": "按需把文件名判断改成不区分大小写（base.toLowerCase().includes('test')），目录判断补上 `/test/` 和 `test/` 前缀；或者在 spec 里明确只按字面判断。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 149,
+      "summary": "validateFindings 对 line 只检查是不是整数，0 或负数也能通过；summary 和 fix 允许空字符串。评审员可以提交没有信息量的 finding，与 reviewer 规范里「每条 finding 必须带文件:行号和问题描述」不一致。",
+      "fix": "line 加上 >= 1 的检查；summary 要求非空；fix 是否允许为空按分级决定（CRITICAL/HIGH 应要求非空）。错误信息保持「第 N 项的 <字段>」格式。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 183,
+      "summary": "drive 没有检测『这一轮没有任何进展』。某个动作执行后不写账本时（现在是 landingHere 这个空壳；将来是 runLandingAction 被拒或静默失败），下一轮重读账本会得到同一个动作，于是空转满 50 轮。每轮都要起 ledger.py、plan_fp.py 进程，读一次 slices.json，再刷一次状态行。按现在的代码，任一切片合回后（reviewActions 返回 dispatch reviewer），之后每次 turn.complete 都会空转 50 轮，conflict-spawns-resolver 测试里就已经发生了。",
+      "fix": "在 driveNow 里记下上一轮的账本事件数（或 actions 的 JSON 签名）；本轮执行完后账本没有新增事件，就停下（可选记一条 blocked/halt）。MAX_ROUNDS 只作兜底。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 39,
+      "summary": "ioHere / spawnHere 是 io.ts 里 ioOf / spawnAgent 的逐行复制（包括默认超时常量 30000）。同一语义现在有两份实现，以后改 io.ts 时这里不会跟着变。这么复制的前提是 $ 不能跨 import，而这一点还没核实（见上一条 HIGH）。",
+      "fix": "先核实这条引擎限制。限制不存在就直接 import ioOf / spawnAgent，删掉副本；限制存在，就在 io.ts 提供不带 $ 的工厂（例如 ioFrom(ops)），由本文件传入 $.process.run 等方法引用，只保留一份实现。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 282,
+      "summary": "flights.set 放在 timeline approve 提交和 takeoff 事件写入之前。后面任一步失败返回『不起飞』时，这个 flight 仍留在模块内的 flights 里，之后每次 SubagentStop / turn.complete 的 flightOfAgent 都会白读它一遍账本。",
+      "fix": "把 flights.set(name, flight) 挪到 appendEvent(takeoff) 成功之后、drive 之前。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 318,
+      "summary": "SubagentStop 里忽略了 appendEvent 的返回值。gate 事件没写进账本时，block / accept 仍按内存里拼出的事件判定，账本和这次判定会不一致。",
+      "fix": "appendEvent 返回 false 时，block 一次并说明『门禁结论写账本失败』，或者至少把 stopVerdict 的输入改回只用 found.events（不拼接未落盘的事件）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 14,
+      "summary": "VERSION_FLOOR 和 register.tsx 里的下限各写一份。spec 要求『下限常量与批准带一致』，两处以后可能漂移。",
+      "fix": "留一条 backlog：S8 或后续切片让 register.tsx 导出这个常量（或挪进 core.ts），这里改为 import。"
+    }
+  ],
+  "fix": null
+}

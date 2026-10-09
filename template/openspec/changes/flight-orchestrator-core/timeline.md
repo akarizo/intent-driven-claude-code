@@ -14,3 +14,5 @@
 2026-10-09T13:26:28Z	review	findings=28 blocking=5 deferred=23
 2026-10-09T13:29:31Z	final	red
 2026-10-09T13:29:31Z	apply-done	blocked=2 blocking=5
+2026-10-09T13:45:56Z	final	red
+2026-10-09T13:48:05Z	apply-done	halted: final 34/41（S8 blocked；fix 未返回；首次 final 红因 mod 灰度开关被存成关闭）
