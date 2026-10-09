@@ -7,3 +7,5 @@
 2026-10-09T15:43:57Z	integrate	wave 1
 2026-10-09T15:46:52Z	gate	S4 ok
 2026-10-09T15:46:58Z	integrate	wave 2
+2026-10-09T15:56:18Z	gate	S5 ok
+2026-10-09T15:56:27Z	integrate	wave 3
