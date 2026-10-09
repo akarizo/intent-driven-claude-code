@@ -2,6 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { FlightBand, FlightItem } from '../types'
+import { registerLanding } from './landing'
+import { registerOrchestrator } from './orchestrator'
 
 // flight 控制面：批准带（AbovePrompt）+ 按压时进程内写账本 + Bash 守卫。
 // 指纹与账本读取只经 plan_fp.py / ledger.py 的 CLI；本模块不注册任何工具或命令（无模型可调批准入口）。
@@ -285,4 +287,6 @@ export const register: Register = on => {
   on('tool.call', { tool: GUARDED_TOOLS }, ($, e, next) => (touchesLedger(e) ? { deny: GUARD_DENY } : next(e))).catch(
     ($, e, next) => (next.called ? next(e) : touchesLedger(e) ? { deny: GUARD_DENY } : next(e)),
   )
+  registerOrchestrator(on)
+  registerLanding(on)
 }
