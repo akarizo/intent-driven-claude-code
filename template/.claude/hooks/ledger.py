@@ -12,8 +12,54 @@ import re
 import subprocess
 import sys
 
-EVENTS = {"approve"}
 FP_RE = re.compile(r"^[0-9a-f]{64}$")
+SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+
+
+def _int(x):  # Python 里 True 是 int，须排除
+    return isinstance(x, int) and not isinstance(x, bool)
+
+
+def _strs(x):
+    return isinstance(x, list) and all(isinstance(i, str) for i in x)
+
+
+def _finding(f):
+    return (isinstance(f, dict) and f.get("severity") in SEVERITIES and isinstance(f.get("file"), str)
+            and _int(f.get("line")) and isinstance(f.get("summary"), str) and isinstance(f.get("fix"), str))
+
+
+def _one_of(*opts):
+    return (lambda x: isinstance(x, str) and x in opts), "不在 %s 之内" % " / ".join(opts)
+
+
+# 字段校验：(判定函数, 不合法时的描述)
+FP = (lambda x: isinstance(x, str) and FP_RE.match(x) is not None, "不是 64 位十六进制")
+ATTEMPT = (lambda x: _int(x) and x > 0, "不是正整数")
+NONEMPTY = (lambda x: isinstance(x, str) and x != "", "不是非空字符串")
+STR = (lambda x: isinstance(x, str), "不是字符串")
+BOOL = (lambda x: isinstance(x, bool), "不是布尔")
+STRS = (_strs, "不是字符串数组")
+RESULT = {"attempt": ATTEMPT, "slice": NONEMPTY, "ok": BOOL, "commit": STR, "failed": STRS}
+
+# 每类事件除公共字段（v / ev / change / at / by.plugin）外的必需字段；允许表外额外字段（spec flight-ledger-events）
+EVENTS = {
+    "approve": {"fp": FP},
+    "takeoff": {"attempt": ATTEMPT, "fp": FP, "branch": NONEMPTY, "model": NONEMPTY,
+                "waves": (lambda x: isinstance(x, list) and all(_strs(w) for w in x), "不是字符串数组的数组")},
+    "dispatch": {"attempt": ATTEMPT, "slice": NONEMPTY, "role": _one_of("executor", "reviewer", "fixer", "resolver"),
+                 "agent": NONEMPTY, "model": NONEMPTY, "worktree": NONEMPTY},
+    "gate": RESULT,
+    "ended": {"attempt": ATTEMPT, "agent": NONEMPTY, "reason": STR,
+              "model": (lambda x: x is None or isinstance(x, str), "不是字符串或 null")},
+    "merge": RESULT,
+    "review": {"attempt": ATTEMPT, "slice": NONEMPTY, "agent": NONEMPTY,
+               "findings": (lambda x: isinstance(x, list) and all(_finding(f) for f in x), "不是合法的 findings 数组")},
+    "blocked": {"attempt": ATTEMPT, "slice": NONEMPTY, "kind": _one_of("gate", "infra"), "reason": STR},
+    "final": {"attempt": ATTEMPT, "ok": BOOL, "commit": STR, "failed": STRS},
+    "land": {"attempt": ATTEMPT, "verdict": _one_of("ready", "draft")},
+    "halt": {"attempt": ATTEMPT, "reason": STR},
+}
 
 
 class LedgerInvalid(Exception):
@@ -53,17 +99,18 @@ def _check_event(sha, ev, change):
         raise LedgerInvalid(sha, "event.json 不是 JSON 对象")
     if ev.get("v") != 1:
         raise LedgerInvalid(sha, "v 不是 1")
-    if ev.get("ev") not in EVENTS:
+    if not isinstance(ev.get("ev"), str) or ev["ev"] not in EVENTS:  # 列表等不可哈希值不得抛 TypeError
         raise LedgerInvalid(sha, "ev 非法")
     if ev.get("change") != change:
         raise LedgerInvalid(sha, "change 与目录名不符")
-    if not isinstance(ev.get("fp"), str) or not FP_RE.match(ev["fp"]):
-        raise LedgerInvalid(sha, "fp 不是 64 位十六进制")
     if not isinstance(ev.get("at"), str):
         raise LedgerInvalid(sha, "at 不是字符串")
     by = ev.get("by")
     if not isinstance(by, dict) or "plugin" not in by:
         raise LedgerInvalid(sha, "by 缺 plugin")
+    for field, (ok, desc) in EVENTS[ev["ev"]].items():
+        if not ok(ev.get(field)):
+            raise LedgerInvalid(sha, "%s 的 %s %s" % (ev["ev"], field, desc))
 
 
 def _read(change_dir):

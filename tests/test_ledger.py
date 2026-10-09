@@ -221,7 +221,6 @@ def test_ledger_tip_matches_read_chain(git_repo, monkeypatch):
 
 
 # ---------------------------------------------------------------- flight-orchestrator-core（scenario: flight-ledger-events#*）
-# 骨架：S1 让 ledger.py 逐类校验飞行事件后逐条去掉 xfail 标记。
 
 def flight_events(change="demo", fp=F1):
     """flight-ledger-events 表中每类事件各一条（字段合法），按一次飞行的顺序排列。"""
@@ -243,7 +242,6 @@ def flight_events(change="demo", fp=F1):
     return [dict(base, **r) for r in rows]
 
 
-@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
 def test_ledger_accepts_flight_events(git_repo):
     # Given: demo 的账本依次有 approve、takeoff、dispatch、gate、ended、merge、review、blocked、final、land 十条合法事件
     d = make_change(git_repo)
@@ -260,7 +258,6 @@ def test_ledger_accepts_flight_events(git_repo):
     assert [json.loads(line)["ev"] for line in s.stdout.splitlines()] == [e["ev"] for e in events]
 
 
-@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
 def test_ledger_rejects_malformed_flight_event(tmp_path):
     # Given: 两个账本——一个链尾是 ok 为字符串 "yes" 的 gate 事件，一个链尾是 ev 为 "teleport" 的事件
     events = flight_events()
@@ -290,7 +287,6 @@ def test_ledger_rejects_malformed_flight_event(tmp_path):
     assert control.returncode == 0, control.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S1：ledger.py 尚不认识飞行事件")
 def test_approved_ignores_flight_events(git_repo):
     # Given: 账本上 approve（当前计划指纹 F）之后又有 takeoff、dispatch、gate 三条事件
     d = make_change(git_repo)
