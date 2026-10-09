@@ -170,18 +170,24 @@ for (const [i, allWave] of waves.entries()) {
       const payload = { slice: s, ok: !!g.ok, commit: g.commit, failed: g.failed || [], warnings: g.warnings || [], ceilings: g.ceilings || [] }
       return `python3 ${hooksDir}/slice-gate.py record --change-dir ${changeDir} --json ${shq(JSON.stringify(payload))}`
     })
-    const integ = await agent(
+    // integrator 抛错与未返回同样重派一次；返回 ok:false（合回冲突）是确定性的，不重派
+    const callInteg = (retry) => agent(
       rules('integrator') + `按 agent 定义第 0 项先把 ${changeDir} 内未提交的飞行记录文件（timeline.md / gate-report.md / evidence.log）提交掉；` +
       `再按第 1 项把切片 ${merged.join(', ')} 的 commit 合回当前分支：${shas.join(' ')}（冲突则 abort 并返回 ok:false）。` +
       `合回后逐条运行（把临时 worktree 里的门禁结论写回分支）：\n${recordCmds.join('\n')}\n` +
       `然后按第 2 项刷新 ${changeDir}/slices/_interfaces.md，并 \`python3 ${hooksDir}/timeline.py record integrate --change-dir ${changeDir} --note "wave ${i + 1}"\`，最后再按第 0 项把飞行记录提交。` +
       '本次只合回，不要运行第 3 项（全量门禁 final）——后续 wave 的 scenario 还没解锁，现在跑必然红。返回 JSON {ok, merged, failed, warnings}。',
-      { label: `integrate:w${i + 1}`, schema: MERGE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
-    if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, kind: 'infra', reason: integ ? integ.failed.join('; ') : 'integrator 未返回' })
+      { label: `integrate:w${i + 1}` + (retry ? ':retry' : ''), schema: MERGE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
+      .catch(() => null)
+    let integ = await callInteg(false)
+    if (!integ) integ = await callInteg(true)
+    if (!integ || !integ.ok) blocked.push({ slice: `wave${i + 1}`, kind: 'infra', reason: integ ? integ.failed.join('; ') : 'integrator 未返回（已重派一次）' })
   }
   for (const s of merged) {
     const gate = done[wave.indexOf(s)]
-    reviews.push(agent(reviewPrompt(s, gate), { label: `review:${s}`, phase: 'Review', schema: FINDINGS, model: models.reviewer, effort: efforts.reviewer, ...typed('code-reviewer') }))
+    // 评审员抛错不重派、不拖垮工作流：记 blocked（infra），切片级评审缺失由 /pr-ship 的整 PR 评审兜住
+    reviews.push(agent(reviewPrompt(s, gate), { label: `review:${s}`, phase: 'Review', schema: FINDINGS, model: models.reviewer, effort: efforts.reviewer, ...typed('code-reviewer') })
+      .catch(() => { blocked.push({ slice: `review:${s}`, kind: 'infra', reason: '切片 ' + s + ' 评审未返回（不重派，PR 评审兜底）' }); return null }))
   }
 }
 
@@ -220,11 +226,16 @@ const mergeFix = fix && fix.commit
   ? `再按第 1 项把 fix 的 commit 合回当前分支：${fix.commit}（冲突则 abort，返回 ok:false 且 failed 写「merge fix 冲突」，不再往下跑）；` +
     `\`python3 ${hooksDir}/timeline.py record fix --change-dir ${changeDir} --note "blocking=${blocking.length}"\`；`
   : ''
-const final = await agent(
+// final-gate 同 integrator：抛错与未返回重派一次，仍为空记 blocked（infra），返回的 final 为 null
+const callFinal = (retry) => agent(
   rules('integrator') + `按 agent 定义第 0 项先提交 ${changeDir} 内未提交的飞行记录文件；` + mergeFix +
   `\`python3 ${hooksDir}/timeline.py record review --change-dir ${changeDir} --note "findings=${findings.length} blocking=${blocking.length} deferred=${deferred.length}"\`；` +
   `再按第 3 项运行 \`python3 ${hooksDir}/slice-gate.py final --change-dir ${changeDir}\`，` +
   `再 \`python3 ${hooksDir}/timeline.py record apply-done --change-dir ${changeDir} --note "blocked=${blocked.length} blocking=${blocking.length}"\`，最后按第 0 项再提交一次飞行记录。返回 final 的 JSON。`,
-  { label: 'final-gate', schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
+  { label: retry ? 'final-gate:retry' : 'final-gate', schema: GATE, model: models.integrator, effort: efforts.integrator, ...typed('integrator') })
+  .catch(() => null)
+let final = await callFinal(false)
+if (!final) final = await callFinal(true)
+if (!final) blocked.push({ slice: 'final', kind: 'infra', reason: 'final-gate 未返回（已重派一次）' })
 
 return { change, models, efforts, slices: results, blocked, blocking, deferred, fix, final }
