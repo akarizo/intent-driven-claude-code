@@ -11,43 +11,7 @@
       "reason": "fix agent 未返回（已重派一次）"
     }
   ],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/prompts.ts",
-      "line": 38,
-      "summary": "reviewerPrompt 让评审员用 `git show ${commit}` 取回改动，但控制面传入的 commit 是合回后的 `--no-ff` 合并提交（core.ts:145 取 merged 事件的 commit；flight-integration spec 写明返回合并后的 commit）。对没有冲突的合并提交，`git show` 只输出组合 diff，结果是空的（已实测：`git show 712f5d9`，即 integrate: S3，只有提交头，没有任何 diff）。评审员因此看到「无变更」，很可能提交空列表放行，独立评审实际失效（违反仓库铁律 4）。reviewer.md:13 与 :22 写的是同一条指令，问题相同。",
-      "fix": "把取 diff 的命令改成相对第一父提交：在 prompts.ts 里写成 `git diff ${x.commit}^1 ${x.commit}`（或 `git show --first-parent -m ${x.commit}`），reviewer.md 第 13、22 行同步改。另外写明：被审 commit 是合并提交时 diff 为空不等于无变更，要按「取 diff 失败」处理。prompts.test.ts 里补一条断言，确认评审员提示词含 `${commit}^1`。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/tests/io.test.ts",
-      "line": 87,
-      "summary": "io-appends-event-with-cas-retry 验证不了这条 scenario 的核心要求「update-ref 失败后重读链尾再试」。假 Io 里的 rev-parse（第 41 行）每次都返回同一个 HEAD（dddd…），断言只检查两次 update-ref 的旧值都是 HEAD。所以把 rev-parse 提到循环外、只读一次链尾的错误实现照样能通过；commit-tree 的 -p 父值也没有断言。现在的实现（io.ts:76，在循环内重读）是对的，但这个测试拦不住回归，和 Then 里的「重读链尾后成功」不对应。",
-      "fix": "让假 Io 的 rev-parse 按调用次数返回不同的链尾：第 1 次 dddd…，第 2 次 ffff…（模拟被别人抢先追加）。断言改为：rev-parse 调了 2 次；第 2 次 commit-tree 的参数里有 ['-p', 'f'.repeat(40)]；两次 update-ref 的旧值依次是 HEAD 和 'f'.repeat(40)。gives-up 测试顺手断言 rev-parse 和 commit-tree 也各调了 3 次。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/land.ts",
-      "line": 178,
-      "summary": "正常路径下收口必然判成 draft。mergeSlice/finishResolve 在 afterMerge 里刷新 slices/_interfaces.md 后不提交，要等下一次 commitRecords 才进提交。按 S8.md 第 32 行，final 直接在 changeTree 里跑，前面没有提交记录这一步。所以没有修复轮时（mergeFix 才会先提交记录），最后一个切片合回留下的 _interfaces.md 改动，会在 final 之后由 closeout 的「chore(flight): 收口」提交进去。而 slice-gate.py 的 _final_fresh 只放行 BOOKKEEPING 里的文件（slice-gate.py:1175，不含 slices/_interfaces.md），于是 cmd_ship 报「final 过期」、退出 1，飞行永远落成 draft。根因是 RECORD_FILES 与 BOOKKEEPING 两份清单不一致，跨 S6/S8/slice-gate；本条为对照代码推出，未实际运行验证。",
-      "fix": "二选一：(a) 在 slice-gate.py 的 BOOKKEEPING 里加入 'slices/_interfaces.md'，与 RECORD_FILES 对齐，并补一条 _final_fresh 测试（需扩所有权或另开任务）；(b) land.ts 导出一个提交飞行记录的函数（复用 commitRecords），S8 在跑 final 之前先在 changeTree 调用它，让 final 的 HEAD 已包含 _interfaces.md。另外加一条集成测试覆盖：合回、final、closeout、ship 依次执行后结果为 ready。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/orchestrator.tsx",
-      "line": 63,
-      "summary": "drive 里 dispatch reviewer/fixer、final、land、halt 全部交给本文件的空壳 landingHere，它什么都不做，也没有调用 landing.tsx 的 runLandingAction。按 slices.json，orchestrator.tsx 只归 S7，S8 的 owns 里没有它，而且 S8 与 S7 同层并行，所以 S8 落地后也接不上这条线。两片都合入后：飞行永远不派评审员、不跑 final、不落地；指纹已变时的 halt、账本读不出时的 halt（第 186 行）也会被静默吞掉。commit 说明里申报了这个缺口，但没有按切片约束『在本切片内用组合解决』，等于把 spec 第 3 节表格最后一行留成了死路。引擎是否真的禁止把 $ 传给跨 import 的函数，我没有在 2.1.295 的 plugin-authoring reference 里找到原文，需进一步确认。",
-      "fix": "S8 开工前先改计划，二选一：(a) 改 S8 切片包，让 landing.tsx 导出不带 $ 的接口，例如 runLandingAction(io, spawn, ui, f, action)（spawn / ui 用闭包注入），同时把 orchestrator.tsx 第 63 行这一处接线写进 S8 的 owns（或追加一个 S9 专门接线）；(b) 如果 $ 跨 import 的限制并不存在，S7 直接 import runLandingAction 并在 perform / driveNow 里 await runLandingAction($, f, a)。不管选哪种，都要补一条测试，断言 S1/S2 合回后账本里出现 reviewer 的 dispatch 事件。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/orchestrator.tsx",
-      "line": 303,
-      "summary": "接管 /opsx-apply 的 command.run hook 会读 next，也没有 .catch。按引擎规则，它在这里算 gating hook，抛异常就被跳过，命令照常落到模型，也就是走旧的 Workflow 引擎。takeoff 在写完 takeoff 事件、开始 drive 之后，任何异常（$.agent.spawn 抛错、readLedger 遇到坏行时 JSON.parse 抛错、process.run 超时抛错等）都会让同一个 change 同时被插件派出的执行体和旧引擎各飞一遍，与 ADR『控制面缺席即停飞』相反（fail-open）。",
-      "fix": "给这个 hook 加 .catch(($, err) => ({ text: `flight：起飞异常，不起飞（${String(err).split('\\n')[0]}）` }))；同时在 takeoff / drive 外层 try/catch，异常时返回明确文本，不能落到 next(e)。另补一条测试：spawn 抛错时，log.commands 为空，回复里含『异常』。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "MEDIUM",

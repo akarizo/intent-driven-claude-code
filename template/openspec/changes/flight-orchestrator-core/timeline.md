@@ -18,3 +18,6 @@
 2026-10-09T13:48:05Z	apply-done	halted: final 34/41（S8 blocked；fix 未返回；首次 final 红因 mod 灰度开关被存成关闭）
 2026-10-09T14:31:52Z	final	ok
 2026-10-09T16:08:57Z	final	ok
+2026-10-09T23:35:24Z	ship	draft: final 过期：记录 436dce03ff，HEAD 226d6e6151
+2026-10-09T23:36:42Z	final	ok
+2026-10-09T23:36:42Z	ship	ready

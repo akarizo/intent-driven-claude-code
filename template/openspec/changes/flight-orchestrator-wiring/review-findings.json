@@ -1,28 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/io.ts",
-      "line": 115,
-      "summary": "账本回退路径只在主 worktree 上探测 changeDir（`${mainTree}/template/openspec/changes/<change>`），探测不到就 continue。但按本仓库约定，正在飞的 change 工件只在 change 分支 / change worktree 上，合入前主 worktree 没有这个目录。实测：当前飞行 flight-orchestrator-wiring 在主仓库 /Users/akarizo/Develop/fromgit/intent-driven-claude-code/template/openspec/changes/ 下不存在。ledger.py 用 `git -C change_dir` 读账本，要求该目录在磁盘上存在。所以进程重启或换进程后，回退路径对任何未合入的活跃飞行都返回 undefined，SubagentStop / turn.complete 会直接 next(e)：不跑门禁，不记 ended，也不 drive。D2 要的「只靠账本找回飞行」在真实目录布局下实际失效。design D2 写的是先找 takeoff.branch 所在的 worktree 再探测，切片包改成了只探测主 worktree，实现照切片包做，两者自相矛盾。",
-      "fix": "探测 changeDir 时遍历全部 worktree（`all`，主 worktree 排第一），对每个 `t.path` 依次试两个候选目录，命中即用 `{changeTree: t.path, changeDir}` 组成 probe 读账本（refs/flight 是共享 ref，从哪个 worktree 读都一样）。重建 Flight 时 changeTree 仍按 takeoff.branch 定位。同时在 ledgerWorld 里补一个情形：`exists` 只对 `${CHANGE_TREE}/${CHANGE_DIR}` 返回 true、对 `${MAIN}/${CHANGE_DIR}` 返回 false，断言仍能找到 demo。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/landing.tsx",
-      "line": 56,
-      "summary": "eventsOf 遇到账本读取失败时静默返回 []，runLandingAction 第 94 行直接拿空状态继续执行，属于失败放行（fail-open）。走 land 分支时，closeoutLists(reduce([])) 得到 blocking=[]、blocked=[]，closeout 会用空列表覆盖 review-findings.json 并提交，随后 slice-gate ship 可能判 ready 并运行 /pr-ship，真实存在的 CRITICAL/HIGH 评审结论就丢了，绕过了铁律 4（CRITICAL/HIGH 未闭环不得非 draft）。走 dispatch 分支时，currentAttempt([]) 会给出错误的 attempt，写进账本的事件归属也就错了。drive（orchestrator.tsx:186）虽然在调用前读过一次账本，但 landing 这里会再读一次，两次读之间的瞬时失败并没有被处理。这段逻辑沿用自 bcb74e6，但已经在本 diff 里重新落地。",
-      "fix": "让 eventsOf 把 error 透传出来（例如返回 readLedger 的原始结果），runLandingAction 遇到 'error' 时立即停止：ctx.toast 提示「账本读取失败」并 return，不能用空状态继续 dispatch / final / land。land 分支尤其要保证读不到账本时绝不调用 closeout，也不运行 pr-ship。另外补一条测试：假 io 让 ledger.py show 返回非 0，断言没有写 review-findings.json，runCommand 也没有被调用。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/orchestrator.tsx",
-      "line": 215,
-      "summary": "只治了症状：起飞异常只在 command.run 路径被兜住。同一个 drive（例如 runLandingAction 派发评审员 / 修复者时 ctx.spawn 抛异常，也就是本 scenario 的触发条件）若由 turn.complete（370 行）或 SubagentStop 触发，异常会一路冒出 hook，账本里既没有 blocked 也没有 halt。结果是飞行停在半空，没有任何 agent 在跑，状态行也一直停在旧状态，人得不到任何信号。这与 spec 的「编排的每条出路都闭合；fail-closed」相悖。",
-      "fix": "在 driveNow 的 perform 循环外层（或包住 runLandingAction / perform 调用）加 try/catch：捕获后尽力执行 runLandingAction(ctx, f, { kind: 'halt', reason: `动作异常：${firstLine(msg)}` })，然后 rethrow。rethrow 保证 takeoff 路径仍按 takeoff-exception-stays-grounded 回复「起飞异常」。另外给 turn.complete hook 补 .catch，返回 next(e) 的结果，不让异常冒到引擎。再补一条 TS 测试：合回后派发评审员时 spawn 抛异常，账本应出现 halt。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "MEDIUM",
