@@ -96,7 +96,18 @@ git clone --depth 1 --branch stable-v2.0 https://github.com/akarizo/intent-drive
 /tmp/idt/install.sh ~/path/to/your-project
 ```
 
-可用 tag 去 GitHub 仓库的 Tags 页查，或运行 `git ls-remote --tags https://github.com/akarizo/intent-driven-claude-code`。
+可用 tag 去 GitHub 仓库的 Tags 页查，或运行 `git ls-remote --tags https://github.com/akarizo/intent-driven-claude-code`。目前有：
+
+| tag | 对应 | 日期 | 内容 |
+| --- | --- | --- | --- |
+| `stable-v2.0` | PR #34（`49533dd`） | 2026-10-08 | 飞行模式 apply：切片 + Workflow 并行 + `slice-gate.py` 机械门禁 + 评审离关键路径 + 模型按角色显式路由；起飞批准由 `takeoff-gate.py` 校验会话转录里的人类消息，**不需要 flight 插件** |
+| `stable-v1.0` | PR #19（`4c00ac6`） | 2026-07-07 | 飞行模式之前：`/opsx-apply` 逐 task 派 `code-reviewer` 守门，或串行执行 |
+
+**`stable-v2.0` 与 main 的差异**（main 在它之后合入了 #35–#37）：
+
+- **起飞批准**：v2.0 以会话转录里的人类消息作批准证据；main 改为在 Claude Code 输入框上方的批准带按「批准起飞」，计划指纹写入账本 `refs/flight/<change>/ledger`，需要 `flight@intent-driven` 插件（#35）。
+- **不含之后的飞行修复**：#36「重派恢复、执行体一律隔离、G7 看实际结果与批准链加固」，#37「G7 沿用项目测试环境、工作流 agent 抛错兜底」。
+- **何时选它**：需要不装 flight 插件、停留在 #34 时点的飞行模式时用；其余情况建议直接用 main。该版本的完整用法见 [tag 内的 README](https://github.com/akarizo/intent-driven-claude-code/blob/stable-v2.0/README.md)。
 
 > ⚠ 不要从 tag 路径（`raw.githubusercontent.com/.../<tag>/install.sh`）取脚本走管道：老版本的脚本不认 tag，缺省装的仍是 main。始终用 main 上的 `install.sh` 加 `IDT_BRANCH`。
 >
