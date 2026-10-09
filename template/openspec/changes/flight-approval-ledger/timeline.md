@@ -1,3 +1,6 @@
 <!-- timeline: ISO时间\t事件\t备注（由 hooks 自动追加） -->
 2026-10-09T04:46:52Z	baseline	exit 0, 67.0s ok
 2026-10-09T04:57:54Z	approve	2026-10-09T04:56:22Z · 起飞，授权你提交
+2026-10-09T05:05:51Z	gate	S1 6a04bbab8a12a9b0a1938031aabf52a2cc2b1a18 ok
+2026-10-09T05:05:51Z	gate	S2 1178847fa032a563b0378b7e55f50280410e8f24 ok
+2026-10-09T05:05:51Z	integrate	wave 1
