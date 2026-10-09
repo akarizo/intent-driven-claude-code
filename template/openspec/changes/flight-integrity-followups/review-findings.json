@@ -1,0 +1,56 @@
+{
+ "blocked": [],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 564,
+   "summary": "gate.pytest 分支直接调 shlex.split(gate[\"pytest\"])，没有像 gate.test 分支那样捕获 ValueError。引号不配对（例如 `uv run \"pytest`）时会抛出未捕获异常，slice-gate 打出 traceback，不输出 JSON 结论。如果 gate.pytest 在 slices.json 里写成数组，也会抛 AttributeError。用户配置错误会让门禁直接崩溃，而不是给出可读的 failed/warning。",
+   "fix": "把 gate.pytest 的解析也包进 try/except (ValueError, AttributeError)：解析失败时退回 [sys.executable, '-m', 'pytest']，并返回一条以 G7 开头的 warning，说明 gate.pytest 无法解析；如果允许数组形式，就先判断是不是 list，是 list 直接用。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 581,
+   "summary": "_g7_timeout 只要 FLIGHT_G7_TIMEOUT 能被 float() 解析就采用，没有过滤 0、负数、nan、inf。0 或负数会立刻判超时；nan 或 inf 传给 communicate(timeout=...) 后，行为取决于实现细节，可能报错。",
+   "fix": "解析后加一道判断：math.isfinite(v) 且 v > 0 才采用，否则继续走 full_suite_sec 或 600 的默认逻辑。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 618,
+   "summary": "超时后先 os.killpg 整组杀掉，再调用不带 timeout 的 p.communicate()。如果孙进程自己 setsid 脱离了进程组，同时还占着管道，这里会无限等待，门禁仍会挂住。另外信号用的是裸数字 9，可读性差。",
+   "fix": "改用 signal.SIGKILL；收尾时调用 p.communicate(timeout=5)，再超时就关闭 p.stdout 后放弃读取，保证门禁一定会返回。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 603,
+   "summary": "Popen(text=True) 按 locale 严格解码子进程输出。项目 pytest 输出里有非 UTF-8 字节时会抛 UnicodeDecodeError，gate 随之崩溃。原实现也有这个问题，但这次新增的诊断行依赖输出文本，影响面变大了。",
+   "fix": "给 Popen 加 encoding='utf-8', errors='replace'。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_slice_gate.py",
+   "line": 1270,
+   "summary": "test_g7_times_out 只断言 failed 里出现「运行超时」。如果实现只杀直接子进程、不杀整个进程组，communicate() 会多等约 5 秒，但最终仍会报超时，测试照样通过。所以这条用例守不住切片「坑」里强调的进程组整组杀掉的约束，换成只杀子进程的写法测试也能通过。",
+   "fix": "在用例里给 _final 计时，断言耗时明显小于包装脚本的 sleep 时长，例如把 sleep 加到 30、断言 < 15 秒；或者在包装脚本里让 sleep 的孙进程写 pid 文件，断言它已不存在。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 174,
+   "summary": "integrator 与 final-gate 的重派 prompt 和首轮完全一样（只有 label 不同），没有告诉 agent「上一轮可能已经做了一部分」。agent 调用抛错多半发生在步骤基本跑完、只差结构化返回的时候，重派会把 timeline.py record integrate / review / apply-done 再记一遍，timeline 里出现重复事件。git merge --no-ff 对已合回的 sha 是幂等的，timeline report 也只取最后一条 apply-done，所以影响有限，只是飞行记录里会多出噪声行。",
+   "fix": "retry 为真时在 prompt 前加一句：上一轮未返回、可能已部分执行；先 git log 核对哪些 sha 已合回、timeline.md 里是否已有本 wave 的 integrate 事件，有就跳过，避免重复记录。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/opsx-apply.md",
+   "line": 59,
+   "summary": "回退段的措辞与切片契约、spec 不一致：契约和 spec 写的是「由 /pr-ship 的整 PR 评审兜住」，文档写成了「pr-ship」（去掉了斜杠）。门禁已经申报原因：test_template_docs.py::test_apply_command_zero_prompts 把文档里第一个 '/pr-ship' 当截断点。为了迁就别的测试的脆弱截断点去改文案，留下了契约漂移，以后的人很容易把斜杠补回来，把那条测试弄红。SKILL.md:67 也是同样情况。",
+   "fix": "二选一：(1) 在后续切片里把 test_apply_command_zero_prompts 的截断点改成稳定锚点（例如步骤 7 的标题「不问，直接进入」），再恢复「/pr-ship」原文；(2) 把 S2.md 契约里的措辞同步改成「pr-ship」，并在 design 里注明原因，让契约与实现一致。"
+  }
+ ],
+ "fix": null
+}
