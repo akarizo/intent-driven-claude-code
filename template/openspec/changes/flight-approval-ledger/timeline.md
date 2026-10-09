@@ -15,3 +15,7 @@
 2026-10-09T05:13:16Z	apply-done	blocked=3 blocking=1
 2026-10-09T05:17:41Z	gate	S3 ok
 2026-10-09T05:17:49Z	integrate	wave 1 补合 S3
+2026-10-09T05:18:05Z	slice-start	S5
+2026-10-09T05:20:50Z	gate	S5 ok
+2026-10-09T05:21:00Z	slice-start	S6
+2026-10-09T05:25:05Z	gate	S6 ok
