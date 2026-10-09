@@ -573,7 +573,6 @@ def test_workflow_skips_merge_when_fix_base_rejected(tmp_path):
 ALL_GREEN = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：integrator / final-gate 抛错未重派")
 def test_mechanical_roles_retry_once(tmp_path):
     # Given: waves [[S1, S2], [S3]] 全部门禁绿；wave 1 的合回与 final-gate 的首次 agent 调用都抛错，重派后都成功
     retried_final = {"slice": "final", "ok": True, "commit": "a" * 40, "failed": []}
@@ -590,7 +589,6 @@ def test_mechanical_roles_retry_once(tmp_path):
     assert out["result"]["final"] == retried_final, out["result"]["final"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：integrator / final-gate 抛错未兜住")
 def test_mechanical_roles_blocked_after_retry(tmp_path):
     # Given: waves [[S1, S2], [S3]] 全部门禁绿；wave 1 的合回与 final-gate 的首次和重派调用都抛错
     replies = ALL_GREEN + [["^integrate:w1(:retry)?$", THROW], ["^final-gate(:retry)?$", THROW]] + TAIL_REPLIES
@@ -607,7 +605,6 @@ def test_mechanical_roles_blocked_after_retry(tmp_path):
         assert blocked[key]["kind"] == "infra" and "未返回" in blocked[key]["reason"] and "已重派" in blocked[key]["reason"], blocked
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：评审员抛错让整个工作流崩溃")
 def test_reviewer_failure_recorded(tmp_path):
     # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审员调用抛错，S2 的评审给出 1 条 MEDIUM
     medium = {"severity": "MEDIUM", "file": "b.py", "line": 2, "summary": "命名不一致", "fix": "统一命名"}
@@ -624,7 +621,6 @@ def test_reviewer_failure_recorded(tmp_path):
     assert "final-gate" in labels, labels
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：回退路径未写明 agent 失败的处理")
 def test_apply_docs_mirror_agent_failure_handling():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
