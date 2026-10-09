@@ -12,8 +12,12 @@ const VERSION_FLOOR = '2.1.295'
 const CHANGE_ROOTS = ['openspec/changes', 'template/openspec/changes']
 const HOOK_DIRS = ['.claude/hooks', 'template/.claude/hooks']
 const LEDGER_REF = /refs\/flight\/[^\s'"]+\/ledger/
+// 账本 ref 在非 packed 状态下就是 <git-common-dir>/refs/flight/<change>/ledger 这个普通文件
+const LEDGER_FILE = /refs\/flight\/|(^|[\\/])packed-refs$/
 const GUARD_DENY =
   'flight：refs/flight/<change>/ledger 账本只能由 flight 控制面（人按下「批准起飞」）写入；读取请用 python3 .claude/hooks/ledger.py show --change-dir <change 目录>'
+// 能落到账本 ref 的工具：跑 shell 命令的看命令文本，写文件的看目标路径
+const GUARDED_TOOLS = ['Bash', 'Monitor', 'Write', 'Edit', 'NotebookEdit'] as const
 const MAX_UPDATE_REF = 3
 const ZERO = '0'.repeat(40)
 
@@ -29,6 +33,10 @@ function isOlder(a: string, b: string): boolean {
     if (x !== y) return x < y
   }
   return false
+}
+
+function touchesLedger(e: { readonly command?: unknown; readonly file_path?: unknown; readonly notebook_path?: unknown }) {
+  return LEDGER_REF.test(String(e.command ?? '')) || LEDGER_FILE.test(String(e.file_path ?? e.notebook_path ?? ''))
 }
 
 type Tree = { path: string; branch: string }
@@ -237,9 +245,7 @@ export const register: Register = on => {
     return { element: e.element }
   })
 
-  on('tool.call', { tool: 'Bash' }, ($, e, next) =>
-    LEDGER_REF.test(e.command) ? { deny: GUARD_DENY } : next(e),
-  ).catch(($, e, next) =>
-    next.called ? next(e) : LEDGER_REF.test(String(e.command)) ? { deny: GUARD_DENY } : next(e),
+  on('tool.call', { tool: GUARDED_TOOLS }, ($, e, next) => (touchesLedger(e) ? { deny: GUARD_DENY } : next(e))).catch(
+    ($, e, next) => (next.called ? next(e) : touchesLedger(e) ? { deny: GUARD_DENY } : next(e)),
   )
 }

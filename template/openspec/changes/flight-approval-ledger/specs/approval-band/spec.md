@@ -38,7 +38,7 @@ Feature: 批准只能来自人的按压，写入由控制面完成
 - **AND** 后一种情形在第三次失败后停止，出现错误提示，输入框不被预填
 
 ### Requirement: 模型侧没有写账本的路径
-插件 SHALL NOT 注册任何模型可调用的工具，也 SHALL NOT 注册会写账本的斜杠命令。插件 SHALL 拦截命令文本中出现 `refs/flight/<任意>/ledger` 的 Bash 调用（不论主会话还是子 agent），拒绝理由指向只读的 `ledger.py show`；该守卫出错时 SHALL 对命中模式的命令仍然拒绝。
+插件 SHALL NOT 注册任何模型可调用的工具，也 SHALL NOT 注册会写账本的斜杠命令。插件 SHALL 拦截命令文本中出现 `refs/flight/<任意>/ledger` 的 Bash / Monitor 调用，以及目标路径含 `refs/flight/` 或为 `packed-refs` 的 Write / Edit / NotebookEdit 调用（不论主会话还是子 agent），拒绝理由指向只读的 `ledger.py show`；该守卫出错时 SHALL 对命中模式的调用仍然拒绝。
 Feature: 历史教训——模型曾自己跑命令记下「批准」
 
 #### Scenario: bash-guard-denies-ledger-writes
@@ -46,6 +46,7 @@ Feature: 历史教训——模型曾自己跑命令记下「批准」
 - **WHEN** 模型发起 Bash 命令 `git update-ref refs/flight/demo/ledger abc` 与 `git status`
 - **THEN** 前者被拒绝，拒绝理由含 `ledger.py show`
 - **AND** 后者照常执行
+- **AND** Monitor 跑同样的命令、Write / Edit / NotebookEdit 写 `.git/refs/flight/demo/ledger` 或 `.git/packed-refs` 同样被拒绝，写其他文件照常执行
 
 #### Scenario: no-model-callable-approval-path
 - **GIVEN** 插件已加载、会话已启动

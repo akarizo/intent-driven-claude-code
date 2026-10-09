@@ -297,6 +297,55 @@ test('bash-guard-passes-other-commands', async ($, on) => {
   expect(reached).toEqual(['git status'])
 })
 
+test('file-write-guard-denies-ledger-ref', async ($, on) => {
+  // Given: 插件已加载；测试在插件之下的 Write / Edit / NotebookEdit 执行端记录到达的目标路径
+  const reached: string[] = []
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    reached.push(e.file_path)
+    return { result: {}, text: '' } as never
+  })
+  on('tool.call', { tool: 'Edit' }, ($, e) => {
+    reached.push(e.file_path)
+    return { result: {}, text: '' } as never
+  })
+  on('tool.call', { tool: 'NotebookEdit' }, ($, e) => {
+    reached.push(e.notebook_path)
+    return { result: {}, text: '' } as never
+  })
+
+  // When: 模型 Write 账本 ref 文件、Edit packed-refs、NotebookEdit refs/flight 下的文件，再 Write 一个普通文件
+  const ref = await $.tool.call({ tool: 'Write', file_path: '/repo/.git/refs/flight/demo/ledger', content: 'abc\n' })
+  const packed = await $.tool.call({ tool: 'Edit', file_path: '/repo/.git/packed-refs', old_string: 'a', new_string: 'b' })
+  const nb = await $.tool.call({ tool: 'NotebookEdit', notebook_path: '/repo/.git/refs/flight/demo/x', new_source: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/repo/README.md', content: '# r\n' })
+
+  // Then: 前三次被拒、理由含 ledger.py show 且没有到达执行端；普通文件原样到达
+  for (const r of [ref, packed, nb]) expect(JSON.stringify(r)).toContain('ledger.py show')
+  expect(reached).toEqual(['/repo/README.md'])
+})
+
+test('monitor-guard-denies-ledger-writes', async ($, on) => {
+  // Given: 插件已加载；测试在插件之下的 Monitor 执行端记录到达的命令
+  const reached: string[] = []
+  on('tool.call', { tool: 'Monitor' }, ($, e) => {
+    reached.push(String(e.command))
+    return { result: {}, text: '' } as never
+  })
+
+  // When: 模型用 Monitor 跑 `git update-ref refs/flight/demo/ledger abc`，再跑 `tail -f app.log`
+  const denied = await $.tool.call({
+    tool: 'Monitor',
+    description: 'x',
+    timeout_ms: 1000,
+    command: 'git update-ref refs/flight/demo/ledger abc',
+  })
+  await $.tool.call({ tool: 'Monitor', description: 'y', timeout_ms: 1000, command: 'tail -f app.log' })
+
+  // Then: 前者被拒、理由含 ledger.py show 且没有到达执行端；后者原样到达
+  expect(JSON.stringify(denied)).toContain('ledger.py show')
+  expect(reached).toEqual(['tail -f app.log'])
+})
+
 test('no-model-callable-approval-path', async ($, on) => {
   // Given: 插件已加载，仓库里有待批准的 demo；测试在插件之下记录 tool.register 与 command.register
   const log = useWorld(on, demoWorld(() => F))

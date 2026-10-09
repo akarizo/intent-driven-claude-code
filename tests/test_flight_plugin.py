@@ -79,6 +79,8 @@ def test_bash_guard_denies_ledger_writes():
     # Then: 前者被拒、理由含 ledger.py show；后者照常执行
     assert_ts_passed("bash-guard-denies-ledger-writes")
     assert_ts_passed("bash-guard-passes-other-commands")
+    assert_ts_passed("file-write-guard-denies-ledger-ref")
+    assert_ts_passed("monitor-guard-denies-ledger-writes")
 
 
 def test_no_model_callable_approval_path():

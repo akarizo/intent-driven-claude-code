@@ -85,7 +85,7 @@ flowchart LR
 |---|---|
 | change 目录里的文件 | ✗ 模型 Write / Edit 可直接改；与 merge 冲突；根 `.gitignore` 的 `*.log` 曾吞掉 evidence.log |
 | `$.store` | ✗ 明文 JSON 在用户目录（S 附表实测），不随仓库走，审阅者看不到 |
-| **`refs/flight/<change>/ledger` 提交链**（选） | 不在工作区；提交链即哈希链；worktree 间共享（refs 在公共 git 目录）；可随分支推送；与 slice-noreturn-resume 的 `refs/flight/<change>/<S>` 同命名空间 |
+| **`refs/flight/<change>/ledger` 提交链**（选） | 不在工作区（ref 本身是公共 git 目录下的普通文件，Write / Edit 写它由 D7 守卫拦截）；提交链即哈希链；worktree 间共享（refs 在公共 git 目录）；可随分支推送；与 slice-noreturn-resume 的 `refs/flight/<change>/<S>` 同命名空间 |
 
 事件格式 v1：提交树里恰一个 `event.json` = `{"v":1,"ev":"approve","change","fp","at","by":{"plugin","surface","session"}}`；提交信息 `flight: approve <change> <fp前8位>`；线性（≤1 个父提交）。读取方任一违规即判损坏（exit 4），不做部分信任。
 
@@ -119,7 +119,7 @@ flowchart LR
 
 ### D7 守卫与威胁模型
 
-- `tool.call` 上拦截命令文本匹配 `refs/flight/[^\s'"]+/ledger` 的 Bash（主会话与子 agent 都拦，S2 实测子 agent 的 tool.call 可见）；`.catch` 中对命中模式的命令照样拒绝。
+- `tool.call` 上拦截命令文本匹配 `refs/flight/[^\s'"]+/ledger` 的 Bash / Monitor，以及目标路径含 `refs/flight/` 或为 `packed-refs` 的 Write / Edit / NotebookEdit（主会话与子 agent 都拦，S2 实测子 agent 的 tool.call 可见）；`.catch` 中对命中模式的调用照样拒绝。（2026-10-09 PR #35 评审补：原只拦 Bash）
 - 威胁模型（明说）：防**走捷径的模型**（直接写证据、自记批准）；不防**蓄意伪造**（例如用变量拼出引用名再调 plumbing、或改 `$.store` 明文文件）。后者需要的是 OS 级密钥，超出本仓库范围。
 
 ### D8 版本下限

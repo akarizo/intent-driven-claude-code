@@ -25,3 +25,10 @@
 ## S6 铁律 7 与命令 / skill / README / 工作流文档同步 · deps: S4, S5 · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_template_docs.py`
 
 - [x] S6 根 `CLAUDE.md` 铁律 7 与 `template/CLAUDE.md.snippet` 改为批准带 + 账本指纹；`/opsx-propose` + skill 交接、`/opsx-apply` + skill 的 step 0 同改；`README.md` / `docs/WORKFLOW_zh.md` 改写并说明插件；`docs/flight-control-plane.html` 入库、README 链接；scenarios：iron-rule-7-states-ledger-approval · propose-handoff-points-to-band · apply-step0-explains-ledger-gate · docs-drop-transcript-approval · readme-links-control-plane-doc
+
+## R PR #35 review 修复 · 2026-10-09 用户授权追加（不在 slices.json 内；来源：PR #35 评审与 S3 切片评审的 MEDIUM）
+
+- [x] R0 账本不可读时起飞 hook 放行：非 git 目录 / ref 指向非提交改判 deny（51d0ad5）
+- [x] R1 守卫扩到 Monitor（命令文本）与 Write / Edit / NotebookEdit（目标路径含 `refs/flight/` 或为 `packed-refs`）；spec「模型侧没有写账本的路径」与 design D2 措辞同步
+- [ ] R2 按压以被按下按钮所代表的项为准：按钮 key 携带 change 与指纹，按压时不再重取 topItem（实现对齐 spec「与批准带上显示的不一致」）
+- [ ] R3 版本下限 fail-closed：会话启动先停用，版本读取成功且 ≥ 2.1.295 才启用；spec「版本下限」同步
