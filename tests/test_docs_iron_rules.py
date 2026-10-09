@@ -77,11 +77,6 @@ def test_docs_state_mechanical_resolution():
 
 
 # ---------------------------------------------------------------- 起飞批准文档（scenario: approval-docs#*，S6 骨架）
-import pytest  # noqa: E402
-
-DX = pytest.mark.xfail(strict=True, reason="S6 文档未同步到批准带 + 账本指纹")
-
-
 def rule7(text):
     return next(line for line in text.splitlines() if line.startswith("7. "))
 
@@ -91,7 +86,6 @@ def step0(text):
     return text[start:text.index("1. **选 change**", start)]
 
 
-@DX
 def test_iron_rule_7_states_ledger_approval():
     # Given: 根 CLAUDE.md 与 template/CLAUDE.md.snippet
     texts = {"CLAUDE.md": rule7(read("CLAUDE.md")), "snippet": read("template/CLAUDE.md.snippet")}
@@ -103,7 +97,6 @@ def test_iron_rule_7_states_ledger_approval():
         assert "人类消息证据" not in t, label
 
 
-@DX
 def test_propose_handoff_points_to_band():
     # Given: opsx-propose.md 与 openspec-propose/SKILL.md
     cmd = read("template/.claude/commands/opsx-propose.md")
@@ -118,7 +111,6 @@ def test_propose_handoff_points_to_band():
     assert "本命令到此结束" in cmd and "本 skill 到此结束" in skill
 
 
-@DX
 def test_apply_step0_explains_ledger_gate():
     # Given: opsx-apply.md 的 step 0 与 openspec-apply-change/SKILL.md
     cmd = step0(read("template/.claude/commands/opsx-apply.md"))
@@ -132,7 +124,6 @@ def test_apply_step0_explains_ledger_gate():
         assert "人类消息" not in t
 
 
-@DX
 def test_docs_drop_transcript_approval():
     # Given: README.md、docs/WORKFLOW_zh.md、install.sh
     docs = {rel: read(rel) for rel in ("README.md", "docs/WORKFLOW_zh.md", "install.sh")}
@@ -145,7 +136,6 @@ def test_docs_drop_transcript_approval():
         assert "批准带" in docs[rel] and "flight@intent-driven" in docs[rel], rel
 
 
-@DX
 def test_readme_links_control_plane_doc():
     # Given: 仓库中的 docs/flight-control-plane.html 与 README.md
     # When: 检查文件存在性与链接

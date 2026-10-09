@@ -178,7 +178,9 @@ slice-gate.py lint（校验 slices.json：片数 1–9 / DAG 深度 ≤ 3 / 同 
 
 **模型路由（铁律，按角色显式声明）**：slice-executor 与 code-reviewer 用会话主模型 `<main>`（effort high），integrator / final-gate 用 sonnet（effort low），渲染 / 分解 / 时间线是零 token 脚本。`<main>` 由 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出），**禁模型自述**；判定不出不起飞（需 `--model=<alias>` 显式指定）。`/opsx-apply` 以 `args.models` 显式传入，脚本缺参拒绝起飞；收口 `session-decompose.py --expect-models` 机械对账各 agent 实际模型，不符即非 0（按 draft PR 处置）。解析顺序自 v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，派发时留空 `model` 就会落到 env 默认值。
 
-**两处人类审批不可省**：起飞批准由 `.claude/hooks/takeoff-gate.py` 校验会话转录里的人类消息证据与新鲜度（PreToolUse hook 注册在 `Workflow|Agent|Task` 上拦未获批准的飞行派发；它对 `Workflow` 工具是否触发尚未实测，未触发时由 `/opsx-apply` step 0 的显式自检兜底），模型自证无效；PR review 是第二处。
+**两处人类审批不可省**：起飞批准 = 人审完 `spec.html` 后在 Claude Code 输入框上方的批准带按「批准起飞」，`flight@intent-driven` 插件把计划指纹写入账本 `refs/flight/<change>/ledger`；`.claude/hooks/takeoff-gate.py` 比对账本最新批准的指纹与当前计划指纹（PreToolUse hook 注册在 `Workflow|Agent|Task` 上拦未获批准的飞行派发；它对 `Workflow` 工具是否触发尚未实测，未触发时由 `/opsx-apply` step 0 的显式自检兜底；exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏），模型自证无效；PR review 是第二处。批准带依赖 `flight@intent-driven` 插件，`install.sh` 会项目级安装；手动安装：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
+
+**BREAKING（升级说明）**：起飞批准不再核验会话转录，改为账本指纹；已有项目升级后须装 flight 插件并在批准带重新批准一次，否则 `/opsx-apply` step 0 报「未批准」。
 
 **关键约束**：
 

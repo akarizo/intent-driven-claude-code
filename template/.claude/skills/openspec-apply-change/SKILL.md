@@ -9,7 +9,7 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
-飞行模式跑完一次 apply：批准自检（`takeoff-gate.py`；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
+飞行模式跑完一次 apply：批准自检（`takeoff-gate.py` 比对账本指纹；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
 
@@ -29,9 +29,9 @@ metadata:
 0. **批准自检（起飞判据；批准由脚本校验，禁模型自证）**
    先按 step 1 的规则定出 `<name>`（有参数直接用参数），再跑：
    ```bash
-   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 没有人类批准 / 批准过期
+   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏
    ```
-   `exit 0` → stdout 是人类批准证据，留给 step 3 的 approve 事件。`exit ≠ 0` → **停下报告**：打印 `openspec/changes/<name>/spec.html` 的绝对路径，说明「起飞需要你自己发出 `/opsx-apply <change>`」，不进入后续步骤、不派发任何 agent。
+   `exit 0` → stdout 是批准证据一行 `<批准时间> · fp <指纹前 8 位> · ledger <账本 tip 前 8 位>`（账本 `refs/flight/<name>/ledger` 最新 approve 事件的指纹 == 当前计划指纹），原样留给 step 3 的 approve 事件。`exit 3` → stderr 给出三种原因之一：**未批准**（账本里没有批准记录）· **计划已变需重新批准**（批准时的指纹 ≠ 当前计划指纹，工件改过）· **账本损坏**（账本里有不合法事件）。**停下报告**：原样转述 stderr，打印 `openspec/changes/<name>/spec.html` 的绝对路径；补救 = 请人类核对 `spec.html` 顶部的计划指纹，在批准带按「批准起飞」后重新发出 `/opsx-apply <change>`；批准带没出现 = 未装 flight 插件，执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。不进入任何后续步骤、不派发任何 agent。
 
 1. **选 change**
    - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
@@ -54,7 +54,7 @@ metadata:
    python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name> --note "<批准证据>"
    git add openspec/changes/<name>/timeline.md && git commit -m "chore(flight): approve"
    ```
-   `<批准证据>` 用 step 0 `takeoff-gate.py` stdout 的原文，不自己编。飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，字段 `{"started","approval","models","efforts","raw","source"}`）。
+   `<批准证据>` 用 step 0 `takeoff-gate.py` stdout 的原文（`<时间> · fp <8位> · ledger <8位>`），不自己编。飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，字段 `{"started","approval","models","efforts","raw","source"}`）。
 
 4. **启动切片工作流**
    - 先定出会话主模型别名 `<main>`：
@@ -83,7 +83,7 @@ metadata:
 **Guardrails**
 - 启动到 `/pr-ship` 之间不出现 AskUserQuestion。
 - 模型按角色显式路由；派发时不得省略 `model`；收口报告必须打印各角色实际模型。
-- 起飞前的人类批准由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
+- 起飞批准以账本指纹为判据（人在批准带按「批准起飞」才写入账本），由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
 - `<main>` 由 `.claude/hooks/session-model.py` 判定，**禁模型自述**；判定不出停飞，人工 `--model=<alias>` 覆盖。
 - `--gate=per-task` 转 legacy skill，不与本流程混用。
 - 不自动 merge / push / 删 worktree。
