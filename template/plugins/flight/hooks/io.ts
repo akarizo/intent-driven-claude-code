@@ -1,30 +1,10 @@
-// 飞行副作用层：$ 适配、判定器调用、账本读写、切片 worktree、agent 派发（spec flight-io · design D5）。
+// 飞行副作用层：判定器调用、账本读写、切片 worktree、按 agent 找飞行（spec flight-io · design D5）。$ 不能跨 import，适配与派发在 orchestrator.tsx。
 // 判定器一律取主 worktree 的副本；命令的工作目录是被判定的那个 worktree。
-import type { EngineInterface } from 'claude-code'
 import type { Flight, FlightEvent, Io, Role, RunResult } from './core'
 
-const DEFAULT_TIMEOUT_MS = 30000
 const HOOK_DIRS = ['.claude/hooks', 'template/.claude/hooks']
 const MAX_UPDATE_REF = 3
 const ZERO = '0'.repeat(40)
-
-export function ioOf($: EngineInterface): Io {
-  return {
-    async run(argv, opts = {}) {
-      const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = opts
-      const r = await $.process.run([...argv], { ...rest, timeoutMs })
-      return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
-    },
-    async read(path) {
-      const text = await $.fs.read(path)
-      return typeof text === 'string' ? text : undefined
-    },
-    async write(path, text) {
-      await $.fs.write(path, text)
-    },
-    exists: path => $.fs.exists(path),
-  }
-}
 
 export type Tree = { path: string; branch: string }
 
@@ -106,27 +86,52 @@ export function agentType(role: Role): string {
   return role === 'executor' ? 'flight:executor' : role === 'reviewer' ? 'flight:reviewer' : 'flight:fixer'
 }
 
-export async function spawnAgent(
-  $: EngineInterface,
-  f: Flight,
-  role: Role,
-  cwd: string,
-  prompt: string,
-  description: string,
-): Promise<{ agentId?: string; deny?: string }> {
-  const r = await $.agent.spawn({ prompt, description, subagentType: agentType(role), model: f.model, cwd })
-  return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
-}
-
 /** 本进程内的活跃飞行（起飞时登记）。 */
 export const flights: Map<string, Flight> = new Map()
 
-/** 遍历活跃飞行，读各自账本，找 dispatch 事件 agent === agentId 的那一个。 */
+const dispatched = (events: readonly FlightEvent[], agentId: string) => events.some(e => e.ev === 'dispatch' && e.agent === agentId)
+
+/** 先查本进程登记的飞行；未命中再只靠账本：遍历 refs/flight/<change>/ledger，在主 worktree 上读账本、重建 Flight 并登记。 */
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
   for (const flight of flights.values()) {
     const ledger = await readLedger(io, flight)
     if (!('events' in ledger)) continue
-    if (ledger.events.some(e => e.ev === 'dispatch' && e.agent === agentId)) return { flight, events: ledger.events }
+    if (dispatched(ledger.events, agentId)) return { flight, events: ledger.events }
+  }
+  const refs = await io.run(['git', 'for-each-ref', '--format=%(refname)', 'refs/flight/'])
+  if (refs.exitCode !== 0) return undefined
+  const changes = refs.stdout
+    .split('\n')
+    .map(line => /^refs\/flight\/(.+)\/ledger$/.exec(line.trim())?.[1])
+    .filter((c): c is string => c !== undefined && !flights.has(c))
+  if (changes.length === 0) return undefined
+  const all = await trees(io, '.')
+  const mainTree = all[0]?.path
+  if (mainTree === undefined) return undefined
+  const hooksDir = await judgesDir(io, mainTree)
+  // ceiling: 未命中（含非飞行 agent）时逐个读全部未登记 change 的账本 -> 非飞行 subagent 频繁或账本数多时，按 change 缓存负结果
+  for (const change of changes) {
+    let changeDir = ''
+    for (const dir of [`template/openspec/changes/${change}`, `openspec/changes/${change}`]) {
+      if (await io.exists(`${mainTree}/${dir}`)) {
+        changeDir = dir
+        break
+      }
+    }
+    if (changeDir === '') continue
+    const probe: Flight = { change, mainTree, changeTree: mainTree, changeDir, branch: '', hooksDir, model: '', session: '' }
+    const ledger = await readLedger(io, probe)
+    if (!('events' in ledger)) continue
+    const { events } = ledger
+    const takeoff = events.filter(e => e.ev === 'takeoff').pop()
+    if (takeoff === undefined) continue
+    if (events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === Number(takeoff.attempt))) continue
+    if (!dispatched(events, agentId)) continue
+    const branch = String(takeoff.branch ?? '')
+    const changeTree = all.find(t => t.branch === branch)?.path ?? mainTree
+    const flight: Flight = { ...probe, changeTree, branch, model: String(takeoff.model ?? ''), session: takeoff.by.session }
+    flights.set(change, flight)
+    return { flight, events }
   }
   return undefined
 }
