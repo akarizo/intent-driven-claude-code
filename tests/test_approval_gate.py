@@ -253,3 +253,23 @@ def test_takeoff_hook_denies_ledger_ref_to_non_commit(git_repo):
     # Then: deny，理由含「账本损坏」
     r = json.loads(p.stdout)["hookSpecificOutput"]
     assert r["permissionDecision"] == "deny" and "账本损坏" in r["permissionDecisionReason"]
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: approval-chain-hardening#takeoff-hook-guards-workflow-dispatch）
+
+def test_takeoff_hook_guards_workflow_dispatch(git_repo):  # 既有行为守卫：行为已存在、此前缺测试，按本仓惯例不标 xfail
+    # Given: demo 没有账本；一次 Workflow 派发的 tool_input 带 scriptPath，args 是含 demo changeDir 的 JSON 字符串（线上真实形态）
+    d = make_change(git_repo)
+    payload = json.dumps({"tool_name": "Workflow", "cwd": str(git_repo),
+                          "tool_input": {"scriptPath": str(git_repo / ".claude" / "workflows" / "opsx-apply.js"),
+                                         "args": json.dumps({"change": "demo", "changeDir": str(d)})}}, ensure_ascii=False)
+
+    # When: 以 hook 模式运行起飞门禁；随后给账本追加当前指纹的批准，再运行一次
+    denied = run_hook("takeoff-gate", stdin=payload, env=NO_SID)
+    ledger_append(git_repo, "demo", approve_event("demo", current_fp(d)))
+    allowed = run_hook("takeoff-gate", stdin=payload, env=NO_SID)
+
+    # Then: 第一次 deny；第二次静默放行
+    r = json.loads(denied.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny", r
+    assert allowed.returncode == 0 and allowed.stdout.strip() == "", allowed.stdout

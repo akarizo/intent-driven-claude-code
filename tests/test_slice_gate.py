@@ -979,3 +979,171 @@ def test_start_resume_drops_renamed_source(git_repo, tmp_path):
     assert not (wt / "src" / "old.py").exists()
     assert (wt / "src" / "new.py").read_text(encoding="utf-8") == "OLD = 1\n"
     assert sorted(json.loads(p.stdout)["checkpoint"]["restored"]) == ["src/new.py", "src/old.py"], p.stdout
+
+
+# ---------------------------------------------------------------- flight-integrity-fixes（scenario: executor-noreturn-recovery#gate-* / resume-* / record-* · scenario-outcome-gate#*）
+# 骨架：S1（门禁结论留存与找回）、S2（G7 看实际运行结果）实现后逐条去掉 xfail 标记。
+
+GATE_REF = "refs/flight/c/gate-S1"
+
+
+def _gate(change, repo):
+    return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=repo).stdout)
+
+
+def test_gate_ok_records_result_ref(git_repo):
+    # Given: 已 start 且实现完整的切片 S1（门禁会绿）
+    change = gate_repo(git_repo)
+
+    # When: 运行切片门禁
+    out = _gate(change, git_repo)
+
+    # Then: 门禁绿；refs/flight/c/gate-S1 的父提交是门禁输出里的 commit，其 gate.json 的 slice / ok / commit / base 与门禁输出一致
+    assert out["ok"] is True, out
+    assert _ref(git_repo, GATE_REF), "门禁结论引用不存在"
+    rec = json.loads(git(git_repo, "show", GATE_REF + ":gate.json"))
+    keys = ("slice", "ok", "commit", "base")
+    assert {k: rec.get(k) for k in keys} == {k: out[k] for k in keys}, rec
+    assert git(git_repo, "rev-parse", GATE_REF + "^") == out["commit"]
+
+
+def test_resume_start_returns_recorded_gate(git_repo, tmp_path):
+    # Given: 切片 S1 在基点 X 上提交并门禁通过（结论已留存），随后从 X 新开一个干净 worktree（模拟隔离模式重派）
+    change = gate_repo(git_repo)
+    base = git(git_repo, "rev-parse", "HEAD~1")
+    gated = _gate(change, git_repo)
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
+
+    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 以 3 退出；stdout 是留存的门禁结论（ok 为 true、commit 为原切片 commit、recovered 为 true）；新 worktree 里没有切片标记
+    assert gated["ok"] is True and gated["base"] == base, gated
+    assert p.returncode == 3, (p.returncode, p.stdout, p.stderr)
+    out = json.loads(p.stdout)
+    assert out["ok"] is True and out["commit"] == gated["commit"] and out.get("recovered") is True, out
+    assert not (wt / ".openspec-slice").exists()
+
+
+def test_resume_start_ignores_foreign_gate_record(git_repo, tmp_path):
+    # Given: 切片 S1 的门禁结论已留存（base X、commit C）；C 之后又有提交 Y，在 Y 上新开 worktree
+    change = gate_repo(git_repo)
+    _gate(change, git_repo)
+    recorded = _ref(git_repo, GATE_REF)
+    write(git_repo / "notes.txt", "y\n")
+    other = commit_all(git_repo, "elsewhere")
+    wt = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), other)
+
+    # When: 在 Y 上运行 start S1 --resume-checkpoint
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
+
+    # Then: 以 0 退出并按原有逻辑起跑（输出含 checkpoint、不含 recovered）；留存的门禁结论引用保持不变
+    assert recorded, "门禁结论引用不存在"
+    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)
+    out = json.loads(p.stdout)
+    assert "checkpoint" in out and "recovered" not in out, out
+    assert _ref(git_repo, GATE_REF) == recorded
+
+
+def test_record_and_fresh_start_clear_gate_ref(git_repo):
+    # Given: 切片 S1 门禁通过、结论已留存
+    change = gate_repo(git_repo)
+    gated = _gate(change, git_repo)
+    recorded = _ref(git_repo, GATE_REF)
+    assert recorded, "门禁结论引用不存在"
+
+    # When: integrator 以 record 写回该结论；之后人为放回一份旧结论，再首轮 start S1
+    rec = run_hook("slice-gate", "record", "--change-dir", str(change), "--json", json.dumps(gated), cwd=git_repo)
+    after_record = _ref(git_repo, GATE_REF)
+    git(git_repo, "update-ref", GATE_REF, recorded)
+    start = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 写回后引用已不存在；首轮 start 后旧结论也被清掉
+    assert rec.returncode == 0 and after_record == "", (rec.stdout, rec.stderr, after_record)
+    assert start.returncode == 0 and _ref(git_repo, GATE_REF) == "", start.stderr
+
+
+ALIASED_XFAIL_TEST = '''
+import sys, pathlib
+import pytest
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from src.mod import add
+
+XF = pytest.mark.xfail(strict=True, reason="尚未实现")
+
+
+@XF
+def test_mod_adds():
+    # Given: 两个整数 1 与 2
+    a, b = 1, 2
+    # When: 调用 add
+    result = add(a, b)
+    # Then: 返回 4（故意错，让 xfail 成立）
+    assert result == 4
+'''
+
+IMPERATIVE_SKIP_TEST = '''
+import sys, pathlib
+import pytest
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from src.mod import add
+
+
+def test_mod_adds():
+    # Given: 两个整数 1 与 2
+    a, b = 1, 2
+    # When: 测试体内直接跳过
+    pytest.skip("尚未实现")
+    # Then: 返回 3
+    assert add(a, b) == 3
+'''
+
+
+def test_g7_rejects_aliased_xfail(git_repo):
+    # Given: scenario cap#adds 映射的测试用别名装饰器 XF = pytest.mark.xfail(strict=True) 标记，断言尚未满足
+    change = gate_repo(git_repo, test_body=ALIASED_XFAIL_TEST)
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: ok 为 false，failed 里有一条 G7 点名 cap#adds 并含实际结果 XFAIL
+    assert out["ok"] is False, out
+    assert any(f.startswith("G7") and "cap#adds" in f and "XFAIL" in f for f in out["failed"]), out["failed"]
+
+
+def test_g7_rejects_imperative_skip(git_repo):
+    # Given: scenario cap#adds 映射的测试在测试体内调用 pytest.skip()
+    change = gate_repo(git_repo, test_body=IMPERATIVE_SKIP_TEST)
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: ok 为 false，failed 里有一条 G7 点名 cap#adds 并含实际结果 SKIPPED
+    assert out["ok"] is False, out
+    assert any(f.startswith("G7") and "cap#adds" in f and "SKIPPED" in f for f in out["failed"]), out["failed"]
+
+
+def test_g7_gate_checks_own_slice_outcome(git_repo):
+    # Given: 切片 S1 的 scenario 测试用别名装饰器标成 xfail，断言尚未满足
+    change = gate_repo(git_repo, test_body=ALIASED_XFAIL_TEST)
+
+    # When: 运行 slice-gate.py gate S1
+    out = _gate(change, git_repo)
+
+    # Then: ok 为 false，failed 里有一条 G7 含实际结果 XFAIL
+    assert out["ok"] is False, out
+    assert any(f.startswith("G7") and "XFAIL" in f for f in out["failed"]), out["failed"]
+
+
+def test_g7_reads_outcome_despite_addopts_quiet(git_repo):
+    # Given: 仓库根有 pytest.ini 写 addopts = -q；切片 S1 的 scenario 测试 test_mod_adds 无标记、断言成立
+    write(git_repo / "pytest.ini", "[pytest]\naddopts = -q\n")
+    change = gate_repo(git_repo)
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: failed 里没有任何 G7 条目
+    assert not [f for f in out["failed"] if f.startswith("G7")], out["failed"]

@@ -423,3 +423,77 @@ test('version-unreadable-disables-band', async ($, on) => {
   expect(await ui.find({ key: 'engine' })).toBeDefined()
   expect(log.fpDirs).toEqual([])
 })
+
+test('band-prefers-approvable-item', async ($, on) => {
+  // Given: 主 worktree /repo（main）的 demo 可批准、spec.html mtime 1000；/repo/.worktrees/zeta（worktree-zeta）的 zeta spec.html mtime 2000，该 worktree 下没有 plan_fp.py
+  const ZT = '/repo/.worktrees/zeta'
+  const ZETA = `${ZT}/template/openspec/changes/zeta`
+  const world = demoWorld(() => F, {
+    worktrees: porcelain([[MAIN, 'main'], [ZT, 'worktree-zeta']]),
+    mtimes: { [`${DEMO}/spec.html`]: 1000, [`${ZETA}/spec.html`]: 2000 },
+  })
+  world.dirs[`${ZT}/template/openspec/changes`] = ['zeta']
+  world.files[`${ZETA}/spec.html`] = '<html></html>'
+  world.files[`${ZETA}/tasks.md`] = '- [ ] 1.1 写代码\n'
+  useWorld(on, world)
+  await $.session.start(START)
+
+  // When: 在 terminal 上绘制输入框上方区域
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 出现 key=approve:demo:<F> 的批准按钮，且有含「另有 1 个无法批准」的文字
+  expect(await ui.find({ key: `approve:demo:${F}` })).toBeDefined()
+  expect(await ui.find({ text: /另有 1 个无法批准/ })).toBeDefined()
+})
+
+test('version-unreadable-shows-notice', async ($, on) => {
+  // Given: 读会话版本的调用抛错，主 worktree 里有待批准的 demo
+  const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await $.session.start(START)
+
+  // When: 在 terminal 上绘制输入框上方区域
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: toasts 里有含「无法确认 Claude Code 版本」的一条，且没有任何按钮
+  expect(log.toasts.some(t => t.includes('无法确认 Claude Code 版本'))).toBe(true)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+})
+
+test('guard-normalizes-ledger-paths', async ($, on) => {
+  // Given: 插件已加载；测试在插件之下的 Write 执行端记录到达的目标路径；三个目标为反斜杠、含 //、含 /./ 的账本 ref 路径
+  const reached: string[] = []
+  on('tool.call', { tool: 'Write' }, ($, e) => {
+    reached.push(e.file_path)
+    return { result: {}, text: '' } as never
+  })
+  const paths = [
+    'C:\\repo\\.git\\refs\\flight\\demo\\ledger',
+    '/repo/.git/refs//flight/demo/ledger',
+    '/repo/.git/refs/./flight/demo/ledger',
+  ]
+
+  // When: 模型对这三个路径各发起一次 Write
+  const results = await Promise.all(paths.map(file_path => $.tool.call({ tool: 'Write', file_path, content: 'abc\n' })))
+
+  // Then: 三次结果都含 ledger.py show，且没有任何路径到达执行端
+  for (const r of results) expect(JSON.stringify(r)).toContain('ledger.py show')
+  expect(reached).toEqual([])
+})
+
+test('guard-denies-gate-record-writes', async ($, on) => {
+  // Given: 插件已加载；测试在插件之下的 Bash 执行端记录到达的命令
+  const reached: string[] = []
+  on('tool.call', { tool: 'Bash' }, ($, e) => {
+    reached.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false }, text: '' } as never
+  })
+  const gate = 'python3 .claude/hooks/slice-gate.py gate S1 --change-dir openspec/changes/demo'
+
+  // When: 模型先发起 Bash `git update-ref refs/flight/demo/gate-S1 abc`，再发起 slice-gate.py gate 命令
+  const denied = await $.tool.call({ tool: 'Bash', command: 'git update-ref refs/flight/demo/gate-S1 abc' })
+  await $.tool.call({ tool: 'Bash', command: gate })
+
+  // Then: 前者被拒、理由含 ledger.py show 且未到达执行端；后者原样到达
+  expect(JSON.stringify(denied)).toContain('ledger.py show')
+  expect(reached).toEqual([gate])
+})

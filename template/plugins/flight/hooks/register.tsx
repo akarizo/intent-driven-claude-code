@@ -11,7 +11,8 @@ type Engine = EngineInterface
 const VERSION_FLOOR = '2.1.295'
 const CHANGE_ROOTS = ['openspec/changes', 'template/openspec/changes']
 const HOOK_DIRS = ['.claude/hooks', 'template/.claude/hooks']
-const LEDGER_REF = /refs\/flight\/[^\s'"]+\/ledger/
+// 账本 ref 与 slice-gate 的门禁结论 ref（refs/flight/<change>/gate-<S>）都不许模型直写
+const LEDGER_REF = /refs\/flight\/[^\s'"]+\/(ledger|gate-[^\s'"\/]+)/
 // 账本 ref 在非 packed 状态下就是 <git-common-dir>/refs/flight/<change>/ledger 这个普通文件
 const LEDGER_FILE = /refs\/flight\/|(^|[\\/])packed-refs$/
 const GUARD_DENY =
@@ -36,8 +37,18 @@ function isOlder(a: string, b: string): boolean {
   return false
 }
 
+/** 反斜杠转正斜杠，并把 // 与 /./ 折叠为 /，避免等价路径绕过 LEDGER_FILE。 */
+function normalizePath(path: unknown): string {
+  let p = String(path).replace(/\\/g, '/')
+  for (let prev = ''; prev !== p; ) {
+    prev = p
+    p = p.replace(/\/\.?\//g, '/')
+  }
+  return p
+}
+
 function touchesLedger(e: { readonly command?: unknown; readonly file_path?: unknown; readonly notebook_path?: unknown }) {
-  return LEDGER_REF.test(String(e.command ?? '')) || LEDGER_FILE.test(String(e.file_path ?? e.notebook_path ?? ''))
+  return LEDGER_REF.test(String(e.command ?? '')) || LEDGER_FILE.test(normalizePath(e.file_path ?? e.notebook_path ?? ''))
 }
 
 type Tree = { path: string; branch: string }
@@ -57,9 +68,13 @@ function parseWorktrees(porcelain: string): Tree[] {
 const APPROVE_KEY = /^approve:(.+):([0-9a-f]{64})$/
 const approveKey = (item: FlightItem) => `approve:${item.change}:${item.fp}`
 
-/** 批准带显示的那一项：spec.html 最近修改的。 */
-function topItem(items: readonly FlightItem[]): FlightItem | undefined {
+function newest(items: readonly FlightItem[]): FlightItem | undefined {
   return items.reduce<FlightItem | undefined>((a, x) => (a === undefined || x.mtimeMs > a.mtimeMs ? x : a), undefined)
+}
+
+/** 批准带显示的那一项：可批准项里 spec.html 最近修改的；没有可批准项才在全部项里取。 */
+function topItem(items: readonly FlightItem[]): FlightItem | undefined {
+  return newest(items.filter(x => x.problem === '')) ?? newest(items)
 }
 
 type Candidate = { change: string; tree: Tree; changeDir: string; specPath: string }
@@ -192,7 +207,13 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // 热重载后 $.state 保留上次的值：每次启动先停用，确认版本后才启用
     await update($, band, () => ({ isDisabled: true, items: [] }))
-    const { version } = await $.session.version()
+    let version: string
+    try {
+      version = (await $.session.version()).version
+    } catch {
+      $.ui.toast('flight：无法确认 Claude Code 版本，批准带已停用')
+      return next(e)
+    }
     if (isOlder(version, VERSION_FLOOR)) {
       $.ui.toast(`flight：Claude Code ${version} 低于 ${VERSION_FLOOR}，批准带与账本写入已停用`)
     } else {
@@ -212,7 +233,8 @@ export const register: Register = on => {
     const top = topItem(b.items)
     if (e.props.hasSurvey || b.isDisabled || top === undefined) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const others = b.items.length - 1
+    const pending = b.items.filter(x => x.problem === '' && x !== top).length
+    const blocked = b.items.filter(x => x.problem !== '' && x !== top).length
     return (
       <Box flexDirection="column">
         <Text>
@@ -226,7 +248,8 @@ export const register: Register = on => {
         ) : (
           <Text color="red">{top.problem}，无法批准</Text>
         )}
-        {others > 0 && <Text dimColor>另有 {others} 个待批准</Text>}
+        {pending > 0 && <Text dimColor>另有 {pending} 个待批准</Text>}
+        {blocked > 0 && <Text dimColor>另有 {blocked} 个无法批准</Text>}
       </Box>
     )
   })

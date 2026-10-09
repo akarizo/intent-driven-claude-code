@@ -1,0 +1,126 @@
+{
+ "blocked": [],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 897,
+   "summary": "结论留存失败时，告警是在 result['summary'] 算完之后才追加进 warnings 的（warnings 与 result 是同一个列表对象，所以 warnings 字段有这条告警）。这样 summary 里的「N 项警告」比 warnings 实际条数少 1，gate-report 和 stdout 里两处对不上。",
+   "fix": "把 _gate_save 调用挪到 result 字典构造之前，用 not failed 判断是否留存；或者在追加告警后重新计算 result['summary']。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_slice_gate.py",
+   "line": 1050,
+   "summary": "契约要求 record 的两条路径都删 gate ref：写回路径，以及 report_has_row 命中后的「已记录」路径。测试只覆盖了写回路径。实现里删除动作放在分支判断之前，所以当前行为没问题，但以后把删除挪进某个分支时，没有测试能发现回归。",
+   "fix": "补一条用例：先 record 一次，再用 update-ref 把 GATE_REF 放回去，然后用同一份 JSON 再 record 一次，断言输出 recorded=false 并且 GATE_REF 已被删除。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 639,
+   "summary": "_gate_ref 和 _ckpt_ref 重复写了同一段 basename(abspath(change_dir).rstrip(sep)) 推导，只差 ref 名前缀。以后有一处改了推导规则，两类 ref 的 change 名就会对不上。",
+   "fix": "抽一个 _flight_ref(change_dir, name) 公共函数：_ckpt_ref 调 _flight_ref(change_dir, slice_id)，_gate_ref 调 _flight_ref(change_dir, 'gate-' + slice_id)。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 173,
+   "summary": "integrator 合回、reviewer、final-gate 的 agent() 调用同样没有处理抛错。第 180 行的 `integ ? … : 'integrator 未返回'` 分支在「抛错而非返回空值」的运行时语义下是死代码。一律隔离以后，每个 wave（含单片 wave）都要派 integrator，这个调用点的出现次数增加了。另外 reviews 用 Promise.all 汇总（第 189 行），任何一个评审员抛错都会让整个工作流在 Fix 阶段 reject，前面全部实现白跑，`.filter(Boolean)` 的兜底也落空。",
+   "fix": "integrator 调用加 `.catch(() => null)`，让第 180 行的「integrator 未返回」分支真正生效；reviews.push 时给每个评审 agent 加 `.catch(() => null)`（filter(Boolean) 已能吸收空值），或改用 Promise.allSettled；final-gate 加 catch 后，返回 null 并在结果里注明。可以与上面 fix 的处理合并，作为 D2 的补全。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 200,
+   "summary": "fix 隔离后，它的 TDD 留痕（test-evidence hook 按 git toplevel 写 evidence.log）只落在临时 worktree 的 evidence.log 里。fix prompt 没让它提交这份记录，finalize 也没有写回，「每条修复都要有先失败的测试」从此在分支上找不到任何证据。改动前 fix 在主 worktree 里跑，留痕会被 finalize 第 0 项提交进分支。切片执行体至少有 G5 在临时 worktree 内判定、再由 record 写回结论，fix 两样都没有。",
+   "fix": "任选其一：(1) fix prompt 要求收尾时把 ${changeDir}/evidence.log 的新增行随最后一个 fix commit 一起提交（evidence.log 属于 BOOKKEEPING，final 的新鲜度判定不受影响）；(2) 让 fix 返回 JSON 带回 evidence 摘要，finalize 合回后追加写入。并在 design D3 里补一句 fix 留痕怎么回到分支。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 156,
+   "summary": "首轮门禁红（r.ok 为 false）而重派又抛错时，run() 返回 null。第 159 行会记成 kind:'infra'「agent 未返回（已重派一次）」，首轮的 gate failed 信息丢失，blocked 的分类和原因与事实不符。",
+   "fix": "重派返回空值时回落到首轮结果：`run(s).then((r) => (!r || !r.ok) ? run(s, r || NO_RETURN).then((r2) => r2 || r) : r)`。这样首轮红、重派抛错时仍按 gate 红记录 blocked，并保留 failed。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/workflows/opsx-apply.js",
+   "line": 206,
+   "summary": "只有 fix.commit 为真值时才在 finalize 里执行 `timeline.py record fix`。fix 返回了但 commit 为空串时（例如 start 被拒后什么都没改），飞行记录里就没有 fix 这一步。改动前 record fix 写在 fix prompt 里，只要 fix 跑过就一定会记。",
+   "fix": "把 record fix 从 mergeFix 中拆出来，条件改为 `fix` 非空（有 commit 才拼合回指令），note 里附 `commit=${fix.commit || 'none'} ok=${fix.ok}`。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_ledger.py",
+   "line": 150,
+   "summary": "4 条 xfail 骨架标记已去，但段头注释「骨架：S4 实现后逐条去掉 xfail 标记。」仍留着，与现状不符（tests/test_plan_fp.py:109 同样残留「骨架：S4 实现后去掉 xfail 标记。」）",
+   "fix": "删掉这两处过时的骨架说明注释，或改成只写 scenario 归属的说明"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 105,
+   "summary": "在 except UnicodeDecodeError 里抛 LedgerInvalid 时没写 from None，调用方（如 takeoff-gate）看 traceback 会多出一段「During handling of ... another exception occurred」的链式噪音；CLI 退出码和 stderr 不受影响",
+   "fix": "改成 raise LedgerInvalid(sha, \"event.json 不是 UTF-8\") from None（同函数里 json.loads 的 ValueError 分支也可以一起这样改，但不是本片必须做的）"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 41,
+   "summary": "normalizePath 只折叠了 // 和 /./，满足了切片契约，但等价路径仍能绕过 LEDGER_FILE：一是含 .. 的路径，如 /repo/.git/refs/x/../flight/demo/ledger，规范化后不含 refs/flight/；二是大小写不同的路径，如 /repo/.git/REFS/flight/demo/ledger，在 macOS APFS 默认大小写不敏感的文件系统上会真正写进账本 / 门禁 ref 文件。这超出本切片契约（需进一步确认是否要纳入），但它和本切片「规范化防绕过」的目标同属一类，修完仍留着同类缺口。",
+   "fix": "在 normalizePath 里按段解析 ..（用栈弹出上一段，或用 path.posix.normalize），并在测试 LEDGER_FILE 前对规范化结果做 toLowerCase（或给 LEDGER_FILE 加 i 标志）；在 guard-normalizes-ledger-paths 里补 .. 和大写 REFS 两个用例。若决定不做，在 design 里记明守卫只是尽力而为。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 18,
+   "summary": "LEDGER_REF 扩展到 gate-<S> 后，拒绝时仍沿用 GUARD_DENY 的原文案：只说「refs/flight/<change>/ledger 账本只能由 flight 控制面写入」，并让模型用 ledger.py show 读取。命中门禁结论 ref 时（包括 git show / git log refs/flight/x/gate-S1 这类只读命令也会被拦），这段文案答非所问，ledger.py show 也读不到门禁结论。",
+   "fix": "保留 ledger.py show 字样（契约要求），同时补一句：门禁结论 ref refs/flight/<change>/gate-<S> 只能由 slice-gate.py gate 写入，查看门禁结论请看 gate-report.md 或 slice-gate 的输出。"
+  },
+  {
+   "severity": "LOW",
+   "file": "install.sh",
+   "line": 340,
+   "summary": "如果只补了模板顶层键、没有合并任何 hooks，python 段仍输出 merged，外层会打印「合并 intent-driven hooks」，和实际改动对不上。比如升级只补了 worktree 键时，用户看到的却是 hooks 被合并。按契约状态值沿用旧的不改，所以只是提示文案不准，不影响逻辑。",
+   "fix": "把 merged 分支的文案改得更宽，例如「合并 intent-driven hooks / 补缺失顶层键」。也可以让 python 段分别统计 hooks 变更和补键，再在 status 里带上说明。状态值仍保持 created / merged / unchanged / error_malformed 四个不变。"
+  },
+  {
+   "severity": "LOW",
+   "file": "install.sh",
+   "line": 318,
+   "summary": "读模板 settings.json 的代码没做容错。模板是非法 JSON 或不是对象（.items() 会抛 AttributeError）时，整个 python 段异常退出，外层打出「合并失败（hooks 未注入）」。这样一来，本来能成功的 hooks 合并也一起被跳过了。模板属于库自有文件，正常不会坏，所以风险低。",
+   "fix": "用 try/except (ValueError, OSError) 包住 json.load，并加上 isinstance(tmpl, dict) 判断。不合格时直接跳过补键，hooks 合并照常写回。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 590,
+   "summary": "pytest 子进程没设 timeout。映射的测试一旦卡住（等网络、死锁、交互式输入等），gate/final 会一直挂起，不会给出红灯。切片包也提到本仓 final 会多跑一遍 `claude plugin test` 等较重的测试。",
+   "fix": "给 subprocess.run 加 timeout（例如沿用 run_cmd 的超时约定，或单独设一个常量）；捕获 TimeoutExpired 后，对所有 py_targets 追加「G7 scenario: <sid> → <target> 运行超时」的 violation。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/slice-gate.py",
+   "line": 596,
+   "summary": "判「未被收集运行」时没有任何诊断信息。sys.executable 环境里没装 pytest、conftest 导入失败、收集错误（returncode 2/4）等情况，都会落成同一句文案，r.returncode 和 r.stderr 被直接丢掉，执行体只能盲猜原因。另外 sys.executable 是 hook 的解释器，不一定是项目 verify 用的环境（如 uv/venv），这种情况最容易触发该文案。",
+   "fix": "outs 为空时，把 r.returncode 与 r.stderr（或 stdout 末尾几行）截断后附进 violation 文案，例如「未被收集运行（pytest rc=%d: %s）」，不改变判定结果。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_slice_gate.py",
+   "line": 1104,
+   "summary": "新增的三条用例只覆盖别名 xfail 和测试体内 skip 两种非 PASSED 路径，「未被收集运行」分支（例如函数存在但被同名覆盖，或收集报错）以及参数化 `target[...]` 的前缀匹配分支都没有用例。",
+   "fix": "可选：补一条参数化 scenario 测试（一个参数失败时应报 FAILED），再补一条收集失败的用例（模块级 raise），断言文案含「未被收集运行」。"
+  }
+ ],
+ "fix": {
+  "slice": "final",
+  "ok": true,
+  "commit": "dcf11eef9c8b79ee4afc6aed92138447ab171533",
+  "failed": [],
+  "warnings": [],
+  "summary": "final 通过：scenario 25/25。3 条 HIGH 各一个 fix commit，均先看到测试失败再实现。c4f127d：fix 执行体的 agent 调用加了 .catch，抛错或未返回时重派一次（label 为 fix:retry）；仍为空就往 blocked 记 fix/infra，Finalize 照常跑。6955e24：fix prompt 第一步用 git merge-base --is-ancestor $(git rev-parse <branch>) HEAD 做基点校验，不成立就返回 G0 base；start fix 也带 --expect-branch。另外补了一处工作流处理（finding 里没提到）：fix 返回 G0 时同样重派一次，仍被 G0 拒绝就记 blocked 且不合回，因为那个 commit 建在旧基点上。两份回退文档 opsx-apply.md 和 openspec-apply-change/SKILL.md 已同步修改。dcf11ee：G7 没有采用 junitxml，因为实测非 strict 的 XPASS 在 junitxml 里和 PASSED 一模一样，会漏判；改为用临时 pytest 插件（-p flight_g7_outcomes，通过 PYTHONPATH 指向临时目录）在 pytest_runtest_logreport 里记录 nodeid 和结果，并加 --rootdir 固定 nodeid，不再依赖终端输出。删掉了不再使用的 PYTEST_OUTCOME_RE。新增用例：带 addopts=-q 时 G7 仍判为 PASSED。没有改动任何已有测试的断言。xdist 下的插件行为只是按 pytest hook 机制推断的，没有实测，因为环境里没装 xdist。slices.json 里没有 fix 条目，所以按 prompt 跳过了 start。全量测试 250 passed，compileall 和 schema validate 都绿。注意：final 跑的是主仓库 template 下的 slice-gate.py（prompt 指定的路径），不是 worktree 里刚修好的那份。"
+ }
+}
