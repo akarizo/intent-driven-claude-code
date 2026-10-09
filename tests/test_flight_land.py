@@ -1,7 +1,5 @@
 """flight 合回与收口过程（scenario: flight-integration#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -46,17 +44,17 @@ def test_land_closeout_writes_records():
 # 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_land_commits_only_records():
     # Given: change 目录的 slices/_interfaces.md 有未提交改动，change 目录外的 src/x.py 也有；另一情形没有未提交的记录
     # When: 提交飞行记录
     # Then: 只 add change 目录内的记录文件并提交 chore(flight): 记录；后一情形不运行 git commit
     assert_ts_passed("land-commits-only-records")
+    assert_ts_passed("land-commits-only-records/no-changes")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_land_prepare_resolve_reports_non_conflict_failure():
     # Given: 解冲突 worktree 里重做 S2 合并时 git merge 非 0、stderr 首行为 not something we can merge、无未合并文件
     # When: 准备 S2 的解冲突现场
     # Then: 返回错误且含该 stderr 首行，不返回冲突列表
     assert_ts_passed("land-prepare-resolve-reports-non-conflict-failure")
+    assert_ts_passed("land-prepare-resolve-rejects-clean-merge")
