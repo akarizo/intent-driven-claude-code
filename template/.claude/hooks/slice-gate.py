@@ -636,6 +636,40 @@ def _ckpt_delete(root, ref):
     subprocess.run(["git", "update-ref", "-d", ref], cwd=root, capture_output=True, text=True)
 
 
+def _gate_ref(change_dir, slice_id):
+    return "refs/flight/%s/gate-%s" % (os.path.basename(os.path.abspath(change_dir).rstrip(os.sep)), slice_id)
+
+
+def _gate_save(root, change_dir, result):
+    """把门禁结论写成以切片 commit 为父的提交，挂到 gate ref。成功返回 None，失败返回 stderr 首行。"""
+    def g(args, stdin=None):
+        p = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, input=stdin)
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr.strip().splitlines() or ["git %s exit %d" % (args[0], p.returncode)])[0])
+        return p.stdout.strip()
+
+    try:
+        blob = g(["hash-object", "-w", "--stdin"], json.dumps(result, ensure_ascii=False))
+        tree = g(["mktree"], "100644 blob %s\tgate.json\n" % blob)
+        sha = g(["commit-tree", tree, "-p", result["commit"], "-m",
+                 "flight: gate %s ok %s" % (result["slice"], result["commit"][:8])])
+        g(["update-ref", _gate_ref(change_dir, result["slice"]), sha])
+    except RuntimeError as e:
+        return str(e)
+    return None
+
+
+def _gate_load(root, ref):
+    p = subprocess.run(["git", "show", ref + ":gate.json"], cwd=root, capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    try:
+        rec = json.loads(p.stdout)
+    except ValueError:
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
 def _slice_owns(change_dir, slice_id):
     with open(os.path.join(change_dir, "slices.json"), "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -756,6 +790,14 @@ def cmd_start(args):
             print(json.dumps({"slice": args.slice, "ok": False, "commit": "", "failed": [msg],
                               "warnings": [], "summary": "基点校验未通过"}, ensure_ascii=False))
             sys.exit(1)
+    if args.resume_checkpoint:
+        # 上一轮执行体门禁已绿却没返回：基点吻合就直接交出留存的结论，不再重做
+        rec = _gate_load(root, _gate_ref(args.change_dir, args.slice))
+        if rec and rec.get("ok") and rec.get("slice") == args.slice and \
+                git(root, "rev-parse", "HEAD") in (rec.get("base"), rec.get("commit")):
+            timeline_record(args.change_dir, "slice-start", "%s (recovered gate)" % args.slice)
+            print(json.dumps(dict(rec, recovered=True), ensure_ascii=False))
+            sys.exit(3)
     existing = _read_marker(root)
     if existing and existing.get("slice") == args.slice:
         # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动
@@ -772,6 +814,7 @@ def cmd_start(args):
     else:
         # 首轮起跑：上一次飞行残留的快照不属于本轮，清掉免得被误恢复
         _ckpt_delete(root, ref)
+        _ckpt_delete(root, _gate_ref(args.change_dir, args.slice))
     marker = {"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
               "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
     with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
@@ -848,6 +891,10 @@ def cmd_gate(args):
               "failed": failed, "warnings": warnings, "hooks_missing": hooks_missing,
               "ceilings": [[rel, ln, limit, up] for rel, ln, limit, up in ceilings],
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
+    if result["ok"]:
+        err = _gate_save(root, args.change_dir, result)
+        if err:
+            warnings.append("门禁结论未能留存：%s" % err)
     append_report(args.change_dir, result)
     record_ceilings(args.change_dir, args.slice, ceilings)
     timeline_record(args.change_dir, "gate", "%s %s" % (args.slice, "ok" if result["ok"] else "red"))
@@ -885,6 +932,9 @@ def cmd_record(args):
                   "warnings": [x for x in (args.warnings or "").split(";") if x.strip()]}
     result.setdefault("failed", [])
     result.setdefault("warnings", [])
+    if result.get("slice"):
+        # 结论已交到 integrator 手里，留存的那份完成使命（不存在时静默）
+        _ckpt_delete(os.getcwd(), _gate_ref(args.change_dir, result["slice"]))
     if report_has_row(args.change_dir, result.get("slice", ""), result.get("commit", "")):
         print(json.dumps({"recorded": False, "reason": "already recorded"}, ensure_ascii=False))
         return
