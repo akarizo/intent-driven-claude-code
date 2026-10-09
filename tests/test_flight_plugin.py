@@ -6,12 +6,10 @@ import re
 import shutil
 import subprocess
 
-import pytest
 
 from conftest import ROOT
 
 PLUGIN = ROOT / "template" / "plugins" / "flight"
-XF = pytest.mark.xfail(strict=True, reason="S3 未实现 flight 插件")
 
 
 @functools.lru_cache(maxsize=1)
@@ -30,7 +28,6 @@ def assert_ts_passed(name):
     assert name in passed, "TS 测试「%s」未通过。claude plugin test 原始输出：\n%s%s" % (name, test.stdout, test.stderr)
 
 
-@XF
 def test_plugin_manifest_validates():
     # Given: 仓库中的 template/plugins/flight/
     # When: 运行 claude plugin validate
@@ -40,7 +37,6 @@ def test_plugin_manifest_validates():
     assert validate.returncode == 0, validate.stdout + validate.stderr
 
 
-@XF
 def test_band_shows_pending_plan():
     # Given: 有待批准 change demo（指纹 3f9a1c07、tasks 未完成、账本无批准）
     # When: 会话启动后绘制输入框上方区域
@@ -48,7 +44,6 @@ def test_band_shows_pending_plan():
     assert_ts_passed("band-shows-pending-plan")
 
 
-@XF
 def test_band_ignores_finished_and_foreign_copies():
     # Given: 主 worktree 有已完成的 old；worktree-demo 与 wf_x 两个 worktree 都有未完成的 demo
     # When: 刷新待批准列表
@@ -56,7 +51,6 @@ def test_band_ignores_finished_and_foreign_copies():
     assert_ts_passed("band-ignores-finished-and-foreign-copies")
 
 
-@XF
 def test_approve_press_appends_ledger_event():
     # Given: 批准带显示 demo 与指纹 F，按下时重算仍是 F
     # When: 人按下「批准起飞」
@@ -64,7 +58,6 @@ def test_approve_press_appends_ledger_event():
     assert_ts_passed("approve-press-appends-ledger-event")
 
 
-@XF
 def test_approve_press_refuses_changed_plan():
     # Given: 批准带显示指纹 F，按下时重算为 G
     # When: 人按下「批准起飞」
@@ -72,23 +65,22 @@ def test_approve_press_refuses_changed_plan():
     assert_ts_passed("approve-press-refuses-changed-plan")
 
 
-@XF
 def test_ledger_append_retries_on_conflict():
     # Given: update-ref 第一次旧值不符、第二次成功；另一情形三次都失败
     # When: 人按下「批准起飞」
     # Then: 前者重读链尾后成功并预填；后者第三次失败后停止、提示错误、不预填
     assert_ts_passed("ledger-append-retries-on-conflict")
+    assert_ts_passed("ledger-append-gives-up-after-three-conflicts")
 
 
-@XF
 def test_bash_guard_denies_ledger_writes():
     # Given: 插件已加载
     # When: 模型发起 `git update-ref refs/flight/demo/ledger abc` 与 `git status`
     # Then: 前者被拒、理由含 ledger.py show；后者照常执行
     assert_ts_passed("bash-guard-denies-ledger-writes")
+    assert_ts_passed("bash-guard-passes-other-commands")
 
 
-@XF
 def test_no_model_callable_approval_path():
     # Given: 插件已加载、会话已启动
     # When: 列出插件注册的工具与斜杠命令
@@ -96,7 +88,6 @@ def test_no_model_callable_approval_path():
     assert_ts_passed("no-model-callable-approval-path")
 
 
-@XF
 def test_version_floor_disables_band():
     # Given: 会话版本 2.1.200，仓库里有待批准的 change
     # When: 会话启动后绘制输入框上方区域
