@@ -1,0 +1,6 @@
+{
+  "name": "flight",
+  "version": "0.1.0",
+  "description": "飞行计划批准带：人按下「批准起飞」后由插件进程写入 refs/flight/<change>/ledger；拦截模型对账本 ref 的 Bash 写入。",
+  "types": "./types/index.d.ts"
+}

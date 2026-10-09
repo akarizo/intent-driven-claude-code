@@ -1,0 +1,3 @@
+# 引擎热加载时写入的类型与配置生成物，不入库
+.claude-plugin/types/
+tsconfig.json
