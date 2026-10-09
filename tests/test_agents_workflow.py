@@ -281,12 +281,12 @@ def test_workflow_merge_dispatch_forbids_final(tmp_path):
     # Given: waves [[S1, S2], [S3]]，全部切片与合回都成功
     replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
 
-    # When: 用 mock agent 跑完工作流，取 wave 1 的合回派发
+    # When: 用 mock agent 跑完工作流，取全部合回派发
     out = run_workflow(tmp_path, flight_args(), replies)
     merges = [c for c in out["calls"] if c["opts"]["label"].startswith("integrate:")]
 
-    # Then: 合回派发的返回结构必填项含 ok 与 failed、不含 slice 与 commit；prompt 含「不要运行第 3 项」；blocked 里没有 wave 开头的条目
-    assert len(merges) == 1, [c["opts"]["label"] for c in merges]
+    # Then: 一律隔离后每个 wave 各一次合回（integrate:w1、integrate:w2）；首次合回派发的返回结构必填项含 ok 与 failed、不含 slice 与 commit；prompt 含「不要运行第 3 项」；blocked 里没有 wave 开头的条目
+    assert [c["opts"]["label"] for c in merges] == ["integrate:w1", "integrate:w2"], [c["opts"]["label"] for c in merges]
     required = set(merges[0]["opts"]["schema"]["required"])
     assert {"ok", "failed"} <= required and not ({"slice", "commit"} & required), required
     assert "不要运行第 3 项" in merges[0]["prompt"]
@@ -394,7 +394,6 @@ def fallback_section(text):
     return text[i:text.index("两条路径最终都产出", i)]
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：agent() 抛错未触发重派")
 def test_workflow_retries_when_executor_throws(tmp_path):
     # Given: waves [[S1, S2], [S3]]；S1 首轮 agent 调用抛错（执行体没交回结构化结果），重派后门禁绿；S2、S3 一次绿
     replies = [["^S1$", THROW], ["^S1:retry$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
@@ -410,7 +409,6 @@ def test_workflow_retries_when_executor_throws(tmp_path):
     assert out["result"]["blocked"] == [], out["result"]["blocked"]
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：agent() 抛错未触发重派")
 def test_workflow_blocks_after_retry_throws(tmp_path):
     # Given: waves [[S1, S2], [S3]]、S3 依赖 S1；S1 首轮与重派的 agent 调用都抛错
     replies = [["^S1(:retry)?$", THROW], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")]] + TAIL_REPLIES
@@ -427,7 +425,6 @@ def test_workflow_blocks_after_retry_throws(tmp_path):
     assert "S3" in blocked and "S3" not in labels
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：执行体与回退路径文档未写明找回的门禁结论与抛错重派")
 def test_apply_docs_describe_recovered_gate():
     # Given: slice-executor.md、opsx-apply.md 与 openspec-apply-change/SKILL.md
     fm, body = frontmatter(AGENTS / "slice-executor.md")
@@ -443,7 +440,6 @@ def test_apply_docs_describe_recovered_gate():
     assert all("抛错" in f for f in fallbacks), fallbacks
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：单片 wave 未隔离")
 def test_single_slice_wave_runs_isolated(tmp_path):
     # Given: waves [[S1, S2], [S3]]，全部一次门禁绿，S3 的 commit 为 f…f
     replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3", commit="f" * 40)]] + TAIL_REPLIES
@@ -458,7 +454,6 @@ def test_single_slice_wave_runs_isolated(tmp_path):
     assert any("f" * 40 in c["prompt"] for c in merges), [c["opts"]["label"] for c in merges]
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：fix 未隔离、final 前未合回")
 def test_fix_runs_isolated_and_merges_before_final(tmp_path):
     # Given: waves [[S1, S2], [S3]] 全部门禁绿；S1 的评审给出 1 条 HIGH；fix 返回的 commit 为 9…9
     replies = [["^S1$", gate_json("S1")], ["^S2$", gate_json("S2")], ["^S3$", gate_json("S3")],
@@ -474,7 +469,6 @@ def test_fix_runs_isolated_and_merges_before_final(tmp_path):
     assert "9" * 40 in prompt and prompt.index("9" * 40) < prompt.index("slice-gate.py final"), prompt
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：回退路径与 git 纪律未同步一律隔离")
 def test_apply_docs_mirror_always_isolate():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md 与 openspec-git-discipline/SKILL.md
     cmd = (CMD / "opsx-apply.md").read_text(encoding="utf-8")
