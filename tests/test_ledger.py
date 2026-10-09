@@ -113,3 +113,16 @@ def test_ledger_shared_across_worktrees(git_repo):
     # Then: 输出 F1
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == F1
+
+
+def test_ledger_change_dir_outside_repo_exits_5(tmp_path):
+    # Given: change 目录 tmp_path/outside/demo 存在但不在任何 git 仓库内（GIT_CEILING_DIRECTORIES 截断向上查找）
+    d = tmp_path / "outside" / "demo"
+    d.mkdir(parents=True)
+    env = {"GIT_CEILING_DIRECTORIES": str(tmp_path)}
+
+    # When: 运行 verify
+    p = run_hook("ledger", "verify", "--change-dir", str(d), env=env)
+
+    # Then: 以 5 退出（配置错误，不得当成无账本放行）
+    assert p.returncode == 5, (p.stdout, p.stderr)

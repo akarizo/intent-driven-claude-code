@@ -57,8 +57,11 @@ def read_events(change_dir):
     change_dir = os.path.normpath(str(change_dir))
     change = os.path.basename(change_dir)
     ref = ref_for(change)
-    if _git(change_dir, "rev-parse", "-q", "--verify", ref, check=False).returncode != 0:
+    p = _git(change_dir, "rev-parse", "-q", "--verify", ref, check=False)
+    if p.returncode == 1:  # 引用不存在
         return []
+    if p.returncode != 0:  # 128 等：目录不存在 / 不在仓库内，不得当成无账本
+        raise RuntimeError("git rev-parse 失败：%s" % p.stderr.strip())
     events = []
     for line in _git(change_dir, "rev-list", "--reverse", "--parents", ref).stdout.splitlines():
         shas = line.split()
