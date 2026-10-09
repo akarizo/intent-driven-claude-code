@@ -59,7 +59,26 @@ PY_TEST_DEF = re.compile(r"^(\s*)(?:async\s+)?def\s+(test_\w+)\s*\(")
 JS_TEST_DEF = re.compile(r"^\s*(?:test|it)\s*\(\s*[\'\"`](.+?)[\'\"`]")
 JS_BLOCK_START = re.compile(r"^\s*(?:test|it|describe)\s*\(")
 MARK_RE = re.compile(r"xfail|skip", re.I)
-PYTEST_OUTCOME_RE = re.compile(r"^(?P<id>\S+::\S+?)\s+(?P<out>PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b")
+# G7 实跑用的临时 pytest 插件：直接记每个 report 的 nodeid 与结果，不依赖终端输出（addopts 含 -q / xdist 的 -n 都会改掉 -v 的逐条行）
+# junitxml 区分不出非 strict 的 XPASS（与 PASSED 同形），所以不用它
+G7_PLUGIN = '''import json, os
+
+
+def pytest_runtest_logreport(report):
+    if report.when == "call":
+        if hasattr(report, "wasxfail"):
+            out = "XPASS" if report.passed else "XFAIL"
+        else:
+            out = report.outcome.upper()
+    elif report.failed:
+        out = "ERROR"
+    elif report.skipped:
+        out = "XFAIL" if hasattr(report, "wasxfail") else "SKIPPED"
+    else:
+        return
+    with open(os.environ["FLIGHT_G7_OUT"], "a", encoding="utf-8") as f:
+        f.write(json.dumps([report.nodeid, out]) + "\\n")
+'''
 # G8 天花板标记：行首注释紧跟标记，两段用 -> 或 → 分隔（形如 `限制 -> 升级条件/路径`）
 CEILING_RE = re.compile(r"^\s*(?:#|//|--|\*)+\s*ceiling\s*:\s*(.*)$", re.I)
 CEILING_SPLIT = re.compile(r"->|→")
@@ -538,6 +557,22 @@ def _py_decorators(source, func):
     return None
 
 
+def _pytest_outcomes(root, targets):
+    """实跑 targets，返回 [(nodeid, PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)]；nodeid 以 root 为 rootdir。"""
+    with tempfile.TemporaryDirectory(prefix="flight-g7-") as tmp:
+        with open(os.path.join(tmp, "flight_g7_outcomes.py"), "w", encoding="utf-8") as f:
+            f.write(G7_PLUGIN)
+        out = os.path.join(tmp, "outcomes.jsonl")
+        env = dict(os.environ, FLIGHT_G7_OUT=out,
+                   PYTHONPATH=os.pathsep.join(p for p in (tmp, os.environ.get("PYTHONPATH")) if p))
+        subprocess.run([sys.executable, "-m", "pytest", "-p", "flight_g7_outcomes", "-p", "no:cacheprovider",
+                        "--rootdir", root, *targets], cwd=root, env=env, capture_output=True, text=True)
+        if not os.path.isfile(out):
+            return []
+        with open(out, "r", encoding="utf-8") as f:
+            return [tuple(json.loads(line)) for line in f if line.strip()]
+
+
 def scenario_status(root, data, slice_ids=None):
     """返回 (violations, total, passed)。passed = 有映射、函数存在、无 xfail/skip 标记，且 .py 目标实跑结果全为 PASSED。"""
     tests = data.get("scenario_tests") or {}
@@ -587,9 +622,7 @@ def scenario_status(root, data, slice_ids=None):
             passed += 1
     if py_targets:
         # 文本检查认不出别名装饰器 / 测试体内 pytest.skip()：对 .py 目标实跑一次，只认 PASSED
-        r = subprocess.run([sys.executable, "-m", "pytest", "-v", "-p", "no:cacheprovider",
-                            *[t for _, t in py_targets]], cwd=root, capture_output=True, text=True)
-        outcomes = [(m.group("id"), m.group("out")) for m in map(PYTEST_OUTCOME_RE.match, r.stdout.splitlines()) if m]
+        outcomes = _pytest_outcomes(root, [t for _, t in py_targets])
         for sid, target in py_targets:
             outs = [o for i, o in outcomes if i == target or i.startswith(target + "[")]
             if not outs:

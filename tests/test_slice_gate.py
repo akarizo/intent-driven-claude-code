@@ -1135,3 +1135,15 @@ def test_g7_gate_checks_own_slice_outcome(git_repo):
     # Then: ok 为 false，failed 里有一条 G7 含实际结果 XFAIL
     assert out["ok"] is False, out
     assert any(f.startswith("G7") and "XFAIL" in f for f in out["failed"]), out["failed"]
+
+
+def test_g7_reads_outcome_despite_addopts_quiet(git_repo):
+    # Given: 仓库根有 pytest.ini 写 addopts = -q；切片 S1 的 scenario 测试 test_mod_adds 无标记、断言成立
+    write(git_repo / "pytest.ini", "[pytest]\naddopts = -q\n")
+    change = gate_repo(git_repo)
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: failed 里没有任何 G7 条目
+    assert not [f for f in out["failed"] if f.startswith("G7")], out["failed"]
