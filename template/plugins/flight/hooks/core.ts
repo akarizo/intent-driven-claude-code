@@ -19,6 +19,17 @@ export interface Io {
   write(path: string, text: string): Promise<void>
   exists(path: string): Promise<boolean>
 }
+/** 「这个 agent 属于哪次飞行」的查找结果（io.flightOfAgent 的返回） */
+export type Found = { flight: Flight; events: FlightEvent[] }
+/** hook 文件从 $ 造的上下文：全是闭包，可以跨文件传（实测 X12：$ 本身不能跨 import） */
+export interface Ctx {
+  io: Io
+  now(): Promise<number> // 毫秒时间戳，用于事件的 at
+  spawn(x: { f: Flight; role: Role; cwd: string; prompt: string; description: string }): Promise<{ agentId?: string; deny?: string }>
+  status(text: string | undefined): Promise<void>
+  toast(text: string): Promise<void>
+  runCommand(command: string, args: string): Promise<void>
+}
 export type Action =
   | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] } }
   | { kind: 'dispatch'; role: 'resolver'; slice: string; conflicts: string[] }
