@@ -32,8 +32,8 @@ function gateJson(x: Partial<GateJson>): string {
 }
 
 type Call = { argv: string[]; cwd?: string }
-type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[] }
-type World = { ledger: FlightEvent[]; finalOut?: string; fixFinalOut?: string }
+type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[]; writes: string[] }
+type World = { ledger: FlightEvent[]; finalOut?: string; fixFinalOut?: string; ledgerFails?: boolean }
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: '' })
 const has = (c: Call, ...parts: string[]) => parts.every(p => c.argv.some(a => a === p || a.endsWith(`/${p}`)))
@@ -43,6 +43,7 @@ const finals = (log: Log) => log.calls.filter(c => has(c, 'slice-gate.py', 'fina
 function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?: string } | undefined): RunResult {
   const [cmd, ...args] = argv
   const cwd = opts?.cwd
+  if (cmd === 'python3' && args[0]?.endsWith('/ledger.py') && w.ledgerFails) return { exitCode: 1, stdout: '', stderr: 'fatal: bad object refs/flight/demo/ledger\n' }
   if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) return ok(log.ledger.map(x => JSON.stringify(x)).join('\n') + '\n')
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'final')
     return ok(cwd === FIX_TREE ? (w.fixFinalOut ?? gateJson({})) : (w.finalOut ?? gateJson({})))
@@ -72,7 +73,7 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
 
 /** 假 Ctx：io 按同一个世界作答，status / toast / runCommand 记入 log；不派发 agent。 */
 function ctxOf(w: World): { ctx: Ctx; log: Log } {
-  const log: Log = { ledger: [...w.ledger], calls: [], commands: [], statuses: [], toasts: [] }
+  const log: Log = { ledger: [...w.ledger], calls: [], commands: [], statuses: [], toasts: [], writes: [] }
   const ctx: Ctx = {
     io: {
       async run(argv, opts) {
@@ -80,7 +81,7 @@ function ctxOf(w: World): { ctx: Ctx; log: Log } {
         return answer(w, log, [...argv], opts)
       },
       read: async () => '- [ ] S1 第一片\n',
-      write: async () => undefined,
+      write: async path => void log.writes.push(path),
       exists: async () => false,
     },
     now: async () => NOW,
@@ -186,4 +187,19 @@ test('final-red-halts', async () => {
   expect(log.ledger.slice(4)).toMatchObject([{ ev: 'final', ok: false }, { ev: 'halt', reason: expect.stringContaining('G2 lint') }])
   expect(log.toasts.some(t => t.includes('停飞'))).toBe(true)
   expect(log.commands).toEqual([])
+})
+
+test('landing-stops-when-ledger-unreadable', async () => {
+  // Given: 账本里 S1 已合回、评审有 1 条 HIGH 未闭环；但此刻 ledger.py show 以 1 退出（账本读取失败）
+  const reviewedHigh = event('review', { attempt: 1, slice: 'S1', agent: 'R', findings: [HIGH] })
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, reviewedHigh], ledgerFails: true })
+
+  // When: drive 交来 land 动作
+  await runLandingAction(ctx, FLIGHT, { kind: 'land' })
+
+  // Then: 没有写 review-findings.json；没有运行任何命令；账本无新增；提示含「账本读取失败」
+  expect(log.writes.filter(p => p.endsWith('/review-findings.json'))).toEqual([])
+  expect(log.commands).toEqual([])
+  expect(log.ledger).toHaveLength(4)
+  expect(log.toasts.some(t => t.includes('账本读取失败'))).toBe(true)
 })

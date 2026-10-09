@@ -53,11 +53,6 @@ async function runFinal(io: Io, f: Flight, cwd: string): Promise<GateJson> {
   return parseGate(await judge(io, f, 'slice-gate', ['final', '--change-dir', f.changeDir], cwd, GATE_TIMEOUT_MS), 'final')
 }
 
-async function eventsOf(io: Io, f: Flight): Promise<FlightEvent[]> {
-  const l = await readLedger(io, f)
-  return 'events' in l ? l.events : []
-}
-
 /** submit_findings 的处理：只认当前 attempt 里 role 为 reviewer 的调用者；校验通过就追加 review 事件 */
 export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
   const state = found && reduce(found.events)
@@ -91,8 +86,13 @@ export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Pr
 /** drive 交来的 dispatch reviewer / fixer、final、land、halt；其他动作直接返回 */
 export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
   const io = ctx.io
-  const events = await eventsOf(io, f)
-  const state = reduce(events)
+  const ledger = await readLedger(io, f)
+  // fail-closed：读不到账本就不以空状态派发 / final / 收口（空状态会让 closeout 用空列表覆盖评审结论）
+  if ('error' in ledger) {
+    await ctx.toast(`flight：${f.change} 账本读取失败，未执行 ${action.kind}：${ledger.error.trim().split('\n')[0] ?? ''}`)
+    return
+  }
+  const state = reduce(ledger.events)
   const attempt = currentAttempt(state)
   const b = await base(ctx, f)
   const append = (x: FlightEvent) => appendEvent(io, f, x)
