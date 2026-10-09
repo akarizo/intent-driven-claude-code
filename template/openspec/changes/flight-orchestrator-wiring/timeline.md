@@ -21,3 +21,6 @@
 2026-10-09T16:12:43Z	ship	draft: 3 条 CRITICAL/HIGH 评审未闭环
 2026-10-09T16:13:00Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/39
 2026-10-09T23:33:00Z	final	ok
+2026-10-09T23:35:24Z	ship	ready
+2026-10-09T23:36:42Z	ship	ready
+2026-10-09T23:36:55Z	ship	draft: final 过期：记录 358278e162，HEAD 9c2afd3365
