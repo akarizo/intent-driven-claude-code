@@ -46,3 +46,10 @@ def test_final_red_halts():
     # When: 推进飞行
     # Then: 账本追加 final（ok false）与 halt（含 G2 lint）；没有运行 /pr-ship
     assert_ts_passed("final-red-halts")
+
+
+def test_landing_stops_when_ledger_unreadable():
+    # Given: 账本有未闭环的 HIGH，但 ledger.py show 以 1 退出
+    # When: drive 交来 land 动作
+    # Then: 不写 review-findings.json、不运行 /pr-ship、账本无新增、提示「账本读取失败」
+    assert_ts_passed("landing-stops-when-ledger-unreadable")
