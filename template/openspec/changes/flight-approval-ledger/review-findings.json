@@ -1,0 +1,191 @@
+{
+ "blocked": [
+  {
+   "slice": "S3",
+   "kind": "infra",
+   "reason": "已恢复：第一段（wf_393c81e6-c64）执行体用满 maxTurns 40，提交 c9483fb 并跑完门禁（ok）后未交回结构化结果；agent() 抛错绕过了 .then 重派，blocked 原因「已重派一次」与事实不符。主会话机械重跑 gate S3（ok）→ integrator 补合 f9fbdee 并 record → 补派 review:S3（0 阻断）"
+  },
+  {
+   "slice": "S5",
+   "kind": "infra",
+   "reason": "已恢复：第一段因依赖 S3 跳过；第二段（wf_d306cb37-70a）实现，门禁 ok（9c53bdf）"
+  },
+  {
+   "slice": "S6",
+   "kind": "infra",
+   "reason": "已恢复：第一段因依赖 S5 跳过；第二段（wf_d306cb37-70a）实现，门禁 ok（c34f61a）"
+  }
+ ],
+ "blocking": [],
+ "deferred": [
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/plan_fp.py",
+   "line": 34,
+   "summary": "glob.glob 直接拼接 change_dir，未转义。路径里只要含 glob 元字符（例如仓库位于 `.../My [Projects]/...`），specs/**/spec.md 和 slices/*.md 就会静默漏匹配，指纹只覆盖 proposal/design/slices.json，并且不报错。已抽查确认：change_dir 为 `a[1]` 时，plan_files 只返回 ['proposal.md']。后果是这些路径下修改 spec 或切片包不会改变指纹，后续批准账本的失效判据会被削弱。",
+   "fix": "两处 glob 都改为对目录前缀转义：glob.glob(os.path.join(glob.escape(change_dir), \"specs\", \"**\", \"spec.md\"), recursive=True)，slices/*.md 同理。另补一条测试：在含 `[` 的目录下修改 specs/cap/spec.md，断言指纹随之变化。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/plan_fp.py",
+   "line": 64,
+   "summary": "读计划文件时只捕获 UnicodeDecodeError/ValueError。遇到权限不足等 OSError 会直接抛出：CLI 以 traceback 退出码 1 结束，不符合 exit 2 + stderr 一行原因的契约；spec_html.compute_meta_chips 只捕获 PlanError，整次渲染会因此失败，违背「PlanError 时不加，不影响渲染」的意图。",
+   "fix": "把 open/read 一并放进 try，并把 OSError 也转成 PlanError（\"计划文件无法读取 %s: %s\"）。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_plan_fp.py",
+   "line": 5,
+   "summary": "去掉 XF 标记后，`import pytest` 已无引用，成了本次改动留下的无用 import；第 8 行一带也多出一个空行。tests/test_spec_html.py:195 的 `import pytest  # noqa: E402` 同样只服务于已删除的 xfail，现在也无引用。",
+   "fix": "删掉 tests/test_plan_fp.py 中无用的 `import pytest` 和多余空行；删掉 tests/test_spec_html.py:195 的 `import pytest  # noqa: E402`（如果文件其他地方确实不再使用 pytest）。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 31,
+   "summary": "_git 用 text=True 时按 locale 编码解码 stdout。event.json 的 blob 不是合法 UTF-8 时，会在 subprocess 内部抛 UnicodeDecodeError，最后走到 exit 5（其他异常），而不是契约要求的 exit 4「账本损坏：<sha8> 非 JSON」。已抽查：blob 为 \\xff\\xfe 时 exit=5，stderr 里没有 sha8。另外在非 UTF-8 的 locale 下（如 Windows cp936），合法但含非 ASCII 字符的事件（写入方用 ensure_ascii=False）也可能解码失败。",
+   "fix": "_git 显式传 encoding=\"utf-8\"。读 blob 时（第 77 行）改为按字节读取：subprocess.run(..., capture_output=True) 拿到 bytes 后 try: text = out.decode(\"utf-8\") except UnicodeDecodeError: raise LedgerInvalid(sha, \"event.json 不是 UTF-8\")。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 93,
+   "summary": "同一引用被解析了多次：read_events 先用 rev-parse 判断存在，再用 rev-list 按引用名遍历；latest_approval 之后又单独 rev-parse 一次取 tip。插件在这几步之间追加事件时，返回的 tip_sha 可能对不上实际校验过的事件链（事件读自旧 tip，返回的却是新 tip），供 S4 门禁使用的 (event, tip) 就不一致。",
+   "fix": "只解析一次：用 rev-parse --verify '<ref>^{commit}' 得到 tip sha，后续 rev-list 改用该 sha 而不是引用名。可以拆出一个内部函数 _read(change_dir) 返回 (events, tip)，read_events 和 latest_approval 都调它，latest_approval 不再单独 rev-parse。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 60,
+   "summary": "rev-parse 没做类型约束。引用被改成指向 tree 或 blob 对象时，rev-list 会失败并抛 RuntimeError，结果是 exit 5，而不是按账本损坏处理的 exit 4。",
+   "fix": "存在性判断改为 rev-parse -q --verify '<ref>^{commit}'。引用存在但不是 commit 时抛 LedgerInvalid(ref 指向的 sha, \"引用不指向提交\")。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 75,
+   "summary": "树条目只检查了类型 blob，没检查 mode。mode 为 120000 的 symlink 条目类型也是 blob，同样能通过；用 cat-file -p 读到的是链接目标字符串，只要这个字符串是合法 JSON 就会被当成事件。",
+   "fix": "额外要求 parts[0] == \"100644\"（或在 {100644, 100755} 范围内）。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/ledger.py",
+   "line": 40,
+   "summary": "`ev.get(\"v\") != 1` 会放过 true 和 1.0：Python 里 True == 1、1.0 == 1，所以 {\"v\": true} 能通过版本校验，结构校验比契约「v == 1」更宽松。",
+   "fix": "改成 `type(ev.get(\"v\")) is not int or ev[\"v\"] != 1`。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "tests/test_approval_gate.py",
+   "line": 125,
+   "summary": "Workflow 派发是 hook 的主强制点。删除 test_takeoff_hook_denies_unapproved_dispatch 后，这一路径已没有任何测试：被删用例的 p3 覆盖的正是线上真实形态（tool_input.scriptPath + args 为 JSON 字符串），旧注释也写明它一旦回归就会静默 fail-open。现在全部 hook 用例都只构造 Agent/slice-executor 派发，is_takeoff_dispatch 的 Workflow 分支（包括 json.loads(args) 字符串解析）无人守护。切片包称这部分语义由新 scenario 覆盖，实际并未覆盖。",
+   "fix": "补一条基于账本的 Workflow 用例：make_change 之后，构造 {tool_name:'Workflow', tool_input:{scriptPath:'.../opsx-apply.js', args: json.dumps({change:'demo', changeDir:str(d)})}}，断言无账本时 deny；再 ledger_append(approve_event(current_fp)) 一次，断言静默放行。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_approval_gate.py",
+   "line": 78,
+   "summary": "契约里新增的 fail 语义边界没有测试：一是「非 git 仓库 = 判定结果，hook 应 deny」，二是「git 不可执行 = 门禁故障，hook 放行、CLI 以 3 退出」。这两条正是新旧实现的关键差异（旧实现有「拿不到证据就放行」的缺口）。我已定向抽查，当前行为符合契约：非 git 目录下 hook 输出 deny；PATH 中没有 git 时 hook 返回 0 且无输出，CLI 以 3 退出并在 stderr 说明门禁故障。但以后若 ledger 对非 git 目录改为抛异常，hook 会静默 fail-open，而现有测试发现不了。",
+   "fix": "补两条用例。第一条在 tmp_path（非 git）下 make_change，跑 hook，断言 permissionDecision==deny。第二条传 env={'PATH': '/nonexistent'}，并用 sys.executable 的绝对路径运行脚本：断言 hook 返回 0 且 stdout 为空，CLI 返回 3 且 stderr 含『门禁故障』。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/hooks/takeoff-gate.py",
+   "line": 26,
+   "summary": "`import ledger` / `import plan_fp` 写在模块顶层，在 main() 的 try 之外。它依赖 sys.path[0] 是脚本所在目录，与 design D5 写的「同目录，按路径加载」不一致。两种情况下会出问题：一是用户环境设置了 PYTHONSAFEPATH（3.11+）或用 -P/-I 运行，二是下游的 hooks 目录缺这两个文件。这时 ImportError 会在进入 main 之前抛出：hook 模式以 1 退出并带 traceback（实际等于放行，但不是『门禁故障』的受控路径）；CLI 模式以 1 退出，而不是契约约定的 3，也没有说明文字。",
+   "fix": "改为按路径加载并纳入故障处理。例如在 main 内用 importlib.util.spec_from_file_location 从 os.path.dirname(os.path.abspath(__file__)) 加载这两个模块；或者至少把 sys.path.insert(0, 脚本目录) 和 import 放进 main 的 try。CLI 路径加载失败时按门禁故障以 3 退出并说明原因，hook 路径则放行。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 20,
+   "summary": "版本下限在失败时是放行的：band 初值是 isDisabled:false。按 2.1.295 类型定义，抛错或超预算的 hook 会被跳过。所以 session.start 里如果 $.session.version() 抛错（老引擎可能没有这个 API），停用状态永远不会被设上。之后 turn.complete 的 refresh 只看 isDisabled，照样会刷出批准带，按压时也照写账本，这正好落在 D8 想防的『未实测版本』上。",
+   "fix": "atom 初值改成 { isDisabled: true, items: [] }，版本检查通过后在 session.start 里 update 成 isDisabled:false 再 refresh。也可以给 session.start 的注册挂一个 .catch，在里面置 isDisabled:true。补一条测试：session.version 抛错时没有 approve 按钮。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 49,
+   "summary": "有问题的项会挡住可批准的项：topItem 只按 mtime 取最新一项，不看 problem。如果最新的那一项是『找不到 plan_fp.py』或『账本损坏』，批准带只显示红字、没有按钮，其他可以批准的 change 都批不了。推广期很容易碰到：S1 合入前切出的 worktree-* 里没有 plan_fp.py。ui.press 那边同样只认 topItem，问题完全一样。",
+   "fix": "topItem 先在 problem==='' 的项里按 mtime 取最新，没有才退回有问题的项。『另有 N 个』分开数可批准的和有问题的。补一条测试：最新一项是账本损坏、较旧一项可批准时，按钮出现在较旧那项上。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 240,
+   "summary": "守卫只拦 Bash。2.1.295 的工具表里 Monitor 也接受 command（『Shell command or script』），跑 `git update-ref refs/flight/x/ledger ...` 不会被拦。走捷径的模型被 Bash 拒绝后，换个工具重试是常见做法，所以这在 D7 威胁模型（防走捷径、不防蓄意伪造）之内。这是规格本身的缺口，实现按规格只写了 Bash；需进一步确认 spec 是否要扩大范围。",
+   "fix": "再注册一个 on('tool.call', { tool: 'Monitor' }, …)，判据和 .catch 跟 Bash 守卫一样，对 e.command ?? '' 做匹配。同时把 spec 的『Bash 调用』改成『执行 shell 命令的工具调用（Bash / Monitor）』，并加一条对应的 TS 测试。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 221,
+   "summary": "按压时批准的是按下那一刻 state 里的 topItem，不是人看到的那一项。turn.complete 会刷新列表，期间如果另一个 change 的 spec.html 刚被写过、mtime 更新，就会成为新的 top。批准带重绘前后人按下按钮，就批准了另一个没审过的 change：重算的指纹拿来对比的是同一时刻 state 里的值，这项检查会通过。契约第 5 条原意是跟『显示值』比较。",
+   "fix": "在 ui.render 里把这次绘制的 { requestId, change, fp } 记到模块变量或 atom 里。press 时用 e.requestId 取出这次绘制显示的那一项，按它的 change/fp 做重算比较和写账本，不再在 press 时重新调 topItem；对不上就 toast 并刷新。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 99,
+   "summary": "plan_fp.py 退出 0 时没有校验 stdout 是不是 64 位十六进制。输出为空时 fp=''，会跟 approved 的空输出相等，这一项就被当成『已批准』而静默隐藏；输出异常时又可能把非法指纹写进账本事件。",
+   "fix": "加 /^[0-9a-f]{64}$/ 校验，不符合就返回 { fp: '', problem: '指纹格式异常' }。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 171,
+   "summary": "commit-tree、hash-object 或 mktree 失败时（例如没配 git user.email）直接返回 false。toast 却固定写『重试 3 次』，而且丢掉了 stderr，人看不出真实原因。",
+   "fix": "appendApprove 返回失败原因（带上 stderr 首行），toast 按原因区分『CAS 冲突重试 3 次』和『git 命令失败：…』。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/plugins/flight/hooks/register.tsx",
+   "line": 234,
+   "summary": "账本写成功后先 await refresh 再 prompt.fill。refresh 一抛错，hook 就被跳过：账本已经写入，但输入框没预填，也没有任何提示。",
+   "fix": "先 prompt.fill 和 toast，再 refresh；或者给 refresh 包 try/catch，失败只 toast，不中断。"
+  },
+  {
+   "severity": "LOW",
+   "file": "tests/test_flight_plugin.py",
+   "line": 8,
+   "summary": "删掉 import pytest 后留下了连续两个空行；模块 docstring 里『S3 实现插件与 TS 测试后逐条去掉 xfail 标记』也已经过时。另外，两条 pytest 骨架新增了对 ledger-append-gives-up-after-three-conflicts 和 bash-guard-passes-other-commands 的断言，这是对骨架的改动，需要执行体在 summary 里申报。",
+   "fix": "删掉多余空行，把 docstring 改成现状描述；在切片 summary 里注明骨架新增了这两条 TS 断言。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "install.sh",
+   "line": 369,
+   "summary": "契约要求「任一非 0 → 告警并打印手动命令，不改变退出码」，但这条失败路径没有任何测试覆盖（4 条 scenario 里桩都是 exit 0）。另外，marketplace add 与 install 用 && 串联：上次运行如果 marketplace add 成功、install 失败（例如网络中断），再跑时 enabledPlugins 仍未设置，又会走一遍 marketplace add。若 CLI 对已声明的 marketplace 返回非 0（需进一步确认），install 就永远走不到，打印出的手动命令也会卡在第一步。",
+   "fix": "补一条用例：claude 桩对 'plugin marketplace add' 返回 1，断言 returncode==0 且输出含两条手动命令。另需实测 CLI 对重复 add 的退出码；若非 0，改为 marketplace add 失败只告警、仍尝试 install（或先检查 settings.json 的 extraKnownMarketplaces 是否已有 intent-driven 再决定是否 add）。"
+  },
+  {
+   "severity": "MEDIUM",
+   "file": "install.sh",
+   "line": 391,
+   "summary": "copy_tree 的 preserve 列表新增了 settings.json。这是行为变更，切片契约里没有，commit message 也没提：以前 --upgrade 会用模板 settings.json 整体覆盖用户的文件（顺带抹掉 enabledPlugins 等用户 key，属于既有缺陷），现在不再刷新。这样一来，模板 settings.json 里的 env / worktree.baseRef 等 key 后续变更不会再下发给升级用户（merge_settings 只合并 hooks）。文件头第 13-16 行的「用户数据」清单也没同步列入 settings.json。修复方向是对的，但应申报并补齐文档。",
+   "fix": "在切片 summary / commit message 申报这项变更；把 settings.json 加进文件头第 15 行的「用户数据」清单。如果模板 settings.json 的非 hooks key 需要随升级下发，在 merge_settings 中按「缺失才补」合并，不要整文件覆盖。"
+  },
+  {
+   "severity": "LOW",
+   "file": "install.sh",
+   "line": 359,
+   "summary": "owner_repo 只剥掉了 https://github.com/ 前缀和 .git 后缀，没有考虑 IDT_BRANCH：用非 main 分支或本地 clone 安装时，模板（hooks/takeoff-gate）取自该分支或本地，插件却从 GitHub 默认分支拉取，两边版本可能不一致。非 GitHub 的 IDT_REPO_URL 会原样传给 marketplace add（CLI 接受 URL，问题不大）。",
+   "fix": "在收尾摘要或注释里说明插件始终取自 REPO_URL 的默认分支；如果 CLI 支持指定 ref（需查文档确认），就把 BRANCH 一并传入。"
+  },
+  {
+   "severity": "LOW",
+   "file": "template/.claude/commands/opsx-apply.md",
+   "line": 26,
+   "summary": "step 0 写「stderr 给出三种原因之一」（未批准 / 计划已变 / 账本损坏），但 takeoff-gate.py 的 CLI 模式还会以 exit 3 报另外两种原因：「无计划工件，无法计算计划指纹」（verdict 的 PlanError 分支）与「门禁故障，无法判定批准」（run_cli 的 except 分支）。脚本头注释自己也列了「门禁故障」。照文档处置的执行体碰到这两种情况时，补救指引（去批准带重新批准 / 装插件）对不上；不过「原样转述 stderr」这句兜住了，所以不阻断。openspec-apply-change/SKILL.md 第 34 行和 README / WORKFLOW_zh 里 exit 3 的列举也有同样问题。",
+   "fix": "把「三种原因之一」改成「通常是以下三种之一」，再补半句：「另有无计划工件 / 门禁故障（git 不可执行），按 stderr 处置」。命令与同名 skill 要同改；spec 的 approval-docs 措辞可以不动。"
+  }
+ ],
+ "fix": {
+  "slice": "final",
+  "ok": true,
+  "commit": "b2d67d4b0ce2d7b4ab6615dca9159b497430918d",
+  "failed": [],
+  "warnings": [],
+  "summary": "final 通过：scenario 36/36"
+ }
+}

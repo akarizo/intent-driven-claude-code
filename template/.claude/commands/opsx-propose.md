@@ -2,7 +2,7 @@
 description: 一次成稿：一步生成完整 change 的全部工件（含切片计划），收尾把 spec.html 交给人类审批，起飞需人类自己发 /opsx-apply
 ---
 
-一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板，然后硬交接给人类：本命令到此结束，起飞由人类自己发出 `/opsx-apply`（`takeoff-gate.py` 机械校验这条批准）。
+一次成稿：并行读完全部待建工件的 instruction，再一次性写出全部工件（含切片计划），最后跑一次 `openspec status`。工件写完后渲染审批面板，然后硬交接给人类：本命令到此结束，起飞由人类在批准带按「批准起飞」（计划指纹写入账本）后自己发出 `/opsx-apply`（`takeoff-gate.py` 机械比对账本指纹）。
 
 ---
 
@@ -74,15 +74,16 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
    ```bash
    openspec status --change "<name>"
    ```
-   然后**硬交接**（三件事缺一不可）：
+   然后**硬交接**（四件事缺一不可）：
 
    1. 打印 `spec.html` 的**绝对路径**（`openspec/changes/<name>/spec.html`，用 `pwd` 拼成绝对路径再打印），请人类打开审阅飞行计划。
-   2. 明确一行：**本命令到此结束。不得在同一轮继续 `/opsx-apply`；起飞需要你自己发出 `/opsx-apply <name>`（`takeoff-gate.py` 会在转录里核验这条人类批准 + 计划新鲜度，模型自证无效）。**
-   3. 提示用户把工件单独 commit（artifacts-only commit）。
+   2. 告诉人类起飞三步：核对 `spec.html` 顶部的计划指纹与 Claude Code 输入框上方批准带显示的指纹一致 → 在批准带按「批准起飞」（flight 插件把计划指纹写入账本 `refs/flight/<name>/ledger`）→ 回车发出预填的 `/opsx-apply <name>`。批准带没出现 = 未装 flight 插件，在项目根执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
+   3. 明确一行：**本命令到此结束。不得在同一轮继续 `/opsx-apply`；`takeoff-gate.py` 比对账本指纹与当前计划指纹，模型自证无效。**
+   4. 提示用户把工件单独 commit（artifacts-only commit）。
 
 **Output**
 
-完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、spec.html 绝对路径 + 「请你自己发出 `/opsx-apply <name>` 起飞」（本命令不代跑）。
+完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、spec.html 绝对路径 + 「核对指纹后在批准带按『批准起飞』，再回车发出预填的 `/opsx-apply <name>`」（本命令不代跑）。
 
 **Artifact Creation Guidelines**
 

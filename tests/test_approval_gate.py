@@ -1,17 +1,10 @@
-"""起飞前的人类批准门禁（scenario: takeoff-approval#*）。
-S4 已实现，骨架标记已去。"""
+"""起飞门禁：判据为「账本最新批准指纹 == 当前计划指纹」（scenario: ledger-takeoff-gate#*）。
+转录只作反证（人类在转录里批准过也不再放行）。"""
 import json
-import os
-from datetime import datetime, timezone
 
-from conftest import ROOT, run_hook
+from conftest import approve_event, git, ledger_append, make_change, run_hook
 
-CMD = ROOT / "template" / ".claude" / "commands"
-SKILLS = ROOT / "template" / ".claude" / "skills"
-
-
-def epoch(iso):
-    return datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+NO_SID = {"CLAUDE_CODE_SESSION_ID": ""}  # 防止实现借环境变量读到当前会话转录
 
 
 def human(text, ts):
@@ -24,199 +17,239 @@ def transcript(path, rows):
     return path
 
 
-def change_dir(tmp_path, plan_iso="2026-09-10T08:00:00Z", under=""):
-    """建一个最小 change 工件目录，并把计划工件的 mtime 钉在 plan_iso。"""
-    d = tmp_path.joinpath(*([under] if under else []), "openspec", "changes", "demo")
-    (d / "specs" / "cap").mkdir(parents=True)
-    for rel in ("proposal.md", "design.md", "tasks.md", "slices.json", "spec.html", "specs/cap/spec.md"):
-        (d / rel).write_text("x", encoding="utf-8")
-    for rel in ("proposal.md", "design.md", "tasks.md", "slices.json", "specs/cap/spec.md"):
-        os.utime(d / rel, (epoch(plan_iso), epoch(plan_iso)))
-    return d
-
-
 APPLY_CMD = ("<command-message>opsx-apply</command-message> "
              "<command-name>/opsx-apply</command-name> <command-args>demo</command-args>")
 
 
-def test_approval_gate_accepts_human_command(tmp_path):
-    # Given: 人类自己发出的 /opsx-apply（晚于计划工件 mtime），以及另一份只说短批准词的转录
-    d = change_dir(tmp_path)
-    typed = transcript(tmp_path / "typed.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
-    worded = transcript(tmp_path / "worded.jsonl", [human("不相等，起飞", "2026-09-10T09:06:33Z")])
-
-    # When: 分别以 --session 运行门禁
-    p1 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(typed))
-    p2 = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(worded))
-
-    # Then: 都判为批准成立（退出码 0），stdout 打印带时间戳的批准证据
-    assert p1.returncode == 0, p1.stderr
-    assert "2026-09-10T08:58:04Z" in p1.stdout
-    assert p2.returncode == 0, p2.stderr
-    assert "起飞" in p2.stdout
-
-
-def test_approval_gate_rejects_self_start(tmp_path):
-    # Given: 最近的人类消息只是继续规划类指令，既无 /opsx-apply 调用也无批准词
-    d = change_dir(tmp_path)
-    sess = transcript(tmp_path / "sess.jsonl", [
-        human("<command-message>opsx-propose</command-message> <command-name>/opsx-propose</command-name> "
-              "<command-args>修复这个问题</command-args>", "2026-09-10T07:38:07Z"),
-        human("继续上述任务的规划", "2026-09-10T08:30:00Z"),
-    ])
-
-    # When: 运行门禁
-    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
-
-    # Then: 非 0 退出，stdout 不给"已批准"结论，stderr 说明需人类显式批准并给出 spec.html 路径
-    assert p.returncode != 0, p.stdout
-    assert "批准" not in p.stdout
-    assert "spec.html" in p.stderr and "/opsx-apply" in p.stderr
-
-
-def test_approval_gate_requires_fresh_approval(tmp_path):
-    # Given: 批准发生在 08:58，而计划工件在 09:30 又被改过
-    d = change_dir(tmp_path, plan_iso="2026-09-10T09:30:00Z")
-    sess = transcript(tmp_path / "sess.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
-
-    # When: 运行门禁
-    p = run_hook("takeoff-gate", "--change-dir", str(d), "--session", str(sess))
-
-    # Then: 非 0 退出，stderr 点名计划在批准之后改过、需重新批准
-    assert p.returncode != 0, p.stdout
-    assert "重新批准" in p.stderr
-
-
-def test_takeoff_hook_denies_unapproved_dispatch(tmp_path):
-    # Given: 一次指向该 change 的 Workflow 派发；转录里没有批准 / 有批准两种情况
-    d = change_dir(tmp_path)
-    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
-    payload = {"tool_name": "Workflow", "cwd": str(tmp_path),
-               "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
-
-    # When: 以 hook 模式（stdin 收 PreToolUse JSON）分别运行；再补一条线上真实形态——args 是 JSON 字符串、走 scriptPath
-    p1 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(none)}))
-    p2 = run_hook("takeoff-gate", stdin=json.dumps({**payload, "transcript_path": str(okay)}))
-    real = {"tool_name": "Workflow", "cwd": str(tmp_path), "transcript_path": str(none),
-            "tool_input": {"scriptPath": "/x/template/.claude/workflows/opsx-apply.js",
-                           "args": json.dumps({"change": "demo", "changeDir": str(d)})}}
-    p3 = run_hook("takeoff-gate", stdin=json.dumps(real))
-
-    # Then: 未批准时输出 permissionDecision=deny 且 reason 含 spec.html 与显式 /opsx-apply 指引；已批准时静默放行；
-    #       args 为 JSON 字符串的真实形态同样 deny（这是主强制点唯一的线上形态，回归就会静默 fail-open）
-    out = json.loads(p1.stdout)
-    hook_out = out["hookSpecificOutput"]
-    assert hook_out["permissionDecision"] == "deny"
-    assert "spec.html" in hook_out["permissionDecisionReason"] and "/opsx-apply" in hook_out["permissionDecisionReason"]
-    assert p2.returncode == 0 and p2.stdout.strip() == ""
-    assert json.loads(p3.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny", p3.stdout
-
-
-def test_takeoff_hook_denies_prompt_path_wrapped_in_backticks(tmp_path):
-    # Given: 未批准的转录，与两种真实 prompt 形状的派发——① 中文全角冒号紧邻 + 反引号包住的相对路径
-    #        ② 前面多带一段仓库名的路径（cwd 下需剥掉最前面的片段才是真目录）
-    d = change_dir(tmp_path)
-    deep = change_dir(tmp_path, under="template")
-    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    quoted = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+def test_takeoff_hook_denies_prompt_path_wrapped_in_backticks(git_repo):
+    # Given: demo 无账本；slice-executor 派发的 prompt 用中文全角冒号紧邻 + 反引号包住相对路径 `openspec/changes/demo/...`
+    d = make_change(git_repo)
+    quoted = {"tool_name": "Agent", "cwd": str(git_repo),
               "tool_input": {"subagent_type": "slice-executor",
                              "prompt": "切片包：`openspec/changes/demo/slices/S1.md`，按 TDD 执行"}}
-    prefixed = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=json.dumps(quoted, ensure_ascii=False), env=NO_SID)
+
+    # Then: 识别出 change 目录并 deny，reason 点名该目录（不静默 fail-open）
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and str(d) in r["permissionDecisionReason"]
+
+
+def test_takeoff_hook_denies_prompt_path_with_repo_prefix(git_repo):
+    # Given: template/openspec/changes/demo 无账本；prompt 里的路径前面多带一段仓库名 idcc/（需剥掉才是 cwd 下的真目录）
+    deep = make_change(git_repo, under=("template", "openspec", "changes"))
+    prefixed = {"tool_name": "Agent", "cwd": str(git_repo),
                 "tool_input": {"subagent_type": "slice-executor",
                                "prompt": "读 idcc/template/openspec/changes/demo/slices/S1.md 再开工"}}
 
-    # When: 以 hook 模式分别运行
-    p1 = run_hook("takeoff-gate", stdin=json.dumps(quoted))
-    p2 = run_hook("takeoff-gate", stdin=json.dumps(prefixed))
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=json.dumps(prefixed, ensure_ascii=False), env=NO_SID)
 
-    # Then: 两种形状都识别出 change 目录并 deny，reason 点名各自的目录（不再静默 fail-open）
-    r1 = json.loads(p1.stdout)["hookSpecificOutput"]
-    r2 = json.loads(p2.stdout)["hookSpecificOutput"]
-    assert r1["permissionDecision"] == "deny" and str(d) in r1["permissionDecisionReason"]
-    assert r2["permissionDecision"] == "deny" and str(deep) in r2["permissionDecisionReason"]
+    # Then: 定位到 template/openspec/changes/demo 并 deny，reason 点名该目录
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and str(deep) in r["permissionDecisionReason"]
 
 
-def test_takeoff_cli_honors_equals_form_change_dir(tmp_path):
-    # Given: 一份无批准的转录、一份有批准的转录，命令行用 --change-dir=DIR 等号写法且 stdin 为空
-    d = change_dir(tmp_path)
-    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
+def test_takeoff_cli_honors_equals_form_change_dir(git_repo):
+    # Given: demo 无账本，命令行用 --change-dir=DIR 等号写法且 stdin 为空
+    d = make_change(git_repo)
 
-    # When: 以等号写法分别运行 CLI 模式
-    p1 = run_hook("takeoff-gate", "--change-dir=" + str(d), "--session=" + str(none))
-    p2 = run_hook("takeoff-gate", "--change-dir=" + str(d), "--session=" + str(okay))
+    # When: 以等号写法运行 CLI 模式
+    p = run_hook("takeoff-gate", "--change-dir=" + str(d), env=NO_SID)
 
-    # Then: 无批准时非 0 退出且 stderr 给补救指引；有批准时 exit 0 并打印批准证据（等号写法不得退化成静默放行）
-    assert p1.returncode != 0, p1.stdout
-    assert "spec.html" in p1.stderr
-    assert p2.returncode == 0 and "2026-09-10T08:58:04Z" in p2.stdout
+    # Then: 以 3 退出，stderr 给出 spec.html 补救指引（等号写法不得退化成静默放行）
+    assert p.returncode == 3, p.stdout
+    assert "spec.html" in p.stderr
+
+
+def test_takeoff_cli_equals_form_accepts_approval(git_repo):
+    # Given: demo 账本最新批准指纹等于当前计划指纹，命令行用 --change-dir=DIR 等号写法
+    d = approved_change(git_repo)
+
+    # When: 以等号写法运行 CLI 模式
+    p = run_hook("takeoff-gate", "--change-dir=" + str(d), env=NO_SID)
+
+    # Then: 以 0 退出，stdout 含当前指纹前 8 位
+    assert p.returncode == 0, p.stderr
+    assert current_fp(d)[:8] in p.stdout
 
 
 def test_takeoff_hook_ignores_unrelated_dispatch(tmp_path):
-    # Given: 一次与飞行无关的派发，以及一次转录不可读的飞行派发
-    d = change_dir(tmp_path)
+    # Given: 一次 Explore 派发，prompt 是「找一下登录逻辑在哪」，与飞行无关
     unrelated = {"tool_name": "Agent", "cwd": str(tmp_path),
                  "tool_input": {"subagent_type": "Explore", "prompt": "找一下登录逻辑在哪"}}
-    broken = {"tool_name": "Workflow", "cwd": str(tmp_path), "transcript_path": str(tmp_path / "nope.jsonl"),
-              "tool_input": {"name": "opsx-apply", "args": {"changeDir": str(d)}}}
 
-    # When: 以 hook 模式运行两者
-    p1 = run_hook("takeoff-gate", stdin=json.dumps(unrelated))
-    p2 = run_hook("takeoff-gate", stdin=json.dumps(broken))
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=json.dumps(unrelated, ensure_ascii=False), env=NO_SID)
 
-    # Then: 都静默放行（无输出、退出码 0）——坏门禁不锁死派发能力
-    assert p1.returncode == 0 and p1.stdout.strip() == ""
-    assert p2.returncode == 0 and p2.stdout.strip() == ""
+    # Then: 静默放行（退出码 0、无输出）
+    assert p.returncode == 0 and p.stdout.strip() == ""
 
 
-def test_propose_ends_with_handoff():
-    # Given: /opsx-propose 命令与 openspec-propose skill
-    cmd = (CMD / "opsx-propose.md").read_text(encoding="utf-8")
-    skill = (SKILLS / "openspec-propose" / "SKILL.md").read_text(encoding="utf-8")
-
-    # When: 阅读两者的收尾步骤
-    texts = [cmd, skill]
-
-    # Then: 都要求打印 spec.html 绝对路径并声明本轮结束、起飞需人类显式 /opsx-apply；不再有"运行 /opsx-apply 即视为批准"
-    for t in texts:
-        assert "绝对路径" in t and "spec.html" in t
-        assert "本命令到此结束" in t or "本 skill 到此结束" in t
-        assert "/opsx-apply" in t and "takeoff-gate" in t
-        assert "即视为批准" not in t
-
-
-def test_takeoff_hook_allows_reviewer_dispatch(tmp_path):
-    # Given: 转录里没有任何批准，一次 /pr-ship 的 code-reviewer 派发在 prompt 里提到了该 change 目录
-    d = change_dir(tmp_path)
-    none = transcript(tmp_path / "none.jsonl", [human("继续", "2026-09-10T08:30:00Z")])
-    reviewer = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(none),
+def test_takeoff_hook_allows_reviewer_dispatch(git_repo):
+    # Given: demo 无账本，一次 /pr-ship 的 code-reviewer 派发在 prompt 里提到了该 change 目录
+    make_change(git_repo)
+    reviewer = {"tool_name": "Agent", "cwd": str(git_repo),
                 "tool_input": {"subagent_type": "code-reviewer",
                                "prompt": "参考 openspec/changes/demo/gate-report.md 审这次 PR 的 diff"}}
 
     # When: 以 hook 模式运行
-    p = run_hook("takeoff-gate", stdin=json.dumps(reviewer))
+    p = run_hook("takeoff-gate", stdin=json.dumps(reviewer, ensure_ascii=False), env=NO_SID)
 
-    # Then: 评审派发不是起飞派发，一律放行——否则铁律 4 的独立评审在装了 hook 的下游会被自家门禁拦死
+    # Then: 评审派发不是起飞派发，一律放行——否则铁律 4 的独立评审会被自家门禁拦死
     assert p.returncode == 0 and p.stdout.strip() == "", p.stdout
 
 
-def test_tasks_tick_does_not_expire_approval(tmp_path):
-    # Given: 批准成立后，收口把 tasks.md 的 `- [ ]` 勾成 `- [x]`（mtime 变成现在），随后仍有起飞类派发
-    d = change_dir(tmp_path)
-    okay = transcript(tmp_path / "ok.jsonl", [human(APPLY_CMD, "2026-09-10T08:58:04Z")])
-    os.utime(d / "tasks.md", None)
-    dispatch = {"tool_name": "Agent", "cwd": str(tmp_path), "transcript_path": str(okay),
-                "tool_input": {"subagent_type": "slice-executor",
-                               "prompt": "切片包：`openspec/changes/demo/slices/S1.md`"}}
+# ---------------------------------------------------------------- 账本判据 scenario（ledger-takeoff-gate#*）
 
-    # When: 先在勾选后派发一次，再把真正的计划工件 slices.json 改新后派发一次
-    after_tick = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
-    os.utime(d / "slices.json", None)
-    after_replan = run_hook("takeoff-gate", stdin=json.dumps(dispatch))
+def current_fp(change_dir):
+    p = run_hook("plan_fp", "--change-dir", str(change_dir))
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
 
-    # Then: 勾选是执行记账不算改计划（放行）；真改了计划才算批准过期（deny）——新鲜度规则本身不能松
+
+def approved_change(repo):
+    d = make_change(repo)
+    ledger_append(repo, "demo", approve_event("demo", current_fp(d)))
+    return d
+
+
+def bump_owns(change_dir):
+    path = change_dir / "slices.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["slices"][0]["owns"].append("b.py")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def executor_dispatch(repo, transcript_path):
+    return json.dumps({"tool_name": "Agent", "cwd": str(repo), "transcript_path": str(transcript_path),
+                       "tool_input": {"subagent_type": "slice-executor",
+                                      "prompt": "切片包：`openspec/changes/demo/slices/S1.md`"}}, ensure_ascii=False)
+
+
+def test_takeoff_accepts_matching_approval(git_repo):
+    # Given: 当前指纹 F 与账本最新批准指纹相等
+    d = approved_change(git_repo)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 0 退出，stdout 含指纹前 8 位与批准时间
+    assert p.returncode == 0, p.stderr
+    assert current_fp(d)[:8] in p.stdout and "2026-10-09T08:00:00Z" in p.stdout
+
+
+def test_takeoff_rejects_missing_approval(git_repo):
+    # Given: demo 没有账本
+    d = make_change(git_repo)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含 spec.html 绝对路径、批准带与插件安装命令
+    assert p.returncode == 3
+    assert str(d / "spec.html") in p.stderr and "批准带" in p.stderr and "claude plugin install" in p.stderr
+
+
+def test_takeoff_rejects_stale_approval(git_repo):
+    # Given: 账本批准指纹为 F，之后 slices.json 被改，当前指纹为 G
+    d = approved_change(git_repo)
+    old = current_fp(d)
+    bump_owns(d)
+    new = current_fp(d)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含「重新批准」与 F、G 的前 8 位
+    assert p.returncode == 3
+    assert "重新批准" in p.stderr and old[:8] in p.stderr and new[:8] in p.stderr
+
+
+def test_takeoff_rejects_invalid_ledger(git_repo):
+    # Given: 账本某个提交的 event.json 不是 JSON
+    d = make_change(git_repo)
+    ledger_append(git_repo, "demo", files={"event.json": "{not json"})
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含「账本损坏」
+    assert p.returncode == 3
+    assert "账本损坏" in p.stderr
+
+
+def test_takeoff_hook_denies_despite_transcript_approval(git_repo, tmp_path):
+    # Given: 转录里人类发出过 /opsx-apply demo（时刻晚于一切），但 demo 没有账本
+    make_change(git_repo)
+    t = transcript(tmp_path / "t.jsonl", [human(APPLY_CMD, "2099-01-01T00:00:00Z")])
+
+    # When: 以该转录构造派发 slice-executor 的载荷运行 hook
+    p = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, t), env=NO_SID)
+
+    # Then: 输出 deny
+    out = json.loads(p.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+
+
+def test_takeoff_hook_allows_approved_dispatch(git_repo, tmp_path):
+    # Given: 账本批准指纹等于当前指纹；转录里没有任何人类批准
+    approved_change(git_repo)
+    empty = transcript(tmp_path / "e.jsonl", [])
+
+    # When: 以派发 slice-executor 的载荷运行 hook
+    p = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+
+    # Then: 以 0 退出且 stdout 为空
+    assert p.returncode == 0 and p.stdout.strip() == "", p.stdout
+
+
+def test_takeoff_tasks_tick_keeps_approval(git_repo, tmp_path):
+    # Given: 账本批准指纹等于当前指纹
+    d = approved_change(git_repo)
+    empty = transcript(tmp_path / "e.jsonl", [])
+
+    # When: 先勾选 tasks.md 后派发一次，再改 slices.json 后派发一次
+    (d / "tasks.md").write_text("- [x] S1 t\n", encoding="utf-8")
+    after_tick = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+    bump_owns(d)
+    after_replan = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+
+    # Then: 第一次放行；第二次 deny 且理由含「重新批准」
     assert after_tick.returncode == 0 and after_tick.stdout.strip() == "", after_tick.stdout
     replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
-    assert replan["permissionDecision"] == "deny"
-    assert "重新批准" in replan["permissionDecisionReason"]  # deny 必须来自「过期」而不是「没批准」
+    assert replan["permissionDecision"] == "deny" and "重新批准" in replan["permissionDecisionReason"]
+
+
+def slice_dispatch(cwd, change_dir):
+    return json.dumps({"tool_name": "Agent", "cwd": str(cwd),
+                       "tool_input": {"subagent_type": "slice-executor",
+                                      "prompt": "切片包：%s/slices/S1.md" % change_dir}}, ensure_ascii=False)
+
+
+def test_takeoff_hook_denies_change_outside_git_repo(tmp_path):
+    # Given: demo 位于不在任何 git 仓库内的目录（GIT_CEILING_DIRECTORIES 截断向上查找），slice-executor 派发指向它
+    d = make_change(tmp_path / "outside")
+    env = {**NO_SID, "GIT_CEILING_DIRECTORIES": str(tmp_path)}
+
+    # When: 以 hook 模式运行
+    p = run_hook("takeoff-gate", stdin=slice_dispatch(tmp_path, d), env=env)
+
+    # Then: deny（账本不可读是判定结果，不是门禁故障），理由含「账本不可读」
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and "账本不可读" in r["permissionDecisionReason"]
+
+
+def test_takeoff_hook_denies_ledger_ref_to_non_commit(git_repo):
+    # Given: demo 的账本引用 refs/flight/demo/ledger 指向一棵空树（不是提交）
+    d = make_change(git_repo)
+    tree = git(git_repo, "hash-object", "-w", "-t", "tree", "/dev/null")
+    git(git_repo, "update-ref", "refs/flight/demo/ledger", tree)
+
+    # When: 以 hook 模式运行 slice-executor 派发
+    p = run_hook("takeoff-gate", stdin=slice_dispatch(git_repo, d), env=NO_SID)
+
+    # Then: deny，理由含「账本损坏」
+    r = json.loads(p.stdout)["hookSpecificOutput"]
+    assert r["permissionDecision"] == "deny" and "账本损坏" in r["permissionDecisionReason"]

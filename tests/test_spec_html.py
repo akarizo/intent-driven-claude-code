@@ -189,3 +189,24 @@ def test_spec_html_zero_sections_no_render(tmp_path):
     # Then: 恢复旧 Guardrail「artifact = 0 时不渲染」—— 非 0 退出，不写出只剩占位符的空壳文件
     assert p.returncode != 0
     assert not out.exists()
+
+
+# ---------------------------------------------------------------- 计划指纹（scenario: plan-fingerprint#spec-html-shows-fingerprint，S1 骨架）
+import pytest  # noqa: E402
+
+from conftest import make_change  # noqa: E402
+
+
+def test_spec_html_shows_fingerprint(tmp_path):
+    # Given: 计划工件齐全的 change 目录，及 plan_fp.py --short 给出的 8 位指纹
+    d = make_change(tmp_path)
+    short = run_hook("plan_fp", "--change-dir", str(d), "--short")
+    assert short.returncode == 0, short.stderr
+
+    # When: 渲染审批面板
+    p = render(d, d / "spec.html")
+
+    # Then: spec.html 含「计划指纹」与同一个 8 位指纹
+    assert p.returncode == 0, p.stderr
+    html = (d / "spec.html").read_text(encoding="utf-8")
+    assert "计划指纹" in html and short.stdout.strip() in html

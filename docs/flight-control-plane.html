@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>飞行控制面重构</title>
+<meta name="description" content="从第一性原理重审 intent-driven 的强制层：判据、状态、编排、证据、路由应放在哪里；以 Claude Code Mod 作为可信执行面的目标架构、迁移路径与待决策项">
+<style>
+:root{
+  --bg:#f7f7f5;--panel:#ffffff;--ink:#1c1c1a;--muted:#5f5f5a;--line:#e3e2dd;
+  --accent:#2f5fa3;--ok:#2d7a4b;--warn:#b7791f;--bad:#b3352e;--soft:#eef2f8;--code:#f1f1ee;
+  --tcb:#e9f3ec;--tcb-line:#2d7a4b;--work:#fbf3e4;--work-line:#b7791f;--human:#eef2f8;--rec:#f3eef8;--rec-line:#7a4fa3;
+  --term-bg:#16181d;--term-ink:#d7dae0;--term-dim:#7f8590;--term-acc:#7ea6e8;--term-ok:#67c08a;--term-bad:#e2726b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141414;--panel:#1d1d1d;--ink:#ececea;--muted:#a3a39d;--line:#333;
+    --accent:#7ea6e8;--ok:#67c08a;--warn:#e0a94a;--bad:#e2726b;--soft:#22293a;--code:#262626;
+    --tcb:#1c2a21;--tcb-line:#67c08a;--work:#2b2418;--work-line:#e0a94a;--human:#1f2533;--rec:#261f2e;--rec-line:#b293d6;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141414;--panel:#1d1d1d;--ink:#ececea;--muted:#a3a39d;--line:#333;
+  --accent:#7ea6e8;--ok:#67c08a;--warn:#e0a94a;--bad:#e2726b;--soft:#22293a;--code:#262626;
+  --tcb:#1c2a21;--tcb-line:#67c08a;--work:#2b2418;--work-line:#e0a94a;--human:#1f2533;--rec:#261f2e;--rec-line:#b293d6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;padding:0 16px 80px}
+main{max-width:1080px;margin:0 auto}
+h1{font-size:26px;margin:32px 0 6px}
+h2{font-size:20px;margin:40px 0 12px;padding-top:8px;border-top:2px solid var(--line)}
+h3{font-size:16px;margin:22px 0 8px}
+p{margin:8px 0}
+.sub{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
+.chip{background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.card.key{border-left:4px solid var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+th,td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+th{background:var(--soft)}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}
+pre{background:var(--code);padding:10px 12px;border-radius:8px;overflow:auto;font-size:12.5px;line-height:1.5}
+pre.term{background:var(--term-bg);color:var(--term-ink);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}
+.term .d{color:var(--term-dim)}.term .a{color:var(--term-acc)}.term .g{color:var(--term-ok)}.term .r{color:var(--term-bad)}
+.tag{display:inline-block;padding:0 7px;border-radius:4px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.t-bad{background:var(--bad)}.t-ok{background:var(--ok)}.t-warn{background:var(--warn)}.t-acc{background:var(--accent)}.t-mute{background:var(--muted)}
+.ev{border-left:3px solid var(--accent);padding:4px 10px;margin:6px 0;color:var(--muted);font-size:13px}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;margin:10px 0}
+.box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:110px;flex:1 1 120px;font-size:13px}
+.box.ok{border-color:var(--ok)}.box.warn{border-color:var(--warn)}.box.bad{border-color:var(--bad)}
+.arrow{align-self:center;color:var(--muted);font-size:18px;padding:0 2px}
+.box b{display:block;font-size:13px;margin-bottom:2px}
+.q{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;margin:12px 0}
+.q label{display:block;padding:4px 0;cursor:pointer}
+.q input[type=radio]{margin-right:8px}
+.rec{color:var(--ok);font-weight:600;font-size:12px;margin-left:6px}
+textarea{width:100%;min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--code);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;margin:6px 6px 6px 0}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.toc{font-size:13.5px;line-height:2}.toc a{color:var(--accent);text-decoration:none;margin-right:14px;white-space:nowrap}
+.small{font-size:12.5px;color:var(--muted)}
+.p{display:grid;grid-template-columns:44px 1fr;gap:4px 10px;margin:8px 0}
+.p .n{font-weight:700;color:var(--ok)}
+svg{width:100%;height:auto;display:block}
+.sv-h{fill:var(--human);stroke:var(--accent)}
+.sv-t{fill:var(--tcb);stroke:var(--tcb-line)}
+.sv-w{fill:var(--work);stroke:var(--work-line)}
+.sv-j{fill:var(--panel);stroke:var(--line)}
+.sv-r{fill:var(--rec);stroke:var(--rec-line)}
+.sv-chip{fill:var(--panel);stroke:var(--line)}
+.sv-title{fill:var(--ink);font-weight:700;font-size:15px}
+.sv-txt{fill:var(--ink);font-size:13px}
+.sv-dim{fill:var(--muted);font-size:12px}
+.sv-ln{stroke:var(--muted);stroke-width:1.6;fill:none}
+.sv-ln.dash{stroke-dasharray:5 4}
+.sv-ah{fill:var(--muted)}
+.leg{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin:6px 0}
+.leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>飞行控制面重构 · 以 Mod 为可信执行面</h1>
+<p class="sub">从第一性原理重审 intent-driven 的强制层：判据由谁算、状态由谁写、动作由谁做、证据存在哪。结论推翻上一轮「门禁不迁」的建议。</p>
+<div class="chips">
+  <span class="chip">依据：Claude Code 2.1.295 的 mod 类型定义与参考文档</span>
+  <span class="chip">缺陷证据：2026-09-10 / 09-18 / 09-24 / 10-08 四次复盘</span>
+  <span class="chip"><span class="tag t-ok">已核实</span> / <span class="tag t-warn">待实测</span> 逐条标注</span>
+  <span class="chip">7 项已决（全部按推荐）· 2026-10-09 实测 8/8 → 见 §10</span>
+</div>
+<p class="toc">
+  <a href="#tldr">0 结论</a><a href="#diag">1 根因诊断</a><a href="#principles">2 第一性原理</a><a href="#facts">3 Mod 能力核实</a><a href="#arch">4 目标架构</a><a href="#fsm">5 飞行状态机</a><a href="#fate">6 组件去留</a><a href="#detail">7 关键设计</a><a href="#rules">8 铁律影响</a><a href="#risk">9 风险</a><a href="#spike">10 先验证</a><a href="#plan">11 实施路径</a><a href="#decide">12 待决定 · 导出</a>
+</p>
+
+<!-- ============================================================ -->
+<h2 id="tldr">0 · 结论</h2>
+<div class="card key">
+<p><b>撤回上一轮的「门禁本体别迁」。</b>那条理由是迁移成本和双实现漂移，属于成本论证，不是正确性论证。</p>
+<p><b>真正的问题</b>：现在的编排器（Workflow 脚本）按设计<b>不能有副作用</b>（<code>opsx-apply.js:19</code>：「脚本本身不碰文件系统，全部由 agent 执行」）。于是 git 合回、跑门禁、记账这些机械动作只能派模型去做，机械事实也只能经模型之口传回来；飞行状态则散在标记文件、<code>gate-report.md</code>、<code>evidence.log</code> 里，被多个脚本各自推导。过去一个月的飞行缺陷，多数是这<b>一个结构错位</b>的不同症状（第 1 节逐条对照）。</p>
+<p><b>Mod 是 Claude Code 里第一个同时具备四项条件的宿主</b>：① 跑在进程内，能直接拿到引擎事实（会话模型、子 agent 实际模型、prompt 来源）；② 有副作用权（<code>$.process.run</code>、<code>$.fs</code>、<code>$.agent.spawn</code>）；③ 看得到所有 loop（子 agent、Workflow agent 的 <code>tool.call</code> 都带 <code>agentId</code>）；④ 能和人直接交互（按钮、状态行、面板、系统通知）。</p>
+<p><b>正确设计</b>：把<b>控制权</b>（编排、状态、证据、路由、审批）整体迁进 mod，构成可信执行面（TCB）；<b>判定器一行不搬</b>，仍是纯 Python CLI；模型只做创造性工作，返回值只作信息、不作判据。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="diag">1 · 根因诊断：缺陷都指向哪里</h2>
+<p class="sub">只列有出处的缺陷。根因类见表下。</p>
+<div class="tablewrap"><table>
+<tr><th style="width:42%">现象</th><th style="width:30%">出处</th><th>根因类</th></tr>
+<tr><td>起飞时宣告主模型 fable，实际 Opus；<code>approve</code> 事件由模型自己 <code>timeline.py record</code></td><td>2026-09-10 两次纠偏</td><td><span class="tag t-bad">R1</span></td></tr>
+<tr><td>执行体收尾跑门禁，再把门禁 JSON「原样返回」给脚本</td><td><code>slice-executor.md:14</code>；<code>slice-gate.py:27</code> 自注「形状不可信」</td><td><span class="tag t-bad">R1</span></td></tr>
+<tr><td>integrator 返回的 commit ≠ 实际 tip，修法被迫改成「以 git 实时 tip 为准」</td><td>2026-09-24 stc 修正①</td><td><span class="tag t-bad">R1</span> <span class="tag t-warn">R3</span></td></tr>
+<tr><td>integrate:w1 自己跑了 final</td><td>2026-09-24 stc 缺陷 B（本仓 #32 也中）</td><td><span class="tag t-warn">R3</span></td></tr>
+<tr><td>执行体自己跑 <code>slice-gate.py start</code> 写 <code>.openspec-slice</code> 标记——被约束方在写约束自己的状态</td><td><code>slice-executor.md:19</code></td><td><span class="tag t-acc">R2</span></td></tr>
+<tr><td>重试重跑 start：base 重置为自己的 commit、red_count 归零</td><td>2026-09-18 gateway #5</td><td><span class="tag t-acc">R2</span></td></tr>
+<tr><td>evidence 曾按字母序猜 change；修后仍是三级推导（标记 → 分支名 → 唯一未完成 change）</td><td>gateway #3；<code>test-evidence.py:6-7</code></td><td><span class="tag t-acc">R2</span></td></tr>
+<tr><td>重试被 G0 拒：隔离模式重试是新 worktree，上一轮 commit 不可达；「Workflow agent() 无复用 worktree 选项」</td><td>gateway #2</td><td><span class="tag t-mute">R4</span></td></tr>
+<tr><td>执行体未返回 56 次（52 次停在第 40 轮），脚本拿到 null 不重试 → 35 次飞行连带 58 个切片 blocked</td><td>2026-10-08 128 次飞行归因</td><td><span class="tag t-mute">R4</span> <span class="tag t-bad">R1</span></td></tr>
+<tr><td>hook 追加的飞行记录未提交，integrator 的 <code>git merge</code> 拒合；根 <code>.gitignore</code> 的 <code>*.log</code> 吞掉 <code>evidence.log</code></td><td>2026-09-10 自举；gateway 追记③</td><td><span class="tag t-ok">R5</span></td></tr>
+<tr><td>回退路径没传 model，9 个 agent 全落 Sonnet，收口对账才发现</td><td>2026-09-10 自举 wave 3</td><td><span class="tag t-warn">R6</span></td></tr>
+<tr><td>pr-ship 把「拉不到」当成「无变更并停止」，大 PR 静默跳过评审</td><td>2026-09-24 stc 修正③</td><td><span class="tag t-warn">R3</span></td></tr>
+</table></div>
+<div class="grid">
+<div class="card"><b>R1 判据经模型之口</b><br><span class="small">事实（门禁结论、commit、主模型、批准）由模型转述，转述可错、可编。</span></div>
+<div class="card"><b>R2 状态没有单一写者</b><br><span class="small">标记、base、red_count 由执行体写，由多个脚本按启发式重新推导。</span></div>
+<div class="card"><b>R3 机械动作交给模型</b><br><span class="small">合回、跑 final、判断「有无变更」写在提示词里，由模型理解后执行。</span></div>
+<div class="card"><b>R4 编排器无副作用权</b><br><span class="small">Workflow 运行时禁文件系统、时间戳、随机数；编排只能通过 agent 间接动手。</span></div>
+<div class="card"><b>R5 证据放在工作区</b><br><span class="small">模型可写、会被 merge / .gitignore 干扰。</span></div>
+<div class="card"><b>R6 路由靠约定加事后对账</b><br><span class="small">没传 model 时 env 兜底，偏差到收口才发现。</span></div>
+</div>
+<div class="ev"><b>关键观察</b>：R1 和 R3 都是 R4 的下游。脚本碰不了文件系统，机械活只能派 agent 做，事实也只能经 agent 传回。F1–F5、slice-noreturn-resume 修的都是症状，R4 一直在。</div>
+
+<!-- ============================================================ -->
+<h2 id="principles">2 · 第一性原理</h2>
+<div class="card">
+<div class="p"><span class="n">P1</span><div><b>信任边界</b>：模型是不可信的执行者。可信执行面（TCB）= 引擎 + 控制面代码 + 判定器 + git + 人。任何判据都在 TCB 内算出、在 TCB 内落盘，<b>不经模型之口</b>。</div></div>
+<div class="p"><span class="n">P2</span><div><b>单一写者</b>：飞行状态只有一个写者（状态机），其余都是读者；读者不推导状态。</div></div>
+<div class="p"><span class="n">P3</span><div><b>判定与强制分离</b>：判定器是纯函数（事实 → 裁决），不依赖宿主，CI 可跑，pytest 覆盖；强制点只是薄适配层。宿主 API 变动只波及适配层。</div></div>
+<div class="p"><span class="n">P4</span><div><b>token 只花在创造上</b>：合回、跑门禁、记账、开 PR、渲染正文都是代码；模型只负责写代码、评审、修复、解冲突。</div></div>
+<div class="p"><span class="n">P5</span><div><b>批准绑定内容</b>：人批准的是计划的内容指纹，而不是「某个时刻之后」。计划一变，批准自动失效。</div></div>
+<div class="p"><span class="n">P6</span><div><b>能力随状态收放</b>：每个飞行状态 × 每个角色对应一个工具包络（可写路径、可用工具、可派发对象），越界即拒。</div></div>
+<div class="p"><span class="n">P7</span><div><b>回退 = 失效即停</b>：控制面不在时不能起飞，而不是走一条语义可能漂移的第二实现；与飞行无关的护栏照常工作。</div></div>
+<div class="p"><span class="n">P8</span><div><b>度量来自引擎事件</b>：时间、用量、实际模型都从事件流记账，不从转录事后重建。</div></div>
+<div class="p"><span class="n">P9</span><div><b>方法论本身要被评测</b>：用带「无插件」对照臂的评测证明流程有效，这是铁律 8 的根。</div></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="facts">3 · Mod 能力核实（本机 2.1.295）</h2>
+<p class="sub">来源：随 plugin-authoring skill 生成的 <code>claude-code.d.ts</code>（约 2.1 万行）与 <code>reference.md</code>，以及 <code>claude plugin --help</code>。文档原文：API 处于 early access，各版本之间会变。</p>
+<div class="tablewrap"><table>
+<tr><th>能力</th><th>API</th><th>本仓用途</th><th>状态</th></tr>
+<tr><td>会话主模型</td><td><code>$.session.model()</code></td><td>取代 <code>session-model.py</code> 的转录推断</td><td><span class="tag t-ok">已实测</span> 返回 <code>claude-opus-5-5</code></td></tr>
+<tr><td>派发拦截</td><td><code>agent.spawn</code>：入参 <code>parentModel</code> 不可改；Agent 工具路径可改写 <code>model</code>；结果 <code>model</code> = 实际解析的模型 id；可 <code>{deny}</code></td><td>路由守卫、实时对账</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>Workflow agent 的派发</td><td>同一事件，带 <code>workflow.runId</code>；<b>只能拒，不能改</b></td><td>决定了「留着 Workflow 就改不了路由」</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>自主派发</td><td><code>$.agent.spawn({prompt, subagentType, model, cwd, name})</code>；启动后即返回，结果经 <code>turn.complete</code>（带 <code>agentId</code>、<code>reason</code>、<code>usage</code>）送达</td><td>控制面直接编排</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>所有 loop 可见</td><td><code>tool.call</code> 带 <code>agentId</code>（子 agent、Workflow agent 都有）</td><td>按 agent 套工具包络</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>副作用</td><td><code>$.process.run</code>（按 argv）、<code>$.fs</code>、<code>$.store</code>（跨会话）、<code>$.state</code>（会话内）、<code>$.clock</code></td><td>跑判定器、git、gh；持久化</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>人的动作</td><td>按钮触发 <code>ui.press</code>；<code>prompt.submit</code> 的 <code>origin.kind</code>（<code>composer</code> = 人在输入框输入）</td><td>批准证据</td><td><span class="tag t-ok">已实测</span> S3</td></tr>
+<tr><td>守卫语义</td><td>hook 抛错默认被跳过；要出错即拒，需写 <code>.catch(...)=&gt;{deny}</code></td><td>守卫一律带 <code>.catch</code></td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>经典事件</td><td>settings hook 的事件可挂为 <code>classic.&lt;Event&gt;</code>（如 <code>classic.SubagentStop</code>）</td><td>stop-gate 语义迁移</td><td><span class="tag t-ok">已实测</span> S5：回答 <code>{block}</code> 即续跑</td></tr>
+<tr><td>系统提示</td><td><code>prompt.compose</code> 增删 section</td><td>rubric 只注入一次</td><td><span class="tag t-warn">有代价</span> S7：跨进程续接多写约 24k 缓存</td></tr>
+<tr><td>中止 / UI</td><td><code>$.turn.abort</code>；<code>$.ui.status / toast / notify / open</code>（面板）、批准带（<code>AbovePrompt</code>）</td><td>越权中止；飞行可视化</td><td><span class="tag t-ok">已核实</span></td></tr>
+<tr><td>分发与验证</td><td><code>claude plugin install -s user|project|local</code>；<code>validate</code>；<code>test</code>；<code>eval --ablation with-without</code>（自动加无插件对照臂）</td><td>团队分发；CI；方法论 A/B</td><td><span class="tag t-ok">已实测</span> S6（全新用户首装流程未测）</td></tr>
+<tr><td>工具返回值</td><td>mod 注册的工具，<code>tool.call</code> hook 返回的 <code>result</code> 必须是字符串（或块数组），对象会被引擎拒收</td><td>控制面工具一律返回字符串</td><td><span class="tag t-ok">已实测</span></td></tr>
+<tr><td><code>$.store</code> 落盘</td><td><code>~/.claude/plugins/store/&lt;插件&gt;_*.json</code>，明文 JSON</td><td>模型用 Bash 可读可改 → 只能当「防走捷径」的旁证，不是秘密</td><td><span class="tag t-ok">已实测</span></td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="arch">4 · 目标架构：五个面</h2>
+<svg viewBox="0 0 1000 600" role="img" aria-label="五面架构：人类面、控制面、判定面、工作面、记录面">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="sv-ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <!-- human -->
+  <rect class="sv-h" x="10" y="10" width="980" height="74" rx="10"/>
+  <text class="sv-title" x="28" y="36">人类面</text>
+  <text class="sv-txt" x="28" y="62">对话：提案 / 规格 / 设计（与主会话模型）</text>
+  <text class="sv-txt" x="380" y="62">批准带按钮：绑定计划指纹</text>
+  <text class="sv-txt" x="680" y="62">PR review（GitHub）</text>
+  <!-- control -->
+  <rect class="sv-t" x="10" y="130" width="980" height="170" rx="10" stroke-width="2"/>
+  <text class="sv-title" x="28" y="156">控制面 · Mod = 可信执行面（TCB）</text>
+  <text class="sv-dim" x="330" y="156">唯一的状态写者 · 唯一的账本写者 · 唯一跑判定器的一方</text>
+  <rect class="sv-chip" x="28" y="172" width="210" height="52" rx="8"/><text class="sv-txt" x="40" y="194">飞行状态机</text><text class="sv-dim" x="40" y="213">事件驱动 · 账本可重放</text>
+  <rect class="sv-chip" x="250" y="172" width="230" height="52" rx="8"/><text class="sv-txt" x="262" y="194">守卫</text><text class="sv-dim" x="262" y="213">tool.call · agent.spawn · 包络</text>
+  <rect class="sv-chip" x="492" y="172" width="230" height="52" rx="8"/><text class="sv-txt" x="504" y="194">路由</text><text class="sv-dim" x="504" y="213">显式 model · 实时对账</text>
+  <rect class="sv-chip" x="734" y="172" width="238" height="52" rx="8"/><text class="sv-txt" x="746" y="194">机械动作</text><text class="sv-dim" x="746" y="213">git 合回 · 门禁 · push · 开 PR</text>
+  <rect class="sv-chip" x="28" y="234" width="452" height="52" rx="8"/><text class="sv-txt" x="40" y="256">账本写者</text><text class="sv-dim" x="40" y="275">每次转移一条：事件 · 指纹 · agentId · 实际模型 · 用量</text>
+  <rect class="sv-chip" x="492" y="234" width="480" height="52" rx="8"/><text class="sv-txt" x="504" y="256">界面</text><text class="sv-dim" x="504" y="275">状态行 · 飞行面板 · 批准带 · 系统通知</text>
+  <!-- judge -->
+  <rect class="sv-j" x="10" y="360" width="470" height="130" rx="10" stroke-width="1.5"/>
+  <text class="sv-title" x="28" y="386">判定面 · Python CLI（纯函数）</text>
+  <text class="sv-txt" x="28" y="412">slice-gate：lint / gate / final / baseline / ship 裁决</text>
+  <text class="sv-txt" x="28" y="434">intent 判定 · claudemd-lint · memory-lint</text>
+  <text class="sv-txt" x="28" y="456">spec_html 渲染 · 账本 → 飞行记录渲染</text>
+  <text class="sv-dim" x="28" y="478">不依赖宿主 · CI 可跑 · pytest 覆盖</text>
+  <!-- worker -->
+  <rect class="sv-w" x="520" y="360" width="470" height="130" rx="10" stroke-width="1.5"/>
+  <text class="sv-title" x="538" y="386">工作面 · 模型（只做创造）</text>
+  <text class="sv-txt" x="538" y="412">slice-executor：只写本片 owns</text>
+  <text class="sv-txt" x="538" y="434">code-reviewer · fixer · 冲突解决（仅冲突时）</text>
+  <text class="sv-dim" x="538" y="456">不跑门禁 · 不写状态 · 不写账本</text>
+  <text class="sv-dim" x="538" y="478">返回值只作信息，不作判据</text>
+  <!-- record -->
+  <rect class="sv-r" x="10" y="520" width="980" height="70" rx="10" stroke-width="1.5"/>
+  <text class="sv-title" x="28" y="546">记录面</text>
+  <text class="sv-txt" x="28" y="572">openspec 工件（工作区，随 change 提交）</text>
+  <text class="sv-txt" x="350" y="572">账本 refs/flight/&lt;change&gt;/ledger（git 提交链）</text>
+  <text class="sv-txt" x="740" y="572">PR 正文 = 账本投影</text>
+  <!-- arrows -->
+  <line class="sv-ln" x1="480" y1="84" x2="480" y2="128" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="490" y="112">ui.press（批准 / 中止）</text>
+  <line class="sv-ln" x1="245" y1="300" x2="245" y2="358" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="255" y="335">$.process.run → 退出码 + JSON</text>
+  <line class="sv-ln" x1="700" y1="300" x2="700" y2="358" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="560" y="322">$.agent.spawn（model 显式，cwd = worktree）</text>
+  <line class="sv-ln dash" x1="860" y1="358" x2="860" y2="302" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="760" y="346">tool.call / turn.complete 被观测</text>
+  <line class="sv-ln" x1="120" y1="300" x2="120" y2="518" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="128" y="505">唯一写者</text>
+  <line class="sv-ln dash" x1="600" y1="490" x2="600" y2="518" marker-end="url(#ah)"/>
+  <text class="sv-dim" x="608" y="510">只写 owns 内源码</text>
+</svg>
+<div class="leg"><span><i style="background:var(--tcb)"></i>可信</span><span><i style="background:var(--work)"></i>不可信（模型）</span><span>实线 = 控制 / 写入　虚线 = 被观测的事件或受限写入</span></div>
+<div class="ev">和现状的本质差别：现在「门禁结论」从工作面经 agent 返回值流向编排器；目标架构里这条线<b>不存在</b>，门禁由控制面直接调判定面，工作面只被观测。</div>
+
+<!-- ============================================================ -->
+<h2 id="fsm">5 · 飞行状态机</h2>
+<p class="sub">每次转移由控制面执行，守卫是判定面的纯函数，每次转移都写一条账本。</p>
+<div class="flow">
+  <div class="box"><b>PLANNED</b>工件齐 · 指纹 fp</div><span class="arrow">→</span>
+  <div class="box ok"><b>APPROVED</b>人按批准 · fp 一致</div><span class="arrow">→</span>
+  <div class="box"><b>PREFLIGHT</b>baseline + preflight 绿</div><span class="arrow">→</span>
+  <div class="box warn"><b>WAVE i</b>切片循环（见下）</div><span class="arrow">→</span>
+  <div class="box"><b>INTEGRATE</b>代码合回；冲突才派模型</div><span class="arrow">↺ i+1</span>
+</div>
+<div class="flow">
+  <div class="box"><b>REVIEW</b>并行，离关键路径</div><span class="arrow">→</span>
+  <div class="box"><b>FIX</b>CRITICAL/HIGH 汇总一次修</div><span class="arrow">→</span>
+  <div class="box"><b>FINAL</b>slice-gate final</div><span class="arrow">→</span>
+  <div class="box"><b>SHIP</b>ship 裁决 · push · 开 PR · 贴评审</div><span class="arrow">→</span>
+  <div class="box ok"><b>PR_OPEN</b>等第二处人类审批</div>
+</div>
+<div class="flow">
+  <div class="box bad" style="flex:1 1 100%"><b>HALTED（任何状态都可进入）</b>计划指纹变化 · 人按中止 · 版本低于下限 · 派发的实际模型与路由表不符 · 越权写入</div>
+</div>
+<h3>切片内循环（WAVE i 中每个切片）</h3>
+<div class="flow">
+  <div class="box"><b>DISPATCH</b>控制面建 worktree，$.agent.spawn</div><span class="arrow">→</span>
+  <div class="box"><b>RUNNING</b>tool.call 按包络放行或拒</div><span class="arrow">→</span>
+  <div class="box"><b>MEASURE</b>turn.complete 或超时 → 控制面跑 gate</div><span class="arrow">→</span>
+  <div class="box ok"><b>GREEN</b></div>
+</div>
+<p class="small">MEASURE 为红且未到上限 → 带 checkpoint 重新 DISPATCH；达到上限 → BLOCKED。<b>「未返回」和「返回了但红」走同一条路</b>：控制面不看 agent 说了什么，只看测出来的结果，所以不需要识别 maxTurns。</p>
+
+<h3>工具包络（状态 × 角色）</h3>
+<div class="tablewrap"><table>
+<tr><th>状态</th><th>主会话模型</th><th>slice-executor（Sx）</th><th>code-reviewer</th><th>fixer</th></tr>
+<tr><td>PLANNED / APPROVED</td><td>只写 openspec 工件</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>WAVE</td><td>源码只读（D5）</td><td>只写 Sx.owns；不得派发子 agent；不得写工件 / 账本</td><td>—</td><td>—</td></tr>
+<tr><td>REVIEW</td><td>只读</td><td>—</td><td>只读</td><td>—</td></tr>
+<tr><td>FIX</td><td>只读</td><td>—</td><td>—</td><td>写 owns 并集</td></tr>
+<tr><td>FINAL / SHIP</td><td>只读</td><td>—</td><td>—</td><td>—</td></tr>
+</table></div>
+<p class="small">Bash 写文件（<code>sed -i</code>、<code>cat &gt;</code>）只能尽力预拦；精确保证来自 MEASURE 时 <code>git diff --name-only base..</code> 对 owns 的核对，越界即红（与现有 G 系门禁同源）。</p>
+
+<!-- ============================================================ -->
+<h2 id="fate">6 · 组件去留</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:22%">现组件</th><th style="width:14%">去向</th><th>说明</th></tr>
+<tr><td><code>intent-gate.py</code></td><td><span class="tag t-acc">拆</span></td><td>判定逻辑保留为纯函数 CLI；强制点迁入 mod <code>tool.call</code>，按 agentId 套包络；另留一个 classic 薄适配作<b>地板</b>：mod 不在时只放行工件与 mini</td></tr>
+<tr><td><code>takeoff-gate.py</code></td><td><span class="tag t-bad">删</span></td><td>批准 = 按钮按压写入账本的 <code>approve{fp}</code>；起飞守卫 = 当前 fp 与已批 fp 相等，不再需要从转录推断「新鲜度」</td></tr>
+<tr><td><code>session-model.py</code></td><td><span class="tag t-bad">删</span></td><td><code>$.session.model()</code> + <code>agent.spawn</code> 结果</td></tr>
+<tr><td><code>slice-gate.py</code></td><td><span class="tag t-acc">拆</span></td><td>lint / waves / gate / final / baseline / preflight / ship 裁决保留（判定器）；<code>start</code> / <code>checkpoint</code> / <code>record</code> 这类写状态的子命令删掉或改为纯计算，状态改由状态机写</td></tr>
+<tr><td><code>stop-gate.py</code></td><td><span class="tag t-acc">迁</span></td><td>语义保留（门禁红不准收口），实现改为 mod 挂 <code>classic.SubagentStop</code> 并由控制面现跑门禁；回答不了「续跑」就改为重派（S5）</td></tr>
+<tr><td><code>test-evidence.py</code></td><td><span class="tag t-bad">删</span></td><td>RED / GREEN 都由控制面在测量点自己跑测试并写入账本；change 归属由状态机给出，不用推导</td></tr>
+<tr><td><code>timeline.py</code></td><td><span class="tag t-acc">拆</span></td><td>写入功能由账本取代；report 改为账本渲染器</td></tr>
+<tr><td><code>session-decompose.py</code></td><td><span class="tag t-mute">降级</span></td><td>飞行记录改从账本出；本脚本只留作离线转录分析</td></tr>
+<tr><td><code>spec_html.py</code></td><td><span class="tag t-ok">留</span></td><td>新增显示计划指纹，和批准带上的指纹肉眼可对</td></tr>
+<tr><td><code>claudemd-lint.py</code> · <code>memory-lint.py</code></td><td><span class="tag t-ok">留</span></td><td>继续作为 classic hook：与飞行无关，只需文件路径和内容；mod 不在时照常工作</td></tr>
+<tr><td><code>intent-reminder.py</code></td><td><span class="tag t-ok">暂留</span></td><td>S7 实测：<code>prompt.compose</code> 在会话内缓存正常，但每次跨进程续接要多写约 24k 缓存；与现在「每条 prompt 带几百 token」相比收益不确定 → 暂留 classic hook，到阶段 5 用评测数据再定</td></tr>
+<tr><td><code>opsx-apply.js</code>（Workflow）</td><td><span class="tag t-bad">删</span></td><td>由 mod 状态机编排；续跑 = 重放账本</td></tr>
+<tr><td><code>integrator.md</code></td><td><span class="tag t-bad">删</span></td><td>合回、跑门禁、记账全是代码，零 token；Haiku 路由的待决项随之消失（它唯一合格的 final-gate 角色变成了代码）</td></tr>
+<tr><td><code>slice-executor.md</code></td><td><span class="tag t-acc">改</span></td><td>不再跑 start / 门禁，不再「原样返回 JSON」；只按切片包做 TDD</td></tr>
+<tr><td><code>code-reviewer.md</code></td><td><span class="tag t-ok">留</span></td><td>由控制面派发，模型来自路由表</td></tr>
+<tr><td><code>opsx-apply.md</code></td><td><span class="tag t-acc">缩</span></td><td>改为 mod 命令 <code>/flight</code>（status / approve / abort / resume），编排不再写在提示词里</td></tr>
+<tr><td><code>pr-ship.md</code>（234 行）</td><td><span class="tag t-acc">拆</span></td><td>预合并、push、开 PR、渲染正文、draft/ready 裁决、贴评论 → 控制面代码；解冲突与评审仍由模型做</td></tr>
+<tr><td>propose / new / continue / explore / verify 等 skill</td><td><span class="tag t-ok">留</span></td><td>创作类，属于人类面的对话</td></tr>
+<tr><td><code>install.sh</code> 拷贝 <code>.claude/</code></td><td><span class="tag t-acc">改</span></td><td>模板整体发布为 plugin（marketplace），目标仓 <code>claude plugin install -s project</code>；install.sh 只管 openspec 初始化与 schema（D6）</td></tr>
+<tr><td>本仓根 <code>.claude</code> 软链</td><td><span class="tag t-bad">删</span></td><td>开发用 <code>--plugin-dir</code> 热加载；<b>飞行永远跑已安装的稳定版</b>，正在改的版本只由测试验证，不再自举</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="detail">7 · 关键设计</h2>
+
+<h3>7.1 账本：git 引用上的提交链</h3>
+<div class="card">
+<p><b>位置</b>：<code>refs/flight/&lt;change&gt;/ledger</code>，每个事件一个 commit（树里一份 JSON）。命名空间与 slice-noreturn-resume 已在用的 <code>refs/flight/&lt;change&gt;/&lt;S&gt;</code> 快照一致。</p>
+<p><b>为什么放这里</b>：不在工作区，所以不与 merge 冲突、不会被 <code>.gitignore</code> 吞、Write/Edit 碰不到（直接对应 R5）；commit 链本身就是哈希链，改动可被检测；push 时连同 <code>refs/flight/*</code> 推送，审阅者可以 fetch 下来复核。</p>
+<p><b>完整性</b>：控制面每次追加后把 tip 记入 <code>$.store</code>；SHIP 前比对，不一致即红。PR 正文是账本的投影，任何时候都能重放生成，被手改也能检出。</p>
+<p><b>写入（S4 实测）</b>：plumbing 单次追加 p50 67ms；并发追加时 <code>update-ref</code> 的旧值校验会拒绝后来者（8 并发只成 1，链长不分叉不丢失）。所以控制面用<b>单写者队列</b>，CAS 失败就重读 tip 再追加。</p>
+<p><b>写入口不外露</b>：账本追加（尤其 <code>approve</code>）只在 mod 进程内做，<b>不做成模型能调的 CLI 或工具</b>——历史教训正是模型自己跑 <code>timeline.py record approve</code>。另在 <code>tool.call</code> 上拒绝提到 <code>refs/flight/</code> 的 Bash 命令（尽力而为）。<code>$.store</code> 是明文文件，tip 比对只防走捷径，不防蓄意伪造。</p>
+<p class="small"><b>威胁模型（明说）</b>：防的是走捷径的模型（直接改证据文件、自己记批准、绕开门禁），不防蓄意伪造 git 对象的对抗者。</p>
+</div>
+
+<h3>7.2 批准：按钮 + 计划指纹</h3>
+<div class="card">
+<p><b>指纹</b>：fp = sha256（规范化后的 proposal + specs + design + tasks + slices.json + 路由表）。spec.html 顶部和批准带显示同一个 fp 前 8 位，人眼可对。</p>
+<p><b>判据</b>：账本里有一条由 <code>ui.press</code> 写入的 <code>approve{fp}</code>，且 fp 等于当前计划指纹。任一工件改动都会让 fp 变化，飞行转入 HALTED，需要重新批准。<code>claude -p</code> 没有界面所以批准不了，这是正确行为；可以在交互会话里批准，再无头起飞。</p>
+</div>
+<pre class="term"><span class="d">──────────────────────────────────────────────────────────────────────</span>
+  <span class="a">✈ 飞行计划</span> add-user-export   <span class="d">指纹</span> 3f9a1c07   <span class="d">6 切片 / 3 wave</span>
+    <span class="d">路由</span>  执行体 claude-opus-5-5 high · 评审 claude-opus-5-5 high
+    <span class="d">预检</span>  <span class="g">baseline 绿 · preflight 绿</span>        <span class="d">spec.html 指纹</span> 3f9a1c07 <span class="g">✓</span>
+    <span class="a">[ 1: 批准起飞 ]</span>   [ 2: 驳回 ]   [ 3: 打开 spec.html ]
+<span class="d">──────────────────────────────────────────────────────────────────────</span>
+ &gt; _</pre>
+<p class="small">示意：批准带（<code>AbovePrompt</code>），只在存在 PLANNED 且 fp 未批准的 change 时出现。</p>
+
+<h3>7.3 路由：随计划批准，派发时实时对账</h3>
+<div class="card">
+<p>路由表是计划的一部分，随 fp 一起批准。渲染计划时 <code>&lt;main&gt;</code> 已由 <code>$.session.model()</code> 解析成具体模型 id，所以人批准的是具体模型，而不是一个别名。</p>
+<p>控制面派发一律显式带 <code>model</code>。<code>agent.spawn</code> 守卫负责：飞行中模型自发的派发（Agent 工具）按路由表改写，或直接拒绝；派发结果里的实际 <code>model</code> 与路由表不符时，<code>$.turn.abort</code> 中止该 agent、写违规记录、门禁转红。<code>--expect-models</code> 由此退化为一次账本查询。</p>
+</div>
+
+<h3>7.4 测量协议：模型请求，TCB 测量</h3>
+<div class="card">
+<p>执行体不汇报结论。TDD 的 RED 节点由执行体调用 mod 注册的工具 <code>mcp__flight__measure</code> 发起「请测一下」，控制面自己跑该切片的 scenario 测试并把结果写入账本；GREEN 在 turn.complete 后由控制面跑 gate 判定。铁律 3「测试运行由 hook 留痕」由此升级为「测试由可信方执行」。</p>
+</div>
+
+<h3>7.5 界面</h3>
+<pre class="term"><span class="d">状态行：</span> <span class="a">✈</span> add-user-export · W2/3 · S4 <span class="r">红 1/2</span> · S5 等待 · 37m
+
+<span class="d">┌</span> 飞行 add-user-export <span class="d">── 指纹 3f9a1c07 ── 已飞 37m ─────────────┐</span>
+<span class="d">│</span> W1  S1 <span class="g">✔ 绿</span>  opus-5-5   4.1m   <span class="d">12k tok</span>                      <span class="d">│</span>
+<span class="d">│</span>     S2 <span class="g">✔ 绿</span>  opus-5-5   6.3m   <span class="d">18k tok</span>                      <span class="d">│</span>
+<span class="d">│</span> W2  S3 <span class="g">✔ 绿</span>  opus-5-5   5.0m                                <span class="d">│</span>
+<span class="d">│</span>     S4 <span class="r">✖ 红</span>  第 1/2 次   G3：scenario 缺测试                <span class="d">│</span>
+<span class="d">│</span> W3  S5 <span class="d">… 等待 S4</span>                                           <span class="d">│</span>
+<span class="d">│</span> 评审  S1 0 · S2 1 HIGH · S3 进行中                          <span class="d">│</span>
+<span class="d">│</span> 账本  refs/flight/add-user-export/ledger · 41 条            <span class="d">│</span>
+<span class="d">│</span> [ 中止 ]   [ 打开 gate-report ]                             <span class="d">│</span>
+<span class="d">└──────────────────────────────────────────────────────────────┘</span></pre>
+<p class="small">示意：飞行面板（全屏终端停靠为侧栏）。门禁转红、需要批准、PR 已开时，用 <code>$.ui.notify</code> 发系统通知——等子 agent 占工作时间 63–82%，这段时间人不必盯着。</p>
+
+<h3>7.6 兼容与稳定</h3>
+<div class="card">
+<p>session.start 检查 <code>$.session.version()</code> 不低于下限，否则进入停飞（P7）。CI 对每个新的 Claude Code 版本跑 <code>claude plugin validate</code> + <code>claude plugin test</code>。mod 只包含状态机和适配层；判定器不依赖 mod API，所以 API 变动的影响面有上限（P3）。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rules">8 · 铁律影响：精神不变，条文里的实现名词要改</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:12%">铁律</th><th style="width:40%">现条文（摘）</th><th>改为</th></tr>
+<tr><td>3</td><td>测试运行由 hook 留痕</td><td>测试由控制面在测量点执行并写入账本（更严）</td></tr>
+<tr><td>6</td><td>显式跑 <code>/opsx-apply</code> / <code>/pr-ship</code> = 授权</td><td>按下批准 = 授权本次飞行文档定义的动作；禁推 main、禁本地 merge 等不变</td></tr>
+<tr><td>7</td><td>第一处由 <code>takeoff-gate.py</code> 机械校验（人类消息证据 + 新鲜度）</td><td>按钮按压事件 + 计划指纹一致</td></tr>
+<tr><td>9</td><td>能用脚本 / hook 判定的不交给模型</td><td>不变；新增推论：机械角色是代码，不是低档模型</td></tr>
+<tr><td>10</td><td>回退必存在（Workflow → Agent 派发；脚本渲染 → 保留占位）</td><td>控制面不在 = 停飞（附安装提示）；非飞行护栏照常；脚本渲染回退不变</td></tr>
+<tr><td>11</td><td>机械角色 = sonnet low；<code>&lt;main&gt;</code> 由 <code>session-model.py</code> 判定；收口 <code>--expect-models</code> 对账</td><td>机械角色 = 代码；<code>&lt;main&gt;</code> = <code>$.session.model()</code> 解析后随计划批准；每次派发实时对账，不符即中止</td></tr>
+</table></div>
+<p class="small">ADR：新立一条，supersede <code>DRAFT-apply-as-flight</code>、<code>DRAFT-model-routing-defaults-for-template</code>，并在 <code>DRAFT-gate-evidence-not-self-reported</code> 上标注「原则保留、机制被取代」（ADR 不改只 supersede）。</p>
+
+<!-- ============================================================ -->
+<h2 id="risk">9 · 风险与对策</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:28%">风险</th><th style="width:22%">影响</th><th>对策</th></tr>
+<tr><td>mod API 处于 early access，跨版本会变</td><td>控制面失效</td><td>判定器不依赖 API；版本下限检查不过即停飞；每个新版本 CI 跑 validate / test；类型文件随版本重新生成</td></tr>
+<tr><td>并行、重试、续跑原本是 Workflow 白送的，现在要自建</td><td>实现量</td><td>事件驱动状态机 + 账本重放；先用 spike 验证 S1 / S4 / S8</td></tr>
+<tr><td>Bash 写文件绕过包络</td><td>越权写入</td><td>预拦只是尽力；MEASURE 用 git diff 精确核对 owns，越界即红</td></tr>
+<tr><td>只能在 Claude Code 里用</td><td>平台锁定</td><td>仓库本来就叫 intent-driven-claude-code；判定器在 CI 里仍可独立跑</td></tr>
+<tr><td>项目级 plugin 的安装与信任</td><td>队友没装就飞不了</td><td>classic 地板 hook 明确提示安装命令；S6 实测</td></tr>
+<tr><td>改控制面的 change 由控制面自己执行</td><td>自举失真</td><td>飞行跑已安装的稳定版；新版本仅由测试验证，合并后再升级</td></tr>
+<tr><td>重构期间新旧并存</td><td>两套语义</td><td>分阶段推进，每阶段一个 change；新路径评测通过后一次性删除旧路径，不长期并存</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="spike">10 · 实测结果（2026-10-09 · Claude Code 2.1.295）</h2>
+<p class="sub">在本会话 dev-mods 目录写一次性 mod，在 scratchpad 的一次性 git 仓库里跑，<b>零仓库改动</b>。验证 mod 与其 store 已删除；S6 的用户级插件记录已按快照逐字复原。</p>
+<div class="tablewrap"><table>
+<tr><th style="width:7%">#</th><th style="width:16%">验证什么</th><th style="width:10%">结果</th><th>实测数据</th></tr>
+<tr><td>S1</td><td>自主派发</td><td><span class="tag t-ok">通过</span></td><td><code>$.agent.spawn({cwd: worktree, model: 'haiku'})</code> 并行 3 个，引擎解析为 <code>claude-haiku-5-5</code>；三个 turn.complete 全部送达，agentId、<code>usage.model</code> 均对得上；插件自己的派发同样触发 <code>agent.spawn</code>，<code>parentModel = claude-opus-5-5</code></td></tr>
+<tr><td>S2</td><td>全 loop 可见</td><td><span class="tag t-ok">通过</span></td><td>子 agent 的 8 次 tool.call 全部带 agentId 被看到；3 次越界 Write 全部被拒；被拒后子 agent 未改走 Bash</td></tr>
+<tr><td>S3</td><td>人类动作</td><td><span class="tag t-ok">通过</span></td><td>你按下批准带按钮 → <code>ui.press</code> 记下 <code>plugin=flight-spike · element=approve · component=AbovePrompt · surface=terminal</code>；你的输入 <code>origin.kind = composer</code>，后台任务通知 = <code>task-notification</code>；模型侧工具清单里没有任何能触发按钮的工具</td></tr>
+<tr><td>S4</td><td>git 账本</td><td><span class="tag t-ok">通过</span></td><td>串行 20/20，p50 67ms / max 389ms；8 个并发追加 1 成 7 被旧值校验拒绝，链长 21 无分叉 → 需单写者队列 + 重试</td></tr>
+<tr><td>S5</td><td>收口拦截</td><td><span class="tag t-ok">通过</span></td><td><code>classic.SubagentStop</code> 回答 <code>{block}</code> → 子 agent 续跑、补出文件，第二次收口 <code>stop_hook_active=true</code>；turn.complete 只在最终收口后触发一次</td></tr>
+<tr><td>S6</td><td>项目级分发</td><td><span class="tag t-ok">通过</span></td><td>项目 settings 写入 <code>extraKnownMarketplaces</code> + <code>enabledPlugins</code>；仓库内与 worktree 内的 <code>claude -p</code> 都加载 hooks module。注意：用户级 <code>installed_plugins.json</code> 也会记一笔（带 projectPath）；<b>全新用户首装流程未测</b></td></tr>
+<tr><td>S7</td><td>prompt.compose</td><td><span class="tag t-warn">有代价</span></td><td>模型读得到 section；同进程多轮第 2 轮只新写 73 token 缓存；但跨进程 <code>--continue</code> 续接第 2 轮新写约 23–25k（复现 2 次），空插件对照 172、无插件对照约 1k</td></tr>
+<tr><td>S8</td><td>事件驱动</td><td><span class="tag t-ok">通过</span></td><td>turn.complete hook 内跑门禁（<code>$.fs.exists</code> + <code>git status</code>）→ S2 首轮红 → 同一 hook 内重派 → 转绿；hook 自身耗时可忽略（剩余预算约 10000ms）</td></tr>
+<tr><td>附</td><td>Agent 工具改写</td><td><span class="tag t-ok">通过</span></td><td>主会话 Agent 请求 sonnet → hook 改写为 haiku → 实际 <code>claude-haiku-5-5</code></td></tr>
+<tr><td>未测</td><td>Workflow agent</td><td><span class="tag t-mute">仅文档</span></td><td>跑 Workflow 需你明确同意多 agent 编排，本次未跑；D1 选 A 后 Workflow 会被删除，只影响过渡期</td></tr>
+</table></div>
+<h3>验证带来的设计修正</h3>
+<div class="card">
+<p>① <b>账本写入</b>：单写者队列 + CAS 失败重试；写入口只在 mod 进程内，不做成 CLI / 工具（7.1 已更新）。</p>
+<p>② <b>intent-reminder 暂不迁</b>（§6 已更新）：compose 在跨进程续接时有约 24k 的缓存写入代价，收益要靠阶段 5 的评测判断。</p>
+<p>③ <b>控制面工具一律返回字符串</b>；<code>$.store</code> 是明文文件，只作旁证。</p>
+<p>④ <b>阶段划分（2026-10-09 已确认，第一个 change = <code>flight-approval-ledger</code>）</b>：原计划的「阶段 1 · 纯 ADR」有两个问题——纯文档 change 没有可测行为，铁律 2 的 scenario 测试只能写成文档一致性检查；而且如果铁律条文先于机制改动，CLAUDE.md 会描述一个尚不存在的机制。建议把 ADR 并入<b>第一个真正切换机制的 change</b>：账本 + 计划指纹 + 批准带，takeoff-gate 判据从「转录里的人类消息」切换为「账本里的批准指纹」，铁律 7 条文与机制同一个 change 落地。</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="plan">11 · 实施路径</h2>
+<div class="flow">
+  <div class="box"><b>阶段 0 · spike</b>S1–S8，dev-mods，零仓库改动</div><span class="arrow">→</span>
+  <div class="box"><b>阶段 1 · ADR</b>新 ADR + 铁律条文 + 根 / 模板 CLAUDE.md</div><span class="arrow">→</span>
+  <div class="box"><b>阶段 2 · 骨架</b>plugin 结构 · 账本 · 批准带 · 状态行（旧 Workflow 仍可用）</div><span class="arrow">→</span>
+  <div class="box"><b>阶段 3 · 编排</b>状态机取代 opsx-apply.js + integrator · 测量协议 · 路由守卫</div><span class="arrow">→</span>
+  <div class="box"><b>阶段 4 · 收口</b>ship 机械部分 · 删除旧组件 · install.sh 改为 plugin 安装</div><span class="arrow">→</span>
+  <div class="box ok"><b>阶段 5 · 评测</b>evals/ 用例 + <code>claude plugin eval</code> 有 / 无插件对照</div>
+</div>
+<p class="small">阶段 1–4 各是一个 openspec change，按铁律 1 先出工件和 spec.html 由你审批；它们改的是飞行机器本身，所以全部用<b>当前已合入 main 的旧机制</b>飞，新机制只靠测试验证。三查结果（2026-10-09）：11 个 change 的 tasks 全部勾完，没有 open PR，不存在会冲突的在途工作。</p>
+
+<!-- ============================================================ -->
+<h2 id="decide">12 · 待你决定 · 导出</h2>
+<p class="sub">勾完点「导出结果」，把生成的文本贴回会话。推荐项已标出。</p>
+
+<div class="q" data-key="D1"><b>D1 · 编排归属</b>
+  <label><input type="radio" name="D1" value="A:mod状态机编排" checked>A · mod 状态机编排，删除 opsx-apply.js 与 integrator<span class="rec">推荐</span> · 唯一能同时消除 R1 / R3 / R4 的方案</label>
+  <label><input type="radio" name="D1" value="B:保留Workflow调度,mod只做TCB">B · 保留 Workflow 调度，mod 只做守卫与账本：机械角色仍要靠 agent，Workflow agent 的路由只能拒不能改，R3 / R4 残留</label>
+</div>
+
+<div class="q" data-key="D2"><b>D2 · 回退语义</b>
+  <label><input type="radio" name="D2" value="A:失效即停飞" checked>A · 控制面不在 = 停飞（附安装提示），非飞行护栏照常<span class="rec">推荐</span> · P7，不维护第二实现</label>
+  <label><input type="radio" name="D2" value="B:保留旧Workflow路径">B · 保留旧 Workflow 路径作为第二实现</label>
+</div>
+
+<div class="q" data-key="D3"><b>D3 · 账本位置</b>
+  <label><input type="radio" name="D3" value="A:git引用提交链" checked>A · <code>refs/flight/&lt;change&gt;/ledger</code> 提交链<span class="rec">推荐</span> · 不在工作区，天然哈希链</label>
+  <label><input type="radio" name="D3" value="B:change目录文件+store摘要">B · change 目录里的文件 + <code>$.store</code> 摘要校验</label>
+</div>
+
+<div class="q" data-key="D4"><b>D4 · 批准方式</b>
+  <label><input type="radio" name="D4" value="A:批准带按钮+指纹" checked>A · 批准带按钮 + 指纹<span class="rec">推荐</span> · 按压事件只能来自人（S3 验证）</label>
+  <label><input type="radio" name="D4" value="B:输入框命令">B · 在输入框敲 <code>/flight approve &lt;fp 前 8 位&gt;</code>（origin = composer）</label>
+  <label><input type="radio" name="D4" value="C:两者皆可">C · 两种都接受</label>
+</div>
+
+<div class="q" data-key="D5"><b>D5 · 飞行中的主会话</b>
+  <label><input type="radio" name="D5" value="A:源码只读" checked>A · 对源码只读<span class="rec">推荐</span> · P6，防主会话「顺手帮忙」越过切片所有权</label>
+  <label><input type="radio" name="D5" value="B:不限制">B · 不限制</label>
+</div>
+
+<div class="q" data-key="D6"><b>D6 · 分发形态</b>
+  <label><input type="radio" name="D6" value="A:模板整体发布为plugin" checked>A · 模板整体发布为 plugin，install.sh 只管 openspec<span class="rec">推荐</span> · 版本化、可 update，同时消除软链和「命令与 skill 同改」的漂移</label>
+  <label><input type="radio" name="D6" value="B:仅控制面为plugin">B · 只有控制面是 plugin，其余继续由 install.sh 拷贝</label>
+</div>
+
+<div class="q" data-key="D7"><b>D7 · 下一步</b>
+  <label><input type="radio" name="D7" value="A:先做spike" checked>A · 先做 spike S1–S8（本会话 dev-mods，零仓库改动），结果回填本页后再立 ADR change<span class="rec">推荐</span></label>
+  <label><input type="radio" name="D7" value="B:直接写ADR change工件">B · 直接写阶段 1 的 ADR change 工件</label>
+  <label><input type="radio" name="D7" value="C:先补充讨论">C · 先补充讨论</label>
+</div>
+
+<div class="q" data-key="NOTE"><b>补充意见（可空）</b>
+  <textarea id="note" style="min-height:70px" placeholder="例如：D5 选 A，但允许主会话改 docs/"></textarea>
+</div>
+
+<button onclick="exportResult()">导出结果</button>
+<button class="ghost" onclick="allRecommended()">全部按推荐</button>
+<button class="ghost" onclick="copyResult()">复制到剪贴板</button>
+<button class="ghost" onclick="downloadResult()">下载 JSON</button>
+<textarea id="out" placeholder="点「导出结果」后在这里生成可粘贴的文本"></textarea>
+
+</main>
+<script>
+function collect(){
+  const r={topic:'flight-control-plane',source:'docs/flight-control-plane.html',decisions:{}};
+  document.querySelectorAll('.q[data-key]').forEach(q=>{
+    const k=q.dataset.key; if(k==='NOTE') return;
+    const c=q.querySelector('input:checked'); r.decisions[k]=c?c.value:null;
+  });
+  r.note=(document.getElementById('note').value||'').trim();
+  return r;
+}
+function exportResult(){
+  const r=collect();
+  const md=['## 飞行控制面重构 · 决策结果',''].concat(
+    Object.entries(r.decisions).map(([k,v])=>'- '+k+'：'+(v||'（未选）'))
+  ).concat(r.note?['- 补充：'+r.note]:[]).concat(['','```json',JSON.stringify(r,null,2),'```']).join('\n');
+  document.getElementById('out').value=md;
+}
+function allRecommended(){
+  document.querySelectorAll('.q .rec').forEach(s=>{const i=s.closest('label').querySelector('input'); if(i) i.checked=true;});
+  exportResult();
+}
+function copyResult(){
+  if(!document.getElementById('out').value) exportResult();
+  const t=document.getElementById('out'); t.select();
+  try{ navigator.clipboard.writeText(t.value); }catch(e){ document.execCommand('copy'); }
+}
+function downloadResult(){
+  const r=collect();
+  const blob=new Blob([JSON.stringify(r,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='flight-control-plane.decisions.json'; a.click();
+}
+</script>
+</body>
+</html>

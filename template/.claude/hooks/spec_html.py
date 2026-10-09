@@ -20,6 +20,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import plan_fp
+
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TEMPLATE = os.path.normpath(
     os.path.join(HOOKS_DIR, "..", "skills", "spec-html-render", "templates", "spec.html.tmpl")
@@ -577,6 +579,11 @@ def compute_meta_chips(change_dir, change_name):
             )
             for aid, path in fallback
         ]
+    try:
+        chips.append('<span class="chip" data-state="done">计划指纹 %s</span>'
+                     % esc(plan_fp.plan_fingerprint(change_dir)[:8]))
+    except plan_fp.PlanError:
+        pass
     return "".join(chips) if chips else None
 
 
