@@ -19,3 +19,6 @@
 2026-10-09T05:20:50Z	gate	S5 ok
 2026-10-09T05:21:00Z	slice-start	S6
 2026-10-09T05:25:05Z	gate	S6 ok
+2026-10-09T05:25:41Z	review	findings=4 blocking=0 deferred=4
+2026-10-09T05:26:52Z	final	ok
+2026-10-09T05:26:55Z	apply-done	blocked=0 blocking=0
