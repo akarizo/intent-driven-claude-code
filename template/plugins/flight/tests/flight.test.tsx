@@ -10,8 +10,10 @@ type World = {
   dirs: Record<string, string[]>
   /** 文件 → 内容（存在即在表中） */
   files: Record<string, string>
-  /** 第 n 次（从 0 起）调用 plan_fp.py 时输出的指纹 */
-  fp: (call: number) => string
+  /** 第 n 次（从 0 起）调用 plan_fp.py 时输出的指纹；第二个参数是它的 --change-dir */
+  fp: (call: number, changeDir: string) => string
+  /** spec.html 路径 → mtimeMs（缺省 1000） */
+  mtimes?: Record<string, number>
   /** 前几次 update-ref 返回非 0（旧值不符） */
   updateRefFailures?: number
 }
@@ -108,13 +110,13 @@ function useWorld(on: On, w: World) {
   on('fs.list', ($, e) => ({
     value: (w.dirs[e.path] ?? []).map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
   }))
-  on('fs.stat', ($, e) => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1000, isLink: false } }))
+  on('fs.stat', ($, e) => ({ value: { kind: 'file' as const, size: 1, mtimeMs: w.mtimes?.[e.path] ?? 1000, isLink: false } }))
   on('fs.read', ($, e) => ({ value: w.files[e.path] ?? '' }))
   on('process.run', ($, e) => {
     const [cmd, ...args] = e.argv
     if (cmd === 'python3' && args[0]?.endsWith('/plan_fp.py')) {
       log.fpDirs.push(String(args[2]))
-      return ok(w.fp(fpCalls++) + '\n')
+      return ok(w.fp(fpCalls++, String(args[2])) + '\n')
     }
     if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) return ok(log.approved + '\n')
     if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
@@ -154,11 +156,11 @@ test('band-shows-pending-plan', async ($, on) => {
   // When: 在 terminal 上绘制输入框上方区域（AbovePrompt）
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
-  // Then: 带上出现 demo、3f9a1c07、/repo/template/openspec/changes/demo/spec.html，以及 key=approve、label=批准起飞 的按钮
+  // Then: 带上出现 demo、3f9a1c07、/repo/template/openspec/changes/demo/spec.html，以及 key=approve:demo:<F>、label=批准起飞 的按钮
   expect(await ui.find({ text: 'demo' })).toBeDefined()
   expect(await ui.find({ text: '3f9a1c07' })).toBeDefined()
   expect(await ui.find({ text: `${DEMO}/spec.html` })).toBeDefined()
-  expect((await ui.find({ key: 'approve' }))?.props.label).toBe('批准起飞')
+  expect((await ui.find({ key: `approve:demo:${F}` }))?.props.label).toBe('批准起飞')
 })
 
 test('band-ignores-finished-and-foreign-copies', async ($, on) => {
@@ -204,7 +206,7 @@ test('approve-press-appends-ledger-event', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
   // When: 按下「批准起飞」
-  await ui.press({ key: 'approve' })
+  await ui.press({ key: `approve:demo:${F}` })
 
   // Then: 写命令依次为 hash-object、mktree、commit-tree、update-ref refs/flight/demo/ledger <新> 40 个 0；事件 ev=approve、fp=F、by.plugin=flight、by.surface=terminal、by.session=sess-1；输入框预填 /opsx-apply demo
   expect(writes(log)).toEqual(['hash-object', 'mktree', 'commit-tree', 'update-ref'])
@@ -220,6 +222,35 @@ test('approve-press-appends-ledger-event', async ($, on) => {
   expect(log.fills).toEqual(['/opsx-apply demo'])
 })
 
+test('approve-press-approves-the-drawn-item', async ($, on) => {
+  // Given: 绘制批准带时只有 demo（指纹 F）待批准，记下它的批准按钮；随后刷新列表，zeta（指纹 G、spec.html 更新）成了最新一项并重绘
+  const ZETA = `${CHANGES}/zeta`
+  const world = demoWorld((_, dir) => (dir === ZETA ? G : F))
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  const demoButton = String((await ui.find({ type: 'Button' }))?.key)
+  world.dirs[CHANGES] = ['demo', 'zeta', 'archive']
+  world.files[`${ZETA}/spec.html`] = '<html></html>'
+  world.files[`${ZETA}/tasks.md`] = '- [ ] 1.1 写代码\n'
+  world.mtimes = { [`${ZETA}/spec.html`]: 2000 }
+  await $.session.start(START)
+
+  // When: 人按下的是当初显示 demo 的那个按钮；之后再按此刻显示 zeta 的按钮
+  const stale = await ui.press({ key: demoButton }).then(
+    () => 'landed',
+    () => 'missed',
+  )
+  const writesAfterStale = writes(log)
+  await ui.press({ key: String((await ui.find({ type: 'Button' }))?.key) })
+
+  // Then: 旧按钮的按压没有落到 zeta 上（未写账本）；按下 zeta 自己的按钮才写入 zeta 与 G
+  expect(stale).toBe('missed')
+  expect(writesAfterStale).toEqual([])
+  expect(JSON.parse(String(log.git.find(c => c.args[0] === 'hash-object')?.stdin))).toMatchObject({ change: 'zeta', fp: G })
+  expect(log.fills).toEqual(['/opsx-apply zeta'])
+})
+
 test('approve-press-refuses-changed-plan', async ($, on) => {
   // Given: 批准带显示指纹 F（第 1 次 plan_fp 输出 F），按下时重算输出 G
   const log = useWorld(on, demoWorld(call => (call === 0 ? F : G)))
@@ -227,7 +258,7 @@ test('approve-press-refuses-changed-plan', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
   // When: 按下「批准起飞」
-  await ui.press({ key: 'approve' })
+  await ui.press({ key: `approve:demo:${F}` })
 
   // Then: 没有任何写账本的 git 命令，输入框未被预填，出现含「计划已变化」的提示
   expect(writes(log)).toEqual([])
@@ -242,7 +273,7 @@ test('ledger-append-retries-on-conflict', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
   // When: 按下「批准起飞」
-  await ui.press({ key: 'approve' })
+  await ui.press({ key: `approve:demo:${F}` })
 
   // Then: update-ref 共 2 次，第 2 次以重读到的链尾 dddd… 为旧值；输入框预填 /opsx-apply demo
   const updates = log.git.filter(c => c.args[0] === 'update-ref')
@@ -258,7 +289,7 @@ test('ledger-append-gives-up-after-three-conflicts', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
   // When: 按下「批准起飞」
-  await ui.press({ key: 'approve' })
+  await ui.press({ key: `approve:demo:${F}` })
 
   // Then: update-ref 恰好 3 次后停止，出现含「账本写入失败」的提示，输入框未被预填
   expect(log.git.filter(c => c.args[0] === 'update-ref')).toHaveLength(3)
@@ -368,7 +399,7 @@ test('version-floor-disables-band', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
   // Then: 没有「批准起飞」按钮、引擎自己的带照常绘制，且出现含 2.1.295 的版本提示
-  expect(await ui.find({ key: 'approve' })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
   expect(await ui.find({ key: 'engine' })).toBeDefined()
   expect(log.toasts.some(t => t.includes('2.1.295'))).toBe(true)
 })

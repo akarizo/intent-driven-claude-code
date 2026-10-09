@@ -16,7 +16,7 @@ Feature: 人在同一处看到「批什么」与「指纹是多少」
 - **AND** `old` 不在列表中
 
 ### Requirement: 按下批准在进程内写账本
-人按下「批准起飞」时，插件 SHALL 先重新计算该 change 的指纹；与批准带上显示的不一致 SHALL 不写账本、提示「计划已变化」并刷新。一致时 SHALL 在插件进程内用 git 底层命令（`hash-object -w --stdin` → `mktree` → `commit-tree` → 带旧值的 `update-ref`）把 `approve` 事件追加到 `refs/flight/<change>/ledger`，事件的 `by` 含 `plugin`、`surface` 与会话 id；所有追加经同一个队列串行执行；`update-ref` 因旧值不符失败时 SHALL 重读链尾后重试，最多 3 次，仍失败则提示错误且不视为批准。写入成功后 SHALL 把 `/opsx-apply <change>` 预填进输入框（不代为提交）。
+批准按钮的地址 SHALL 携带它所显示的 change 与指纹（`approve:<change>:<指纹>`），按下时以该按钮代表的项为准，不取按下时刻的最新一项；列表刷新后旧按钮的按压不得落到新显示的项上。人按下「批准起飞」时，插件 SHALL 先重新计算该 change 的指纹；与批准带上显示的不一致 SHALL 不写账本、提示「计划已变化」并刷新。一致时 SHALL 在插件进程内用 git 底层命令（`hash-object -w --stdin` → `mktree` → `commit-tree` → 带旧值的 `update-ref`）把 `approve` 事件追加到 `refs/flight/<change>/ledger`，事件的 `by` 含 `plugin`、`surface` 与会话 id；所有追加经同一个队列串行执行；`update-ref` 因旧值不符失败时 SHALL 重读链尾后重试，最多 3 次，仍失败则提示错误且不视为批准。写入成功后 SHALL 把 `/opsx-apply <change>` 预填进输入框（不代为提交）。
 Feature: 批准只能来自人的按压，写入由控制面完成
 
 #### Scenario: approve-press-appends-ledger-event
@@ -24,6 +24,7 @@ Feature: 批准只能来自人的按压，写入由控制面完成
 - **WHEN** 人按下「批准起飞」
 - **THEN** 插件按 `hash-object`、`mktree`、`commit-tree`、`update-ref refs/flight/demo/ledger` 的顺序执行 git 命令，写入的事件 `ev` 为 `approve`、`fp` 为 F、`by.plugin` 为 `flight`
 - **AND** 输入框被预填为 `/opsx-apply demo`
+- **AND** 绘制后列表刷新、另一个 change 成为显示项时，按下当初显示 `demo` 的按钮不会批准新显示的项
 
 #### Scenario: approve-press-refuses-changed-plan
 - **GIVEN** 批准带显示 `demo` 与指纹 F，但按下时重算的指纹为 G

@@ -52,6 +52,10 @@ function parseWorktrees(porcelain: string): Tree[] {
     .filter(t => t.path !== '')
 }
 
+// 批准按钮的地址带着绘制时显示的 change 与指纹：按下时以人看到的那一项为准
+const APPROVE_KEY = /^approve:(.+):([0-9a-f]{64})$/
+const approveKey = (item: FlightItem) => `approve:${item.change}:${item.fp}`
+
 /** 批准带显示的那一项：spec.html 最近修改的。 */
 function topItem(items: readonly FlightItem[]): FlightItem | undefined {
   return items.reduce<FlightItem | undefined>((a, x) => (a === undefined || x.mtimeMs > a.mtimeMs ? x : a), undefined)
@@ -215,7 +219,7 @@ export const register: Register = on => {
         <Text dimColor>{top.specPath}</Text>
         {top.problem === '' ? (
           // 引擎要求 Button 带 onPress；真正的处理在下方 ui.press hook（拿得到 e.surface，且不调 next，此闭包不会执行）
-          <Button key="approve" label="批准起飞" variant="primary" onPress={() => undefined} />
+          <Button key={approveKey(top)} label="批准起飞" variant="primary" onPress={() => undefined} />
         ) : (
           <Text color="red">{top.problem}，无法批准</Text>
         )}
@@ -224,24 +228,31 @@ export const register: Register = on => {
     )
   })
 
-  on('ui.press', { plugin: 'flight', element: 'approve' }, async ($, e) => {
+  on('ui.press', { plugin: 'flight', element: /^approve:/ }, async ($, e) => {
+    const shown = APPROVE_KEY.exec(e.element)
     const b = await read($, band)
-    const top = topItem(b.items)
-    if (b.isDisabled || top === undefined || top.problem !== '') return { element: e.element }
-    const now = await fingerprint($, top.hooksDir, top.changeDir, top.worktree)
-    if (now === undefined || now.fp !== top.fp) {
-      $.ui.toast(`flight：${top.change} 的计划已变化，请重新审阅 spec.html 后再批准`)
+    if (shown === null || b.isDisabled) return { element: e.element }
+    const [, change, fp] = shown
+    const item = b.items.find(x => x.change === change)
+    if (item === undefined || item.problem !== '') {
+      $.ui.toast(`flight：${change} 已不在可批准列表，请看批准带当前显示的项`)
       await refresh($)
       return { element: e.element }
     }
-    const isAppended = await serial(() => appendApprove($, top, e.surface))
+    const now = await fingerprint($, item.hooksDir, item.changeDir, item.worktree)
+    if (now === undefined || now.fp !== fp) {
+      $.ui.toast(`flight：${change} 的计划已变化，请重新审阅 spec.html 后再批准`)
+      await refresh($)
+      return { element: e.element }
+    }
+    const isAppended = await serial(() => appendApprove($, { ...item, fp }, e.surface))
     if (!isAppended) {
-      $.ui.toast(`flight：${top.change} 账本写入失败（重试 ${MAX_UPDATE_REF} 次），未批准`)
+      $.ui.toast(`flight：${change} 账本写入失败（重试 ${MAX_UPDATE_REF} 次），未批准`)
       return { element: e.element }
     }
     await refresh($)
-    const filled = await $.prompt.fill({ text: `/opsx-apply ${top.change}` })
-    if (!filled.isFilled) $.ui.toast(`flight：已批准 ${top.change}，请手动输入 /opsx-apply ${top.change}`)
+    const filled = await $.prompt.fill({ text: `/opsx-apply ${change}` })
+    if (!filled.isFilled) $.ui.toast(`flight：已批准 ${change}，请手动输入 /opsx-apply ${change}`)
     return { element: e.element }
   })
 

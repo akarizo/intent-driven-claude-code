@@ -56,6 +56,7 @@ def test_approve_press_appends_ledger_event():
     # When: 人按下「批准起飞」
     # Then: 依次 hash-object → mktree → commit-tree → update-ref refs/flight/demo/ledger，事件 ev=approve、fp=F、by.plugin=flight；输入框预填 /opsx-apply demo
     assert_ts_passed("approve-press-appends-ledger-event")
+    assert_ts_passed("approve-press-approves-the-drawn-item")
 
 
 def test_approve_press_refuses_changed_plan():
