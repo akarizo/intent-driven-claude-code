@@ -7,7 +7,7 @@
     {
       "name": "flight",
       "source": "./template/plugins/flight",
-      "description": "飞行计划批准带：人按下「批准起飞」后由插件进程写入账本 ref；拦截模型对账本 ref 的 Bash 写入。"
+      "description": "飞行计划批准带：人按下「批准起飞」后由插件进程写入账本 ref；拦截模型对账本 / 门禁结论 ref 的写入（Bash / Monitor / 文件写入工具）。"
     }
   ]
 }
