@@ -4,3 +4,6 @@
 2026-10-09T11:17:36Z	gate	S1 ok
 2026-10-09T11:17:36Z	gate	S2 ok
 2026-10-09T11:17:41Z	integrate	wave 1
+2026-10-09T11:19:05Z	review	findings=7 blocking=0 deferred=7
+2026-10-09T11:20:17Z	final	ok
+2026-10-09T11:20:17Z	apply-done	blocked=0 blocking=0
