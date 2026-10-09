@@ -1101,7 +1101,6 @@ def test_mod_adds():
 '''
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现 G7 按实际运行结果判定")
 def test_g7_rejects_aliased_xfail(git_repo):
     # Given: scenario cap#adds 映射的测试用别名装饰器 XF = pytest.mark.xfail(strict=True) 标记，断言尚未满足
     change = gate_repo(git_repo, test_body=ALIASED_XFAIL_TEST)
@@ -1114,7 +1113,6 @@ def test_g7_rejects_aliased_xfail(git_repo):
     assert any(f.startswith("G7") and "cap#adds" in f and "XFAIL" in f for f in out["failed"]), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现 G7 按实际运行结果判定")
 def test_g7_rejects_imperative_skip(git_repo):
     # Given: scenario cap#adds 映射的测试在测试体内调用 pytest.skip()
     change = gate_repo(git_repo, test_body=IMPERATIVE_SKIP_TEST)
@@ -1127,7 +1125,6 @@ def test_g7_rejects_imperative_skip(git_repo):
     assert any(f.startswith("G7") and "cap#adds" in f and "SKIPPED" in f for f in out["failed"]), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现 G7 按实际运行结果判定")
 def test_g7_gate_checks_own_slice_outcome(git_repo):
     # Given: 切片 S1 的 scenario 测试用别名装饰器标成 xfail，断言尚未满足
     change = gate_repo(git_repo, test_body=ALIASED_XFAIL_TEST)

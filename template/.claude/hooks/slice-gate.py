@@ -59,6 +59,7 @@ PY_TEST_DEF = re.compile(r"^(\s*)(?:async\s+)?def\s+(test_\w+)\s*\(")
 JS_TEST_DEF = re.compile(r"^\s*(?:test|it)\s*\(\s*[\'\"`](.+?)[\'\"`]")
 JS_BLOCK_START = re.compile(r"^\s*(?:test|it|describe)\s*\(")
 MARK_RE = re.compile(r"xfail|skip", re.I)
+PYTEST_OUTCOME_RE = re.compile(r"^(?P<id>\S+::\S+?)\s+(?P<out>PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b")
 # G8 天花板标记：行首注释紧跟标记，两段用 -> 或 → 分隔（形如 `限制 -> 升级条件/路径`）
 CEILING_RE = re.compile(r"^\s*(?:#|//|--|\*)+\s*ceiling\s*:\s*(.*)$", re.I)
 CEILING_SPLIT = re.compile(r"->|→")
@@ -538,13 +539,13 @@ def _py_decorators(source, func):
 
 
 def scenario_status(root, data, slice_ids=None):
-    """返回 (violations, total, passed)。passed = 有映射、函数存在、且无 xfail/skip 标记。"""
+    """返回 (violations, total, passed)。passed = 有映射、函数存在、无 xfail/skip 标记，且 .py 目标实跑结果全为 PASSED。"""
     tests = data.get("scenario_tests") or {}
     wanted = []
     for s in data.get("slices") or []:
         if slice_ids is None or s["id"] in slice_ids:
             wanted.extend(s.get("scenarios") or [])
-    violations, passed = [], 0
+    violations, passed, py_targets = [], 0, []
     for sid in wanted:
         target = tests.get(sid)
         if not target or "::" not in target:
@@ -580,7 +581,24 @@ def scenario_status(root, data, slice_ids=None):
         if marked:
             violations.append("G7 scenario: %s → %s 仍标记 xfail/skip" % (sid, target))
             continue
-        passed += 1
+        if rel.endswith(".py"):
+            py_targets.append((sid, target))
+        else:
+            passed += 1
+    if py_targets:
+        # 文本检查认不出别名装饰器 / 测试体内 pytest.skip()：对 .py 目标实跑一次，只认 PASSED
+        r = subprocess.run([sys.executable, "-m", "pytest", "-v", "-p", "no:cacheprovider",
+                            *[t for _, t in py_targets]], cwd=root, capture_output=True, text=True)
+        outcomes = [(m.group("id"), m.group("out")) for m in map(PYTEST_OUTCOME_RE.match, r.stdout.splitlines()) if m]
+        for sid, target in py_targets:
+            outs = [o for i, o in outcomes if i == target or i.startswith(target + "[")]
+            if not outs:
+                violations.append("G7 scenario: %s → %s 未被收集运行" % (sid, target))
+            elif any(o != "PASSED" for o in outs):
+                bad = next(o for o in outs if o != "PASSED")
+                violations.append("G7 scenario: %s → %s 实际结果 %s（未真正通过）" % (sid, target, bad))
+            else:
+                passed += 1
     return violations, len(wanted), passed
 
 
