@@ -19,3 +19,6 @@
 - `mergeFix(io, f, note)`: 合回 fix
 - `validateFindings(input)`: 校验评审发现
 - `closeout(io, f, lists, merged)`: 收口
+
+## S7 template/plugins/flight/hooks/orchestrator.tsx
+- `registerOrchestrator(on: On): void`: 编排接线（接管 /opsx-apply、收口现跑门禁、结束兜底、合回与解冲突、状态行、类型隐藏）
