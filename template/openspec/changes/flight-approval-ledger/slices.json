@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "change": "flight-approval-ledger",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 67.0
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "计划指纹判定器 plan_fp.py + spec.html 显示指纹",
+      "scenarios": [
+        "plan-fingerprint#fp-ignores-execution-records",
+        "plan-fingerprint#fp-changes-on-plan-edit",
+        "plan-fingerprint#fp-ignores-measured-suite-time",
+        "plan-fingerprint#fp-normalizes-line-endings",
+        "plan-fingerprint#fp-cli-short-is-prefix",
+        "plan-fingerprint#spec-html-shows-fingerprint"
+      ],
+      "owns": [
+        "template/.claude/hooks/plan_fp.py",
+        "template/.claude/hooks/spec_html.py",
+        "tests/test_plan_fp.py",
+        "tests/test_spec_html.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_plan_fp.py tests/test_spec_html.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "账本只读读取与结构校验 ledger.py",
+      "scenarios": [
+        "flight-ledger#ledger-shared-across-worktrees",
+        "flight-ledger#ledger-approved-returns-latest-fp",
+        "flight-ledger#ledger-absent-means-unapproved",
+        "flight-ledger#ledger-show-lists-events",
+        "flight-ledger#ledger-rejects-tampered-chain"
+      ],
+      "owns": [
+        "template/.claude/hooks/ledger.py",
+        "tests/test_ledger.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_ledger.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "flight 插件：批准带 · 进程内账本写入 · Bash 守卫 · 版本下限",
+      "scenarios": [
+        "approval-band#band-shows-pending-plan",
+        "approval-band#band-ignores-finished-and-foreign-copies",
+        "approval-band#approve-press-appends-ledger-event",
+        "approval-band#approve-press-refuses-changed-plan",
+        "approval-band#ledger-append-retries-on-conflict",
+        "approval-band#bash-guard-denies-ledger-writes",
+        "approval-band#no-model-callable-approval-path",
+        "approval-band#plugin-manifest-validates",
+        "approval-band#version-floor-disables-band"
+      ],
+      "owns": [
+        "template/plugins/flight/**",
+        "tests/test_flight_plugin.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_plugin.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "takeoff-gate 判据切换为账本指纹（CLI + PreToolUse）",
+      "scenarios": [
+        "ledger-takeoff-gate#takeoff-accepts-matching-approval",
+        "ledger-takeoff-gate#takeoff-rejects-missing-approval",
+        "ledger-takeoff-gate#takeoff-rejects-stale-approval",
+        "ledger-takeoff-gate#takeoff-rejects-invalid-ledger",
+        "ledger-takeoff-gate#takeoff-hook-denies-despite-transcript-approval",
+        "ledger-takeoff-gate#takeoff-hook-allows-approved-dispatch",
+        "ledger-takeoff-gate#takeoff-tasks-tick-keeps-approval"
+      ],
+      "owns": [
+        "template/.claude/hooks/takeoff-gate.py",
+        "tests/test_approval_gate.py"
+      ],
+      "deps": [
+        "S1",
+        "S2"
+      ],
+      "verify": "python3 -m pytest -q tests/test_approval_gate.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "分发：仓库根 marketplace + install.sh 项目级安装插件",
+      "scenarios": [
+        "plugin-distribution#marketplace-lists-flight-plugin",
+        "plugin-distribution#install-registers-plugin-at-project-scope",
+        "plugin-distribution#install-without-claude-prints-manual-steps",
+        "plugin-distribution#install-skips-enabled-plugin"
+      ],
+      "owns": [
+        ".claude-plugin/marketplace.json",
+        "install.sh",
+        "tests/test_install.py"
+      ],
+      "deps": [
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_install.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "铁律 7 与命令 / skill / README / 工作流文档同步",
+      "scenarios": [
+        "approval-docs#iron-rule-7-states-ledger-approval",
+        "approval-docs#propose-handoff-points-to-band",
+        "approval-docs#apply-step0-explains-ledger-gate",
+        "approval-docs#docs-drop-transcript-approval",
+        "approval-docs#readme-links-control-plane-doc"
+      ],
+      "owns": [
+        "CLAUDE.md",
+        "template/CLAUDE.md.snippet",
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "docs/flight-control-plane.html",
+        "tests/test_docs_iron_rules.py",
+        "tests/test_template_docs.py"
+      ],
+      "deps": [
+        "S4",
+        "S5"
+      ],
+      "verify": "python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_template_docs.py",
+      "packet": "slices/S6.md"
+    }
+  ],
+  "scenario_tests": {
+    "plan-fingerprint#fp-ignores-execution-records": "tests/test_plan_fp.py::test_fp_ignores_execution_records",
+    "plan-fingerprint#fp-changes-on-plan-edit": "tests/test_plan_fp.py::test_fp_changes_on_plan_edit",
+    "plan-fingerprint#fp-ignores-measured-suite-time": "tests/test_plan_fp.py::test_fp_ignores_measured_suite_time",
+    "plan-fingerprint#fp-normalizes-line-endings": "tests/test_plan_fp.py::test_fp_normalizes_line_endings",
+    "plan-fingerprint#fp-cli-short-is-prefix": "tests/test_plan_fp.py::test_fp_cli_short_is_prefix",
+    "plan-fingerprint#spec-html-shows-fingerprint": "tests/test_spec_html.py::test_spec_html_shows_fingerprint",
+    "flight-ledger#ledger-shared-across-worktrees": "tests/test_ledger.py::test_ledger_shared_across_worktrees",
+    "flight-ledger#ledger-approved-returns-latest-fp": "tests/test_ledger.py::test_ledger_approved_returns_latest_fp",
+    "flight-ledger#ledger-absent-means-unapproved": "tests/test_ledger.py::test_ledger_absent_means_unapproved",
+    "flight-ledger#ledger-show-lists-events": "tests/test_ledger.py::test_ledger_show_lists_events",
+    "flight-ledger#ledger-rejects-tampered-chain": "tests/test_ledger.py::test_ledger_rejects_tampered_chain",
+    "approval-band#band-shows-pending-plan": "tests/test_flight_plugin.py::test_band_shows_pending_plan",
+    "approval-band#band-ignores-finished-and-foreign-copies": "tests/test_flight_plugin.py::test_band_ignores_finished_and_foreign_copies",
+    "approval-band#approve-press-appends-ledger-event": "tests/test_flight_plugin.py::test_approve_press_appends_ledger_event",
+    "approval-band#approve-press-refuses-changed-plan": "tests/test_flight_plugin.py::test_approve_press_refuses_changed_plan",
+    "approval-band#ledger-append-retries-on-conflict": "tests/test_flight_plugin.py::test_ledger_append_retries_on_conflict",
+    "approval-band#bash-guard-denies-ledger-writes": "tests/test_flight_plugin.py::test_bash_guard_denies_ledger_writes",
+    "approval-band#no-model-callable-approval-path": "tests/test_flight_plugin.py::test_no_model_callable_approval_path",
+    "approval-band#plugin-manifest-validates": "tests/test_flight_plugin.py::test_plugin_manifest_validates",
+    "approval-band#version-floor-disables-band": "tests/test_flight_plugin.py::test_version_floor_disables_band",
+    "ledger-takeoff-gate#takeoff-accepts-matching-approval": "tests/test_approval_gate.py::test_takeoff_accepts_matching_approval",
+    "ledger-takeoff-gate#takeoff-rejects-missing-approval": "tests/test_approval_gate.py::test_takeoff_rejects_missing_approval",
+    "ledger-takeoff-gate#takeoff-rejects-stale-approval": "tests/test_approval_gate.py::test_takeoff_rejects_stale_approval",
+    "ledger-takeoff-gate#takeoff-rejects-invalid-ledger": "tests/test_approval_gate.py::test_takeoff_rejects_invalid_ledger",
+    "ledger-takeoff-gate#takeoff-hook-denies-despite-transcript-approval": "tests/test_approval_gate.py::test_takeoff_hook_denies_despite_transcript_approval",
+    "ledger-takeoff-gate#takeoff-hook-allows-approved-dispatch": "tests/test_approval_gate.py::test_takeoff_hook_allows_approved_dispatch",
+    "ledger-takeoff-gate#takeoff-tasks-tick-keeps-approval": "tests/test_approval_gate.py::test_takeoff_tasks_tick_keeps_approval",
+    "plugin-distribution#marketplace-lists-flight-plugin": "tests/test_install.py::test_marketplace_lists_flight_plugin",
+    "plugin-distribution#install-registers-plugin-at-project-scope": "tests/test_install.py::test_install_registers_plugin_at_project_scope",
+    "plugin-distribution#install-without-claude-prints-manual-steps": "tests/test_install.py::test_install_without_claude_prints_manual_steps",
+    "plugin-distribution#install-skips-enabled-plugin": "tests/test_install.py::test_install_skips_enabled_plugin",
+    "approval-docs#iron-rule-7-states-ledger-approval": "tests/test_docs_iron_rules.py::test_iron_rule_7_states_ledger_approval",
+    "approval-docs#propose-handoff-points-to-band": "tests/test_docs_iron_rules.py::test_propose_handoff_points_to_band",
+    "approval-docs#apply-step0-explains-ledger-gate": "tests/test_docs_iron_rules.py::test_apply_step0_explains_ledger_gate",
+    "approval-docs#docs-drop-transcript-approval": "tests/test_docs_iron_rules.py::test_docs_drop_transcript_approval",
+    "approval-docs#readme-links-control-plane-doc": "tests/test_docs_iron_rules.py::test_readme_links_control_plane_doc"
+  }
+}

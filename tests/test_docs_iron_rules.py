@@ -74,3 +74,81 @@ def test_docs_state_mechanical_resolution():
     assert "禁自述" in docs["CLAUDE.md"] and "禁自述" in docs["template/CLAUDE.md.snippet"]
     assert "takeoff-gate" in docs["CLAUDE.md"] and "takeoff-gate" in docs["install.sh"]
     assert "session-model.py" in docs["install.sh"]
+
+
+# ---------------------------------------------------------------- 起飞批准文档（scenario: approval-docs#*，S6 骨架）
+import pytest  # noqa: E402
+
+DX = pytest.mark.xfail(strict=True, reason="S6 文档未同步到批准带 + 账本指纹")
+
+
+def rule7(text):
+    return next(line for line in text.splitlines() if line.startswith("7. "))
+
+
+def step0(text):
+    start = text.index("0. **批准自检")
+    return text[start:text.index("1. **选 change**", start)]
+
+
+@DX
+def test_iron_rule_7_states_ledger_approval():
+    # Given: 根 CLAUDE.md 与 template/CLAUDE.md.snippet
+    texts = {"CLAUDE.md": rule7(read("CLAUDE.md")), "snippet": read("template/CLAUDE.md.snippet")}
+
+    # When: 读取铁律 7 与对应条目
+    # Then: 都含「批准带」「指纹」与 takeoff-gate，都不含「人类消息证据」
+    for label, t in texts.items():
+        assert "批准带" in t and "指纹" in t and "takeoff-gate" in t, label
+        assert "人类消息证据" not in t, label
+
+
+@DX
+def test_propose_handoff_points_to_band():
+    # Given: opsx-propose.md 与 openspec-propose/SKILL.md
+    cmd = read("template/.claude/commands/opsx-propose.md")
+    skill = read("template/.claude/skills/openspec-propose/SKILL.md")
+
+    # When: 读取收尾交接
+    # Then: 都含绝对路径 / spec.html / 批准带 / 指纹 / /opsx-apply / takeoff-gate，各自声明到此结束，都不含「转录」
+    for t in (cmd, skill):
+        for word in ("绝对路径", "spec.html", "批准带", "指纹", "/opsx-apply", "takeoff-gate"):
+            assert word in t, word
+        assert "转录" not in t
+    assert "本命令到此结束" in cmd and "本 skill 到此结束" in skill
+
+
+@DX
+def test_apply_step0_explains_ledger_gate():
+    # Given: opsx-apply.md 的 step 0 与 openspec-apply-change/SKILL.md
+    cmd = step0(read("template/.claude/commands/opsx-apply.md"))
+    skill = read("template/.claude/skills/openspec-apply-change/SKILL.md")
+
+    # When: 读取起飞自检
+    # Then: 都含 takeoff-gate.py --change-dir、账本、指纹、claude plugin install，都不含「人类消息」
+    for t in (cmd, skill):
+        for word in ("takeoff-gate.py --change-dir", "账本", "指纹", "claude plugin install"):
+            assert word in t, word
+        assert "人类消息" not in t
+
+
+@DX
+def test_docs_drop_transcript_approval():
+    # Given: README.md、docs/WORKFLOW_zh.md、install.sh
+    docs = {rel: read(rel) for rel in ("README.md", "docs/WORKFLOW_zh.md", "install.sh")}
+
+    # When: 检索起飞批准相关文字
+    # Then: 都不含「人类消息证据」；README 与 WORKFLOW 都含「批准带」与 flight@intent-driven
+    for rel, t in docs.items():
+        assert "人类消息证据" not in t, rel
+    for rel in ("README.md", "docs/WORKFLOW_zh.md"):
+        assert "批准带" in docs[rel] and "flight@intent-driven" in docs[rel], rel
+
+
+@DX
+def test_readme_links_control_plane_doc():
+    # Given: 仓库中的 docs/flight-control-plane.html 与 README.md
+    # When: 检查文件存在性与链接
+    # Then: 文件存在，README 链接到它
+    assert (ROOT / "docs" / "flight-control-plane.html").is_file()
+    assert "docs/flight-control-plane.html" in read("README.md")

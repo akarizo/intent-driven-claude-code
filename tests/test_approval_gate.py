@@ -220,3 +220,140 @@ def test_tasks_tick_does_not_expire_approval(tmp_path):
     replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
     assert replan["permissionDecision"] == "deny"
     assert "重新批准" in replan["permissionDecisionReason"]  # deny 必须来自「过期」而不是「没批准」
+
+
+# ---------------------------------------------------------------- 账本判据（scenario: ledger-takeoff-gate#*，S4 骨架）
+# S4 把起飞判据切到账本指纹后：去掉下面的 xfail 标记，并删除 / 改写上方依赖转录与 mtime 的旧用例；
+# test_propose_ends_with_handoff 迁到 tests/test_docs_iron_rules.py（S6 的 propose-handoff-points-to-band）。
+import pytest  # noqa: E402
+
+from conftest import approve_event, ledger_append, make_change  # noqa: E402
+
+LX = pytest.mark.xfail(strict=True, reason="S4 未切换到账本判据")
+NO_SID = {"CLAUDE_CODE_SESSION_ID": ""}  # 防止旧实现借环境变量读到当前会话转录
+
+
+def current_fp(change_dir):
+    p = run_hook("plan_fp", "--change-dir", str(change_dir))
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip()
+
+
+def approved_change(repo):
+    d = make_change(repo)
+    ledger_append(repo, "demo", approve_event("demo", current_fp(d)))
+    return d
+
+
+def bump_owns(change_dir):
+    path = change_dir / "slices.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["slices"][0]["owns"].append("b.py")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def executor_dispatch(repo, transcript_path):
+    return json.dumps({"tool_name": "Agent", "cwd": str(repo), "transcript_path": str(transcript_path),
+                       "tool_input": {"subagent_type": "slice-executor",
+                                      "prompt": "切片包：`openspec/changes/demo/slices/S1.md`"}}, ensure_ascii=False)
+
+
+@LX
+def test_takeoff_accepts_matching_approval(git_repo):
+    # Given: 当前指纹 F 与账本最新批准指纹相等
+    d = approved_change(git_repo)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 0 退出，stdout 含指纹前 8 位与批准时间
+    assert p.returncode == 0, p.stderr
+    assert current_fp(d)[:8] in p.stdout and "2026-10-09T08:00:00Z" in p.stdout
+
+
+@LX
+def test_takeoff_rejects_missing_approval(git_repo):
+    # Given: demo 没有账本
+    d = make_change(git_repo)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含 spec.html 绝对路径、批准带与插件安装命令
+    assert p.returncode == 3
+    assert str(d / "spec.html") in p.stderr and "批准带" in p.stderr and "claude plugin install" in p.stderr
+
+
+@LX
+def test_takeoff_rejects_stale_approval(git_repo):
+    # Given: 账本批准指纹为 F，之后 slices.json 被改，当前指纹为 G
+    d = approved_change(git_repo)
+    old = current_fp(d)
+    bump_owns(d)
+    new = current_fp(d)
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含「重新批准」与 F、G 的前 8 位
+    assert p.returncode == 3
+    assert "重新批准" in p.stderr and old[:8] in p.stderr and new[:8] in p.stderr
+
+
+@LX
+def test_takeoff_rejects_invalid_ledger(git_repo):
+    # Given: 账本某个提交的 event.json 不是 JSON
+    d = make_change(git_repo)
+    ledger_append(git_repo, "demo", files={"event.json": "{not json"})
+
+    # When: 运行 CLI
+    p = run_hook("takeoff-gate", "--change-dir", str(d), env=NO_SID)
+
+    # Then: 以 3 退出，stderr 含「账本损坏」
+    assert p.returncode == 3
+    assert "账本损坏" in p.stderr
+
+
+@LX
+def test_takeoff_hook_denies_despite_transcript_approval(git_repo, tmp_path):
+    # Given: 转录里人类发出过 /opsx-apply demo（时刻晚于一切），但 demo 没有账本
+    make_change(git_repo)
+    t = transcript(tmp_path / "t.jsonl", [human(APPLY_CMD, "2099-01-01T00:00:00Z")])
+
+    # When: 以该转录构造派发 slice-executor 的载荷运行 hook
+    p = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, t), env=NO_SID)
+
+    # Then: 输出 deny
+    out = json.loads(p.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+
+
+@LX
+def test_takeoff_hook_allows_approved_dispatch(git_repo, tmp_path):
+    # Given: 账本批准指纹等于当前指纹；转录里没有任何人类批准
+    approved_change(git_repo)
+    empty = transcript(tmp_path / "e.jsonl", [])
+
+    # When: 以派发 slice-executor 的载荷运行 hook
+    p = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+
+    # Then: 以 0 退出且 stdout 为空
+    assert p.returncode == 0 and p.stdout.strip() == "", p.stdout
+
+
+@LX
+def test_takeoff_tasks_tick_keeps_approval(git_repo, tmp_path):
+    # Given: 账本批准指纹等于当前指纹
+    d = approved_change(git_repo)
+    empty = transcript(tmp_path / "e.jsonl", [])
+
+    # When: 先勾选 tasks.md 后派发一次，再改 slices.json 后派发一次
+    (d / "tasks.md").write_text("- [x] S1 t\n", encoding="utf-8")
+    after_tick = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+    bump_owns(d)
+    after_replan = run_hook("takeoff-gate", stdin=executor_dispatch(git_repo, empty), env=NO_SID)
+
+    # Then: 第一次放行；第二次 deny 且理由含「重新批准」
+    assert after_tick.returncode == 0 and after_tick.stdout.strip() == "", after_tick.stdout
+    replan = json.loads(after_replan.stdout)["hookSpecificOutput"]
+    assert replan["permissionDecision"] == "deny" and "重新批准" in replan["permissionDecisionReason"]
