@@ -16,15 +16,7 @@
    "reason": "已恢复：第一段因依赖 S5 跳过；第二段（wf_d306cb37-70a）实现，门禁 ok（c34f61a）"
   }
  ],
- "blocking": [
-  {
-   "severity": "HIGH",
-   "file": "template/.claude/hooks/ledger.py",
-   "line": 60,
-   "summary": "`rev-parse -q --verify` 只要返回码非 0 就当成「无引用」返回 []。但 git -C 指向不存在的目录或不在任何仓库内时，返回码是 128，结果同样被当成无账本：verify 以 0 退出（等于判为合法），approved 打印空并以 0 退出。这违反切片契约「其他异常 → exit 5」和坑点「必须在某个 git 仓库内」，也和 main() 里注释「目录不在仓库内等 → exit 5」自相矛盾。已定向抽查：对仓库外的目录跑 verify，exit=0。--change-dir 配错时会被静默当成「未批准 / 账本合法」，调用方无法区分配置错误和真实状态。",
-   "fix": "区分返回码：rev-parse -q --verify 找不到引用时返回 1，此时才返回 []；其他非 0 返回码（如 128）抛 RuntimeError，带上 stderr，由 main 转成 exit 5。也可以先跑 `git -C DIR rev-parse --git-dir`（check=True）确认在仓库内。另补一条测试：--change-dir 在仓库外时 exit 5。"
-  }
- ],
+ "blocking": [],
  "deferred": [
   {
    "severity": "MEDIUM",

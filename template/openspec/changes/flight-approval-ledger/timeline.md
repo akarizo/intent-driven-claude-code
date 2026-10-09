@@ -24,3 +24,7 @@
 2026-10-09T05:26:55Z	apply-done	blocked=0 blocking=0
 2026-10-09T05:28:36Z	apply-done	补合 S3 + 第二段 S5/S6 后收口
 2026-10-09T05:29:22Z	ship	draft: 1 条 CRITICAL/HIGH 评审未闭环
+2026-10-09T05:31:15Z	ship	draft: 1 条 CRITICAL/HIGH 评审未闭环
+2026-10-09T05:31:25Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/35
+2026-10-09T05:36:59Z	ship	ready
+2026-10-09T05:37:05Z	pr-ready	https://github.com/akarizo/intent-driven-claude-code/pull/35
