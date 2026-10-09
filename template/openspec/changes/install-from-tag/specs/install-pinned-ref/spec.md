@@ -25,7 +25,7 @@ Feature: 历史版本只以 tag 存在，也要能用 pipe 模式装上
 - **AND** 目标目录没有被创建
 
 ### Requirement: pipe 模式交给该版本自带的 install.sh
-解压后 pipe 模式 SHALL 以 `bash <解压目录>/install.sh [--upgrade] <TARGET>` 运行归档自带的 install.sh，stdin 接 `/dev/null`，自身 SHALL NOT 复制模板。整体退出码 SHALL 等于被交接脚本的退出码，临时目录 SHALL 在退出时删除。被交接的脚本旁边有 `template/`，SHALL 按本地模式运行，不再下载。
+解压后 pipe 模式 SHALL 以 `bash <解压目录>/install.sh [--upgrade] <TARGET>` 运行归档自带的 install.sh，stdin 接 `/dev/null`，自身 SHALL NOT 复制模板。整体退出码 SHALL 等于被交接脚本的退出码，临时目录 SHALL 在退出时删除。被交接的脚本旁边有 `template/`，SHALL 按本地模式运行，不再下载。归档里缺 `install.sh` 或缺 `template/` 时 SHALL 以 4 退出，SHALL NOT 交接。
 Feature: 安装器与模板永远来自同一个版本
 
 #### Scenario: pipe-delegates-args-to-archived-installer
@@ -40,6 +40,12 @@ Feature: 安装器与模板永远来自同一个版本
 - **WHEN** 以 `IDT_BRANCH=stable-v9.9` 用管道运行 install.sh
 - **THEN** 以 3 退出
 - **AND** `TMPDIR` 目录仍为空
+
+#### Scenario: pipe-archive-without-template-exits-4
+- **GIVEN** 源里有 tag `stable-v9.9` 的归档，里面只有记录调用的桩 install.sh，没有 `template/`
+- **WHEN** 以 `IDT_BRANCH=stable-v9.9` 用管道运行 install.sh
+- **THEN** 以 4 退出，`[err]` 行指出归档里没有 `template/`
+- **AND** 桩没有被执行，目标目录没有被创建
 
 #### Scenario: pipe-real-installer-runs-local-mode
 - **GIVEN** 源里分支 `main` 的归档由本仓库当前的 install.sh 与 `template/` 打成

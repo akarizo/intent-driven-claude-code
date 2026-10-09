@@ -17,6 +17,7 @@
         "install-pinned-ref#pipe-missing-ref-lists-both-urls",
         "install-pinned-ref#pipe-delegates-args-to-archived-installer",
         "install-pinned-ref#pipe-propagates-exit-and-cleans-temp",
+        "install-pinned-ref#pipe-archive-without-template-exits-4",
         "install-pinned-ref#pipe-real-installer-runs-local-mode",
         "install-pinned-ref#readme-documents-pinned-install"
       ],
@@ -36,6 +37,7 @@
     "install-pinned-ref#pipe-missing-ref-lists-both-urls": "tests/test_install.py::test_pipe_missing_ref_lists_both_urls",
     "install-pinned-ref#pipe-delegates-args-to-archived-installer": "tests/test_install.py::test_pipe_delegates_args_to_archived_installer",
     "install-pinned-ref#pipe-propagates-exit-and-cleans-temp": "tests/test_install.py::test_pipe_propagates_exit_and_cleans_temp",
+    "install-pinned-ref#pipe-archive-without-template-exits-4": "tests/test_install.py::test_pipe_archive_without_template_exits_4",
     "install-pinned-ref#pipe-real-installer-runs-local-mode": "tests/test_install.py::test_pipe_real_installer_runs_local_mode",
     "install-pinned-ref#readme-documents-pinned-install": "tests/test_install.py::test_readme_documents_pinned_install"
   }

@@ -69,7 +69,7 @@ curl …/main/install.sh | IDT_BRANCH=stable-v2.0 bash -s -- ~/proj
   - **stdin 接 `/dev/null`**：`curl | bash` 时，父 bash 正从 stdin 逐字节读脚本，子进程如果继承 stdin，可能吞掉剩余的脚本内容。
   - **不用数组透传原始参数**：bash 3.2 在 `set -u` 下展开空数组会报错。改用已解析出的 `UPGRADE` / `TARGET`，分两种调用写。
   - **TARGET 原样传**（缺省 `$PWD`）：子进程继承工作目录，相对路径同样成立；目标目录的创建和归一化交给被交接的脚本。
-- 归档里没有 `install.sh` → `[err]` 并以 4 退出（防御伪造或不完整的源）。
+- 归档里没有 `install.sh` 或没有 `template/` → `[err]` 并以 4 退出，不交接（防御伪造或不完整的源）。缺 `template/` 时若照常交接，子进程判不出本地模式，会按同一个 `IDT_BRANCH` 再次下载并交接，无界递归（PR #38 评审 MEDIUM，R0）。
 
 ### D5 · `install.sh [-u|--upgrade] [TARGET]` 成为跨版本契约
 

@@ -365,6 +365,23 @@ def test_pipe_propagates_exit_and_cleans_temp(tmp_path):
     assert list(tmpdir.iterdir()) == []
 
 
+def test_pipe_archive_without_template_exits_4(tmp_path):
+    # Given: 源里有 tag stable-v9.9 的归档，里面只有记录调用的桩 install.sh，没有 template/
+    #   （用桩而非真实 install.sh：修复前真实脚本会无界递归下载，测试不能触发它）
+    source = make_source(tmp_path, "stable-v9.9", "tags", {"install.sh": STUB_INSTALLER})
+    target = tmp_path / "proj"
+
+    # When: 以 IDT_BRANCH=stable-v9.9 用管道运行 install.sh
+    p = run_pipe(tmp_path, source, str(target), ref="stable-v9.9")
+
+    # Then: 以 4 退出，[err] 行指出归档里没有 template/；桩没有被执行，目标目录没有被创建
+    err = [line for line in p.stderr.splitlines() if line.startswith("[err]")]
+    assert p.returncode == 4, p.stdout + p.stderr
+    assert any("template/" in line for line in err), p.stderr
+    assert stub_log(tmp_path) == {}, stub_log(tmp_path)
+    assert not target.exists()
+
+
 def test_pipe_real_installer_runs_local_mode(tmp_path):
     # Given: 源里分支 main 的归档由本仓库当前的 install.sh 与 template/ 打成；PATH 上有 openspec 桩，没有 claude
     source = make_source(tmp_path, "main", "heads", {"install.sh": INSTALLER, "template": ROOT / "template"})

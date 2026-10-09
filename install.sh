@@ -163,6 +163,8 @@ if [[ -z "$TEMPLATE_SRC" ]]; then
   tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components=1 \
     || { log_err "解压失败：$got"; exit 4; }
   [[ -f "$TMP/src/install.sh" ]] || { log_err "归档里没有 install.sh：$got"; exit 4; }
+  # 缺 template/ 时子进程判不出本地模式，会按同一 ref 再下载、再交接，无界递归
+  [[ -d "$TMP/src/template" ]] || { log_err "归档里没有 template/：$got"; exit 4; }
 
   # 交给归档自带的 install.sh（本地模式）执行：参数与退出码透传；
   # 不用 exec（保留 EXIT trap 清理 $TMP），</dev/null 防止子进程吞掉 curl | bash 的剩余脚本
