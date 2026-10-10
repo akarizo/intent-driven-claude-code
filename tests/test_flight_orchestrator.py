@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -97,3 +99,34 @@ def test_takeoff_refuses_bad_fingerprint():
     # Then: 回复含「计算计划指纹失败」；账本没有事件、没有派发、没有记 approve
     assert_ts_passed("takeoff-refuses-bad-fingerprint")
     assert_ts_passed("takeoff-refuses-bad-fingerprint/not-hex")
+
+# ---------------------------------------------------------------- flight-hardening
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
+
+
+def test_drive_reports_fp_failure_distinctly():
+    # Given: 已起飞，之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」
+    # When: 处理 S1 执行体的结束
+    # Then: 账本末条 halt 的原因含「计算计划指纹失败」与「plan_fp 超时」、不含「计划指纹已变」；$.ui.log 收到含「停飞 · demo」的文本
+    assert_ts_passed("drive-reports-fp-failure-distinctly")
+
+
+def test_executor_dispatch_commits_records_first():
+    # Given: 已起飞，waves [[S1, S2], [S3]]，S1、S2 已合回，change 目录 slices/_interfaces.md 有未提交改动
+    # When: drive 派发 S3 的执行体
+    # Then: 「chore(flight): 记录」的 git commit 排在 S3 切片 worktree 的 git worktree add 之前
+    assert_ts_passed("executor-dispatch-commits-records-first")
+
+
+def test_takeoff_waits_for_live_agents_after_halt():
+    # Given: demo 的 attempt 1 已 halt，它派出的 agent-1 在 agent.list 里仍为 running
+    # When: 人再次发出 /opsx-apply demo
+    # Then: 回复含「仍在运行」，账本没有新的 takeoff
+    assert_ts_passed("takeoff-waits-for-live-agents-after-halt")
+
+
+def test_merge_survives_missing_interfaces_summary():
+    # Given: 已起飞，测试世界的 fs.read 对不存在的文件抛 ENOENT，change 目录还没有 slices/_interfaces.md
+    # When: S1 执行体以绿门禁结束
+    # Then: 账本有 S1 的 merge 且 ok、没有 halt；_interfaces.md 被写出且含「## S1」
+    assert_ts_passed("merge-survives-missing-interfaces-summary")

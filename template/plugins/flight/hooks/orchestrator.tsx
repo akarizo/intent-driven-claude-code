@@ -4,7 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
 import { agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, readLedger, trees } from './io'
-import { finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
+import { commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt } from './prompts'
 
@@ -45,6 +45,8 @@ function ioHere($: Engine): Io {
       return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
     },
     async read(path) {
+      // $.fs.read 对不存在的文件抛 ENOENT；Io.read 的契约是「不存在 → undefined」，其他错误照常抛出
+      if (!(await $.fs.exists(path))) return undefined
       const text = await $.fs.read(path)
       return typeof text === 'string' ? text : undefined
     },
@@ -70,6 +72,7 @@ function ctxOf($: Engine): Ctx {
       await $.ui.toast(text)
     },
     runCommand: (command, args) => $.command.run({ command, args }).then(() => undefined),
+    log: async text => { try { await $.ui.log(text) } catch { /* 打印失败不影响飞行 */ } },
   }
 }
 
@@ -142,6 +145,9 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
   const owns = (slice: string) => slices[slice]?.owns ?? []
 
   if (a.kind === 'dispatch' && a.role === 'executor') {
+    // 先提交飞行记录：切片 worktree 从分支尖端切出，未提交的记录（如刚刷新的接口摘要）会在合回时冲突
+    const err = await commitRecords(io, f, 'chore(flight): 记录')
+    if (err) return blocked(a.slice, `提交飞行记录失败：${err}`)
     const wt = await ensureWorktree(io, f, a.slice)
     if ('error' in wt) return blocked(a.slice, `建切片 worktree 失败：${firstLine(wt.error)}`)
     // 续接（worktree 已存在）不带 --expect-branch：change 分支可能已前移
@@ -209,7 +215,14 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     showStatus($, f, state)
     const slices = await slicesOf(io, f)
     const deps = Object.fromEntries(Object.entries(slices).map(([id, s]) => [id, s.deps]))
-    const fpNow = (await judge(io, f, 'plan_fp', ['--change-dir', absChangeDir(f)], f.changeTree)).stdout.trim()
+    const fpRun = await judge(io, f, 'plan_fp', ['--change-dir', absChangeDir(f)], f.changeTree)
+    const fpNow = fpRun.stdout.trim()
+    if (fpRun.exitCode !== 0 || !/^[0-9a-f]{64}$/.test(fpNow)) {
+      // 算不出指纹 ≠ 计划已变：如实停飞，不交给 nextActions 去比对
+      const why = firstLine(fpRun.stderr) || firstLine(fpRun.stdout) || '无输出'
+      await runLandingAction(ctx, f, { kind: 'halt', reason: `计算计划指纹失败：${why}` })
+      return
+    }
     const actions = nextActions(state, { waves: state.takeoff.waves as string[][], deps }, fpNow)
     if (!actions.length) return
     for (const a of actions) {
@@ -303,10 +316,11 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   if ('error' in ledger) return `flight：账本读取失败：${firstLine(ledger.error)}`
   const state = reduce(ledger.events)
   const ofA = (e: FlightEvent) => Number(e.attempt) === state.attempt
-  if (state.takeoff !== undefined && !ledger.events.some(e => (e.ev === 'land' || e.ev === 'halt') && ofA(e))) {
+  // 已 land / halt 的飞行也查：停飞不会收回已派出的 agent，它们还在写切片 worktree
+  if (state.takeoff !== undefined) {
     const mine = new Set(ledger.events.filter(e => e.ev === 'dispatch' && ofA(e)).map(e => String(e.agent)))
     const live = (await $.agent.list()).some(x => mine.has(x.id) && LIVE.includes(String(x.status)))
-    if (live) return `flight：${name} 正在飞（attempt ${state.attempt}），不重复起飞`
+    if (live) return `flight：${name} 上一次飞行派出的 agent 仍在运行（attempt ${state.attempt}），等它们结束再起飞`
   }
 
   // 先算计划指纹再记任何东西：空 fp 写进 takeoff 事件会让整条账本判损坏（PR #39 评审 HIGH）

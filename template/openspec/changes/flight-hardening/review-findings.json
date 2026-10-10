@@ -1,0 +1,41 @@
+{
+  "blocked": [
+    {
+      "slice": "S1",
+      "kind": "gate",
+      "reason": "G3 pairing: 改了源码 .openspec-slice 但区间内没有测试文件改动"
+    }
+  ],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 150,
+      "summary": "flightRecord 内的 judge（timeline report）没有兜底：Ctx.log 的 try/catch 只包住了 $.ui.log，没包住 flightRecord 本身。若 io.run / $.process.run 遇到超时或启动失败时直接抛错（是否会抛需进一步确认），land 分支会在 land 事件已写入之后、ctx.runCommand('pr-ship') 之前抛出；orchestrator 的 catch 随后再追加一条 halt，结果是 /pr-ship 不运行，账本里出现 land 之后又跟 halt 的矛盾序列。这违反切片约束「打日志永远不能拖垮飞行」。",
+      "fix": "在 flightRecord 里用 try/catch 包住 judge 调用：异常时 body 写成 `（timeline report 失败：<异常首行>）`，与非 0 退出走同一条路径。这样 land 分支的 ctx.log 不可能抛错，ctx.runCommand('pr-ship') 一定会执行。另外补一个测试：假 io 在 timeline report 时抛错，断言 log.seq 仍为 ['log','command']。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/landing.test.tsx",
+      "line": 216,
+      "summary": "路由对账只测了「一致」分支；「N 条不符」加逐条 summary 的拼接分支（landing.tsx:61）没有测试覆盖。",
+      "fix": "补一个测试：让某个 ended 事件的 model 与起飞主模型不符，断言 log 含「路由对账：1 条不符」和对应的「路由不符：…」summary。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 59,
+      "summary": "timeline report 非 0 退出且 stderr 为空时，输出「（timeline report 失败：）」，既没有原因也没有退出码，不便排查。",
+      "fix": "stderr 首行为空时回退显示 `exit ${r.exitCode}`，例如 `（timeline report 失败：exit 2）`。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 218,
+      "summary": "driveNow 在调 nextActions 之前就先算 plan_fp，并在指纹不合格时停飞。原先 core.next 会先判断本 attempt 是否已有 land/halt，有就返回 []；现在这层终态短路被绕过了。已停飞或已落地的飞行，只要还有残留 agent 结束（turn.complete 触发 drive），而且 plan_fp 失败，就会往账本再追加一条 halt，同时重复弹 toast、重复打印飞行记录。典型情形有两种：第一，上一次正是因为 plan_fp 失败才停飞，之后每个仍在运行的执行体结束时都会再记一条 halt。第二，已经 land 的飞行 change 目录被移走后，会在 land 后面再记一条 halt，飞行记录和度量随之被污染。另外，每次终态 drive 都会白跑一遍 plan_fp。",
+      "fix": "在 driveNow 中 `if (state.takeoff === undefined) return` 之后、调 judge('plan_fp') 之前加终态短路：`if (state.events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === state.attempt)) return`。再补一条测试：账本预置 takeoff、dispatch、halt，让 plan_fp 返回非 0，触发残留 agent 的 turn.complete，断言账本里 halt 只有 1 条。"
+    }
+  ],
+  "fix": null
+}

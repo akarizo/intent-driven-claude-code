@@ -57,3 +57,13 @@ def test_io_refuses_invalid_event():
     # Then: 都返回 false，没有任何 git 调用
     assert_ts_passed("io-refuses-invalid-event")
     assert_ts_passed("io-refuses-invalid-event/dispatch-without-agent")
+
+# ---------------------------------------------------------------- flight-hardening
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+def test_io_refuses_prototype_ev():
+    # Given: 两条事件的 ev 分别为 toString 与 constructor，其余公共字段合法
+    # When: 分别追加
+    # Then: 都返回 false，没有任何 git 调用
+    assert_ts_passed("io-refuses-prototype-ev")

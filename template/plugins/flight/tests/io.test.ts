@@ -275,3 +275,17 @@ test('io-cas-rereads-tip', async () => {
   expect(calls.filter(c => c[1] === 'commit-tree')[1]?.join(' ')).toContain(`-p ${T2}`)
   expect(calls.filter(c => c[1] === 'update-ref').map(c => c[4])).toEqual([T1, T2])
 })
+
+test('io-refuses-prototype-ev', async () => {
+  // Given: 两条事件的 ev 分别为 toString 与 constructor（Object 原型上的键），其余公共字段合法
+  const { io, calls } = world({ files: [] })
+  const common = { v: 1, change: 'demo', at: '2026-10-10T00:00:00Z', by: { plugin: 'flight', session: 'sess' } }
+  const events = ['toString', 'constructor'].map(ev => ({ ...common, ev }) as FlightEvent)
+
+  // When: 分别追加
+  const results = await Promise.all(events.map(e => appendEvent(io, flight(HOOKS), e)))
+
+  // Then: 都返回 false，没有任何 git 调用
+  expect(results).toEqual([false, false])
+  expect(calls).toEqual([])
+})
