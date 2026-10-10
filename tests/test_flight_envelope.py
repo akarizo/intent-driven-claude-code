@@ -1,13 +1,11 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
-# 骨架：S3 实现后去掉 xfail 标记。
+# S3 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_executor_write_limited_to_owns():
     # Given: 执行体 worktree 为 W，本片 owns 为 src/a.py 与 tests/**
     # When: 判定写 W/src/b.py、W/tests/x/test_y.py、W/src/a.py、/tmp/z.py
@@ -15,7 +13,6 @@ def test_executor_write_limited_to_owns():
     assert_ts_passed("executor-write-limited-to-owns")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_reviewer_cannot_write():
     # Given: 评审员
     # When: 判定它 Edit 任一文件
@@ -23,7 +20,6 @@ def test_reviewer_cannot_write():
     assert_ts_passed("reviewer-cannot-write")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_bash_dangerous_git_denied():
     # Given: 执行体
     # When: 判定 git push / git -C /w reset --hard / git stash / git worktree add / git update-ref refs/flight/... / git commit --amend / git branch -D
@@ -31,7 +27,6 @@ def test_bash_dangerous_git_denied():
     assert_ts_passed("bash-dangerous-git-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_bash_upgrade_only_allowlisted():
     # Given: 门禁 test 为 python3 -m pytest -q tests，某片 verify 为 python3 -m pytest -q tests/test_a.py
     # When: 判定执行体的 Bash 能否免询问
@@ -39,7 +34,6 @@ def test_bash_upgrade_only_allowlisted():
     assert_ts_passed("bash-upgrade-only-allowlisted")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_main_session_write_in_active_tree_denied():
     # Given: 在飞树为 T 与切片前缀 M/.claude/worktrees/flight-demo-
     # When: 判定主会话的若干 Write 与 Bash
@@ -47,7 +41,6 @@ def test_main_session_write_in_active_tree_denied():
     assert_ts_passed("main-session-write-in-active-tree-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_spawn_guard_decisions():
     # Given: 守卫的纯判定函数
     # When: 判定四种派发
