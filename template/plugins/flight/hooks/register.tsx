@@ -170,6 +170,26 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
   return run
 }
 
+/** 最近一次 takeoff 之后最后一条 approve 的指纹即 fp → true；读失败按「不去重」返回 false。 */
+async function isAlreadyApproved($: Engine, item: FlightItem): Promise<boolean> {
+  try {
+    const r = await $.process.run(['python3', `${item.hooksDir}/ledger.py`, 'show', '--change-dir', item.changeDir], {
+      cwd: item.worktree,
+    })
+    if (r.exitCode !== 0) return false
+    let last = ''
+    for (const line of r.stdout.split('\n')) {
+      if (line.trim() === '') continue
+      const ev = JSON.parse(line) as { ev?: string; fp?: string }
+      if (ev.ev === 'takeoff') last = ''
+      else if (ev.ev === 'approve') last = String(ev.fp)
+    }
+    return last === item.fp
+  } catch {
+    return false
+  }
+}
+
 /** 追加一条 approve 事件到 refs/flight/<change>/ledger；成功返回 true。 */
 async function appendApprove($: Engine, item: FlightItem, surface: string): Promise<boolean> {
   const git = (args: string[], stdin?: string) =>
@@ -272,8 +292,16 @@ export const register: Register = on => {
       await refresh($)
       return { element: e.element }
     }
-    const isAppended = await serial(() => appendApprove($, { ...item, fp }, e.surface))
-    if (!isAppended) {
+    // 去重判定与追加在同一串行段：连按时后一次能读到前一次刚写入的 approve
+    const outcome = await serial(async () =>
+      (await isAlreadyApproved($, { ...item, fp })) ? 'duplicate' : (await appendApprove($, { ...item, fp }, e.surface)) ? 'appended' : 'failed',
+    )
+    if (outcome === 'duplicate') {
+      $.ui.toast(`flight：${change} 已批准（指纹相同），无需重复按`)
+      await refresh($)
+      return { element: e.element }
+    }
+    if (outcome === 'failed') {
       $.ui.toast(`flight：${change} 账本写入失败（重试 ${MAX_UPDATE_REF} 次），未批准`)
       return { element: e.element }
     }
