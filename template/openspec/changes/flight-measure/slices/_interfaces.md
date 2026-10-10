@@ -35,3 +35,14 @@ export function agentType(role: Role): string {
 export const flights: Map<string, Flight> = new Map()
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
 ```
+
+## S8
+
+### template/plugins/flight/hooks/prompts.ts
+```
+export function worktreeNote(worktree: string): string {
+export function executorPrompt(x: {
+export function reviewerPrompt(x: { change: string; changeDir: string; slice: string; commit: string }): string {
+export function resolverPrompt(x: { change: string; changeDir: string; slice: string; conflicts: string[] }): string {
+export function fixerPrompt(x: { change: string; changeDir: string; findings: Finding[] }): string {
+```
