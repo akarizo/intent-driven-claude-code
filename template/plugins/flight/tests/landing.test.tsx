@@ -33,7 +33,7 @@ function gateJson(x: Partial<GateJson>): string {
 
 type Call = { argv: string[]; cwd?: string }
 type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[]; writes: string[]; logs: string[]; seq: string[] }
-type World = { ledger: FlightEvent[]; finalOut?: string; fixFinalOut?: string; ledgerFails?: boolean; timelineReport?: string; dirty?: string }
+type World = { ledger: FlightEvent[]; finalOut?: string; fixFinalOut?: string; ledgerFails?: boolean; timelineReport?: string; timelineFails?: string; dirty?: string }
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: '' })
 const has = (c: Call, ...parts: string[]) => parts.every(p => c.argv.some(a => a === p || a.endsWith(`/${p}`)))
@@ -48,6 +48,7 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'final')
     return ok(cwd === FIX_TREE ? (w.fixFinalOut ?? gateJson({})) : (w.finalOut ?? gateJson({})))
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok('ready\n')
+  if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineFails !== undefined) return { exitCode: 1, stdout: '', stderr: w.timelineFails }
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py')) return ok(args[1] === 'report' ? (w.timelineReport ?? '') : '')
   if (cmd !== 'git') throw new Error(`unexpected argv: ${argv.join(' ')}`)
   const op = args[0] === '-C' ? args[2] : args[0]
@@ -254,4 +255,17 @@ test('fixer-dispatch-commits-records-first', async () => {
   const addAt = log.calls.findIndex(c => c.argv[0] === 'git' && has(c, 'worktree', 'add'))
   expect(commitAt).toBeGreaterThan(-1)
   expect(commitAt).toBeLessThan(addAt)
+})
+
+test('halt-prints-flight-record-when-report-fails', async () => {
+  // Given: S1 已合回且评审结果为空列表；timeline report 以 exit 1 退出，stderr 为「boom: no timeline\nsecond」
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], timelineFails: 'boom: no timeline\nsecond' })
+
+  // When: drive 交来停飞动作，原因「final 红：G2 lint」
+  await runLandingAction(ctx, FLIGHT, { kind: 'halt', reason: 'final 红：G2 lint' })
+
+  // Then: Ctx.log 仍收到一段文本，含「（timeline report 失败：boom: no timeline）」且不含 stderr 第二行「second」
+  expect(log.logs).toHaveLength(1)
+  expect(log.logs[0]).toContain('（timeline report 失败：boom: no timeline）')
+  expect(log.logs[0]).not.toContain('second')
 })
