@@ -5,5 +5,5 @@
 
 ## 切片
 
-- [ ] S1 插件起飞：授权提交时只提交本 change 的工件；插件补丁版本 +1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py`）
-- [ ] S2 文档：apply 写明「授权提交」，propose 交接写明可直接带「授权提交」起飞 （deps: - · verify: `python3 -m pytest -q tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）
+- [x] S1 插件起飞：授权提交时只提交本 change 的工件；插件补丁版本 +1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py`）
+- [x] S2 文档：apply 写明「授权提交」，propose 交接写明可直接带「授权提交」起飞 （deps: - · verify: `python3 -m pytest -q tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）
