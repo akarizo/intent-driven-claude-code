@@ -1,0 +1,88 @@
+{
+  "blocked": [],
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 160,
+      "summary": "取 diff 失败：`git diff 46d418a^1 46d418a` 为空。合并提交 46d418a 的第一父 cab176c 已经含有 466cf98（与第二父 b29d6d2 改动逐字相同的 S2 提交，直接落在集成主线上），所以这次合并对第一父没有任何变更，按第一父 diff 无法证明 S2 是经由切片合回进来的。旁证：手动比对 fde1368..b29d6d2 的内容（landing.tsx 的 try/catch 兜底、landing.test.tsx 的 4 个用例、test_flight_landing.py 去 xfail 并改注释），实现本身覆盖了 S2 的 3 条 scenario 与补漏用例，未见逻辑问题。",
+      "fix": "查清 466cf98 为什么会直接提交在集成分支上（疑似执行体在主 worktree 而不是切片 worktree 里提交，或者编排重复 cherry-pick）。处理办法二选一：(1) 在集成分支上把 466cf98 回退或重写掉，让 S2 只通过合并 b29d6d2 进来，然后重新合回并重新评审；(2) 如果接受现状，就把 466cf98 当作 S2 的实际合回点，对 `git diff fde1368 466cf98` 重新派发评审，并在 timeline 里记下这次偏差。另外在编排或 slice-gate 加一条检查：集成主线上不得出现切片 owns 范围内的非合并提交。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/openspec/changes/flight-envelope/slices/S5.md",
+      "line": 1,
+      "summary": "取 diff 失败：`git diff 3c5fd02^1 3c5fd02` 为空。原因是 S5 的同一补丁（patch-id 39fa58d7 相同）在合回前已作为 ed0fc42 直接提交到 change 分支（父为 46d418a integrate: S2，比切片分支上的 c8a5205 早 36 秒），integrate: S5 合并因此没有引入任何变更。这说明 S5 执行体（或别的进程）绕过切片 worktree，直接在 change worktree 上写入并提交，正好是本 change 要禁止的越界路径；也让合回 commit 无法作为这个切片的评审范围。补充：按切片分支 c8a5205^..c8a5205 旁路审阅，内容与 S5 包的 scenario、owns 和 design D5–D9 一致，没有发现内容问题。",
+      "fix": "1) 查清 ed0fc42 的来源（哪个 agent 或会话、在哪个 worktree 里提交），确认 change worktree 上没有别的越界写入（对照 46d418a..0247ab7 的改动和 owns）。2) 修复编排：执行体只能在自己的切片 worktree 里提交，合回只能经由 integrate 合并；在 slice-gate 或合回步骤加一道机械检查：合回 commit 对第一父的 diff 为空，或者第一父链上已有与切片 tip patch-id 相同的提交时，判红并停飞，不得当成正常合回。3) 本切片的评审证据改以 c8a5205（切片 tip）为准重新登记，或者由人确认后在 timeline 里补记这次异常。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/openspec/changes/flight-envelope/slices/S4.md",
+      "line": 1,
+      "summary": "取 diff 失败：合并提交 43ef676 对第一父 21e6e6d 的 diff 为空（0 行），按铁律不得当作「无变更」。原因：S4 的实现早已以普通提交 69945f3（父 3c5fd02，非合并）直接落在第一父链上，后来的 integrate: S4 合并（第二父 f0b0fa7）对第一父没有带进任何改动，所以本次评审拿不到 S4 的改动。",
+      "fix": "让控制面对真正带进 S4 改动的提交重新派发评审：对 69945f3 跑 `git diff 69945f3^1 69945f3`（改了 core.ts / orchestrator.tsx / orchestrator.test.tsx / test_flight_orchestrator.py，共 +145/-19）。同时查清 S4 为什么在 integrate 合并之前就以非合并提交进了集成分支（是重派或重试时重复落地，还是 cherry-pick），再修好合回逻辑，让每个切片只经由一次 integrate 合并落地，评审拿合并提交时才能取到非空 diff。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 1,
+      "summary": "取 diff 失败：`git diff 951da31^1 951da31` 为空。合并提交 951da31 的第一父 414540e 已经包含 S3 的全部内容。早先有一个同名提交 310ad86（feat(flight): S3 ...）以线性方式进了主线，它和 959c612 对三个 owns 文件改的内容完全一致。所以这次 integrate: S3 合并对主线是零改动，没有可审的范围。S3 的真实改动并没有经过本次评审。",
+      "fix": "排查飞行编排为什么让 S3 落地两次（310ad86 先直接进主线，959c612 之后又经 integrate 合回），确认是不是续飞或重派时把已合回的切片重复合并了一遍。对 S3 重新派发评审，指向真正引入改动的提交，例如 `git diff 69945f3 310ad86`（也就是 310ad86^1..310ad86），或者直接评审 959c612^1..959c612。在拿到有效评审之前，不要把 S3 的评审标为已闭环。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 986,
+      "summary": "取 diff 失败：git diff a71c6f2^1 a71c6f2 为空，合回 commit 相对第一父没有任何改动。原因：S1 的同内容提交 cab176c（父 466cf98）早已直接落在集成线上（经 46d418a integrate: S2 的第一父进入），没有走切片分支 + integrate 合回；本次合回的 cb56137（父 fde1368）内容与之相同，所以合并后无增量。S2/S3/S4/S5 也各有一份重复提交（466cf98/ed0fc42/310ad86/69945f3）直接写在集成线上，说明执行体没有隔离，直接在集成 worktree 里提交了。内容本身（fde1368..cb56137：L986 加 `and f != MARKER`、去掉 xfail、改注释）看过，符合切片包，没发现问题，但不能凭空 diff 认定本次合回已评审。",
+      "fix": "1) 核实执行体为什么直接提交到集成分支（worktree-flight-envelope）：查各切片执行体派发时的 isolation 设置和 cwd，确保执行体只在切片 worktree 内提交，集成线只接受 integrate 合并与 chore(flight) 记录；2) 对已在集成线上的 cab176c，用 `git diff 466cf98 cab176c` 做一次评审，作为 S1 的评审依据，或重新安排一次以 cab176c 为对象的评审；3) slice-gate / 编排层加机械校验：integrate 合并相对第一父 diff 为空、或集成线上出现非 integrate/记录类的直接提交时判红，不能静默放行。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 457,
+      "summary": "取 diff 失败：`git diff 5db35c0^1 5db35c0` 为空。合并提交 5db35c0 的第一父 b61063e 与第二父 c9935f2 是同一父 af8cd3d 上两份同名的 S6 提交，三者 tree 完全相同（2aeea61）。也就是说 S6 的改动在合回前就已经直接落在 change 分支上，这次 integrate 合并对第一父没有带来任何变更，按第一父取 diff 审不到本片内容。（作为补充，下面几条是按 af8cd3d..5db35c0 的实际改动审出的。）",
+      "fix": "查清 b61063e 是怎么进入 change 分支的：执行体是否在 change worktree 里直接提交，或 mergeSlice / commitRecords 是否把切片提交重复写到了 change 分支。修正后让 S6 只经切片分支合回。在此之前，以 `git diff af8cd3d 5db35c0` 作为本片的评审范围重新确认，门禁的所有权检查也要以这个范围为准，不能以空 diff 判为通过。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 487,
+      "summary": "需进一步确认：agent.spawn 对插件自己的派发同样计算 parentInFlight。插件在 classic.SubagentStop / turn.complete（比如 agent-1 结束后 drive 派发评审员或下一片）里调用 $.agent.spawn 时，如果真实引擎把 parentAgentId 设成触发该 hook 帧的 agent-1，那么 agent-1 仍在缓存里、飞行仍在飞，plugin 自己的 flight:* 派发就会被以「飞行中的 agent 不得再派发子 agent」拒绝，整次飞行在第一片后停住。现有测试都由测试侧直接 turn.complete 触发，不带 parentAgentId，覆盖不到这种情况。",
+      "fix": "在 X 实测里确认引擎在 SubagentStop 帧内由插件发起的派发是否带 parentAgentId。若带：接线处在 origin 为 flight 时令 parentInFlight=false（或在 spawnVerdict 里豁免 originPlugin==='flight'），并补一条测试：以 parentAgentId=agent-1 触发插件来源的 flight:reviewer 派发，期望放行。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 138,
+      "summary": "ownerOf 只缓存命中结果，不缓存未命中。只要有飞行在飞（active 非空），任何非飞行 subagent（比如主会话派出的 Explore）的每一次 tool.call 和 tool.check 都会经 flyingWho 走到 flightOfAgent：对 flights 里每个飞行（含已落地的）读账本，再跑 for-each-ref、worktree list、judgesDir，并逐个读未登记 change 的账本。每次工具调用要起多个 git 子进程，而且 call 和 check 各来一遍。flightOfAgent 里注明的 ceiling（「非飞行 subagent 频繁时按 change 缓存负结果」）被本片搬到了热路径上。",
+      "fix": "在 ownerOf 里为未命中维护一个负缓存，比如 Map<agentId, 账本代数>，或者在 takeoff / dispatch 写入时清空负缓存；也可以先按 owners 判断，只有 owners 为空且刚重启时才回退扫账本。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 170,
+      "summary": "骨架的 Given/When 注释从 spec 的「owns 为 src/a.py / Write src/a.py」改成了「src/s1.py」，以迁就 demoWorld 的夹具，但 specs/flight-envelope/spec.md 第 59–60 行的 scenario 原文没改，骨架与规格的措辞不再一致。语义等价，但会让后续对照产生困惑。",
+      "fix": "把骨架注释恢复为 spec 原文，并在测试里注明夹具里 S1 的 owns 是 src/s1.py；或者在 demoWorld 里让 S1 的 owns 与 spec 一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 627,
+      "summary": "tool-check-upgrades-ask-only-in-envelope 只覆盖了写入升 allow 以及 deny / ceiling / 白名单外 Bash / 主会话这几种原样返回。inEnvelope 的其余升级分支没有接线层的测试：Read/Grep/Glob、slices.json 门禁 / verify 命令的 Bash 白名单（envelopeOf 拼 commands）、评审员 mcp__flight__submit_findings。commands 拼装或 FINDINGS_TOOL 名字一旦出错，不会被发现。",
+      "fix": "在同一测试或新测试里追加：agent-1 的 Bash `python3 -m pytest -q tests`（取自 demo 的 gate.test）在引擎答 ask 时应升 allow；评审员 agent 的 mcp__flight__submit_findings 在 ask 时应升 allow。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 128,
+      "summary": "owners 缓存只增不减，飞行落地或停飞后不清理，长会话里多次飞行会一直累积。对正确性无影响，因为 flyingWho 会再查 active。",
+      "fix": "在 land / halt 写入时删掉该 change 的 owners 条目，或者容忍这点增长，在注释里写明 ceiling。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "e5d2503d687d7396c63dbdeea65b3f9296f12f5f"
+  }
+}
