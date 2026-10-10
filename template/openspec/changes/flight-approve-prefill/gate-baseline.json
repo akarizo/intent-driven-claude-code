@@ -1,0 +1,21 @@
+{
+  "commit": "64afc308fad6d7a92db09c1261c977f275d56982",
+  "at": "2026-10-10T09:49:06Z",
+  "plan_sha": "3266442c528821c205553a3aaf9f28d30db20ca6",
+  "ok": true,
+  "reasons": [],
+  "test": {
+    "exit": 0,
+    "sec": 68.0
+  },
+  "lint": {
+    "exit": 0,
+    "lines": []
+  },
+  "typecheck": null,
+  "verify": {
+    "S1": {
+      "exit": 0
+    }
+  }
+}

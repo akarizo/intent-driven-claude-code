@@ -149,3 +149,14 @@ def test_approve_press_dedupes_same_fingerprint():
     # Then: 账本没有新增事件，toast 含「已批准」
     assert_ts_passed("approve-press-dedupes-same-fingerprint")
 
+
+# ---------------------------------------------------------------- flight-approve-prefill S1
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
+def test_approve_dedupe_prefills_command():
+    # Given: demo 账本最后一条是指纹 F 的 approve 且之后没有 takeoff，当前计划指纹仍为 F
+    # When: 人再按一次 demo 的「批准起飞」
+    # Then: 账本没有新增事件、toast 含「已批准」；$.prompt.fill 收到 /opsx-apply demo
+    assert_ts_passed("approve-dedupe-prefills-command")
