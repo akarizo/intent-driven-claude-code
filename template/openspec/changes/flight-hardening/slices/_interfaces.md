@@ -55,3 +55,10 @@ export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: 
 ```
 export function registerOrchestrator(on: On): void {
 ```
+
+## S3
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
