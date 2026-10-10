@@ -120,14 +120,26 @@ async function emptyMerge(io: Io, f: Flight, branch: string): Promise<string | u
   return merged === headTree ? `合回对第一父无变更：${branch} 的改动已不经 integrate 进了 change 分支，不能当作正常合回` : undefined
 }
 
+/**
+ * 已经 integrate 过：切片分支尖端是 HEAD 第一父链上某个合并提交的非第一父。
+ * 只看「尖端是 HEAD 的祖先」不够：零提交的切片分支尖端就是派发时的 change 分支尖端，同样是祖先（PR #41 复核 HIGH）。
+ */
+async function integrated(io: Io, f: Flight, branch: string): Promise<boolean> {
+  const tip = await git(io, f.changeTree, 'rev-parse', branch)
+  const sha = tip.stdout.trim()
+  if (tip.exitCode !== 0 || sha === '') return false
+  const merges = await git(io, f.changeTree, 'log', '--first-parent', '--merges', '--format=%P', `${sha}..HEAD`)
+  return merges.exitCode === 0 && lines(merges.stdout).some(l => l.split(' ').slice(1).includes(sha))
+}
+
 /** 在 change worktree 里：提交飞行记录 →（已合回则只补记账）→ 越界与空合回检查 → merge --no-ff → record --json → 刷新接口摘要 */
 export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]):
   Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[]; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, conflicts: [], failed: [err] }
   const branch = `flight/${f.change}/${slice}`
-  // 续飞补跑门禁后：分支尖端已是 HEAD 的祖先（上一 attempt 已 integrate、账本缺 merge 事件）→ 已合回，只补记账
-  if ((await git(io, f.changeTree, 'merge-base', '--is-ancestor', branch, 'HEAD')).exitCode === 0) {
+  // 续飞补跑门禁后：上一 attempt 已 integrate、账本缺 merge 事件 → 已合回，只补记账
+  if (await integrated(io, f, branch)) {
     const r = await afterMerge(io, f, slice, gate, owns)
     return r.ok ? r : { ...r, conflicts: [] }
   }

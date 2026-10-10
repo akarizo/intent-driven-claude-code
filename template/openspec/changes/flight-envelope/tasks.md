@@ -16,3 +16,4 @@
 
 - [x] R1 agent.spawn 守卫对 flight 插件自己发起的派发不判「父 agent 在飞」（插件在收口 / turn.complete 帧里派发评审员、下一片、修复体不被拒）；design D9、ADR、spec 同步
 - [x] R2 合回前切片分支尖端已是 HEAD 的祖先 → 视为已合回：跳过 merge 与越界 / 空合回检查，照常 record、刷新接口摘要并记 merge ok（续飞补跑门禁的已合回情形）
+- [x] R3 「已合回」收窄为：切片分支尖端是 HEAD 第一父链上某个合并提交的非第一父；零提交的切片分支（尖端在第一父链上）不算，照旧走越界 / 空合回检查（PR #41 follow-up 复核 HIGH，R2 的第 2 轮）

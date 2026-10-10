@@ -114,11 +114,13 @@ test('land-refuses-direct-commit-in-owns', async () => {
 })
 
 test('land-records-already-integrated-slice', async () => {
-  // Given: 切片分支 flight/demo/S1 的尖端已是 HEAD 的祖先（上一 attempt 已 integrate，账本缺 merge 事件）；合并结果树与 HEAD 的树相同；HEAD 为 m1
+  // Given: 切片分支 flight/demo/S1 的尖端 tip1 是 HEAD 第一父链上合并提交的第二父（上一 attempt 已 integrate，账本缺 merge 事件）；合并结果树与 HEAD 的树相同；HEAD 为 m1
   const { io, calls, fs } = fakeIo({ [`${CT}/src/a.py`]: 'def run(x):\n' }, argv =>
     has(argv, 'merge-base', '--is-ancestor', 'flight/demo/S1', 'HEAD') ? { exitCode: 0 }
-      : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' }
-        : has(argv, 'rev-parse', 'HEAD') ? { stdout: 'm1\n' } : undefined,
+      : has(argv, 'rev-parse', 'flight/demo/S1') ? { stdout: 'tip1\n' }
+        : has(argv, 'log', '--first-parent', '--merges', 'tip1..HEAD') ? { stdout: 'p1 tip1\n' }
+          : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' }
+            : has(argv, 'rev-parse', 'HEAD') ? { stdout: 'm1\n' } : undefined,
   )
   const gate = gateOf('S1')
 
@@ -131,6 +133,26 @@ test('land-records-already-integrated-slice', async () => {
   expect(find(calls, 'record', '--json')).toBeGreaterThan(-1)
   expect(fs.get(`${CT}/${CD}/slices/_interfaces.md`) ?? '').toContain('## S1\n')
   expect(result).toEqual({ ok: true, commit: 'm1' })
+})
+
+test('land-refuses-zero-commit-slice-as-integrated', async () => {
+  // Given: 切片分支 flight/demo/S2 没有自己的提交：尖端 x0 就是派发时的 change 分支尖端（是 HEAD 的祖先，但不是任何合并提交的第二父）；
+  //        执行体把改动留在工作区或直接提交进了 change 分支，合并结果树与 HEAD 的树相同
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'merge-base', '--is-ancestor', 'flight/demo/S2', 'HEAD') ? { exitCode: 0 }
+      : has(argv, 'rev-parse', 'flight/demo/S2') ? { stdout: 'x0\n' }
+        : has(argv, 'log', '--first-parent', '--merges', 'x0..HEAD') ? { stdout: 'p1 s1tip\n' }
+          : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' } : undefined,
+  )
+
+  // When: 合回 S2
+  const result = await mergeSlice(io, F, 'S2', gateOf('S2'), ['a.py'])
+
+  // Then: 不当作已合回：不 record、不 merge --no-ff；返回失败，写明合回对第一父无变更
+  expect(find(calls, 'record')).toBe(-1)
+  expect(find(calls, 'merge', '--no-ff')).toBe(-1)
+  expect(result.ok).toBe(false)
+  expect(result.ok ? '' : result.failed.join('\n')).toContain('合回对第一父无变更')
 })
 
 test('land-refuses-merge-without-change', async () => {

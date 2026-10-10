@@ -46,7 +46,7 @@ type World = {
   dirty?: string[]
   /** 插件之下 tool.check 的引擎判定队列（按调用顺序取；取完后为 ask） */
   checks?: string[]
-  /** 切片分支尖端已是 HEAD 祖先（已经 integrate 过）的切片：`git merge-base --is-ancestor` 对它们退出 0，其余退出 1 */
+  /** 已经 integrate 过的切片：`git merge-base --is-ancestor` 对它们退出 0（其余退出 1），且第一父链上有以其尖端 tip-<S> 为第二父的合并提交 */
   integrated?: string[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
@@ -193,8 +193,11 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, ''))
       case 'mktree':
         return wrap(res(0, 'e'.repeat(40) + '\n'))
-      case 'rev-parse':
-        return wrap(res(0, 'd'.repeat(40) + '\n'))
+      case 'rev-parse': {
+        // 切片分支尖端：tip-<切片>（integrated 的切片据此在第一父链的合并提交里当第二父）
+        const ref = args.find(a => String(a).startsWith('flight/demo/'))
+        return wrap(res(0, ref ? `tip-${String(ref).split('/').pop()}\n` : 'd'.repeat(40) + '\n'))
+      }
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
       case 'merge-base':
@@ -203,8 +206,12 @@ function useWorld(on: On, w: World) {
           return wrap(res((w.integrated ?? []).includes(s) ? 0 : 1, ''))
         }
         return wrap(res(0, '0'.repeat(40) + '\n'))
-      case 'log':
-        return wrap(res(0, ''))
+      case 'log': {
+        // `git log --first-parent --merges --format=%P tip-<S>..HEAD`：integrated 的切片有一个以 tip-<S> 为第二父的合并提交
+        const range = args.find(a => /^tip-.+\.\.HEAD$/.test(String(a)))
+        const s = range ? String(range).slice(4, -6) : ''
+        return wrap(res(0, args.includes('--merges') && (w.integrated ?? []).includes(s) ? `p1 tip-${s}\n` : ''))
+      }
       case 'merge-tree':
         return wrap(res(0, 'a'.repeat(40) + '\n'))
       case 'rev-list':
