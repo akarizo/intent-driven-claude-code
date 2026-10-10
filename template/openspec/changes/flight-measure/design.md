@@ -48,7 +48,7 @@
 ### D2 · `measure` 事件与判定器
 - **字段**：在公共字段之外，带 `attempt`、`slice`、`agent`（起点测量写 `dispatch`）、`base`、`commit`、`outcomes`、`changed`、`source`。
   - `outcomes` 是 `[目标, 状态]` 的数组，状态取 PASSED、FAILED、ERROR、SKIPPED、XFAIL、XPASS、MISSING 之一。
-  - `changed` 是相对 base 的全部改动文件，含未提交的。
+  - `changed` 是相对 base 的改动文件，含未提交的，但不计切片标记与本 change 目录下的簿记文件（attempt 1 评审 HIGH：start 一跑就会写出这两类文件，不排除的话起点测量永远不成立）。
   - `source` 是其中的生产代码，分类与 G3 相同：非测试、非文档 / 配置、不在 change 目录内。
 - **写入方与读取方同表校验**：插件 `io.ts` 的 `EVENTS` 与 `ledger.py` 的 `EVENTS` 用同一张字段表。
 - **`ledger.py events`**：新子命令，每行打印一个已知事件类型，供起飞核对（D8）。
@@ -126,6 +126,13 @@ flowchart TD
   - `git branch` 的拒绝选项加上 `-u`、`--set-upstream-to`、`--unset-upstream`、`--edit-description`；
   - `fetch` 进拒绝表。
 - **Glob 不越界免询问**：Glob 的 `pattern` 是绝对路径或含 `..` 段时不升级。
+- **attempt 1 评审补出的三处**（S9）：
+  - `eval` 在当前 shell 执行，内层的 `cd` / `pushd` / `popd` 要回传外层；`bash -c` 在子进程，不回传。
+  - 外层段首的 `GIT_*` 赋值要与内层各段合并后再判。
+  - `env`、`exec` 前缀：
+    - 带参数的选项（env 的 `-u`、`-C`、`-S`、`-P` 及长名，exec 的 `-a`）连参数一起剥掉；
+    - `env -C` 计入换目录；
+    - 不认识的选项一律拒绝，宁可多拒。
 
 ### D10 · 归属判定 fail-closed
 - **区分读失败**：扫描本进程登记的在飞飞行的账本时读取失败（`ledger.py` 退出码非 0），并且别处也没找到该 agent，归属查询返回「判不出」并带上原因，不写进未命中缓存。
@@ -149,6 +156,31 @@ flowchart TD
 
 ### D12 · 版本
 插件升到 0.4.0：新增工具与新事件类型，判定器需要同版本。
+
+### D13 · 工具不变量改写
+原有的不变量是「模型可调用的工具只有 `submit_findings`」，改为「恰为 `submit_findings` 与 `measure`，两者都不能追加 approve，插件不注册斜杠命令」。
+- 原有的 TS 测试 `no-model-callable-approval-path`、`only-findings-tool-registered` 随之更新。
+- 铁律 7 的含义不变：批准带之外，仍然没有模型能走的批准路径。
+
+## 修订（attempt 1 停飞之后，2026-10-11）
+
+**attempt 1 的结果**：S1–S6、S8 一次门禁全绿并合回。S7 两个执行体都止步于两处规划失误：
+- **S7 的 owns 漏了 `flight.test.tsx`**：那里有工具不变量测试，加了测量工具就必然变红；
+- **`takeoff-checks-versions` 在测试里构造不出「已装 ≠ 已加载」**：测试里插件从仓库目录加载，不在缓存下。
+
+控制面在 S7 阻断后仍派出修复体，修复体的全量 final 必然红，于是停飞。
+
+**用户定（2026-10-11）**：修计划后续飞。
+- **R1**：S7 的 owns 加上 `flight.test.tsx` 与 `tests/test_flight_plugin.py`，新增 scenario `model-tools-cannot-approve`（D13）。
+- **R2**：`takeoff-checks-versions` 改为验证接线，拒飞路径由 S6 的纯函数测试覆盖。
+- **R3**：新增 S9，把评审的 3 条 HIGH 与 1 条 MEDIUM 写成 scenario，有规格可依，不只靠修复体。attempt 1 修复体的提交（`7c8eb4e`、`a9e7330`、`cdcc5eb`）与 S7 的提交（`74d32c1`）可供执行体 `git show` 参考，不得 cherry-pick 或 merge。
+- **R4**：`measure` 的 `changed` 口径修正（D2）。
+- **续飞前**：S7 与修复体的旧 worktree 由用户清掉，分支改名保留。原因是旧 worktree 里的切片包与 `slices.json` 是旧版本，门禁会按旧的 owns 判；修复体的旧 worktree 切自不含 S7 的旧尖端，它的 final 也必然红。
+
+**记下的控制面缺陷**（留给后续 change，本 change 不修）：
+- 有切片阻断时仍派修复体，而修复体的全量 final 必然红。
+- 修复体 worktree 跨 attempt 复用，没有基于新尖端。
+- 续飞复用切片 worktree 时，切片包和 owns 不随计划修订更新。
 
 ### 一个切片的时序（测量协议上线后）
 
@@ -190,12 +222,17 @@ flowchart LR
   subgraph W2["wave 2"]
     S2["S2 G5 账本判据 · start/gate 新参数"]
     S3["S3 红次数与测量统计 · test-evidence 让位"]
-    S7["S7 接线：测量工具 · 起点测量 · 门禁参数 · 起飞核对 · 0.4.0"]
+    S7["S7 接线：测量工具 · 起点测量 · 门禁参数 · 起飞核对 · 工具不变量 · 0.4.0"]
+  end
+  subgraph W3["wave 3（attempt 2 新增）"]
+    S9["S9 评审补修：eval 换目录 · 外层 GIT_* · 前缀选项 · 起点测量口径"]
   end
   S1 --> S2
   S1 --> S3
   S5 --> S7
   S6 --> S7
+  S2 --> S9
+  S4 --> S9
 ```
 
 ## Risks / Trade-offs

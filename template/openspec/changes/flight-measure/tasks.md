@@ -1,7 +1,8 @@
 <!-- 本文件由 slices.json 生成，不要手写编辑；改动请改 slices.json 后重新生成。 -->
 > 切片规则：1–9 片 · DAG 深度 ≤ 3 · 同 wave 所有权不相交 · 每片 owns ≤ 12 条 · 每片一个 commit · 门禁绿才勾选。
 > 本仓库自身纪律：TDD（先写失败测试）；测试函数首行 `# Given:` / `// Given:` 三段中文注释；`python3 -m pytest -q tests` 全绿；`cd template && openspec schema validate intent-driven` 绿。
-> wave 1 = S1 + S4 + S5 + S6 + S8 · wave 2 = S2 + S3 + S7。在已安装的插件 0.3.2 上飞（测量协议合入前不生效，本次 G5 仍是旧的警告语义）；飞行期间主会话停在 `.worktrees/flight-envelope-followups`（停车位）、不 cd。
+> wave 1 = S1 + S4 + S5 + S6 + S8 · wave 2 = S2 + S3 + S7 · wave 3 = S9。在已安装的插件 0.3.x 上飞（测量协议合入前不生效，本次 G5 仍是旧的警告语义）；飞行期间主会话停在 `.worktrees/flight-envelope-followups`（停车位）、不 cd。
+> attempt 1（2026-10-10）停飞：S7 阻断（owns 漏了工具不变量测试；起飞 scenario 在测试里构造不出）。计划已修订（S7 owns 与 scenario、新增 S9），attempt 2 只派 S7、S9 与修复体。
 
 ## 切片
 
@@ -13,3 +14,4 @@
 - [ ] S6 versions.ts：插件副本核对与判定器事件表核对（纯函数） （deps: - · verify: `python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py`）
 - [ ] S7 接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0 （deps: S5, S6 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py`）
 - [ ] S8 铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议 （deps: - · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py`）
+- [ ] S9 评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径 （deps: S2, S4 · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py`）

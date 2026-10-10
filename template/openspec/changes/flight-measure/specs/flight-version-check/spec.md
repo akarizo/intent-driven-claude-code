@@ -41,7 +41,8 @@ Feature: 判定器不认识的事件会让整条账本判损坏
 Feature: 版本错位当场可见
 
 #### Scenario: takeoff-checks-versions
-- **GIVEN** demo 已批准、其余起飞检查都过
-- **WHEN** 三次起飞：installed_plugins.json 的条目指向与加载目录不同的缓存目录；`ledger.py events` 缺 `measure`；两项都正常
-- **THEN** 前两次回复分别含「/reload-plugins」与「主检出」，账本都没有新增事件
-- **AND** 第三次回复含「✈ 起飞」与「插件 」，账本新增 takeoff 事件
+测试里插件从仓库目录加载，永远不在缓存目录下，所以「已装 ≠ 已加载」的拒飞路径由 S6 的纯函数测试 `loaded-differs-from-installed` 覆盖；这里验证接线。
+- **GIVEN** demo 已批准、其余起飞检查都过；`CLAUDE_CONFIG_DIR` 为 C，C 下没有 installed_plugins.json
+- **WHEN** 两次起飞：`ledger.py events` 缺 `measure`；`ledger.py events` 列出全部类型
+- **THEN** 第一次回复含「主检出」，账本没有新增事件
+- **AND** 第二次回复含「✈ 起飞」「插件 」与「已安装版本未核对」，插件读取过 `C/plugins/installed_plugins.json`，账本新增 takeoff 事件

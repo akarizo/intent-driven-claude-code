@@ -4,7 +4,7 @@
 `slice-gate.py measure <S> --change-dir D [--base B]` SHALL 只运行本片 scenario 映射中以 `.py` 结尾的目标，复用 G7 的 pytest 运行方式与超时；SHALL 打印 JSON `{slice, base, commit, outcomes, unmeasurable, changed, source, tail}`。其中：
 - `outcomes` 为 `[目标, 状态]`。一个目标对应多个节点时，按 ERROR > FAILED > XPASS > XFAIL > SKIPPED > PASSED 取最差者；没有结果记 MISSING。
 - `unmeasurable` 为非 `.py` 目标。
-- `changed` 为相对 base 的全部改动文件，含未提交的。
+- `changed` 为相对 base 的改动文件，含未提交的，但不计切片标记 `.openspec-slice` 与本 change 目录下的文件（这些是控制面的簿记，start 一跑就会出现）。
 - `source` 为其中按 G3 分类属于生产代码的文件。
 
 跑完 SHALL 退出 0，不论红绿；跑不起来或超时 SHALL 退出 1，并在 JSON 中带 `error`。
@@ -23,6 +23,16 @@ Feature: 评审页 D3-A：测试由控制面执行
 - **WHEN** 运行 measure，再运行该切片的 gate
 - **THEN** measure 的 `outcomes` 里该目标为 XPASS，不是 FAILED
 - **AND** gate 的 G7 仍判该 scenario 未通过（实际结果不是 PASSED）
+
+### Requirement: start 之后立即测量即为起点测量
+切片以 `start --evidence ledger` 起跑、工作树没有其他改动时，紧接着运行的 measure SHALL 输出空的 `changed`，账本模式的 gate SHALL 认出这次测量是起点测量。
+Feature: flight-measure attempt 1 · S2 评审 HIGH：start 写的标记与 timeline 让起点测量永远不成立
+
+#### Scenario: start-measure-right-after-start
+- **GIVEN** 切片 S1 的工件已提交，以 `start S1 --evidence ledger` 起跑，工作树没有其他改动
+- **WHEN** 立即运行 `slice-gate.py measure S1 --base <start 的 base>`，把输出写成一条 measure 事件，再以账本模式运行 gate
+- **THEN** measure 的 `changed` 为 `[]`
+- **AND** gate 的 G5 失败项不含「缺少本片起点测量」
 
 ### Requirement: 账本接受 measure 事件，判定器能列出已知事件类型
 `ledger.py` SHALL 把 `measure` 列为合法事件：`attempt` 为正整数；`slice`、`agent`、`base` 为非空字符串；`commit` 为字符串；`outcomes` 为「两项字符串数组」的数组，且第二项属于 PASSED / FAILED / ERROR / SKIPPED / XFAIL / XPASS / MISSING；`changed`、`source` 为字符串数组。缺字段或类型不符 SHALL 让账本判为损坏。`ledger.py events` SHALL 每行打印一个已知事件类型并退出 0。
@@ -72,6 +82,16 @@ Feature: 评审页 D3-A
 - **WHEN** 插件的 `tool.check` 处理 agent-1 的这次调用，以及评审员 agent-2 的同一调用
 - **THEN** agent-1 的判定为 allow
 - **AND** agent-2 的判定仍为 ask
+
+### Requirement: 模型可调用的插件工具不构成批准路径
+插件注册的模型可调用工具 SHALL 恰为 `submit_findings` 与 `measure`，两者在任何输入下都 SHALL NOT 追加 approve 事件；插件 SHALL NOT 注册斜杠命令。
+Feature: 铁律 7 · 加了测量工具后，批准带之外仍然没有模型能走的批准路径
+
+#### Scenario: model-tools-cannot-approve
+- **GIVEN** 插件已加载、会话已启动
+- **WHEN** 列出插件注册的工具与斜杠命令，并以各种输入调用这两个工具
+- **THEN** 工具恰为 `submit_findings` 与 `measure`，没有斜杠命令
+- **AND** 账本没有新增 approve 事件
 
 ### Requirement: 派发执行体前，控制面先做起点测量
 派发执行体之前（`slice-gate start` 成功之后），若账本里没有本片、本 base 的起点测量（`changed` 为空的 measure 事件），控制面 SHALL 先运行一次测量，并以 `agent` 为 `dispatch` 记账。测量失败或写入失败 SHALL 记本片 blocked（infra），理由含「起点测量失败」，SHALL NOT 派发。

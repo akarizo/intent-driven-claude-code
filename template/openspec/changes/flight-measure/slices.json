@@ -5,7 +5,7 @@
     "test": "python3 -m pytest -q tests",
     "lint": "python3 -m compileall -q template/.claude/hooks",
     "typecheck": null,
-    "full_suite_sec": 104.2
+    "full_suite_sec": 81.8
   },
   "slices": [
     {
@@ -129,7 +129,8 @@
         "flight-measure#fresh-dispatch-takes-start-measure",
         "flight-gate-evidence#gate-runs-with-ledger-evidence",
         "flight-version-check#takeoff-checks-versions",
-        "flight-ownership-fail-closed#unknown-owner-fails-closed"
+        "flight-ownership-fail-closed#unknown-owner-fails-closed",
+        "flight-measure#model-tools-cannot-approve"
       ],
       "owns": [
         "template/plugins/flight/hooks/orchestrator.tsx",
@@ -137,7 +138,9 @@
         "template/plugins/flight/hooks/measure.ts",
         "template/plugins/flight/tests/orchestrator.test.tsx",
         "tests/test_flight_orchestrator.py",
-        "template/plugins/flight/.claude-plugin/plugin.json"
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "tests/test_flight_plugin.py"
       ],
       "deps": [
         "S5",
@@ -171,6 +174,29 @@
       "deps": [],
       "verify": "python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py",
       "packet": "slices/S8.md"
+    },
+    {
+      "id": "S9",
+      "title": "评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径",
+      "scenarios": [
+        "flight-envelope-gaps#eval-cd-carries-to-outer",
+        "flight-envelope-gaps#outer-git-env-reaches-inner",
+        "flight-envelope-gaps#prefix-options-with-arguments",
+        "flight-measure#start-measure-right-after-start"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/envelope.ts",
+        "template/plugins/flight/tests/envelope.test.ts",
+        "tests/test_flight_envelope.py",
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [
+        "S2",
+        "S4"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py",
+      "packet": "slices/S9.md"
     }
   ],
   "scenario_tests": {
@@ -206,6 +232,11 @@
     "flight-ownership-fail-closed#unknown-owner-fails-closed": "tests/test_flight_orchestrator.py::test_unknown_owner_fails_closed",
     "flight-measure-docs#iron-rule-3-trusted-runner": "tests/test_docs_iron_rules.py::test_iron_rule_3_trusted_runner",
     "flight-measure-docs#executor-follows-measure-protocol": "tests/test_flight_agents.py::test_executor_follows_measure_protocol",
-    "flight-measure-docs#measure-adr-and-review-refs": "tests/test_docs_iron_rules.py::test_measure_adr_and_review_refs"
+    "flight-measure-docs#measure-adr-and-review-refs": "tests/test_docs_iron_rules.py::test_measure_adr_and_review_refs",
+    "flight-measure#model-tools-cannot-approve": "tests/test_flight_plugin.py::test_no_model_callable_approval_path",
+    "flight-envelope-gaps#eval-cd-carries-to-outer": "tests/test_flight_envelope.py::test_eval_cd_carries_to_outer",
+    "flight-envelope-gaps#outer-git-env-reaches-inner": "tests/test_flight_envelope.py::test_outer_git_env_reaches_inner",
+    "flight-envelope-gaps#prefix-options-with-arguments": "tests/test_flight_envelope.py::test_prefix_options_with_arguments",
+    "flight-measure#start-measure-right-after-start": "tests/test_slice_gate.py::test_measure_right_after_start_is_start_measure"
   }
 }

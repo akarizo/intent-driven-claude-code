@@ -40,6 +40,36 @@ Feature: #42 评审 MEDIUM：worktree 与主仓库共用 `.git/config` 与 ref �
 - **THEN** 前五条被拒绝，理由含相应的子命令或选项
 - **AND** 后三条不被拒绝
 
+### Requirement: eval 内层的换目录回传外层
+`eval` 在当前 shell 执行：其内层 `cd`、`pushd`、`popd` 设定的目录 SHALL 回传给外层后续各段；`bash`、`sh`、`zsh -c` 在子进程执行，外层目录 SHALL 不受影响。
+Feature: flight-measure attempt 1 · S4 评审 HIGH：`eval cd /repo && git commit` 被放行
+
+#### Scenario: eval-cd-carries-to-outer
+- **GIVEN** 执行体 worktree 为 W，主仓库为 /repo
+- **WHEN** 判定 `eval cd /repo && git commit -m x`、`eval cd W && git commit -m x`、`bash -c 'cd /repo' && git commit -m x`
+- **THEN** 第一条被拒，理由含「自己的 worktree」
+- **AND** 后两条不被拒
+
+### Requirement: 外层的 GIT_* 赋值带进 -c 与 eval 的内层
+段首（含经 `env` 给出）的 `GIT_*` 赋值 SHALL 与内层各段自己的赋值合并后判定：内层改动类 git 见到合并后的 `GIT_*` SHALL 拒绝，只读 git 不拒。
+Feature: flight-measure attempt 1 · S4 评审 HIGH：`GIT_DIR=… bash -c "git commit"` 被放行
+
+#### Scenario: outer-git-env-reaches-inner
+- **GIVEN** 执行体 worktree 为 W
+- **WHEN** 判定 `GIT_DIR=/repo/.git bash -c "git commit -m x"`、`env GIT_WORK_TREE=/repo eval git add a`、`GIT_PAGER=cat bash -c 'git log -1'`
+- **THEN** 前两条被拒，理由含「GIT_」
+- **AND** 第三条不被拒
+
+### Requirement: 前缀命令带参数的选项不得让判定失守
+剥 `env`、`exec` 前缀时：不带参数的已知选项（env 的 `-i`、`-0`、`-v` 及其长名）SHALL 剥掉；带参数的选项 SHALL 连同参数一起剥掉，包括 env 的 `-u` / `--unset`、`-C` / `--chdir`、`-S` / `--split-string`、`-P`，以及 exec 的 `-a`；`env -C <p>` 与 `--chdir=<p>` SHALL 按 `cd <p>` 设定目录；剥前缀时遇到不认识的 `-` 选项 SHALL 拒绝，理由含「无法判定」。
+Feature: flight-measure attempt 1 · S4 评审 MEDIUM：`env -u FOO git push` 让整段判定失守（fail-open）
+
+#### Scenario: prefix-options-with-arguments
+- **GIVEN** 执行体 worktree 为 W，主仓库为 /repo
+- **WHEN** 判定 `env -u FOO git push origin HEAD:main`、`exec -a n git push`、`env -C /repo git commit -m x`、`env --chdir=/repo git add a`、`env -Z x git commit -m x`，以及 `env -u FOO python3 -m pytest -q`、`env -C W git commit -m x`
+- **THEN** 前五条被拒：前两条理由含「git push」，第三、四条含「自己的 worktree」，第五条含「无法判定」
+- **AND** 后两条不被拒
+
 ### Requirement: Glob 的 pattern 不得越界免询问
 `readUpgradable` 对 Glob SHALL 在 `pattern` 为绝对路径或含 `..` 段时返回 false。
 Feature: #42 评审 LOW：只看 `path` 时 `pattern` 可越出仓库

@@ -1,5 +1,5 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-
+import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -136,3 +136,30 @@ def test_glob_pattern_cannot_escape():
     # When: 判定 Glob 的绝对 pattern、含 .. 的 pattern 与 path=W 的相对 pattern
     # Then: 前两个不免询问，第三个免询问
     assert_ts_passed("glob-pattern-cannot-escape")
+
+# ---------------------------------------------------------------- flight-measure S9
+# 骨架：S9 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S9：同名 TS 测试尚未实现")
+def test_eval_cd_carries_to_outer():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 eval cd /repo && git commit、eval cd W && git commit、bash -c 'cd /repo' && git commit
+    # Then: 第一条被拒（理由含自己的 worktree），后两条不拒
+    assert_ts_passed("eval-cd-carries-to-outer")
+
+
+@pytest.mark.xfail(strict=True, reason="S9：同名 TS 测试尚未实现")
+def test_outer_git_env_reaches_inner():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 GIT_DIR=… bash -c "git commit"、env GIT_WORK_TREE=… eval git add a、GIT_PAGER=cat bash -c 'git log -1'
+    # Then: 前两条被拒（理由含 GIT_），第三条不拒
+    assert_ts_passed("outer-git-env-reaches-inner")
+
+
+@pytest.mark.xfail(strict=True, reason="S9：同名 TS 测试尚未实现")
+def test_prefix_options_with_arguments():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 env -u FOO git push、exec -a n git push、env -C /repo git commit、env --chdir=/repo git add、env -Z x git commit，以及 env -u FOO python3 -m pytest、env -C W git commit
+    # Then: 前五条被拒（git push / 自己的 worktree / 无法判定），后两条不拒
+    assert_ts_passed("prefix-options-with-arguments")

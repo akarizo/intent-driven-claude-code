@@ -64,5 +64,6 @@
 - **判定器**：`template/.claude/hooks/` 下的 `slice-gate.py`（新增 measure 子命令、G5 账本模式、start 与 gate 的新参数、严格 XPASS）、`ledger.py`（新增 measure 事件与 `events` 子命令）、`timeline.py`、`test-evidence.py`。
 - **插件**：`template/plugins/flight/hooks/` 下的 `io.ts`、`envelope.ts`、`orchestrator.tsx`、`core.ts`、`prompts.ts`，以及新增的 `versions.ts`、`measure.ts`；`agents/executor.md`；插件版本 0.4.0。
 - **文档**：根 `CLAUDE.md` 与 `template/CLAUDE.md.snippet` 的铁律 3、`README.md`、`docs/WORKFLOW_zh.md`、`pr-ship.md` 与 `code-reviewer.md` 的评审参考材料，以及新 ADR `DRAFT-flight-measure-protocol`。
-- **本 change 跑在已安装的 0.3.2 上**：测量协议在合入之前不生效，本次飞行的 G5 仍是旧的警告语义。合入后，下一次飞行才是测量协议的首飞。
+- **attempt 1（2026-10-10）停飞后修订计划续飞**：S7 因规划失误被阻断（漏了工具不变量测试的 owns，起飞 scenario 在测试里构造不出）。修订内容：S7 补 owns 与 scenario；新增 S9，把评审的 3 条 HIGH 与 1 条 MEDIUM 写成 scenario。详见 design 的「修订」一节。
+- **本 change 跑在已安装的 0.3.x 上**：测量协议在合入之前不生效，本次飞行的 G5 仍是旧的警告语义。合入后，下一次飞行才是测量协议的首飞。
 - **合入后必须同时做两件事**：主检出快进（判定器在主检出），以及更新插件并 `/reload-plugins`。只做一件时，新的版本核对会拒飞并说明缺了哪一步。

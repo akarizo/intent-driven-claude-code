@@ -1568,3 +1568,30 @@ def test_start_tags_ledger_evidence(git_repo):
     assert marker.get("evidence") == "ledger", marker
     assert not any("evidence.log" in w for w in out["warnings"]), out["warnings"]
     assert out["hooks_missing"] is False
+
+# ---------------------------------------------------------------- flight-measure S9
+# 骨架：S9 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S9：measure 的 changed 尚未排除切片标记与 change 目录")
+def test_measure_right_after_start_is_start_measure(git_repo):
+    # Given: 切片 S1 的工件已提交，以 --evidence ledger 起跑后工作树没有其他改动
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_mod.py::test_mod_adds"
+    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], scenarios=["cap#adds"])],
+                            scenario_tests={"cap#adds": target}))
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    commit_all(git_repo, "artifacts")
+    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
+    assert s.returncode == 0, s.stderr
+    base = json.loads(s.stdout)["base"]
+
+    # When: 立即 measure，把输出写成一条 measure 事件，再以账本模式运行 gate
+    m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
+    out = json.loads(m.stdout)
+    ledger_append(git_repo, "c", _measure_ev(base, out["outcomes"], changed=out["changed"], source=out["source"], agent="dispatch"))
+    g = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: changed 为空；G5 不报「缺少本片起点测量」
+    assert out["changed"] == [], out["changed"]
+    assert not any("缺少本片起点测量" in f for f in _g5(g)), g["failed"]
