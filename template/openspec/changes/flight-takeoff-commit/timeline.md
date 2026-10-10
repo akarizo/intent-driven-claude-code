@@ -5,3 +5,4 @@
 2026-10-10T16:37:21Z	gate	S1 ok
 2026-10-10T16:39:50Z	final	ok
 2026-10-10T16:39:50Z	apply-done	blocked=0 blocking=0
+2026-10-10T16:39:51Z	ship	ready
