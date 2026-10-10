@@ -1,0 +1,21 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 305,
+      "summary": "规格 Requirement 写明重复批准时预填失败要 SHALL 再 toast「请手动输入 /opsx-apply <change>」，但重复分支只测了 isFilled=true。失败回退目前只靠共用的 prefillApply 函数和正常分支的测试间接覆盖；以后如果两处预填逻辑又分开写，重复分支的回退没有测试能拦住。",
+      "fix": "可选：加一个用例，测试世界里 prompt.fill 应答 isFilled=false，账本为 approve F，按下 approve:demo:F，断言 log.toasts 里有一条含「请手动输入 /opsx-apply demo」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 306,
+      "summary": "重复分支的 toast 仍写「无需重复按」，紧接着又预填了 /opsx-apply；预填失败时还会再弹一条「请手动输入」。两条提示语义有点打架（先说不用按，再让手动输入下一步），属于小的体验问题。",
+      "fix": "可选：把重复分支的 toast 改成「flight：<change> 已批准（指纹相同），已预填 /opsx-apply <change>」之类，并保留「已批准」字样，现有断言就不受影响。"
+    }
+  ],
+  "fix": null
+}
