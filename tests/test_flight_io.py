@@ -1,8 +1,6 @@
 """flight 副作用层（scenario: flight-io#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 情形拆成同名 TS 测试与其补充测试（gives-up / reuses）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -71,10 +69,8 @@ def test_io_refuses_prototype_ev():
     assert_ts_passed("io-refuses-prototype-ev")
 
 # ---------------------------------------------------------------- flight-envelope-tightening S3
-# 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_owner_pending_until_dispatch():
     # Given: markPending('agent-9', 'demo')
     # When: 查询 agent-9 归属；写入其 dispatch（S2、W2）后再查
@@ -82,7 +78,6 @@ def test_owner_pending_until_dispatch():
     assert_ts_passed("owner-pending-until-dispatch")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_owner_miss_cached_until_dispatch():
     # Given: 账本里没有 agent-x 的 dispatch
     # When: 连查两次 agent-x；写入任一 dispatch 后再查一次
