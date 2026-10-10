@@ -61,6 +61,8 @@ const isFinding = (f: unknown) => {
   return typeof x === 'object' && x !== null && oneOf('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')[0](x.severity) &&
     typeof x.file === 'string' && isInt(x.line) && typeof x.summary === 'string' && typeof x.fix === 'string'
 }
+const STATUSES = ['PASSED', 'FAILED', 'ERROR', 'SKIPPED', 'XFAIL', 'XPASS', 'MISSING']
+const isOutcome = (o: unknown) => Array.isArray(o) && o.length === 2 && typeof o[0] === 'string' && STATUSES.includes(o[1] as string)
 const EVENTS: Record<string, Record<string, Check>> = {
   approve: { fp: FP },
   takeoff: { attempt: ATTEMPT, fp: FP, branch: NONEMPTY, model: NONEMPTY, waves: [x => Array.isArray(x) && x.every(isStrs), '不是字符串数组的数组'] },
@@ -73,7 +75,15 @@ const EVENTS: Record<string, Record<string, Check>> = {
   final: { attempt: ATTEMPT, ok: BOOL, commit: STR, failed: STRS },
   land: { attempt: ATTEMPT, verdict: oneOf('ready', 'draft') },
   halt: { attempt: ATTEMPT, reason: STR },
+  measure: {
+    attempt: ATTEMPT, slice: NONEMPTY, agent: NONEMPTY, base: NONEMPTY, commit: STR,
+    outcomes: [x => Array.isArray(x) && x.every(isOutcome), '不是合法的 outcomes 数组'],
+    changed: STRS, source: STRS,
+  },
 }
+
+/** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */
+export const EVENT_TYPES: readonly string[] = Object.keys(EVENTS)
 
 /** 事件不合 ledger.py 的字段表时返回原因，合规返回 undefined。 */
 export function eventProblem(event: FlightEvent, change: string): string | undefined {
@@ -155,14 +165,18 @@ export function resetOwnership(): void {
   misses.clear()
 }
 
-/** 按 agentId 查归属：先 owners，再登记中，再未命中缓存；都没有才退回 flightOfAgent 扫账本，命中写回 owners、未命中记入 misses。 */
-export async function ownership(io: Io, agentId: string): Promise<Owner | { pending: true; change: string } | undefined> {
+/** 在飞飞行的账本读失败、其余地方也没找到该 agent：归属判不出（fail-closed，不缓存）。 */
+export type Unknown = { unknown: true; change: string; error: string }
+
+/** 按 agentId 查归属：先 owners，再登记中，再未命中缓存；都没有才扫账本，命中写回 owners、未命中记入 misses；判不出原样返回、不缓存。 */
+export async function ownership(io: Io, agentId: string): Promise<Owner | { pending: true; change: string } | Unknown | undefined> {
   const hit = owners.get(agentId)
   if (hit !== undefined) return hit
   const change = pending.get(agentId)
   if (change !== undefined) return { pending: true, change }
   if (misses.has(agentId)) return undefined
-  const found = await flightOfAgent(io, agentId)
+  const found = await scanAgent(io, agentId)
+  if (found !== undefined && 'unknown' in found) return found
   const d = found?.events.filter(e => e.ev === 'dispatch' && e.agent === agentId).pop()
   if (found === undefined || d === undefined) {
     misses.add(agentId)
@@ -173,10 +187,10 @@ export async function ownership(io: Io, agentId: string): Promise<Owner | { pend
   return owner
 }
 
-/** 按 agentId 查正式归属：登记中视为无归属。 */
+/** 按 agentId 查正式归属：登记中与判不出视为无归属。 */
 export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
   const o = await ownership(io, agentId)
-  return o === undefined || 'pending' in o ? undefined : o
+  return o === undefined || 'pending' in o || 'unknown' in o ? undefined : o
 }
 
 export function worktreePath(f: Flight, name: string): string {
@@ -211,13 +225,27 @@ async function locateChangeDir(io: Io, all: readonly Tree[], change: string): Pr
   return undefined
 }
 
-/** 先查本进程登记的飞行；未命中再只靠账本：遍历 refs/flight/<change>/ledger，在含该 change 目录的 worktree 上读账本、重建 Flight 并登记。 */
+/** 先查本进程登记的飞行；未命中再只靠账本：遍历 refs/flight/<change>/ledger，在含该 change 目录的 worktree 上读账本、重建 Flight 并登记。读失败按未命中处理。 */
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
+  const r = await scanAgent(io, agentId)
+  return r === undefined || 'unknown' in r ? undefined : r
+}
+
+/** flightOfAgent 的扫描本体：本进程登记且在飞（active）的飞行账本读失败、且其余地方都没找到时返回判不出；其余 change 读失败照旧跳过。 */
+async function scanAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | Unknown | undefined> {
+  let unread: Unknown | undefined
   for (const flight of flights.values()) {
     const ledger = await readLedger(io, flight)
-    if (!('events' in ledger)) continue
+    if (!('events' in ledger)) {
+      if (unread === undefined && active.has(flight.change)) unread = { unknown: true, change: flight.change, error: ledger.error }
+      continue
+    }
     if (dispatched(ledger.events, agentId)) return { flight, events: ledger.events }
   }
+  return (await scanRefs(io, agentId)) ?? unread
+}
+
+async function scanRefs(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
   const refs = await io.run(['git', 'for-each-ref', '--format=%(refname)', 'refs/flight/'])
   if (refs.exitCode !== 0) return undefined
   const changes = refs.stdout
