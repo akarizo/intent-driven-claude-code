@@ -1,7 +1,6 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。"""
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -55,7 +54,7 @@ def test_landing_stops_when_ledger_unreadable():
     assert_ts_passed("landing-stops-when-ledger-unreadable")
 
 # ---------------------------------------------------------------- flight-hardening
-# 骨架：S2 实现后去掉 xfail 标记。
+# flight-hardening S2 的 scenario 测试。
 
 
 def test_landing_prints_flight_record():
@@ -79,10 +78,9 @@ def test_fixer_dispatch_commits_records_first():
     assert_ts_passed("fixer-dispatch-commits-records-first")
 
 # ---------------------------------------------------------------- flight-envelope S2
-# 骨架：S2 实现后去掉 xfail 标记。
+# flight-envelope S2 的 scenario 测试。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_land_handoff_failure_keeps_landing():
     # Given: 全部合回、final 绿；运行 /pr-ship 抛出「no command named /pr-ship in this session」
     # When: 执行落地动作
@@ -90,7 +88,6 @@ def test_land_handoff_failure_keeps_landing():
     assert_ts_passed("land-handoff-failure-keeps-landing")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_flight_record_survives_report_throw():
     # Given: 全部合回、final 绿；timeline report 时 io.run 抛错「spawn ENOENT」
     # When: 执行落地动作
@@ -98,7 +95,6 @@ def test_flight_record_survives_report_throw():
     assert_ts_passed("flight-record-survives-report-throw")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_flight_record_shows_exit_code():
     # Given: timeline report 以 2 退出、stderr 为空
     # When: 执行停飞动作
