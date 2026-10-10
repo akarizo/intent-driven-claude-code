@@ -1,7 +1,5 @@
 """命令与 skill 写明「授权提交」（scenario: flight-takeoff-commit#takeoff-commit-documented）。
-骨架：strict xfail，断言是真实的；切片 S2 实现后去掉标记即解锁。"""
-import pytest
-
+"""
 from conftest import ROOT
 
 CMD = ROOT / "template" / ".claude" / "commands"
@@ -12,7 +10,6 @@ def read(path):
     return path.read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：apply 与 propose 文档写明授权提交")
 def test_takeoff_commit_documented():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md、opsx-propose.md、openspec-propose/SKILL.md
     apply_docs = [read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")]
