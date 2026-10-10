@@ -17,8 +17,16 @@ const DENY_SUBS = new Set([
 ])
 /** git remote 的只读用法（flight-envelope-gaps）：无参数，或第一个参数是其中之一；其余写共享 .git/config，拒绝 */
 const REMOTE_READ = new Set(['-v', '--verbose', 'show', 'get-url'])
-/** 段首可剥掉的前缀命令（其后紧随的 `-` 选项与 `VAR=` 一并剥掉） */
-const PREFIX_CMDS = new Set(['builtin', 'command', 'exec', 'env'])
+/**
+ * 段首可剥掉的前缀命令及其已知选项（flight-envelope-gaps）：flags 不带参数；withArg 连同一个参数剥掉，长名也接受 `--opt=val`。
+ * 不在表里的 `-` 选项一律判为无法判定。
+ */
+const PREFIX_OPTS: ReadonlyMap<string, { flags: readonly string[]; withArg: readonly string[] }> = new Map([
+  ['builtin', { flags: [], withArg: [] }],
+  ['command', { flags: ['-p', '-v', '-V'], withArg: [] }],
+  ['exec', { flags: [], withArg: ['-a'] }],
+  ['env', { flags: ['-i', '-0', '-v', '--ignore-environment', '--null', '--debug'], withArg: ['-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-P'] }],
+])
 /** 带 `-c` 时把其后文本当命令执行的 shell */
 const SHELL_PROGS = new Set(['bash', 'sh', 'zsh'])
 /** git config 的只读用法（flight-envelope-tightening D3）；其余用法一律拒绝 */
@@ -106,22 +114,45 @@ function denySegments(command: string): string[] {
 }
 
 /**
- * 段的词（按空白切）：去掉前导 `{`、`!`、`VAR=val`，以及 `builtin` / `command` / `exec` / `env` 和紧随的 `-` 选项与 `VAR=val`。
- * hasEnv 标记剥掉过任何前缀（bashUpgradable 据此不免询问，故剥前缀只会更严）；envKeys 为剥掉的赋值键名。
- * ceiling: 不识别带参数的前缀选项（如 `env -C <dir>`、`exec -a <name>`），参数会被当成程序名 -> 出现漏拒时按命令补选项表。
+ * 段的词（按空白切）：去掉前导 `{`、`!`、`VAR=val`，以及 PREFIX_OPTS 里的前缀命令和其后的已知选项（带参数的连同参数）与 `VAR=val`。
+ * hasEnv 标记剥掉过任何前缀（bashUpgradable 据此不免询问，故剥前缀只会更严）；envKeys 为剥掉的赋值键名；
+ * chdir 为 `env -C` / `--chdir` 的参数（未去引号）；unknownOpt 为剥前缀时遇到的不认识选项（此时 toks 为空，调用方须拒绝）。
+ * `env -S` / `--split-string` 的参数就是命令文本：去引号后接回词序列继续剥，而不是丢掉（丢掉会漏判其中的 git）。
+ * ceiling: 选项按前缀命令查表，短选项簇（如 `env -iv`）与短选项粘参数（如 `-uFOO`）一律判为无法判定；`-S` 只去引号不做真正分词 -> 误拒或漏拒出现时补表或换 shell 词法分析。
  */
-function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[] } {
-  const toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[]; chdir?: string; unknownOpt?: string } {
+  let toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
   const envKeys: string[] = []
+  let chdir: string | undefined
+  let prefix: { flags: readonly string[]; withArg: readonly string[] } | undefined
   let i = 0
-  let afterPrefix = false
   for (; i < toks.length; i++) {
-    const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(toks[i])
-    if (m) envKeys.push(m[1])
-    else if (PREFIX_CMDS.has(toks[i])) afterPrefix = true
-    else if (!(afterPrefix && toks[i].startsWith('-'))) break
+    const t = toks[i]
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(t)
+    if (m) {
+      envKeys.push(m[1])
+      continue
+    }
+    const p = PREFIX_OPTS.get(t)
+    if (p) {
+      prefix = p
+      continue
+    }
+    if (!prefix || !t.startsWith('-')) break
+    const eq = t.startsWith('--') ? t.indexOf('=') : -1
+    const opt = eq < 0 ? t : t.slice(0, eq)
+    const val = eq < 0 ? undefined : t.slice(eq + 1)
+    if (val === undefined && prefix.flags.includes(opt)) continue
+    if (!prefix.withArg.includes(opt)) return { toks: [], hasEnv: true, envKeys, unknownOpt: t }
+    if (opt === '-S' || opt === '--split-string') {
+      const rest = val === undefined ? toks.slice(i + 1) : [val, ...toks.slice(i + 1)]
+      toks = [...toks.slice(0, i + 1), ...rest.map(x => x.replace(/^["']|["']$/g, ''))]
+      continue
+    }
+    const arg = val ?? toks[++i] ?? ''
+    if (opt === '-C' || opt === '--chdir') chdir = arg
   }
-  return { toks: toks.slice(i), hasEnv: i > 0, envKeys }
+  return { toks: toks.slice(i), hasEnv: i > 0, envKeys, chdir }
 }
 
 /** 程序名（去引号后的 basename） */
@@ -260,28 +291,40 @@ export function bashVerdict(role: Role, command: string, worktree?: string, _mai
   if (command.includes('refs/flight/')) return { deny: `${name}不得触及 refs/flight/（账本与门禁结论只由 flight 插件写入）` }
   if (command.includes('<<')) return { deny: `${name}不得使用 heredoc（<<，会绕过写入包络）：改用 Write 工具写文件` }
   if (command.includes('/dev/stdin')) return { deny: `${name}不得让程序读标准输入（/dev/stdin 会挂起）：写成脚本文件再运行` }
-  return segmentsVerdict(role, command, worktree, undefined)
+  return segmentsVerdict(role, command, worktree, { cwd: undefined })
 }
 
-/** bashVerdict 的逐段判定；start 为起始目录（`bash -c` / `eval` 内层沿用外层当前目录递归） */
-function segmentsVerdict(role: Role, command: string, worktree: string | undefined, start: string | null | undefined): Deny | undefined {
+/**
+ * bashVerdict 的逐段判定；state.cwd 为当前目录，逐段更新。`eval` 在当前 shell 执行，内层共用 state（其 cd 回传外层）；
+ * `bash -c` 等跑在子进程，内层拿 state 的副本（其 cd 不影响外层）。inheritedEnv 为外层段首带进内层的 GIT_* 键名，
+ * 与内层各段自己的键名合并后判定。`env -C <p>` 只对本段生效（按 `cd <p>` 解析，不回传后续各段）。
+ */
+function segmentsVerdict(
+  role: Role,
+  command: string,
+  worktree: string | undefined,
+  state: { cwd: string | null | undefined },
+  inheritedEnv: readonly string[] = [],
+): Deny | undefined {
   const name = ROLE_NAME[role]
   const extra = role === 'reviewer' ? REVIEWER_EXTRA : []
   const gitEnvDeny = (keys: readonly string[]) => ({ deny: `${name}不得用 GIT_* 环境变量（${keys.join('、')}）改变改动类 git 的作用对象` })
-  let cwd = start
   for (const seg of denySegments(command)) {
-    const { toks, envKeys } = words(seg)
-    const gitEnv = envKeys.filter(k => k.startsWith('GIT_'))
+    const { toks, envKeys, chdir, unknownOpt } = words(seg)
+    if (unknownOpt !== undefined) return { deny: `${name}的前缀选项 ${unknownOpt} 无法判定（不在 env / exec / command 的已知选项表里）：去掉该选项或写成脚本文件再运行` }
+    const ownGitEnv = envKeys.filter(k => k.startsWith('GIT_'))
+    const gitEnv = [...inheritedEnv, ...ownGitEnv]
     const cd = cdArg(toks) ?? (toks[0] === 'pushd' ? toks.slice(1).join(' ') : undefined)
     if (cd !== undefined) {
-      cwd = resolveDir(cwd, unquote(cd))
+      state.cwd = resolveDir(state.cwd, unquote(cd))
       continue
     }
     if (toks[0] === 'popd') {
-      cwd = null
+      state.cwd = null
       continue
     }
-    if (toks.length === 0 && gitEnv.length > 0) return gitEnvDeny(gitEnv)
+    if (toks.length === 0 && ownGitEnv.length > 0) return gitEnvDeny(ownGitEnv)
+    const cwd = chdir === undefined ? state.cwd : resolveDir(state.cwd, unquote(chdir))
     // ceiling: 只认 export（不认 declare -x / typeset -x / set -a） -> 出现漏拒时补进来
     const exported = toks[0] === 'export' ? toks.slice(1).filter(t => t.startsWith('GIT_')).map(t => t.split('=')[0]) : []
     if (exported.length > 0) return gitEnvDeny(exported)
@@ -289,7 +332,8 @@ function segmentsVerdict(role: Role, command: string, worktree: string | undefin
     const inner = innerCommand(toks)
     if (inner === null) return { deny: `${name}的 -c / eval 命令文本无法判定（引号不配对或被 ;、|、& 等切开）：写成脚本文件再运行` }
     if (inner !== undefined) {
-      const d = segmentsVerdict(role, inner, worktree, cwd)
+      const sub = progName(toks) === 'eval' && chdir === undefined ? state : { cwd }
+      const d = segmentsVerdict(role, inner, worktree, sub, gitEnv)
       if (d) return d
       continue
     }

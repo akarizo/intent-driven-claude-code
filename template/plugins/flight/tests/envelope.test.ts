@@ -443,3 +443,64 @@ test('glob-pattern-cannot-escape', () => {
   // Then: 前两个不免询问，第三个免询问
   expect(results).toEqual([false, false, true])
 })
+
+// ---------------------------------------------------------------- spec flight-envelope-gaps（flight-measure S9）
+
+test('eval-cd-carries-to-outer', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；eval 在当前 shell 里 cd /repo 后 commit，eval cd W 后 commit，bash -c 在子进程里 cd /repo 后 commit
+  const cmds = [
+    'eval cd /repo && git commit -m x',
+    `eval cd ${W} && git commit -m x`,
+    "bash -c 'cd /repo' && git commit -m x",
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 第一条被拒且理由含「自己的 worktree」；后两条不被拒
+  expect(v[0]?.deny).toContain('自己的 worktree')
+  expect(v[1]).toBeUndefined()
+  expect(v[2]).toBeUndefined()
+})
+
+test('outer-git-env-reaches-inner', () => {
+  // Given: 执行体 worktree 为 W；段首 GIT_DIR 带进 bash -c 的 commit，经 env 给出的 GIT_WORK_TREE 带进 eval 的 add，GIT_PAGER=cat 带进 bash -c 的只读 log
+  const cmds = [
+    'GIT_DIR=/repo/.git bash -c "git commit -m x"',
+    'env GIT_WORK_TREE=/repo eval git add a',
+    "GIT_PAGER=cat bash -c 'git log -1'",
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条被拒且理由含「GIT_」；第三条不被拒
+  expect(v[0]?.deny).toContain('GIT_')
+  expect(v[1]?.deny).toContain('GIT_')
+  expect(v[2]).toBeUndefined()
+})
+
+test('prefix-options-with-arguments', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；五条带参数或不认识的前缀选项包住的危险 git，与 env -u FOO 包住的 pytest、env -C W 包住的 commit
+  const cmds = [
+    'env -u FOO git push origin HEAD:main',
+    'exec -a n git push',
+    'env -C /repo git commit -m x',
+    'env --chdir=/repo git add a',
+    'env -Z x git commit -m x',
+    'env -u FOO python3 -m pytest -q',
+    `env -C ${W} git commit -m x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条理由含「git push」；第三、四条含「自己的 worktree」；第五条含「无法判定」；后两条不被拒
+  expect(v[0]?.deny).toContain('git push')
+  expect(v[1]?.deny).toContain('git push')
+  expect(v[2]?.deny).toContain('自己的 worktree')
+  expect(v[3]?.deny).toContain('自己的 worktree')
+  expect(v[4]?.deny).toContain('无法判定')
+  expect(v[5]).toBeUndefined()
+  expect(v[6]).toBeUndefined()
+})

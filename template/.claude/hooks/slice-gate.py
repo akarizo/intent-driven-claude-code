@@ -1128,7 +1128,8 @@ def cmd_measure(args):
             outs = [o for i, o in raw if i == t or i.startswith(t + "[")]
             outcomes.append([t, max(outs, key=MEASURE_RANK.index) if outs else "MISSING"])
     committed, uncommitted = changed_files(root, base)
-    changed = sorted(committed | uncommitted)
+    # 簿记文件（start 写的切片标记、change 目录下的 timeline 等）不算本片改动，口径与 source_files 的排除一致
+    changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
     print(json.dumps({"slice": args.slice, "base": base, "commit": git(root, "rev-parse", "HEAD"),
                       "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed,
                       "source": source_files(changed, change_rel), "tail": _tail(text, 40)}, ensure_ascii=False))
