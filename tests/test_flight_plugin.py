@@ -141,10 +141,8 @@ def test_only_findings_tool_registered():
     assert_ts_passed("only-findings-tool-registered")
 
 # ---------------------------------------------------------------- flight-envelope-tightening S5
-# 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_approve_press_dedupes_same_fingerprint():
     # Given: demo 账本最后一条是指纹 F 的 approve 且之后没有 takeoff，当前计划指纹仍为 F
     # When: 人再按一次 demo 的「批准起飞」
