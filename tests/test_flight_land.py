@@ -65,3 +65,10 @@ def test_land_refuses_direct_commit_in_owns():
     # When: 合回 S2
     # Then: 不 merge、不 record，返回失败并指出 466cf98 与该文件；只改飞行记录的提交不算
     assert_ts_passed("land-refuses-direct-commit-in-owns")
+
+
+def test_land_refuses_merge_without_change():
+    # Given: merge-tree 算出的 S5 合并结果树与 HEAD 的树相同
+    # When: 合回 S5
+    # Then: 不 merge、不 record，返回失败并写明合回对第一父无变更
+    assert_ts_passed("land-refuses-merge-without-change")
