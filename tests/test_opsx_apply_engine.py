@@ -2,8 +2,6 @@
 骨架：S4 改两份文档后去掉 xfail 标记。"""
 import re
 
-import pytest
-
 from conftest import ROOT
 
 COMMAND = ROOT / "template" / ".claude" / "commands" / "opsx-apply.md"
@@ -31,10 +29,8 @@ def test_apply_docs_describe_plugin_engine():
         assert re.search(r"不会?自动回退", text), name
 
 # ---------------------------------------------------------------- flight-envelope S5
-# 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：命令、skill 与 ADR 尚未写明权限边界")
 def test_docs_state_envelope():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md 与 template/openspec/adr/
     docs = {p.name: preamble(p) for p in (COMMAND, SKILL)}
