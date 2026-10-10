@@ -1294,10 +1294,9 @@ def test_g7_reports_collection_failure_detail(git_repo):
                for f in out["failed"]), out["failed"]
 
 # ---------------------------------------------------------------- flight-envelope S1
-# 骨架：S1 实现后去掉 xfail 标记。
+# flight-envelope S1 的 scenario 测试。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：G3 的源码列表没排除 .openspec-slice")
 def test_gate_pairing_ignores_marker(git_repo):
     # Given: 切片 S1 已 start，区间内没有任何提交，工作树里只有未提交的 .openspec-slice 标记
     change = git_repo / "openspec" / "changes" / "c"
