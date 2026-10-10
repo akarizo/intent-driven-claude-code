@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -165,18 +163,16 @@ def test_drive_stops_after_terminal_without_fp():
 
 
 # ---------------------------------------------------------------- flight-envelope S6
-# 骨架：S6 实现后去掉 xfail 标记。
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_tool_call_denies_out_of_envelope_write():
-    # Given: demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/a.py）
-    # When: agent-1 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/a.py
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/s1.py）
+    # When: agent-1 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/s1.py
     # Then: 前者 tool.call 答 deny 且理由含「owns」，后者交给下游执行
     assert_ts_passed("tool-call-denies-out-of-envelope-write")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_tool_check_upgrades_ask_only_in_envelope():
     # Given: demo 已起飞，S1 执行体 agent-1 已派发
     # When: 引擎对 agent-1 包络内的 Write 判 ask / deny / ask 且 ceiling 为 ask；对 agent-1 的 Bash npm install 判 ask；对主会话的 Write 判 ask
@@ -184,7 +180,6 @@ def test_tool_check_upgrades_ask_only_in_envelope():
     assert_ts_passed("tool-check-upgrades-ask-only-in-envelope")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_main_session_read_only_during_flight():
     # Given: demo 已起飞（在飞），之后 attempt 1 halt
     # When: 起飞后、停飞前与停飞后，主会话各 Edit 一次 <change worktree>/src/a.py
@@ -192,7 +187,6 @@ def test_main_session_read_only_during_flight():
     assert_ts_passed("main-session-read-only-during-flight")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_agent_spawn_guard_wired():
     # Given: 插件已加载
     # When: 主会话的模型经 Agent 工具派发 subagent_type: flight:executor
