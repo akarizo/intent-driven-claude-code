@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-io（io-*）。io 函数跑在记录调用的假 Io 上；git / python3 / 文件系统由假 Io 作答。
 // 不经 ioOf($)：测试侧 $ 只有事件面（无 fs / process），测试 hook 里的 $ 调 fs / process 会被宿主扫描规则拒绝（2.1.295 实测）。
 import { expect, test } from 'claude-code/testing'
-import { appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir } from '../hooks/io'
+import { appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
 import type { Flight, FlightEvent, Io, RunResult } from '../hooks/core'
 
 const MAIN = '/repo'
@@ -288,4 +288,64 @@ test('io-refuses-prototype-ev', async () => {
   // Then: 都返回 false，没有任何 git 调用
   expect(results).toEqual([false, false])
   expect(calls).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-envelope-tightening S3（spec flight-agent-ownership）
+
+/** 假 Io：账本扫描由 ledgerWorld 作答（账本只有 takeoff 与 a1 的 dispatch），追加事件的 git 命令由 world 作答；calls 记录全部调用。 */
+function ownershipWorld(): { io: Io; calls: string[][] } {
+  const calls: string[][] = []
+  const ledger = ledgerWorld()
+  const { io: append } = world({ files: [] })
+  const APPEND = ['hash-object', 'mktree', 'rev-parse', 'commit-tree', 'update-ref']
+  const io: Io = {
+    async run(argv, opts) {
+      calls.push([...argv])
+      return argv[0] === 'git' && APPEND.includes(String(argv[1])) ? append.run(argv, opts) : ledger.run(argv, opts)
+    },
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: ledger.exists,
+  }
+  return { io, calls }
+}
+
+test('owner-pending-until-dispatch', async () => {
+  // Given: 归属表与进程内飞行清空；markPending('agent-9', 'demo')；账本里还没有 agent-9 的 dispatch
+  resetOwnership()
+  flights.clear()
+  const { io } = ownershipWorld()
+  markPending('agent-9', 'demo')
+  const dispatch: FlightEvent = { ...DISPATCH, slice: 'S2', agent: 'agent-9', worktree: '/W2' }
+
+  // When: 查询 agent-9 的归属；写入 agent-9 的 dispatch（S2、worktree /W2）后再查询
+  const first = await ownership(io, 'agent-9')
+  await appendEvent(io, flight(HOOKS), dispatch)
+  const second = await ownership(io, 'agent-9')
+
+  // Then: 第一次为登记中（change demo）；第二次为 { change demo、executor、S2、/W2 } 的正式归属
+  expect(first).toEqual({ pending: true, change: 'demo' })
+  expect(second).toEqual({ change: 'demo', role: 'executor', slice: 'S2', worktree: '/W2' })
+})
+
+test('owner-miss-cached-until-dispatch', async () => {
+  // Given: 归属表与进程内飞行清空；账本只有 takeoff 与 a1 的 dispatch，没有 agent-x 的 dispatch；已查过一次 agent-x（未命中）
+  resetOwnership()
+  flights.clear()
+  const { io, calls } = ownershipWorld()
+  await ownership(io, 'agent-x')
+  const afterFirst = calls.length
+
+  // When: 再查 agent-x；写入 a1 的 dispatch；再查一次 agent-x
+  const second = await ownership(io, 'agent-x')
+  const afterSecond = calls.length
+  await appendEvent(io, flight(HOOKS), DISPATCH)
+  const afterAppend = calls.length
+  const third = await ownership(io, 'agent-x')
+
+  // Then: 第二次未命中且没有任何调用（未读账本）；dispatch 写入后的那次查询重新读了账本（又运行了 ledger.py），结果仍未命中
+  expect(second).toBeUndefined()
+  expect(afterSecond).toBe(afterFirst)
+  expect(calls.slice(afterAppend).some(c => c[0] === 'python3' && c[1] === `${HOOKS}/ledger.py`)).toBe(true)
+  expect(third).toBeUndefined()
 })
