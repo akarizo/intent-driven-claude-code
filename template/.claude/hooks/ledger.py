@@ -2,7 +2,7 @@
 """飞行审批账本只读判定器：读取并校验 refs/flight/<change>/ledger 提交链（design D2 / D3）。
 
 只读：本文件不含任何写 git 对象或引用的命令；写入只在插件进程内。
-CLI：ledger.py {show|approved|verify} --change-dir DIR
+CLI：ledger.py {show|approved|verify} --change-dir DIR；ledger.py events（按字母序列出事件类型）
   LedgerInvalid → exit 4；LedgerUnreadable（不在仓库内等）与其他异常（git 不可执行等）→ exit 5。
 """
 import argparse
@@ -41,6 +41,11 @@ STR = (lambda x: isinstance(x, str), "不是字符串")
 BOOL = (lambda x: isinstance(x, bool), "不是布尔")
 STRS = (_strs, "不是字符串数组")
 RESULT = {"attempt": ATTEMPT, "slice": NONEMPTY, "ok": BOOL, "commit": STR, "failed": STRS}
+OUTCOMES = ("PASSED", "FAILED", "ERROR", "SKIPPED", "XFAIL", "XPASS", "MISSING")
+
+
+def _outcome(o):
+    return isinstance(o, list) and len(o) == 2 and _strs(o) and o[1] in OUTCOMES
 
 # 每类事件除公共字段（v / ev / change / at / by.plugin）外的必需字段；允许表外额外字段（spec flight-ledger-events）
 EVENTS = {
@@ -59,6 +64,10 @@ EVENTS = {
     "final": {"attempt": ATTEMPT, "ok": BOOL, "commit": STR, "failed": STRS},
     "land": {"attempt": ATTEMPT, "verdict": _one_of("ready", "draft")},
     "halt": {"attempt": ATTEMPT, "reason": STR},
+    "measure": {"attempt": ATTEMPT, "slice": NONEMPTY, "agent": NONEMPTY, "base": NONEMPTY, "commit": STR,
+                "outcomes": (lambda x: isinstance(x, list) and all(_outcome(o) for o in x),
+                             "不是 [目标, 结果] 数组（结果在 %s 之内）" % " / ".join(OUTCOMES)),
+                "changed": STRS, "source": STRS},
 }
 
 
@@ -175,9 +184,15 @@ def latest_approval(change_dir):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="飞行审批账本只读判定器")
-    ap.add_argument("cmd", choices=["show", "approved", "verify"])
-    ap.add_argument("--change-dir", required=True)
+    ap.add_argument("cmd", choices=["show", "approved", "verify", "events"])
+    ap.add_argument("--change-dir")
     args = ap.parse_args(argv)
+    if args.cmd == "events":
+        for name in sorted(EVENTS):
+            print(name)
+        return 0
+    if not args.change_dir:
+        ap.error("%s 需要 --change-dir" % args.cmd)
     try:
         if args.cmd == "show":
             for ev in read_events(args.change_dir):
