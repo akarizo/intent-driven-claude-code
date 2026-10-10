@@ -53,3 +53,30 @@ def test_landing_stops_when_ledger_unreadable():
     # When: drive 交来 land 动作
     # Then: 不写 review-findings.json、不运行 /pr-ship、账本无新增、提示「账本读取失败」
     assert_ts_passed("landing-stops-when-ledger-unreadable")
+
+# ---------------------------------------------------------------- flight-hardening
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_landing_prints_flight_record():
+    # Given: 全部合回、评审有结果、final 绿；timeline report 输出「批准 → apply 完成：12.0 min」；各 agent 实际模型都是 claude-opus-5-5、主模型 opus
+    # When: 执行落地动作
+    # Then: Ctx.log 收到含「飞行记录 · demo」「批准 → apply 完成：12.0 min」「路由对账：一致」的文本，且在运行 /pr-ship 之前
+    assert_ts_passed("landing-prints-flight-record")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_halt_prints_flight_record():
+    # Given: timeline report 输出「门禁红次数：2」
+    # When: 执行停飞动作（原因「final 红：G2 lint」）
+    # Then: Ctx.log 收到含「停飞 · demo：final 红：G2 lint」与「门禁红次数：2」的文本
+    assert_ts_passed("halt-prints-flight-record")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_fixer_dispatch_commits_records_first():
+    # Given: change 目录的 slices/_interfaces.md 有未提交改动
+    # When: 派发修复 agent
+    # Then: 「chore(flight): 记录」的 git commit 排在修复 worktree 的 git worktree add 之前
+    assert_ts_passed("fixer-dispatch-commits-records-first")

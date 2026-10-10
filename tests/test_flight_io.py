@@ -1,6 +1,8 @@
 """flight 副作用层（scenario: flight-io#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 情形拆成同名 TS 测试与其补充测试（gives-up / reuses）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -57,3 +59,14 @@ def test_io_refuses_invalid_event():
     # Then: 都返回 false，没有任何 git 调用
     assert_ts_passed("io-refuses-invalid-event")
     assert_ts_passed("io-refuses-invalid-event/dispatch-without-agent")
+
+# ---------------------------------------------------------------- flight-hardening
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_io_refuses_prototype_ev():
+    # Given: 两条事件的 ev 分别为 toString 与 constructor，其余公共字段合法
+    # When: 分别追加
+    # Then: 都返回 false，没有任何 git 调用
+    assert_ts_passed("io-refuses-prototype-ev")
