@@ -9,12 +9,18 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
+**执行引擎（先读）**
+- 装了 flight 插件（0.2.0 及以上）时，`/opsx-apply` 由插件的**状态机**执行：起飞检查（批准、干净工作区、lint / preflight、主模型）与整个飞行（派发、收口门禁、合回、评审、修复、final、收口、pr-ship）都不经模型，**模型不执行下面的步骤**。
+- 只有人显式加 `--engine=workflow` 时，才由模型按下面的步骤用 Workflow 引擎飞（旧引擎，后续 change 删除）；插件**不会自动回退**到旧引擎。
+- 插件缺席即**停飞**：没有插件，批准无从写入账本，step 0 的 `takeoff-gate.py` 必然拒绝。
+
 飞行模式跑完一次 apply：批准自检（`takeoff-gate.py` 比对账本指纹；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
 
 **Input**：可选指定 change 名。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余步骤不适用于该分支。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
+`--engine=workflow`（可选）→ 显式选旧引擎：由模型按下面的步骤用 Workflow 引擎飞；不加则由 flight 插件状态机执行，插件缺席即停飞。
 
 **模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
 

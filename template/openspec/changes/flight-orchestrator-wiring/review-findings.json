@@ -1,0 +1,91 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 115,
+      "summary": "新增的两条 error 返回（合并意外成功 / 非冲突的合并失败）都发生在 `worktree add -b <S>-resolve` 成功之后，但返回前没有清理。解冲突 worktree 与分支 flight/<change>/<S>-resolve 会留在原地，而 error 结构里不带 path，调用方（orchestrator.tsx:146 的 blocked）拿不到现场位置。下次重试 prepareResolve 时，第 112 行的 worktree add 会因「already exists」失败，把真正的根因（如 not something we can merge）盖掉，变成「建解冲突 worktree 失败」。切片包没要求清理，所以不阻断。",
+      "fix": "两条 error 路径返回前先在 change worktree 里执行 `git worktree remove --force <path>` 和 `git branch -D <resolveBranch>`（非冲突失败时先在 path 里 `merge --abort`）；或者至少把 path 写进 error 文本（如「…；现场留在 <path>」），方便人工处理。任选其一后补一条假 Io 测试来固定行为。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 149,
+      "summary": "本切片改动后，prepareResolve 只在 conflicts 非空时才返回 { path, conflicts }。因此调用方 `p.conflicts.length ? p.conflicts : a.conflicts` 中回退到 a.conflicts 的分支已经走不到，成了死代码（该文件不在本切片 owns 内，只作提醒）。",
+      "fix": "在后续负责 orchestrator.tsx 的切片里改成直接用 p.conflicts，或加注释说明保留这个回退的原因；本切片不用改。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_flight_agents.py",
+      "line": 98,
+      "summary": "test_reviewer_body_treats_missing_diff_as_high 中的 HIGH 与「取 diff 失败」两项断言在改动前就已成立：基线 reviewer.md 正文第 30、34 行早有 HIGH（分级说明与 submit_findings 段），旧第 13 行也早有「取 diff 失败」。因此这个测试真正能区分新旧的只有「^1 出现」和「git show 不出现」两项。scenario 名称里的核心要求「把取不到 diff 定为 HIGH」实际没被测到：哪天把铁律 1 的 HIGH 删掉，测试照样是绿的。本切片实现本身是对的，只是这条被解锁的骨架断言起不到约束作用。",
+      "fix": "改成检查同一行同时出现这两个词。例如在 body.splitlines() 里找含「取 diff 失败」的那一行，断言该行也含 HIGH（或者用正则 r'取 diff 失败' 与 'HIGH' 在同一段铁律 1 内匹配）。改骨架断言需要在 summary 里申报。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/prompts.ts",
+      "line": 38,
+      "summary": "提示词让评审员执行 `git diff <commit>^1 <commit>`。如果评审员的 Bash 跑在开了 EXTENDED_GLOB 的 zsh 里，`^` 会被当作 glob 取反，命令报 no matches found，评审员就会按新规则提交「取 diff 失败」HIGH，造成误阻断。zsh 默认不开这个选项，所以是否真会触发需进一步确认。",
+      "fix": "可以换成 shell 中性的写法 `git diff <commit>~1 <commit>`（对第一父与 ^1 等价），或在提示词中给参数加引号 'c^1'。如果换写法，需要同步改 reviewer.md 与两处测试里断言的字面量。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/io.test.ts",
+      "line": 164,
+      "summary": "假 Io 让 `${MAIN}/${CHANGE_DIR}` 存在，正好掩盖了上一条的缺陷：测试世界里 change 工件在主 worktree 上，和真实布局（工件只在 change worktree 上）不一致。另外，回退路径里的三个跳过分支（无 takeoff、最新 attempt 已 land/halt、changeDir 两个候选都不存在）都没有测试，以后改坏了不会被发现。",
+      "fix": "新增情形：change 工件只在 change worktree 上；账本含同 attempt 的 land 或 halt 事件时，按已派发的 agent 查找应返回空；账本没有 takeoff 时返回空。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 111,
+      "summary": "judgesDir 返回空串时没有提前返回，后面每个 change 都会执行 `python3 /ledger.py show ...`，必然失败后 continue，白白多起一个子进程。",
+      "fix": "`if (hooksDir === '') return undefined`，放在 judgesDir 之后。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 35,
+      "summary": "reminded 是模块级的 Set。landing 现在宣称不持有运行时状态、副作用一律经 Ctx 闭包，这个 Set 却是隐式的进程内可变状态。测试之间也共享它：以后如果再有测试用 agentId 'R' 调用 onLandingStop，第一次就不会再 block，结果取决于测试执行顺序。",
+      "fix": "把「是否已提醒」放到 Ctx 里（例如加一个 ctx.remindedOnce(agentId) 闭包，由 hook 文件持有），或者至少额外导出一个仅供测试用的重置入口；最低限度也要在测试里给每个用例用不同的 agentId，并加注释说明这个约束。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 81,
+      "summary": "fixer 收口时 appendEvent 的返回值被忽略。gate 事件没写进账本时，stopVerdict 仍然按内存里拼好的 [...events, g] 来判定，账本和裁决可能对不上。这一点沿用自原实现。",
+      "fix": "检查 appendEvent 的返回值。写入失败时返回 block，并提示账本写入失败、请重试收口；或者至少 ctx.toast 告警。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 329,
+      "summary": "takeoff 在 appendEvent(takeoff) 成功、flights.set 之后才调用 drive，所以 drive 里的异常被这里的 catch 接住时，账本已经有本 attempt 的 takeoff 事件，没有 halt，showStatus 也已经点亮。可回复却是「起飞异常，不起飞」，账本状态、状态行和回复三者不一致。下次 /opsx-apply 虽然能以 attempt+1 重飞，但旧 attempt 一直悬着。",
+      "fix": "按上一条在 driveNow 里先记 halt 再 rethrow，即可让账本与「不起飞」一致；或者在这个 catch 里对已写入 takeoff 的情况补一次 halt 并清掉状态行（ctx.status(undefined)）。回复文案也改成「已起飞但派发异常，已停飞」，与事实一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 408,
+      "summary": "only-findings-tool-registered 没断言调用结果是 deny，也没有任何飞行在空中，三种输入都走 found===undefined 这一条最浅的分支。即使 tool.call hook 根本没接上，断言「没有 hash-object」也照样成立。切片包要求「都被拒绝」，这一点没测到；「已起飞时非 reviewer / 主会话调用、或 reviewer 夹带 ev=approve」这些更有意义的路径也没覆盖。",
+      "fix": "收集每次 $.tool.call 的返回值，断言都含 deny。再加一组输入：先让 demo 起飞（有 executor agent），用 executor 的 agentId 和不带 agentId 的主会话分别调用，均应 deny；账本里 ev==='approve' 的事件数不变。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 331,
+      "summary": "command.run 的 .catch 中，PASS_THROUGH 参数下如果 next(e) 本身抛异常（此时 next.called 为真），会被改写成「flight：起飞异常，不起飞」。可这条命令根本不归 flight 起飞，文案会误导，还把下游 Workflow 引擎的真实错误吞掉了。",
+      "fix": "PASS_THROUGH 且 next.called 时，返回中性文案，例如「opsx-apply（workflow 引擎）执行异常：<首行>」，或保留原错误信息，不要套用起飞异常文案。"
+    }
+  ],
+  "fix": {
+    "slice": "final",
+    "ok": true,
+    "commit": "7df9c3e0d9e89198651f795128320efab596caef",
+    "failed": [],
+    "warnings": [],
+    "summary": "final 通过：scenario 16/16。三条 fix 分别提交：(1) io.ts 的账本回退路径改为遍历全部 worktree 探测 change 目录（主 worktree 排第一）；(2) landing.tsx 读不到账本时提示「账本读取失败」并直接返回，不再以空状态执行 dispatch、final 或 land；(3) orchestrator.tsx 的 driveNow 捕获 perform 异常后，先尽力写入 halt（动作异常），再把异常重新抛出；turn.complete hook 补了 .catch，异常交回 next(e)。每条修复都先补了一个 TS 测试并确认它先失败：io-finds-flight-from-ledger/change-dir-only-in-change-worktree、landing-stops-when-ledger-unreadable、drive-halts-on-action-exception。同时给这三个测试各加了一个 pytest 包装函数，已有骨架的断言没有改。ledgerWorld 加了 changeDirs 参数，ledger.py 在目录不存在时返回失败；默认值与原行为一致。fix 不在 slices.json 中，start 被拒绝，按指示跳过了这一步；基点已通过 rev-parse 确认 HEAD 等于 worktree-flight-orchestrator-wiring。"
+  }
+}

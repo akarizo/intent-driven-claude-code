@@ -7,7 +7,7 @@
     {
       "name": "flight",
       "source": "./template/plugins/flight",
-      "description": "飞行计划批准带：人按下「批准起飞」后由插件进程写入账本 ref；拦截模型对账本 / 门禁结论 ref 的写入（Bash / Monitor / 文件写入工具）。"
+      "description": "飞行计划批准带：人按下「批准起飞」后由插件进程写入账本 ref；拦截模型对账本 / 门禁结论 ref 的写入（Bash / Monitor / 文件写入工具）。接管 /opsx-apply：状态机编排、收口门禁、合回、评审回收、落地接 pr-ship。"
     }
   ]
 }
