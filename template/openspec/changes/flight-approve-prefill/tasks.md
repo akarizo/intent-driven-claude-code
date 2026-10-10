@@ -5,4 +5,4 @@
 
 ## 切片
 
-- [ ] S1 重复批准同样预填起飞命令；版本 0.3.2 （deps: - · verify: `python3 -m pytest -q tests/test_flight_plugin.py`）
+- [x] S1 重复批准同样预填起飞命令；版本 0.3.2 （deps: - · verify: `python3 -m pytest -q tests/test_flight_plugin.py`）
