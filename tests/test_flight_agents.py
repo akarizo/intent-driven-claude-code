@@ -99,3 +99,21 @@ def test_reviewer_body_treats_missing_diff_as_high():
 
     # Then: 含 ^1、「取 diff 失败」与 HIGH，不含 git show
     assert found == {"^1": True, "取 diff 失败": True, "HIGH": True, "git show": False}, found
+
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S8 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S8：执行体定义与提示词尚未写明测量协议")
+def test_executor_follows_measure_protocol():
+    # Given: 插件的 executor.md
+    meta, body = parse("executor")
+
+    # When: 读取它的工具白名单与正文
+    names = tools(meta)
+
+    # Then: 白名单含测量工具；正文写明「看它红」，不再有「不加 cd && 前缀」与「自动留痕」；提示词的同名 TS 测试通过
+    assert "mcp__flight__measure" in names, names
+    assert "measure" in body and "看它红" in body
+    assert "不加 `cd && ` 前缀" not in body and "自动留痕" not in body
+    assert_ts_passed("executor-prompt-states-measure-protocol")

@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "change": "flight-measure",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 104.2
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "判定器：measure 子命令、measure 事件与 events 子命令、严格 XPASS",
+      "scenarios": [
+        "flight-measure#measure-command-reports-outcomes",
+        "flight-measure#measure-reports-strict-xpass",
+        "flight-measure#ledger-accepts-measure-events"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "template/.claude/hooks/ledger.py",
+        "tests/test_slice_gate.py",
+        "tests/test_ledger.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py tests/test_ledger.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "G5 账本判据；start 与 gate 的 --evidence ledger、--measure-base",
+      "scenarios": [
+        "flight-gate-evidence#g5-ledger-requires-red-per-target",
+        "flight-gate-evidence#g5-ledger-requires-red-before-source",
+        "flight-gate-evidence#g5-ledger-exempts-targets-passing-at-start",
+        "flight-gate-evidence#g5-ledger-needs-start-measure",
+        "flight-gate-evidence#g5-ledger-uses-measure-base",
+        "flight-gate-evidence#start-tags-ledger-evidence",
+        "flight-gate-evidence#g5-legacy-path-unchanged"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "门禁红次数与测量统计取自账本；test-evidence 对账本模式切片让位",
+      "scenarios": [
+        "flight-gate-evidence#red-count-from-ledger",
+        "flight-gate-evidence#test-evidence-skips-ledger-slices"
+      ],
+      "owns": [
+        "template/.claude/hooks/timeline.py",
+        "template/.claude/hooks/test-evidence.py",
+        "tests/test_evidence_timeline.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_evidence_timeline.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "包络补漏：解释器 -c 与 eval、换目录写法、GIT_* 环境变量、共享 config 与 fetch、Glob pattern",
+      "scenarios": [
+        "flight-envelope-gaps#interpreter-wrappers-checked",
+        "flight-envelope-gaps#cd-variants-tracked",
+        "flight-envelope-gaps#git-env-overrides-denied",
+        "flight-envelope-gaps#shared-config-writers-denied",
+        "flight-envelope-gaps#glob-pattern-cannot-escape"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/envelope.ts",
+        "template/plugins/flight/tests/envelope.test.ts",
+        "tests/test_flight_envelope.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "io.ts：在飞账本读失败判不出、measure 事件写入校验、导出事件类型表",
+      "scenarios": [
+        "flight-ownership-fail-closed#ledger-read-failure-not-cached",
+        "flight-measure#measure-event-checked-before-write"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_io.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "versions.ts：插件副本核对与判定器事件表核对（纯函数）",
+      "scenarios": [
+        "flight-version-check#loaded-matches-installed",
+        "flight-version-check#loaded-differs-from-installed",
+        "flight-version-check#installed-unverifiable-noted",
+        "flight-version-check#judges-must-know-events"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/versions.ts",
+        "template/plugins/flight/tests/versions.test.ts",
+        "tests/test_flight_versions.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py",
+      "packet": "slices/S6.md"
+    },
+    {
+      "id": "S7",
+      "title": "接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0",
+      "scenarios": [
+        "flight-measure#measure-tool-records-event",
+        "flight-measure#measure-tool-only-for-flight-executors",
+        "flight-measure#measure-tool-upgraded-for-executor",
+        "flight-measure#fresh-dispatch-takes-start-measure",
+        "flight-gate-evidence#gate-runs-with-ledger-evidence",
+        "flight-version-check#takeoff-checks-versions",
+        "flight-ownership-fail-closed#unknown-owner-fails-closed"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/hooks/measure.ts",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py",
+        "template/plugins/flight/.claude-plugin/plugin.json"
+      ],
+      "deps": [
+        "S5",
+        "S6"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py",
+      "packet": "slices/S7.md"
+    },
+    {
+      "id": "S8",
+      "title": "铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议",
+      "scenarios": [
+        "flight-measure-docs#iron-rule-3-trusted-runner",
+        "flight-measure-docs#executor-follows-measure-protocol",
+        "flight-measure-docs#measure-adr-and-review-refs"
+      ],
+      "owns": [
+        "CLAUDE.md",
+        "template/CLAUDE.md.snippet",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "template/openspec/adr/DRAFT-flight-measure-protocol.md",
+        "template/plugins/flight/agents/executor.md",
+        "template/plugins/flight/hooks/prompts.ts",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "template/.claude/commands/pr-ship.md",
+        "template/.claude/agents/code-reviewer.md",
+        "tests/test_docs_iron_rules.py",
+        "tests/test_flight_agents.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py",
+      "packet": "slices/S8.md"
+    }
+  ],
+  "scenario_tests": {
+    "flight-measure#measure-command-reports-outcomes": "tests/test_slice_gate.py::test_measure_reports_slice_outcomes",
+    "flight-measure#measure-reports-strict-xpass": "tests/test_slice_gate.py::test_measure_reports_strict_xpass",
+    "flight-measure#ledger-accepts-measure-events": "tests/test_ledger.py::test_ledger_accepts_measure_events",
+    "flight-gate-evidence#g5-ledger-requires-red-per-target": "tests/test_slice_gate.py::test_g5_ledger_requires_red_per_target",
+    "flight-gate-evidence#g5-ledger-requires-red-before-source": "tests/test_slice_gate.py::test_g5_ledger_requires_red_before_source",
+    "flight-gate-evidence#g5-ledger-exempts-targets-passing-at-start": "tests/test_slice_gate.py::test_g5_ledger_exempts_targets_passing_at_start",
+    "flight-gate-evidence#g5-ledger-needs-start-measure": "tests/test_slice_gate.py::test_g5_ledger_needs_start_measure",
+    "flight-gate-evidence#g5-ledger-uses-measure-base": "tests/test_slice_gate.py::test_g5_ledger_uses_measure_base",
+    "flight-gate-evidence#start-tags-ledger-evidence": "tests/test_slice_gate.py::test_start_tags_ledger_evidence",
+    "flight-gate-evidence#g5-legacy-path-unchanged": "tests/test_slice_gate.py::test_gate_g5_fails_when_evidence_has_no_rows_for_slice",
+    "flight-gate-evidence#red-count-from-ledger": "tests/test_evidence_timeline.py::test_red_count_from_ledger",
+    "flight-gate-evidence#test-evidence-skips-ledger-slices": "tests/test_evidence_timeline.py::test_evidence_skips_ledger_marked_slice",
+    "flight-envelope-gaps#interpreter-wrappers-checked": "tests/test_flight_envelope.py::test_interpreter_wrappers_checked",
+    "flight-envelope-gaps#cd-variants-tracked": "tests/test_flight_envelope.py::test_cd_variants_tracked",
+    "flight-envelope-gaps#git-env-overrides-denied": "tests/test_flight_envelope.py::test_git_env_overrides_denied",
+    "flight-envelope-gaps#shared-config-writers-denied": "tests/test_flight_envelope.py::test_shared_config_writers_denied",
+    "flight-envelope-gaps#glob-pattern-cannot-escape": "tests/test_flight_envelope.py::test_glob_pattern_cannot_escape",
+    "flight-ownership-fail-closed#ledger-read-failure-not-cached": "tests/test_flight_io.py::test_ledger_read_failure_not_cached",
+    "flight-measure#measure-event-checked-before-write": "tests/test_flight_io.py::test_measure_event_checked_before_write",
+    "flight-version-check#loaded-matches-installed": "tests/test_flight_versions.py::test_loaded_matches_installed",
+    "flight-version-check#loaded-differs-from-installed": "tests/test_flight_versions.py::test_loaded_differs_from_installed",
+    "flight-version-check#installed-unverifiable-noted": "tests/test_flight_versions.py::test_installed_unverifiable_noted",
+    "flight-version-check#judges-must-know-events": "tests/test_flight_versions.py::test_judges_must_know_events",
+    "flight-measure#measure-tool-records-event": "tests/test_flight_orchestrator.py::test_measure_tool_records_event",
+    "flight-measure#measure-tool-only-for-flight-executors": "tests/test_flight_orchestrator.py::test_measure_tool_only_for_flight_executors",
+    "flight-measure#measure-tool-upgraded-for-executor": "tests/test_flight_orchestrator.py::test_measure_tool_upgraded_for_executor",
+    "flight-measure#fresh-dispatch-takes-start-measure": "tests/test_flight_orchestrator.py::test_fresh_dispatch_takes_start_measure",
+    "flight-gate-evidence#gate-runs-with-ledger-evidence": "tests/test_flight_orchestrator.py::test_gate_runs_with_ledger_evidence",
+    "flight-version-check#takeoff-checks-versions": "tests/test_flight_orchestrator.py::test_takeoff_checks_versions",
+    "flight-ownership-fail-closed#unknown-owner-fails-closed": "tests/test_flight_orchestrator.py::test_unknown_owner_fails_closed",
+    "flight-measure-docs#iron-rule-3-trusted-runner": "tests/test_docs_iron_rules.py::test_iron_rule_3_trusted_runner",
+    "flight-measure-docs#executor-follows-measure-protocol": "tests/test_flight_agents.py::test_executor_follows_measure_protocol",
+    "flight-measure-docs#measure-adr-and-review-refs": "tests/test_docs_iron_rules.py::test_measure_adr_and_review_refs"
+  }
+}

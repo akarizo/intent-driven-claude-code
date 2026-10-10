@@ -1,5 +1,7 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
 
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -98,3 +100,45 @@ def test_read_upgrade_limited_to_repo():
     # Then: 仓库内的 Read 与 Grep 可免询问；~/.ssh 与 /etc 不可
     assert_ts_passed("read-upgrade-limited-to-repo")
 
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_interpreter_wrappers_checked():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 bash -c / sh -lc / eval 包住的 push、reset、cd /repo 后的 commit、-c 内含 ; 的命令，以及 bash -c 'python3 -m pytest -q'
+    # Then: 前五条被拒（理由含子命令 / 自己的 worktree / 无法判定），最后一条不拒
+    assert_ts_passed("interpreter-wrappers-checked")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_cd_variants_tracked():
+    # Given: 执行体 worktree 为 W，主仓库 /repo
+    # When: 判定 pushd /repo、builtin cd /repo、command cd /repo 之后的改动类 git，pushd W/sub && popd 之后的 commit，以及 builtin cd W 之后的 commit
+    # Then: 前四条被拒（理由含自己的 worktree），最后一条不拒
+    assert_ts_passed("cd-variants-tracked")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_git_env_overrides_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定带 GIT_DIR / GIT_CONFIG_* / env GIT_WORK_TREE / export GIT_DIR / 单独 GIT_INDEX_FILE= 赋值的改动类 git，以及 GIT_PAGER=cat git log -1
+    # Then: 前五条被拒（理由含 GIT_），最后一条不拒
+    assert_ts_passed("git-env-overrides-denied")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_shared_config_writers_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 git fetch、remote add、remote set-url、branch -u、branch --set-upstream-to，以及 remote -v、remote get-url、branch --list
+    # Then: 前五条被拒，后三条不拒
+    assert_ts_passed("shared-config-writers-denied")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_glob_pattern_cannot_escape():
+    # Given: 主仓库 /repo，执行体 worktree W 在其内
+    # When: 判定 Glob 的绝对 pattern、含 .. 的 pattern 与 path=W 的相对 pattern
+    # Then: 前两个不免询问，第三个免询问
+    assert_ts_passed("glob-pattern-cannot-escape")

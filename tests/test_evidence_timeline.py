@@ -384,3 +384,62 @@ def test_evidence_single_candidate_fallback(git_repo):  # 既有行为守卫：�
     assert (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
     line = (change_c / "evidence.log").read_text(encoding="utf-8").strip().splitlines()[-1]
     assert "\tS1\t" in line
+
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+from conftest import ledger_append, make_change  # noqa: E402
+
+
+def _ev(change, **fields):
+    return dict({"v": 1, "change": change, "at": "2026-10-10T10:00:00Z", "by": {"plugin": "flight", "session": "test"}}, **fields)
+
+
+@pytest.mark.xfail(strict=True, reason="S3：红次数与测量统计尚未改为读账本")
+def test_red_count_from_ledger(git_repo):
+    # Given: timeline.md 没有 red 行；账本含 takeoff、2 条红 gate、1 条绿 gate、1 条红 final、3 条 measure（2 条有 FAILED）
+    d = make_change(git_repo)
+    write(d / "timeline.md", "2026-10-10T09:00:00Z\tapprove\tx\n2026-10-10T09:30:00Z\tgate\tS1 ok\n")
+    gate = {"attempt": 1, "slice": "S1", "commit": "c" * 40}
+    measure = {"ev": "measure", "attempt": 1, "slice": "S1", "agent": "a1", "base": "f" * 40, "commit": "e" * 40,
+               "changed": [], "source": []}
+    rows = [
+        {"ev": "takeoff", "attempt": 1, "fp": "a" * 64, "branch": "worktree-demo", "waves": [["S1"]], "model": "opus"},
+        dict(measure, outcomes=[["t", "XFAIL"]]),
+        dict(measure, outcomes=[["t", "FAILED"]]),
+        dict(measure, outcomes=[["t", "ERROR"], ["u", "PASSED"]]),
+        dict(gate, ev="gate", ok=False, failed=["G1 verify"]),
+        dict(gate, ev="gate", ok=False, failed=["G7 scenario"]),
+        dict(gate, ev="gate", ok=True, failed=[]),
+        {"ev": "final", "attempt": 1, "ok": False, "commit": "d" * 40, "failed": ["G1"]},
+    ]
+    for r in rows:
+        ledger_append(git_repo, "demo", _ev("demo", **r))
+
+    # When: 运行 timeline.py report
+    out = run_hook("timeline", "report", "--change-dir", str(d)).stdout
+
+    # Then: 门禁红次数 3（切片门禁 2、final 1）；测量 3 次、见红 2 次
+    assert "门禁红次数：3" in out and "切片门禁 2" in out and "final 1" in out, out
+    assert "测量：3 次（见红 2 次）" in out, out
+
+
+@pytest.mark.xfail(strict=True, reason="S3：test-evidence 尚未对账本模式让位")
+def test_evidence_skips_ledger_marked_slice(git_repo):
+    # Given: 仓库根的切片标记写明 evidence=ledger
+    change = marker_repo(git_repo)
+    marker = git_repo / ".openspec-slice"
+    data = json.loads(marker.read_text(encoding="utf-8"))
+    marker.write_text(json.dumps(dict(data, evidence="ledger")), encoding="utf-8")
+    event = bash_event("python3 -m pytest -q tests", stdout="3 passed in 0.1s", cwd=git_repo)
+
+    # When: 喂一次 pytest 的 PostToolUse；去掉标记里的 evidence 再喂一次
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
+    skipped = not (change / "evidence.log").exists()
+    marker.write_text(json.dumps(data), encoding="utf-8")
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
+
+    # Then: 第一次没有写 evidence.log；第二次写了一行 S1
+    assert skipped
+    assert "\tS1\t" in (change / "evidence.log").read_text(encoding="utf-8")
