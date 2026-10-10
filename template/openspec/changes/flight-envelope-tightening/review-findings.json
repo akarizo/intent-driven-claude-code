@@ -1,0 +1,105 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/land.test.ts",
+      "line": 119,
+      "summary": "删掉两个用例中三元链的首个 `--is-ancestor` 分支后，剩余的 `: has(...)` 续行仍保留原来逐级加深的缩进（首行 `has(argv, 'rev-parse', ...)` 与后续续行缩进层级不对齐，第 139 行同理），读起来像嵌套比实际更深。纯排版问题，不影响行为。",
+      "fix": "把 119-122 与 139-141 行的续行缩进整体左移一级，让首个条件与其后的 `:` 分支对齐（或交给仓库的格式化工具统一处理）；如果要严格守最小改动，也可以保持原样。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 167,
+      "summary": "misses 会把「读账本失败」也缓存成未命中。flightOfAgent 遇到 for-each-ref 非 0、readLedger 出错（continue）、trees 为空时都返回 undefined，ownership 无法区分「确实没派发」和「暂时读不到」，一律 misses.add。之后直到本进程下一次写 dispatch 前，这个 agent 的查询都直接返回 undefined，flyingWho 随之返回 undefined，包络对它不生效（fail-open）。原先每次调用都会重试，现在一次瞬时失败就会长时间生效。典型触发场景：进程重启后 owners 为空、续飞 takeoff，第一次查询碰上 ledger.py 或 git 的瞬时故障。",
+      "fix": "只缓存确定的未命中：让 flightOfAgent（或 ownership 内部）区分「完整扫完、都没有该 agent 的 dispatch」和「中途有读取失败（refs / trees / readLedger 非 events）」，只有前者 misses.add，后者直接返回 undefined、不缓存。再补一个用例：ledger.py 返回失败时查询，之后恢复，下一次查询应重新读账本并命中。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 147,
+      "summary": "pending 只在本进程写入 dispatch 时删除，没有对应的撤销入口。spawn 拿到 agentId 后，如果 dispatch 追加失败（appendEvent 返回 false）或飞行先 halt / land，这个 agentId 会一直处于登记中：按 D6，它的 Write/Edit/Bash 会被永久以「稍后重试」拒绝，表项也一直留在内存里。",
+      "fix": "导出 unmarkPending(agentId)（或在 remember 处理 halt/land 时清掉该 change 下的 pending 项），并在 S4 的接线里 dispatch 写入失败的分支调用；也可以在设计里注明这是有意的 fail-closed。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/openspec/adr/DRAFT-flight-envelope-tightening.md",
+      "line": 45,
+      "summary": "新 ADR 声称「全文重述包络」，并把第 1、2、6 条标为「承接，未修订」或「沿用」，但重述时漏掉了旧 ADR 的几处限定。第 6 条漏了「只拦非 flight 插件发起的派发（插件在收口或 turn.complete 帧里接着派发，父 agent 可能就是刚结束的那个）」这个例外；第 2 条漏了切段规则（按 &&、||、;、|、换行切段，跳过前导 VAR= 与 git 全局选项后取子命令），而第 3、8 条的「每一段」「按段解析」都依赖这条规则；第 1 条漏了拒绝理由的格式。旧 ADR 已被取代，这些限定在新 ADR 里相当于被删掉了，以后按第 6 条字面实现会误拦插件自己的续派。",
+      "fix": "第 6 条补回旧 ADR 的括注例外。第 2 条开头补回切段与子命令提取规则：「命令按 &&、||、;、|、换行切段，跳过前导 VAR=… 与 git 全局选项后取子命令」。第 1 条补回「拒绝理由写明角色、切片和越界的相对路径」。也可以保留现状，但须改掉「全文重述」「未修订」的措辞，明确写「细节见旧 ADR 原文」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/agents/executor.md",
+      "line": 24,
+      "summary": "同一文件里既有的第 24 行写「不加 cd && 前缀（cwd 已是仓库根）；不为一行脚本先 cat > 到文件再执行」，与本次新增的一行存在张力。新增行说 Bash 由插件固定在自己的 worktree，要跑脚本就先写成脚本文件再运行。按新 ADR 的 Context，cwd 并不由引擎保证，括注「cwd 已是仓库根」已经过时；「不为一行脚本先写文件」和「要跑脚本就先写成脚本文件」也容易让执行体判断不清，不知道该用 python3 -c 还是先写文件。",
+      "fix": "把第 24 行改为：「不加 cd && 前缀（插件已把 Bash 固定在你自己的 worktree）；一行脚本用 python3 -c，多行脚本用 Write 写成文件再运行，不用 cat > 或 heredoc」。这样它和新增行措辞一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 297,
+      "summary": "串行段里的嵌套三元把去重判定、追加、失败三种结果挤在一行（三元套 await 再套三元），读者要逐个拆括号才能确认 duplicate / appended / failed 三条分支，可读性差。",
+      "fix": "改写为 serial(async () => { if (await isAlreadyApproved($, approved)) return 'duplicate'; return (await appendApprove($, approved, e.surface)) ? 'appended' : 'failed' })，其中先在段外声明 const approved = { ...item, fp }，同时避免重复展开两次。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 174,
+      "summary": "切片包写的是「读账本复用 appendApprove 已有的读法」，实现改用 ledger.py show（evaluate 里 ledger.py approved 的同类读法），与字面约束略有出入；行为上更稳（会校验整条链），读失败与损坏（exit 4/5）都回落为不去重，符合「读失败照常追加」。属于规格措辞偏差，需进一步确认是否接受。",
+      "fix": "如果接受当前读法，在 design D9 或切片包里把措辞改成「经 ledger.py show 读取」，让规格和实现一致；如果不接受，就改用 git rev-parse 加 rev-list 读事件，不过那样会丢掉链校验，不推荐。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 238,
+      "summary": "D2 的硬拒绝（改动类 git 只能作用于自己的 worktree）有几种可确认的绕过方式。(1) 前导环境变量：words() 把 `VAR=` 剥掉后不再看，gitTargets 只认 -C/--git-dir/--work-tree/cd，于是 `GIT_DIR=/repo/.git git commit -m x`、`GIT_WORK_TREE=/repo git add .` 会被判为作用于 worktree 而放行；这和已经拦下的 `--git-dir=` 是同一件事。`export GIT_DIR=...; git commit` 同理。(2) 路径中间的 `$`：resolveDir 只在路径以 `$` 开头时判「无法判定」，`X=../../..; git -C \"W/$X\" commit` 在词法上落在 W 里，实际作用于树外。(3) parseGit 只剥前导 `{`、`!`，`if true; then git -C /repo commit -m x; fi`、`env git ...`、`time git ...` 的段头不是 git，D2 整段跳过。bashUpgradable 会拒掉这些（不在白名单）而回退到引擎询问，所以不算完全失守；但 D2 的设计意图是硬拒绝，现在只剩询问这一道。设计 D2 只列了 -C/--git-dir/--work-tree/cd，环境变量这一类是设计层的遗漏，建议在 S4 或后续切片补上（需进一步确认是否纳入本 change）。",
+      "fix": "1) bashVerdict 里给了 worktree 时，如果段的前导 `VAR=`（words 改为同时返回被剥掉的键名）或 `export` 段设置了 GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR / GIT_INDEX_FILE / GIT_CONFIG_*（可直接按 `^GIT_` 前缀匹配），后续出现改动类 git 就拒绝，理由含「自己的 worktree」；2) resolveDir 把含 `$` 或反引号的路径一律判为 null（`/[$`]/.test(p)`），不只看开头；3) words() 额外剥掉 then/do/else/time/env/exec/command/nohup 这些段头词，让 parseGit 和 readsStdin 能看到真正的程序名；4) 每种绕过补一条 TS 用例，断言 bashVerdict 拒绝。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 14,
+      "summary": "D3 号称补齐拒绝表，但漏了 `git fetch`。worktree 和主仓库共用 ref 库，在自己的 worktree 里跑 `git fetch . HEAD:refs/heads/main`（或 `git fetch <remote> x:main`）会直接移动主分支或 change 分支的 ref，而 D2 只查作用目录（在 W 内），挡不住。这正属于 D6 所说的「移动 ref」，目前只会回退到引擎询问。严格说超出 D3 明列的范围，需进一步确认是否纳入本 change。",
+      "fix": "在 dangerOf 里加一条：`g.sub === 'fetch'` 且参数里有含 `:` 的 refspec（或者 fetch 一律拒绝，飞行 agent 本来就不需要 fetch）时返回 'git fetch 写入 ref'；并补一条 `git fetch . HEAD:refs/heads/main` 被拒的用例。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 255,
+      "summary": "bashUpgradable 先判 hasEnv，再判门禁 / verify 命令，所以一旦门禁命令本身带前导环境变量（例如 `CI=1 npm test`、`PYTHONPATH=. pytest`），就永远不能免询问，每次运行门禁都会弹询问。这是 spec 字面要求（任何一段带前导 VAR= 都返回 false），但对这类配置相当于行为退化。",
+      "fix": "对段与门禁命令完全相等、或以「门禁命令加空格」开头的情况，把 hasEnv 判定放到命令匹配之后（门禁命令是人审过的配置）；或者在文档 / 门禁配置说明里写明门禁命令不得带前导 VAR=。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 281,
+      "summary": "readUpgradable 对 Grep / Glob 只看 `path`。Glob 的 `pattern` 如果是绝对路径或含 `..`（例如 `{pattern: '../../../../etc/*'}` 且不带 path），判定目标是 worktree，会免询问。Glob 工具是否真接受越出 path 的 pattern 需进一步确认；就算接受，泄漏的也只是文件名，不是文件内容。",
+      "fix": "Glob 的 pattern 以 `/` 或 `~` 开头、或包含 `..` 段时返回 false；补一条用例。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 69,
+      "summary": "markPending 在 await $.agent.spawn 返回之后才调用。若引擎在 spawn 的 Promise 解析之前就已让子 agent 开始调用工具，这段窗口内 ownership 查不到归属，会把该 agent 记入 misses 并当作非飞行 agent 放行：不受写入包络约束，也不做 Bash 改写。该窗口源自 design D6 本身的设计，引擎实际的调度时序需进一步确认。",
+      "fix": "先确认 $.agent.spawn 的解析时机是否早于子 agent 的首次工具调用。若存在窗口：方案一，在 spawn 之前按 description 或 nonce 预登记，拿到 agentId 后再绑定；方案二，在代码处加 ceiling 注释写明这个窗口，并补一条测试，模拟 spawn 解析前就有工具调用。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 177,
+      "summary": "S4 把 orchestrator 改为直接使用 ownership 之后，生产代码和测试都不再引用 ownerOf，它成了孤儿导出。io.ts 不在 S4 的 owns 内，S4 本身没有越权，这里只做提醒。",
+      "fix": "在后续切片或修复体中删除 io.ts 的 ownerOf，或给它补上实际调用方；不要在 S4 范围内顺手改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 803,
+      "summary": "切片包第 5 条要求「版本解析不出来」时也拒绝起飞，实现里对应 [-1,-1] 分支，但只有 2.37.1 这一条用例覆盖，解析失败和 exitCode 非 0 两条路径都没有测试。scenario 本身只要求 2.37.1，所以不算违约。",
+      "fix": "可选：在世界里把 gitVersion 配成无法解析的输出（如 'garbage'），补一条断言：回复含「git ≥ 2.38」，账本里没有 takeoff。"
+    }
+  ],
+  "fix": null
+}
