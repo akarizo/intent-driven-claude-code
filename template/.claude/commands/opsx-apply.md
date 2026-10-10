@@ -6,6 +6,11 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
 - 装了 flight 插件（0.2.0 及以上）时，本命令由插件的**状态机**执行：起飞检查（批准、干净工作区、lint / preflight、主模型）与整个飞行（派发、收口门禁、合回、评审、修复、final、收口、pr-ship）都不经模型，**模型不执行下面的步骤**。
 - 只有人显式加 `--engine=workflow` 时，才由模型按下面的步骤用 Workflow 引擎飞（旧引擎，后续 change 删除）；插件**不会自动回退**到旧引擎。
 - 插件缺席即**停飞**：没有插件，批准无从写入账本，step 0 的 `takeoff-gate.py` 必然拒绝。
+- **飞行中的权限（插件 0.3.0 起）**：
+  - 飞行 agent 的写入限于角色包络：执行体只能写本片 owns，修复体只能写全部 owns 的并集，评审员不能写；
+  - 危险 git（push、merge、reset、worktree、stash、改历史等）一律拒绝；
+  - Bash 只对门禁 / verify 命令、只读 git、`git add` / `git commit` 这类白名单免询问，其余按你的权限设置；
+  - 飞行中主会话对在飞的 change worktree 只读。这一条是尽力而为：shell 已 `cd` 进去后不带路径的 git 命令拦不到，会话重启后要等再次起飞才恢复。
 
 飞行模式跑完一次 apply：批准自检（`takeoff-gate.py` 比对账本指纹；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
