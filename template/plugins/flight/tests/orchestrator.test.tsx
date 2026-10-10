@@ -195,6 +195,12 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, 'd'.repeat(40) + '\n'))
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
+      case 'merge-base':
+        return wrap(res(0, '0'.repeat(40) + '\n'))
+      case 'log':
+        return wrap(res(0, ''))
+      case 'merge-tree':
+        return wrap(res(0, 'a'.repeat(40) + '\n'))
       case 'rev-list':
         return wrap(res(0, `${'f'.repeat(40)} ${'1'.repeat(40)} ${'2'.repeat(40)}\n`))
       case 'diff':
@@ -254,6 +260,22 @@ test('opsx-apply-taken-over', async ($, on) => {
     ['flight:executor', 'opus', SLICE1],
     ['flight:executor', 'opus', SLICE2],
   ])
+})
+
+test('spawn-prompt-names-worktree', async ($, on) => {
+  // Given: demo 已批准，waves [[S1, S2], [S3]]；引擎派发的 agent 不一定落在 cwd 参数给的目录里
+  const log = useWorld(on, demoWorld())
+
+  // When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 每份提示词都写明自己的切片 worktree 绝对路径、git 一律 git -C 该路径，且不得在别的 worktree 写入或提交
+  expect(log.spawns.length).toBe(2)
+  for (const s of log.spawns) {
+    expect(s.prompt).toContain(`\`${s.cwd}\``)
+    expect(s.prompt).toContain(`git -C ${s.cwd}`)
+    expect(s.prompt).toContain('不得在别的 worktree 写入或提交')
+  }
 })
 
 test('takeoff-refused-without-approval', async ($, on) => {

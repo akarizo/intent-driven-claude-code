@@ -18,7 +18,9 @@ function fakeIo(files: Record<string, string>, respond: Respond) {
   const io: Io = {
     async run(argv, opts) {
       calls.push({ argv: [...argv], cwd: opts?.cwd })
-      return { exitCode: 0, stdout: '', stderr: '', ...(respond([...argv]) ?? {}) }
+      // 合回前的越界与空合回检查：未预设时分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
+      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
+      return { exitCode: 0, stdout: '', stderr: '', ...preset, ...(respond([...argv]) ?? {}) }
     },
     async read(p) {
       return fs.get(p)
@@ -90,6 +92,41 @@ test('land-reports-non-conflict-merge-failure', async () => {
   // Then: 不运行 merge --abort；返回失败，failed 含 stderr 首行
   expect(find(calls, 'merge', '--abort')).toBe(-1)
   expect(result).toEqual({ ok: false, conflicts: [], failed: ['git merge 失败：merge: flight/demo/S2 - not something we can merge'] })
+})
+
+test('land-refuses-direct-commit-in-owns', async () => {
+  // Given: S2 的分叉点为 b0；change 分支自 b0 以来的第一父链上，非合并提交 466cf98 改了 S2 owns 内的 landing.tsx，记录提交 0247ab7 只改了 timeline.md
+  const log = `@466cf98\n\ntemplate/plugins/flight/hooks/landing.tsx\n@0247ab7\n\n${CD}/timeline.md\n`
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'merge-base', 'HEAD', 'flight/demo/S2') ? { stdout: 'b0\n' } : has(argv, 'log', '--first-parent', '--no-merges', 'b0..HEAD') ? { stdout: log } : undefined,
+  )
+
+  // When: 合回 S2（owns 含 landing.tsx 与整个 change 目录）
+  const result = await mergeSlice(io, F, 'S2', gateOf('S2'), ['template/plugins/flight/hooks/landing.tsx', `${CD}/**`])
+
+  // Then: 不运行 merge --no-ff 与 record；返回失败，failed 指出 466cf98 与 landing.tsx，不提记录提交 0247ab7
+  expect(find(calls, 'merge', '--no-ff')).toBe(-1)
+  expect(find(calls, 'record')).toBe(-1)
+  expect(result.ok).toBe(false)
+  const failed = result.ok ? '' : result.failed.join('\n')
+  expect(failed).toContain('466cf98 template/plugins/flight/hooks/landing.tsx')
+  expect(failed).not.toContain('0247ab7')
+})
+
+test('land-refuses-merge-without-change', async () => {
+  // Given: 第一父链上没有改动 S5 owns 的直接提交；merge-tree 算出的合并结果树 t1 与 HEAD 的树相同（S5 的改动已以别的路径进了 change 分支）
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'merge-tree', '--write-tree', 'HEAD', 'flight/demo/S5') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' } : undefined,
+  )
+
+  // When: 合回 S5
+  const result = await mergeSlice(io, F, 'S5', gateOf('S5'), ['docs/a.md'])
+
+  // Then: 不运行 merge --no-ff 与 record；返回失败，failed 写明合回对第一父无变更
+  expect(find(calls, 'merge', '--no-ff')).toBe(-1)
+  expect(find(calls, 'record')).toBe(-1)
+  expect(result.ok).toBe(false)
+  expect(result.ok ? '' : result.failed.join('\n')).toContain('合回对第一父无变更')
 })
 
 test('land-aborts-conflict-and-prepares-resolver', async () => {
