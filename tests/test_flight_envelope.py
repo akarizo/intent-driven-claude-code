@@ -1,6 +1,5 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
 
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -101,10 +100,9 @@ def test_read_upgrade_limited_to_repo():
     assert_ts_passed("read-upgrade-limited-to-repo")
 
 # ---------------------------------------------------------------- flight-measure
-# 骨架：S4 实现后去掉 xfail 标记。
+# S4 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_interpreter_wrappers_checked():
     # Given: 执行体 worktree 为 W
     # When: 判定 bash -c / sh -lc / eval 包住的 push、reset、cd /repo 后的 commit、-c 内含 ; 的命令，以及 bash -c 'python3 -m pytest -q'
@@ -112,7 +110,6 @@ def test_interpreter_wrappers_checked():
     assert_ts_passed("interpreter-wrappers-checked")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_cd_variants_tracked():
     # Given: 执行体 worktree 为 W，主仓库 /repo
     # When: 判定 pushd /repo、builtin cd /repo、command cd /repo 之后的改动类 git，pushd W/sub && popd 之后的 commit，以及 builtin cd W 之后的 commit
@@ -120,7 +117,6 @@ def test_cd_variants_tracked():
     assert_ts_passed("cd-variants-tracked")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_git_env_overrides_denied():
     # Given: 执行体 worktree 为 W
     # When: 判定带 GIT_DIR / GIT_CONFIG_* / env GIT_WORK_TREE / export GIT_DIR / 单独 GIT_INDEX_FILE= 赋值的改动类 git，以及 GIT_PAGER=cat git log -1
@@ -128,7 +124,6 @@ def test_git_env_overrides_denied():
     assert_ts_passed("git-env-overrides-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_shared_config_writers_denied():
     # Given: 执行体 worktree 为 W
     # When: 判定 git fetch、remote add、remote set-url、branch -u、branch --set-upstream-to，以及 remote -v、remote get-url、branch --list
@@ -136,7 +131,6 @@ def test_shared_config_writers_denied():
     assert_ts_passed("shared-config-writers-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_glob_pattern_cannot_escape():
     # Given: 主仓库 /repo，执行体 worktree W 在其内
     # When: 判定 Glob 的绝对 pattern、含 .. 的 pattern 与 path=W 的相对 pattern

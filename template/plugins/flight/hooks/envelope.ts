@@ -13,8 +13,14 @@ const ROLE_NAME: Record<Role, string> = { executor: '执行体', fixer: '修复�
 /** D6 拒绝表：移动 ref、改写历史或改动共享状态的 git 子命令 */
 const DENY_SUBS = new Set([
   'push', 'merge', 'rebase', 'reset', 'checkout', 'switch', 'worktree', 'update-ref', 'symbolic-ref',
-  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes', 'pull',
+  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes', 'pull', 'fetch',
 ])
+/** git remote 的只读用法（flight-envelope-gaps）：无参数，或第一个参数是其中之一；其余写共享 .git/config，拒绝 */
+const REMOTE_READ = new Set(['-v', '--verbose', 'show', 'get-url'])
+/** 段首可剥掉的前缀命令（其后紧随的 `-` 选项与 `VAR=` 一并剥掉） */
+const PREFIX_CMDS = new Set(['builtin', 'command', 'exec', 'env'])
+/** 带 `-c` 时把其后文本当命令执行的 shell */
+const SHELL_PROGS = new Set(['bash', 'sh', 'zsh'])
 /** git config 的只读用法（flight-envelope-tightening D3）；其余用法一律拒绝 */
 const CONFIG_READ = new Set(['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'])
 /** 读标准输入会挂起的解释器（D3）：python、python3、python3.x、node、bash、sh、zsh、ruby、perl */
@@ -99,12 +105,45 @@ function denySegments(command: string): string[] {
   return command.replace(/\d*>&\d+/g, ' ').split(/&&|\|\||[;|&\n()`]/)
 }
 
-/** 段的词（按空白切）：去掉前导 `{`、`!` 与 `VAR=val`；hasEnv 标记是否带前导 `VAR=` */
-function words(segment: string): { toks: string[]; hasEnv: boolean } {
+/**
+ * 段的词（按空白切）：去掉前导 `{`、`!`、`VAR=val`，以及 `builtin` / `command` / `exec` / `env` 和紧随的 `-` 选项与 `VAR=val`。
+ * hasEnv 标记剥掉过任何前缀（bashUpgradable 据此不免询问，故剥前缀只会更严）；envKeys 为剥掉的赋值键名。
+ * ceiling: 不识别带参数的前缀选项（如 `env -C <dir>`、`exec -a <name>`），参数会被当成程序名 -> 出现漏拒时按命令补选项表。
+ */
+function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[] } {
   const toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+  const envKeys: string[] = []
   let i = 0
-  while (i < toks.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[i])) i++
-  return { toks: toks.slice(i), hasEnv: i > 0 }
+  let afterPrefix = false
+  for (; i < toks.length; i++) {
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(toks[i])
+    if (m) envKeys.push(m[1])
+    else if (PREFIX_CMDS.has(toks[i])) afterPrefix = true
+    else if (!(afterPrefix && toks[i].startsWith('-'))) break
+  }
+  return { toks: toks.slice(i), hasEnv: i > 0, envKeys }
+}
+
+/** 程序名（去引号后的 basename） */
+function progName(toks: readonly string[]): string {
+  return (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
+}
+
+/**
+ * `bash` / `sh` / `zsh` 带 `-c`（含 `-lc` 这类短选项簇）或 `eval` 段：返回其后的命令文本（去一层引号）；
+ * 取不出（引号不配对，含被分段切开的情形）返回 null；不是这类段返回 undefined。
+ * ceiling: 只认整段一层引号，不解析反斜杠转义与 `-c` 文本后的位置参数（多出的词让引号不配对而拒） -> 误拒或漏拒出现时换成 shell 词法分析。
+ */
+function innerCommand(toks: readonly string[]): string | null | undefined {
+  const prog = progName(toks)
+  let k = -1
+  if (prog === 'eval') k = 0
+  else if (SHELL_PROGS.has(prog)) k = toks.findIndex((t, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(t))
+  if (k < 0) return undefined
+  const text = toks.slice(k + 1).join(' ')
+  const q = text[0]
+  if (q === "'" || q === '"') return text.length >= 2 && text.endsWith(q) ? unquote(text) : null
+  return (text.split("'").length - 1) % 2 === 0 && (text.split('"').length - 1) % 2 === 0 ? text : null
 }
 
 /** 去掉一层单引号（`'\''` 还原为 `'`）或双引号 */
@@ -147,8 +186,7 @@ function gitTargets(g: GitCall, cwd: string | null | undefined, worktree: string
  * ceiling: 不识别带参数的解释器选项（如 `python3 -W x -`）-> 出现漏拒时按解释器补选项表。
  */
 function readsStdin(toks: readonly string[]): boolean {
-  const prog = (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
-  if (!STDIN_INTERPRETER.test(prog)) return false
+  if (!STDIN_INTERPRETER.test(progName(toks))) return false
   for (const a of toks.slice(1)) {
     if (a === '-' || a === '-s') return true
     if (!a.startsWith('-') || ['-c', '-m', '-e', '-p', '--eval', '--print'].includes(a)) return false
@@ -199,7 +237,10 @@ function dangerOf(g: GitCall, extra: readonly string[]): string | undefined {
   if (configKeys(g.globals).includes('core.hookspath')) return 'git -c / --config-env core.hooksPath'
   // ceiling: 只要带一个只读选项就放行（`--list --add` 之类的混用不细分） -> 出现混用绕过时改为逐项校验
   if (g.sub === 'config' && !g.args.some(a => CONFIG_READ.has(a))) return 'git config 的写入用法'
-  if (g.sub === 'branch' && hasOpt(g.args, 'dDmMfcC', ['--delete', '--move', '--copy', '--force'])) return 'git branch 的删改选项'
+  if (g.sub === 'remote' && g.args.length > 0 && !REMOTE_READ.has(g.args[0])) return 'git remote 的写入用法'
+  if (g.sub === 'branch' && hasOpt(g.args, 'dDmMfcCu', ['--delete', '--move', '--copy', '--force', '--set-upstream-to', '--unset-upstream', '--edit-description'])) {
+    return 'git branch 的删改 / 上游 / 描述选项'
+  }
   if (g.sub === 'commit' && hasOpt(g.args, 'n', ['--amend', '--no-verify'])) return 'git commit --amend / --no-verify'
   return undefined
 }
@@ -219,21 +260,46 @@ export function bashVerdict(role: Role, command: string, worktree?: string, _mai
   if (command.includes('refs/flight/')) return { deny: `${name}不得触及 refs/flight/（账本与门禁结论只由 flight 插件写入）` }
   if (command.includes('<<')) return { deny: `${name}不得使用 heredoc（<<，会绕过写入包络）：改用 Write 工具写文件` }
   if (command.includes('/dev/stdin')) return { deny: `${name}不得让程序读标准输入（/dev/stdin 会挂起）：写成脚本文件再运行` }
+  return segmentsVerdict(role, command, worktree, undefined)
+}
+
+/** bashVerdict 的逐段判定；start 为起始目录（`bash -c` / `eval` 内层沿用外层当前目录递归） */
+function segmentsVerdict(role: Role, command: string, worktree: string | undefined, start: string | null | undefined): Deny | undefined {
+  const name = ROLE_NAME[role]
   const extra = role === 'reviewer' ? REVIEWER_EXTRA : []
-  let cwd: string | null | undefined
+  const gitEnvDeny = (keys: readonly string[]) => ({ deny: `${name}不得用 GIT_* 环境变量（${keys.join('、')}）改变改动类 git 的作用对象` })
+  let cwd = start
   for (const seg of denySegments(command)) {
-    const { toks } = words(seg)
-    const cd = cdArg(toks)
+    const { toks, envKeys } = words(seg)
+    const gitEnv = envKeys.filter(k => k.startsWith('GIT_'))
+    const cd = cdArg(toks) ?? (toks[0] === 'pushd' ? toks.slice(1).join(' ') : undefined)
     if (cd !== undefined) {
       cwd = resolveDir(cwd, unquote(cd))
       continue
     }
+    if (toks[0] === 'popd') {
+      cwd = null
+      continue
+    }
+    if (toks.length === 0 && gitEnv.length > 0) return gitEnvDeny(gitEnv)
+    // ceiling: 只认 export（不认 declare -x / typeset -x / set -a） -> 出现漏拒时补进来
+    const exported = toks[0] === 'export' ? toks.slice(1).filter(t => t.startsWith('GIT_')).map(t => t.split('=')[0]) : []
+    if (exported.length > 0) return gitEnvDeny(exported)
     if (readsStdin(toks)) return { deny: `${name}不得让解释器读标准输入（单独的 - 或 -s 会挂起）：写成脚本文件再运行` }
+    const inner = innerCommand(toks)
+    if (inner === null) return { deny: `${name}的 -c / eval 命令文本无法判定（引号不配对或被 ;、|、& 等切开）：写成脚本文件再运行` }
+    if (inner !== undefined) {
+      const d = segmentsVerdict(role, inner, worktree, cwd)
+      if (d) return d
+      continue
+    }
     const g = parseGit(seg)
     if (!g) continue
     const d = dangerOf(g, extra)
     if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员只读）` }
-    if (worktree === undefined || READONLY_SUBS.has(g.sub)) continue
+    if (READONLY_SUBS.has(g.sub)) continue
+    if (gitEnv.length > 0) return gitEnvDeny(gitEnv)
+    if (worktree === undefined) continue
     const wt = normalizePath(worktree)
     const out = gitTargets(g, cwd, worktree).find(t => t === null || !within(wt, t))
     if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；作用目录：${out ?? '无法判定（相对路径且无绝对基准）'}` }
@@ -280,6 +346,8 @@ export function readUpgradable(tool: string, input: unknown, worktree: string, m
   const v = (input as Record<string, unknown>)[key]
   const target = typeof v === 'string' && v !== '' ? v : worktree
   if (target.startsWith('~')) return false
+  const pattern = tool === 'Glob' ? (input as Record<string, unknown>).pattern : undefined
+  if (typeof pattern === 'string' && (pattern.startsWith('/') || pattern.split('/').includes('..'))) return false
   return within(normalizePath(mainTree), normalizePath(target.startsWith('/') ? target : worktree + '/' + target))
 }
 
