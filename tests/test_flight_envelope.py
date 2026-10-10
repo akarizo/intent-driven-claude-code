@@ -1,7 +1,5 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
 
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -56,10 +54,9 @@ def test_spawn_guard_exempts_plugin_own_dispatch():
     assert_ts_passed("spawn-guard-exempts-plugin-own-dispatch")
 
 # ---------------------------------------------------------------- flight-envelope-tightening S1
-# 骨架：S1 实现后去掉 xfail 标记。
+# S1 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_bash_wrap_pins_worktree():
     # Given: 执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1，门禁 test 为 python3 -m pytest -q tests
     # When: 改写 git commit -m x 并二次改写；判定改写后的门禁命令能否免询问
@@ -67,7 +64,6 @@ def test_bash_wrap_pins_worktree():
     assert_ts_passed("bash-wrap-pins-worktree")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_mutating_git_must_target_own_worktree():
     # Given: 执行体 worktree 为 W，主仓库为 M，change worktree 为 M/.worktrees/demo
     # When: 判定 git -C W commit、git commit、git -C <change worktree> commit、cd <change worktree> && git add、git -C sub commit、git -C <change worktree> log
@@ -75,7 +71,6 @@ def test_mutating_git_must_target_own_worktree():
     assert_ts_passed("mutating-git-must-target-own-worktree")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_deny_table_gaps_closed():
     # Given: 执行体
     # When: 判定 git pull、git config 写入、-c core.hooksPath（含大小写变体）、--config-env=core.hooksPath、commit --am、branch --d、git config --get
@@ -83,7 +78,6 @@ def test_deny_table_gaps_closed():
     assert_ts_passed("deny-table-gaps-closed")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_stdin_scripts_and_heredoc_denied():
     # Given: 执行体
     # When: 判定 python3 -、python3 - <<'EOF'、bash -s、python3 /dev/stdin、cat > a.py <<EOF、python3 scripts/x.py
@@ -91,7 +85,6 @@ def test_stdin_scripts_and_heredoc_denied():
     assert_ts_passed("stdin-scripts-and-heredoc-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_upgrade_refuses_env_prefix_and_outside_git():
     # Given: 执行体 worktree 为 W，主仓库为 M
     # When: 判定 GIT_EXTERNAL_DIFF=/x git diff、GIT_DIR=/o git -C W commit、git -C /tmp/other log、git -C W diff、git -C M/.worktrees/demo log 能否免询问
@@ -99,7 +92,6 @@ def test_upgrade_refuses_env_prefix_and_outside_git():
     assert_ts_passed("upgrade-refuses-env-prefix-and-outside-git")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_read_upgrade_limited_to_repo():
     # Given: 主仓库为 /r，执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1
     # When: 判定仓库内外的 Read、不带 path 的 Grep、Glob path /etc
