@@ -1172,20 +1172,28 @@ def report_latest(change_dir):
     return latest
 
 
-BOOKKEEPING = ("timeline.md", "gate-report.md", "evidence.log", "review-findings.json", "tasks.md")
+BOOKKEEPING = ("timeline.md", "gate-report.md", "evidence.log", "review-findings.json", "tasks.md",
+               "slices/_interfaces.md")
 
 
 def _final_fresh(root, change_dir, final_commit):
-    """final 之后的 commit 只改了 change 目录的记账文件 → 仍算新鲜；任一 git 调用失败 → 不新鲜。"""
+    """final 之后的 commit 只改了 changes 根下任一 change 的记账文件 → 仍算新鲜；任一 git 调用失败 → 不新鲜。"""
     if not _is_ancestor(root, final_commit, "HEAD"):
         return False
     try:
         names = git(root, "diff", "--name-only", final_commit, "HEAD").splitlines()
     except RuntimeError:
         return False
-    change_rel = os.path.relpath(os.path.abspath(change_dir), root).replace(os.sep, "/")
-    allowed = {"%s/%s" % (change_rel, n) for n in BOOKKEEPING}
-    return all(n in allowed for n in names if n)
+    changes_rel = os.path.relpath(os.path.dirname(os.path.abspath(change_dir)), root).replace(os.sep, "/")
+    prefix = changes_rel + "/"
+
+    def bookkeeping(n):
+        if not n.startswith(prefix):
+            return False
+        parts = n[len(prefix):].split("/", 1)
+        return len(parts) == 2 and parts[1] in BOOKKEEPING
+
+    return all(bookkeeping(n) for n in names if n)
 
 
 def cmd_ship(args):
