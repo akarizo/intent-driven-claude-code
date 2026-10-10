@@ -323,7 +323,7 @@ def test_ship_stale_after_plan_change(git_repo):  # 既有行为守卫：同上
     assert any("过期" in r for r in out["reasons"]), out["reasons"]
 
 # ---------------------------------------------------------------- flight-hardening
-# 骨架：S1 实现后去掉 xfail 标记。
+# flight-hardening S1 的 scenario 测试。
 
 
 def test_final_fresh_ignores_other_change_bookkeeping(git_repo):
