@@ -43,9 +43,10 @@ def test_agent_files_declare_flight_types():
     for n, m in parsed.items():
         assert m.get("effort") == "high", (n, m)
         assert "model" not in m, (n, m)
-    # Then: executor 与 fixer 的 tools 恰为写代码的六件，maxTurns 40
+    # Then: executor 的 tools 为写代码的六件加 mcp__flight__measure，fixer 恰为六件，两者 maxTurns 40
+    assert tools(parsed["executor"]) == WRITERS + ["mcp__flight__measure"], tools(parsed["executor"])
+    assert tools(parsed["fixer"]) == WRITERS, tools(parsed["fixer"])
     for n in ("executor", "fixer"):
-        assert tools(parsed[n]) == WRITERS, (n, tools(parsed[n]))
         assert parsed[n].get("maxTurns") == "40", (n, parsed[n])
     # Then: reviewer 的 tools 含 submit_findings，不含 Edit 与 Write
     rv = tools(parsed["reviewer"])
@@ -104,7 +105,6 @@ def test_reviewer_body_treats_missing_diff_as_high():
 # 骨架：S8 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S8：执行体定义与提示词尚未写明测量协议")
 def test_executor_follows_measure_protocol():
     # Given: 插件的 executor.md
     meta, body = parse("executor")
