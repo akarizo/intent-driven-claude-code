@@ -2,6 +2,7 @@
 // 账本：git hash-object 的 stdin 即事件 JSON，世界把它存进数组；ledger.py show 按顺序逐行返回。
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { ev } from '../hooks/core'
 
 const MAIN = '/repo'
 const TREE = '/repo/.worktrees/demo'
@@ -11,6 +12,7 @@ const F = '3f9a1c07' + 'a'.repeat(56)
 const G = '9b0e44d2' + 'b'.repeat(56)
 const SLICE1 = `${MAIN}/.claude/worktrees/flight-demo-S1`
 const SLICE2 = `${MAIN}/.claude/worktrees/flight-demo-S2`
+const SLICE3 = `${MAIN}/.claude/worktrees/flight-demo-S3`
 const RESOLVE2 = `${MAIN}/.claude/worktrees/flight-demo-S2-resolve`
 
 type Run = { exitCode: number; stdout: string; stderr: string }
@@ -32,6 +34,12 @@ type World = {
   spawnThrows?: boolean
   /** update-ref 一直返回非 0（旧值不符，账本写入总失败） */
   updateRefFails?: boolean
+  /** 跟踪 change 目录飞行记录的提交状态：fs.write 写过 → `git status --porcelain -- <记录>` 报改动，git commit 后清空 */
+  tracksRecords?: boolean
+  /** agent.list 的应答（缺省空） */
+  agents?: { id: string; status: string }[]
+  /** 账本预置事件 */
+  ledger?: Record<string, unknown>[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -58,15 +66,18 @@ function demoWorld(extra: Partial<World> = {}): World {
 }
 
 function useWorld(on: On, w: World) {
+  const files: Record<string, string> = { [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES) }
   const log = {
-    events: [] as Record<string, unknown>[],
+    events: [...(w.ledger ?? [])] as Record<string, unknown>[],
     spawns: [] as Spawn[],
     statuses: [] as string[],
     commands: [] as string[],
     runs: [] as { argv: string[]; cwd: string | undefined }[],
+    logs: [] as string[],
+    files,
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, `${TREE}/${CD}/slices.json`])
-  const files: Record<string, string> = { [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES) }
+  const dirty = new Set<string>()
   let agents = 0
   let conflicted = ''
   let pending: Record<string, unknown> | undefined
@@ -79,7 +90,11 @@ function useWorld(on: On, w: World) {
     log.statuses.push(String(e.text ?? ''))
     return { value: undefined }
   })
-  on('agent.list', () => ({ value: [] }))
+  on('ui.log', ($, e) => {
+    log.logs.push(String((e as { text?: unknown }).text ?? ''))
+    return { value: undefined }
+  })
+  on('agent.list', () => ({ value: (w.agents ?? []) as never }))
   on('turn.complete', () => ({ text: '' }))
   on('classic.SubagentStop', () => ({}))
   on('command.run', ($, e) => {
@@ -100,9 +115,15 @@ function useWorld(on: On, w: World) {
     } as never
   })
   on('fs.exists', ($, e) => ({ value: exists.has(e.path) }))
-  on('fs.read', ($, e) => ({ value: files[e.path] ?? '' }))
+  // 与真实引擎一致：读不存在的文件抛错，原文 `$.fs.read(<path>) failed: ENOENT`
+  on('fs.read', ($, e) => {
+    if (!(e.path in files)) throw new Error(`$.fs.read(${e.path}) failed: ENOENT`)
+    return { value: files[e.path] }
+  })
   on('fs.write', ($, e) => {
     files[e.path] = String((e as { text?: unknown }).text ?? '')
+    exists.add(e.path)
+    if (w.tracksRecords && e.path.startsWith(`${TREE}/${CD}/`)) dirty.add(e.path.slice(`${TREE}/`.length))
     return { value: undefined }
   })
   on('process.run', ($, e) => {
@@ -138,8 +159,11 @@ function useWorld(on: On, w: World) {
         if (args[1] === 'list') return wrap(res(0, `worktree ${MAIN}\nbranch refs/heads/main\n\nworktree ${TREE}\nbranch refs/heads/worktree-demo\n`))
         exists.add(String(args[4]))
         return wrap(res(0, ''))
-      case 'status':
-        return wrap(res(0, ''))
+      case 'status': {
+        // 带路径的 status（commitRecords 查飞行记录）才报 tracksRecords 跟踪到的改动；起飞前的整树检查照旧干净
+        const paths = args.includes('--') ? args.slice(args.indexOf('--') + 1).map(p => p.slice(`${TREE}/`.length)) : []
+        return wrap(res(0, paths.filter(p => dirty.has(p)).map(p => ` M ${p}\n`).join('')))
+      }
       case 'hash-object':
         pending = JSON.parse(String(e.init?.stdin))
         return wrap(res(0, 'b'.repeat(40) + '\n'))
@@ -169,8 +193,10 @@ function useWorld(on: On, w: World) {
         if (args[1] === '--abort') conflicted = ''
         return wrap(res(0, ''))
       }
-      case 'add':
       case 'commit':
+        dirty.clear()
+        return wrap(res(0, ''))
+      case 'add':
         return wrap(res(0, ''))
     }
     throw new Error(`unexpected git: ${args.join(' ')}`)
@@ -403,4 +429,76 @@ test('takeoff-refuses-bad-fingerprint/not-hex', async ($, on) => {
   expect(r.text).toContain('计算计划指纹失败')
   expect(log.events).toEqual([])
   expect(log.spawns).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-hardening（S3）
+
+test('drive-reports-fp-failure-distinctly', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.fpRun = res(1, '', 'plan_fp 超时')
+
+  // When: 处理 A 的结束（turn.complete）
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: 账本末条为 halt，原因含「计算计划指纹失败」与「plan_fp 超时」、不含「计划指纹已变」；$.ui.log 收到含「停飞 · demo」的文本
+  const last = log.events.at(-1)
+  expect(last).toMatchObject({ ev: 'halt', reason: expect.stringContaining('计算计划指纹失败') })
+  expect(String(last?.reason)).toContain('plan_fp 超时')
+  expect(String(last?.reason)).not.toContain('计划指纹已变')
+  expect(log.logs.some(t => t.includes('停飞 · demo'))).toBe(true)
+})
+
+test('executor-dispatch-commits-records-first', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，waves [[S1, S2], [S3]]；世界跟踪飞行记录的提交状态；S1（agent-1）已收口结束并合回，S2（agent-2）已收口——合回 S2 后刷新的 slices/_interfaces.md 尚未提交
+  const log = useWorld(on, demoWorld({ tracksRecords: true }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+  await $.turn.complete(ended('agent-1') as never)
+  await $.classic.SubagentStop(subagentStop('agent-2') as never)
+
+  // When: 处理 S2 执行体的结束，drive 合回 S2 后派发 S3 的执行体
+  await $.turn.complete(ended('agent-2') as never)
+
+  // Then: S3 切片 worktree 的 git worktree add 发生过；它与 S2 合回之间有一次「chore(flight): 记录」的 git commit
+  const addS3 = log.runs.findIndex(x => x.argv[1] === 'worktree' && x.argv[2] === 'add' && x.argv.includes(SLICE3))
+  const mergeS2 = log.runs.findIndex(x => x.argv.join(' ').includes('merge --no-ff flight/demo/S2'))
+  const between = log.runs.slice(mergeS2, Math.max(addS3, 0))
+  expect(addS3).toBeGreaterThan(-1)
+  expect(between.some(x => x.argv.includes('commit') && x.argv.includes('chore(flight): 记录'))).toBe(true)
+})
+
+test('takeoff-waits-for-live-agents-after-halt', async ($, on) => {
+  // Given: 账本预置 demo attempt 1 的 takeoff、S1 的 dispatch（agent-1）、halt；agent.list 里 agent-1 仍为 running
+  const b = { change: 'demo', at: '2026-10-09T12:00:00.000Z', session: 'sess-1' }
+  const ledger = [
+    ev.takeoff(b, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    ev.dispatch(b, { attempt: 1, slice: 'S1', role: 'executor', agent: 'agent-1', model: 'opus', worktree: SLICE1 }),
+    ev.halt(b, { attempt: 1, reason: '计划指纹已变' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, agents: [{ id: 'agent-1', status: 'running' }] }))
+
+  // When: 人再次发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「仍在运行」；账本仍只有预置的 3 条事件（没有新的 takeoff）
+  expect(r.text).toContain('仍在运行')
+  expect(log.events.length).toBe(3)
+})
+
+test('merge-survives-missing-interfaces-summary', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；世界的 fs.read 对不存在的文件抛 ENOENT，change 目录还没有 slices/_interfaces.md；A 收口时 S1 门禁绿
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+
+  // When: 处理 A 的结束（turn.complete），drive 合回 S1
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: 账本有 S1 的 merge 且 ok；没有 halt；_interfaces.md 被写出且含「## S1」
+  expect(log.events.some(x => x.ev === 'merge' && x.slice === 'S1' && x.ok === true)).toBe(true)
+  expect(log.events.some(x => x.ev === 'halt')).toBe(false)
+  expect(log.files[`${TREE}/${CD}/slices/_interfaces.md`]).toContain('## S1')
 })
