@@ -170,6 +170,12 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
   return run
 }
 
+/** 把 /opsx-apply <change> 预填进输入框；预填不了就提示手动输入。 */
+async function prefillApply($: Engine, change: string): Promise<void> {
+  const filled = await $.prompt.fill({ text: `/opsx-apply ${change}` })
+  if (!filled.isFilled) $.ui.toast(`flight：已批准 ${change}，请手动输入 /opsx-apply ${change}`)
+}
+
 /** 最近一次 takeoff 之后最后一条 approve 的指纹即 fp → true；读失败按「不去重」返回 false。 */
 async function isAlreadyApproved($: Engine, item: FlightItem): Promise<boolean> {
   try {
@@ -299,6 +305,7 @@ export const register: Register = on => {
     if (outcome === 'duplicate') {
       $.ui.toast(`flight：${change} 已批准（指纹相同），无需重复按`)
       await refresh($)
+      await prefillApply($, change)
       return { element: e.element }
     }
     if (outcome === 'failed') {
@@ -306,8 +313,7 @@ export const register: Register = on => {
       return { element: e.element }
     }
     await refresh($)
-    const filled = await $.prompt.fill({ text: `/opsx-apply ${change}` })
-    if (!filled.isFilled) $.ui.toast(`flight：已批准 ${change}，请手动输入 /opsx-apply ${change}`)
+    await prefillApply($, change)
     return { element: e.element }
   })
 
