@@ -54,3 +54,10 @@ export function spawnVerdict(x: { subagentType: string; originPlugin: string | u
 ```
 export const register: Register = on => {
 ```
+
+## S4
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
