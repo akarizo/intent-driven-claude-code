@@ -53,3 +53,48 @@ def test_spawn_guard_exempts_plugin_own_dispatch():
     # Then: 插件自己的派发放行，引擎来源被拒（PR #41 评审 HIGH，R1）
     assert_ts_passed("spawn-guard-exempts-plugin-own-dispatch")
 
+# ---------------------------------------------------------------- flight-envelope-tightening S1
+# S1 已实现：骨架标记已去。
+
+
+def test_bash_wrap_pins_worktree():
+    # Given: 执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1，门禁 test 为 python3 -m pytest -q tests
+    # When: 改写 git commit -m x 并二次改写；判定改写后的门禁命令能否免询问
+    # Then: 结果为 cd '<worktree>' && git commit -m x，二次改写不变；改写后的门禁命令可免询问；路径含单引号时正确转义
+    assert_ts_passed("bash-wrap-pins-worktree")
+
+
+def test_mutating_git_must_target_own_worktree():
+    # Given: 执行体 worktree 为 W，主仓库为 M，change worktree 为 M/.worktrees/demo
+    # When: 判定 git -C W commit、git commit、git -C <change worktree> commit、cd <change worktree> && git add、git -C sub commit、git -C <change worktree> log
+    # Then: 第三、四、五个被拒且理由含「自己的 worktree」；第一、二、六个不被拒
+    assert_ts_passed("mutating-git-must-target-own-worktree")
+
+
+def test_deny_table_gaps_closed():
+    # Given: 执行体
+    # When: 判定 git pull、git config 写入、-c core.hooksPath（含大小写变体）、--config-env=core.hooksPath、commit --am、branch --d、git config --get
+    # Then: 前七个被拒；git config --get user.name 不被拒
+    assert_ts_passed("deny-table-gaps-closed")
+
+
+def test_stdin_scripts_and_heredoc_denied():
+    # Given: 执行体
+    # When: 判定 python3 -、python3 - <<'EOF'、bash -s、python3 /dev/stdin、cat > a.py <<EOF、python3 scripts/x.py
+    # Then: 前五个被拒且理由含「脚本文件」或「Write」；python3 scripts/x.py 不被拒
+    assert_ts_passed("stdin-scripts-and-heredoc-denied")
+
+
+def test_upgrade_refuses_env_prefix_and_outside_git():
+    # Given: 执行体 worktree 为 W，主仓库为 M
+    # When: 判定 GIT_EXTERNAL_DIFF=/x git diff、GIT_DIR=/o git -C W commit、git -C /tmp/other log、git -C W diff、git -C M/.worktrees/demo log 能否免询问
+    # Then: 前三个不可免询问，后两个可免询问
+    assert_ts_passed("upgrade-refuses-env-prefix-and-outside-git")
+
+
+def test_read_upgrade_limited_to_repo():
+    # Given: 主仓库为 /r，执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1
+    # When: 判定仓库内外的 Read、不带 path 的 Grep、Glob path /etc
+    # Then: 仓库内的 Read 与 Grep 可免询问；~/.ssh 与 /etc 不可
+    assert_ts_passed("read-upgrade-limited-to-repo")
+

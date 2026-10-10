@@ -67,3 +67,20 @@ def test_io_refuses_prototype_ev():
     # When: 分别追加
     # Then: 都返回 false，没有任何 git 调用
     assert_ts_passed("io-refuses-prototype-ev")
+
+# ---------------------------------------------------------------- flight-envelope-tightening S3
+
+
+def test_owner_pending_until_dispatch():
+    # Given: markPending('agent-9', 'demo')
+    # When: 查询 agent-9 归属；写入其 dispatch（S2、W2）后再查
+    # Then: 第一次为登记中（change demo）；第二次为 executor / S2 / W2 的正式归属
+    assert_ts_passed("owner-pending-until-dispatch")
+
+
+def test_owner_miss_cached_until_dispatch():
+    # Given: 账本里没有 agent-x 的 dispatch
+    # When: 连查两次 agent-x；写入任一 dispatch 后再查一次
+    # Then: 第二次不读账本；dispatch 写入后的查询重新读账本
+    assert_ts_passed("owner-miss-cached-until-dispatch")
+

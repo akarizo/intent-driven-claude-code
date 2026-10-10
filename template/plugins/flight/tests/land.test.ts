@@ -18,8 +18,8 @@ function fakeIo(files: Record<string, string>, respond: Respond) {
   const io: Io = {
     async run(argv, opts) {
       calls.push({ argv: [...argv], cwd: opts?.cwd })
-      // 合回前的检查：未预设时切片分支不是 HEAD 的祖先（未合入过）、分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
-      const preset = argv.includes('--is-ancestor') ? { exitCode: 1 } : argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
+      // 合回前的检查：未预设时第一父链上没有以切片尖端为第二父的合并提交（未合入过）、分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
+      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
       return { exitCode: 0, stdout: '', stderr: '', ...preset, ...(respond([...argv]) ?? {}) }
     },
     async read(p) {
@@ -116,8 +116,7 @@ test('land-refuses-direct-commit-in-owns', async () => {
 test('land-records-already-integrated-slice', async () => {
   // Given: 切片分支 flight/demo/S1 的尖端 tip1 是 HEAD 第一父链上合并提交的第二父（上一 attempt 已 integrate，账本缺 merge 事件）；合并结果树与 HEAD 的树相同；HEAD 为 m1
   const { io, calls, fs } = fakeIo({ [`${CT}/src/a.py`]: 'def run(x):\n' }, argv =>
-    has(argv, 'merge-base', '--is-ancestor', 'flight/demo/S1', 'HEAD') ? { exitCode: 0 }
-      : has(argv, 'rev-parse', 'flight/demo/S1') ? { stdout: 'tip1\n' }
+    has(argv, 'rev-parse', 'flight/demo/S1') ? { stdout: 'tip1\n' }
         : has(argv, 'log', '--first-parent', '--merges', 'tip1..HEAD') ? { stdout: 'p1 tip1\n' }
           : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' }
             : has(argv, 'rev-parse', 'HEAD') ? { stdout: 'm1\n' } : undefined,
@@ -136,11 +135,10 @@ test('land-records-already-integrated-slice', async () => {
 })
 
 test('land-refuses-zero-commit-slice-as-integrated', async () => {
-  // Given: 切片分支 flight/demo/S2 没有自己的提交：尖端 x0 就是派发时的 change 分支尖端（是 HEAD 的祖先，但不是任何合并提交的第二父）；
-  //        执行体把改动留在工作区或直接提交进了 change 分支，合并结果树与 HEAD 的树相同
+  // Given: 切片分支 flight/demo/S2 没有自己的提交：尖端 x0 就是派发时的 change 分支尖端，在第一父链上，不是任何合并提交的第二父
+  //        （x0..HEAD 第一父链上唯一的合并提交 p1 的第二父是 s1tip）；执行体把改动留在工作区或直接提交进了 change 分支，合并结果树与 HEAD 的树相同
   const { io, calls } = fakeIo({}, argv =>
-    has(argv, 'merge-base', '--is-ancestor', 'flight/demo/S2', 'HEAD') ? { exitCode: 0 }
-      : has(argv, 'rev-parse', 'flight/demo/S2') ? { stdout: 'x0\n' }
+    has(argv, 'rev-parse', 'flight/demo/S2') ? { stdout: 'x0\n' }
         : has(argv, 'log', '--first-parent', '--merges', 'x0..HEAD') ? { stdout: 'p1 s1tip\n' }
           : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' } : undefined,
   )

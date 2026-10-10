@@ -46,8 +46,12 @@ type World = {
   dirty?: string[]
   /** 插件之下 tool.check 的引擎判定队列（按调用顺序取；取完后为 ask） */
   checks?: string[]
-  /** 已经 integrate 过的切片：`git merge-base --is-ancestor` 对它们退出 0（其余退出 1），且第一父链上有以其尖端 tip-<S> 为第二父的合并提交 */
+  /** 已经 integrate 过的切片：第一父链上有以其尖端 tip-<S> 为第二父的合并提交 */
   integrated?: string[]
+  /** dispatch 事件写入账本总失败（update-ref 非 0，其余事件照常）：派出的 agent 停在登记中 */
+  dispatchFails?: boolean
+  /** `git --version` 的输出（缺省 git version 2.43.0） */
+  gitVersion?: string
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -187,7 +191,7 @@ function useWorld(on: On, w: World) {
         pending = JSON.parse(String(e.init?.stdin))
         return wrap(res(0, 'b'.repeat(40) + '\n'))
       case 'update-ref':
-        if (w.updateRefFails) return wrap(res(1, '', 'cannot lock ref: is at dddd but expected 0000'))
+        if (w.updateRefFails || (w.dispatchFails && pending?.ev === 'dispatch')) return wrap(res(1, '', 'cannot lock ref: is at dddd but expected 0000'))
         if (pending) log.events.push(pending)
         pending = undefined
         return wrap(res(0, ''))
@@ -200,11 +204,9 @@ function useWorld(on: On, w: World) {
       }
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
+      case '--version':
+        return wrap(res(0, (w.gitVersion ?? 'git version 2.43.0') + '\n'))
       case 'merge-base':
-        if (args.includes('--is-ancestor')) {
-          const s = String(args[args.indexOf('--is-ancestor') + 1]).split('/').pop() ?? ''
-          return wrap(res((w.integrated ?? []).includes(s) ? 0 : 1, ''))
-        }
         return wrap(res(0, '0'.repeat(40) + '\n'))
       case 'log': {
         // `git log --first-parent --merges --format=%P tip-<S>..HEAD`：integrated 的切片有一个以 tip-<S> 为第二父的合并提交
@@ -739,4 +741,74 @@ test('agent-spawn-guard-wired', async ($, on) => {
   // Then: 答 deny 且理由含「控制面」；派发没有到达派发端
   expect(r).toMatchObject({ deny: expect.stringContaining('控制面') })
   expect(log.spawns).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-envelope-tightening（S4）
+
+test('bash-runs-in-own-worktree', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（worktree 为 S1 切片路径）；插件之下的执行端记录到达的完整命令
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // When: agent-1 调用 Bash git status
+  await $.tool.call({ tool: 'Bash', command: 'git status', agentId: 'agent-1' } as never)
+
+  // Then: 执行端收到的命令为 cd '<S1 worktree>' && git status
+  expect(log.reached).toEqual([`Bash cd '${SLICE1}' && git status`])
+})
+
+test('commit-outside-own-worktree-denied', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（worktree 为 S1 切片路径）；插件之下的执行端记录到达的调用
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // When: agent-1 调用 Bash git -C <change worktree> commit -m x
+  const r = await $.tool.call({ tool: 'Bash', command: `git -C ${TREE} commit -m x`, agentId: 'agent-1' } as never)
+
+  // Then: 答 deny 且理由含「自己的 worktree」；命令没有到达执行端
+  expect(r).toMatchObject({ deny: expect.stringContaining('自己的 worktree') })
+  expect(log.reached).toEqual([])
+})
+
+test('read-outside-repo-not-upgraded', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的引擎依次判 ask、ask
+  useWorld(on, demoWorld({ checks: ['ask', 'ask'] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const calls = [
+    { tool: 'Read', input: { file_path: '~/.ssh/id_rsa' }, agentId: 'agent-1' },
+    { tool: 'Read', input: { file_path: `${SLICE1}/a.py` }, agentId: 'agent-1' },
+  ]
+
+  // When: 依次对 agent-1 的 Read ~/.ssh/id_rsa 与 Read <S1 worktree>/a.py 做权限判定
+  const answers: { decision?: string }[] = []
+  for (const c of calls) answers.push((await $.tool.check(c as never)) as { decision?: string })
+
+  // Then: 前者原样为 ask，后者改答 allow
+  expect(answers.map(a => a.decision)).toEqual(['ask', 'allow'])
+})
+
+test('pending-agent-writes-denied', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，agent-1 已派发，但 dispatch 事件写入账本总失败（agent-1 停在登记中）；插件之下的执行端记录到达的调用
+  const log = useWorld(on, demoWorld({ dispatchFails: true }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // When: agent-1 调用 Write <S1 worktree>/src/s1.py
+  const r = await $.tool.call({ tool: 'Write', file_path: `${SLICE1}/src/s1.py`, content: 'x\n', agentId: 'agent-1' } as never)
+
+  // Then: 答 deny 且理由含「登记中」；写入没有到达执行端
+  expect(r).toMatchObject({ deny: expect.stringContaining('登记中') })
+  expect(log.reached).toEqual([])
+})
+
+test('takeoff-refuses-old-git', async ($, on) => {
+  // Given: demo 已批准、起飞检查都过，但 git --version 输出 git version 2.37.1
+  const log = useWorld(on, demoWorld({ gitVersion: 'git version 2.37.1' }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「git ≥ 2.38」与当前版本 2.37.1；账本没有 takeoff
+  expect(r.text).toContain('git ≥ 2.38')
+  expect(r.text).toContain('2.37.1')
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
 })

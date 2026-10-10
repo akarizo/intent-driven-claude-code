@@ -214,3 +214,40 @@ def test_agent_spawn_guard_denies_child_of_flight_agent():
     # Then: 答 deny 且理由含「不得再派发」（R1 的反向回归）
     assert_ts_passed("agent-spawn-guard-denies-child-of-flight-agent")
 
+# ---------------------------------------------------------------- flight-envelope-tightening S4
+
+
+def test_bash_runs_in_own_worktree():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: agent-1 调用 Bash git status
+    # Then: 执行端收到的命令为 cd '<S1 worktree>' && git status
+    assert_ts_passed("bash-runs-in-own-worktree")
+
+
+def test_commit_outside_own_worktree_denied():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: agent-1 调用 Bash git -C <change worktree> commit -m x
+    # Then: tool.call 答 deny，理由含「自己的 worktree」
+    assert_ts_passed("commit-outside-own-worktree-denied")
+
+
+def test_read_outside_repo_not_upgraded():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: 引擎对 agent-1 的 Read ~/.ssh/id_rsa 与 Read <S1 worktree>/a.py 都判 ask
+    # Then: 前者原样返回 ask，后者改答 allow
+    assert_ts_passed("read-outside-repo-not-upgraded")
+
+
+def test_pending_agent_writes_denied():
+    # Given: demo 已起飞，agent-1 已派发但 dispatch 事件没能写入账本
+    # When: agent-1 调用 Write <S1 worktree>/src/s1.py
+    # Then: tool.call 答 deny，理由含「登记中」
+    assert_ts_passed("pending-agent-writes-denied")
+
+
+def test_takeoff_refuses_old_git():
+    # Given: demo 已批准，git --version 输出 git version 2.37.1
+    # When: 人发出 /opsx-apply demo
+    # Then: 回复含「git ≥ 2.38」，账本没有 takeoff
+    assert_ts_passed("takeoff-refuses-old-git")
+

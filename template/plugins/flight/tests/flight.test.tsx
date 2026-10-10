@@ -18,6 +18,9 @@ type World = {
   mtimes?: Record<string, number>
   /** 前几次 update-ref 返回非 0（旧值不符） */
   updateRefFailures?: number
+  /** `ledger.py show` 输出的事件（缺省为空账本）；showFails 时 show 以 exit 5 失败 */
+  ledger?: object[]
+  showFails?: boolean
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -126,7 +129,11 @@ function useWorld(on: On, w: World) {
       log.fpDirs.push(String(args[2]))
       return ok(w.fp(fpCalls++, String(args[2])) + '\n')
     }
-    if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) return ok(log.approved + '\n')
+    if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) {
+      if (args[1] !== 'show') return ok(log.approved + '\n')
+      if (w.showFails) return { value: { ...fail('git 不可用').value, exitCode: 5 } }
+      return ok((w.ledger ?? []).map(ev => JSON.stringify(ev) + '\n').join(''))
+    }
     if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
     if (cmd !== 'git') throw new Error(`unexpected argv: ${e.argv.join(' ')}`)
     log.git.push({ args, cwd: e.init?.cwd, stdin: e.init?.stdin })
@@ -272,6 +279,57 @@ test('approve-press-refuses-changed-plan', async ($, on) => {
   expect(writes(log)).toEqual([])
   expect(log.fills).toEqual([])
   expect(log.toasts.some(t => t.includes('计划已变化'))).toBe(true)
+})
+
+/** 账本事件（只带去重判定用得到的字段）。 */
+function ledgerEvent(ev: string, fp: string) {
+  return { v: 1, ev, change: 'demo', fp, at: '2026-10-09T11:00:00.000Z', by: { plugin: 'flight' } }
+}
+
+test('approve-press-dedupes-same-fingerprint', async ($, on) => {
+  // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 依次为 approve G、takeoff G、approve F（F 之后没有 takeoff）；按下时 plan_fp 仍输出 F
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.ledger = [ledgerEvent('approve', G), ledgerEvent('takeoff', G), ledgerEvent('approve', F)]
+
+  // When: 人再按一次 demo 的「批准起飞」
+  await ui.press({ key: `approve:demo:${F}` })
+
+  // Then: 没有任何写账本的 git 命令（账本无新增事件），且出现含「已批准（指纹相同）」的提示
+  expect(writes(log)).toEqual([])
+  expect(log.toasts.some(t => t.includes('已批准（指纹相同）'))).toBe(true)
+})
+
+test('approve-press-appends-after-takeoff-with-same-fingerprint', async ($, on) => {
+  // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 依次为 approve F、takeoff F（takeoff 之后没有 approve）；按下时 plan_fp 仍输出 F
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.ledger = [ledgerEvent('approve', F), ledgerEvent('takeoff', F)]
+
+  // When: 人按下 demo 的「批准起飞」
+  await ui.press({ key: `approve:demo:${F}` })
+
+  // Then: 照常追加：写命令依次为 hash-object、mktree、commit-tree、update-ref
+  expect(writes(log)).toEqual(['hash-object', 'mktree', 'commit-tree', 'update-ref'])
+})
+
+test('approve-press-appends-when-ledger-unreadable', async ($, on) => {
+  // Given: 批准带已显示 demo 与指纹 F；按下时 ledger.py show 以 exit 5 失败，plan_fp 仍输出 F
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.showFails = true
+
+  // When: 人按下 demo 的「批准起飞」
+  await ui.press({ key: `approve:demo:${F}` })
+
+  // Then: 读失败按不去重处理，照常追加：写命令依次为 hash-object、mktree、commit-tree、update-ref
+  expect(writes(log)).toEqual(['hash-object', 'mktree', 'commit-tree', 'update-ref'])
 })
 
 test('ledger-append-retries-on-conflict', async ($, on) => {

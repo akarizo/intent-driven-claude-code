@@ -2,6 +2,8 @@
 骨架：S4 改两份文档后去掉 xfail 标记。"""
 import re
 
+import pytest
+
 from conftest import ROOT
 
 COMMAND = ROOT / "template" / ".claude" / "commands" / "opsx-apply.md"
@@ -44,3 +46,26 @@ def test_docs_state_envelope():
     text = adr.read_text(encoding="utf-8")
     assert "Status: accepted" in text
     assert "DRAFT-flight-orchestrator-state-machine" in text
+
+# ---------------------------------------------------------------- flight-envelope-tightening S6
+# 骨架：S6 实现后去掉 xfail 标记。
+
+
+def test_docs_state_tightened_envelope():
+    # Given: 三份 agent 定义、opsx-apply.md、openspec-apply-change/SKILL.md 与 template/openspec/adr/
+    agents = ROOT / "template" / "plugins" / "flight" / "agents"
+    body = {n: (agents / ("%s.md" % n)).read_text(encoding="utf-8").split("---", 2)[-1] for n in ("executor", "fixer", "reviewer")}
+    docs = {p.name: preamble(p) for p in (COMMAND, SKILL)}
+    adr = ROOT / "template" / "openspec" / "adr" / "DRAFT-flight-envelope-tightening.md"
+
+    # When: 读 agent 正文、两份文档第一个步骤之前的部分，以及新 ADR
+    text = adr.read_text(encoding="utf-8")
+    status = next((l for l in text.splitlines() if l.startswith("- Status:")), "")
+
+    # Then: executor / fixer 正文含 worktree 与 heredoc，reviewer 含 heredoc；两份文档含 heredoc、主仓库、自己的 worktree；ADR 为 accepted 且 supersedes 旧 ADR
+    for n in ("executor", "fixer"):
+        assert "worktree" in body[n] and "heredoc" in body[n], n
+    assert "heredoc" in body["reviewer"]
+    missing = {name: [w for w in ("heredoc", "主仓库", "自己的 worktree") if w not in t] for name, t in docs.items()}
+    assert missing == {COMMAND.name: [], SKILL.name: []}, missing
+    assert "accepted" in status and "supersedes DRAFT-flight-capability-envelope" in status, status

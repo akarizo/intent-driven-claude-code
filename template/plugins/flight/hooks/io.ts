@@ -131,19 +131,52 @@ export const owners: Map<string, Owner> = new Map()
 function remember(f: Flight, e: FlightEvent): void {
   if (e.ev === 'takeoff') active.set(f.change, { change: f.change, changeTree: f.changeTree, slicePrefix: worktreePath(f, '') })
   else if (e.ev === 'land' || e.ev === 'halt') active.delete(f.change)
-  else if (e.ev === 'dispatch') owners.set(String(e.agent), { change: f.change, role: e.role as Role, slice: String(e.slice), worktree: String(e.worktree) })
+  else if (e.ev === 'dispatch') {
+    owners.set(String(e.agent), { change: f.change, role: e.role as Role, slice: String(e.slice), worktree: String(e.worktree) })
+    pending.delete(String(e.agent))
+    misses.clear()
+  }
 }
 
-/** 按 agentId 查归属：缓存未命中时退回 flightOfAgent 扫账本，并写回缓存。 */
-export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
+/** 已派发、dispatch 尚未写入的 agent：agentId → change（design D6）。 */
+const pending: Map<string, string> = new Map()
+
+/** 扫完账本仍未命中的 agentId；任一 dispatch 写入时清空。 */
+const misses: Set<string> = new Set()
+
+export function markPending(agentId: string, change: string): void {
+  pending.set(agentId, change)
+}
+
+/** 只供测试：清空归属缓存、登记中与未命中缓存（测试与插件是两个模块实例）。 */
+export function resetOwnership(): void {
+  owners.clear()
+  pending.clear()
+  misses.clear()
+}
+
+/** 按 agentId 查归属：先 owners，再登记中，再未命中缓存；都没有才退回 flightOfAgent 扫账本，命中写回 owners、未命中记入 misses。 */
+export async function ownership(io: Io, agentId: string): Promise<Owner | { pending: true; change: string } | undefined> {
   const hit = owners.get(agentId)
   if (hit !== undefined) return hit
+  const change = pending.get(agentId)
+  if (change !== undefined) return { pending: true, change }
+  if (misses.has(agentId)) return undefined
   const found = await flightOfAgent(io, agentId)
   const d = found?.events.filter(e => e.ev === 'dispatch' && e.agent === agentId).pop()
-  if (found === undefined || d === undefined) return undefined
+  if (found === undefined || d === undefined) {
+    misses.add(agentId)
+    return undefined
+  }
   const owner: Owner = { change: found.flight.change, role: d.role as Role, slice: String(d.slice), worktree: String(d.worktree) }
   owners.set(agentId, owner)
   return owner
+}
+
+/** 按 agentId 查正式归属：登记中视为无归属。 */
+export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
+  const o = await ownership(io, agentId)
+  return o === undefined || 'pending' in o ? undefined : o
 }
 
 export function worktreePath(f: Flight, name: string): string {
@@ -196,7 +229,7 @@ export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: 
   const mainTree = all[0]?.path
   if (mainTree === undefined) return undefined
   const hooksDir = await judgesDir(io, mainTree)
-  // ceiling: 未命中（含非飞行 agent）时逐个读全部未登记 change 的账本 -> 非飞行 subagent 频繁或账本数多时，按 change 缓存负结果
+  // ceiling: 未命中（含非飞行 agent）时逐个读全部未登记 change 的账本；ownership 按 agentId 缓存未命中，任一 dispatch 写入即全清 -> 派发频繁时按 change 失效
   for (const change of changes) {
     const at = await locateChangeDir(io, all, change)
     if (at === undefined) continue

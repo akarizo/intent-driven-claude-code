@@ -6,6 +6,8 @@ import re
 import shutil
 import subprocess
 
+import pytest
+
 from conftest import ROOT
 
 PLUGIN = ROOT / "template" / "plugins" / "flight"
@@ -137,3 +139,13 @@ def test_only_findings_tool_registered():
     # When: 列出插件注册的工具与斜杠命令，并以各种输入调用 submit_findings
     # Then: 工具只有 submit_findings、没有斜杠命令；任何调用都不追加 approve 事件
     assert_ts_passed("only-findings-tool-registered")
+
+# ---------------------------------------------------------------- flight-envelope-tightening S5
+
+
+def test_approve_press_dedupes_same_fingerprint():
+    # Given: demo 账本最后一条是指纹 F 的 approve 且之后没有 takeoff，当前计划指纹仍为 F
+    # When: 人再按一次 demo 的「批准起飞」
+    # Then: 账本没有新增事件，toast 含「已批准」
+    assert_ts_passed("approve-press-dedupes-same-fingerprint")
+

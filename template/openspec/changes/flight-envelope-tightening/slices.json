@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "change": "flight-envelope-tightening",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 84.7
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "envelope.ts 收紧：Bash 改写函数、git 作用目标、拒绝表补齐、白名单收紧、读取免询问限于仓库内",
+      "scenarios": [
+        "flight-envelope-tightening#bash-wrap-pins-worktree",
+        "flight-envelope-tightening#mutating-git-must-target-own-worktree",
+        "flight-envelope-tightening#deny-table-gaps-closed",
+        "flight-envelope-tightening#stdin-scripts-and-heredoc-denied",
+        "flight-envelope-tightening#upgrade-refuses-env-prefix-and-outside-git",
+        "flight-envelope-tightening#read-upgrade-limited-to-repo"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/envelope.ts",
+        "template/plugins/flight/tests/envelope.test.ts",
+        "tests/test_flight_envelope.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "合回检查补规格；清理 land 测试里失效的 --is-ancestor 预设",
+      "scenarios": [
+        "flight-merge-guards#merge-refuses-direct-commits-in-owns",
+        "flight-merge-guards#merge-refuses-empty-merge",
+        "flight-merge-guards#merge-records-already-integrated",
+        "flight-merge-guards#merge-refuses-zero-commit-as-integrated"
+      ],
+      "owns": [
+        "template/plugins/flight/tests/land.test.ts",
+        "tests/test_flight_land.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_land.py tests/test_flight_plugin.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "io.ts：agent 归属的登记中状态与未命中缓存",
+      "scenarios": [
+        "flight-agent-ownership#owner-pending-until-dispatch",
+        "flight-agent-ownership#owner-miss-cached-until-dispatch"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_io.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "接线：Bash 固定在自己的 worktree、git 作用目标与读取判定、登记中拒绝、git 版本检查；版本 0.3.1",
+      "scenarios": [
+        "flight-envelope-tightening#bash-runs-in-own-worktree",
+        "flight-envelope-tightening#commit-outside-own-worktree-denied",
+        "flight-envelope-tightening#read-outside-repo-not-upgraded",
+        "flight-envelope-tightening#pending-agent-writes-denied",
+        "flight-envelope-tightening#takeoff-refuses-old-git",
+        "flight-merge-guards#spawn-prompt-names-worktree"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py",
+        "template/plugins/flight/.claude-plugin/plugin.json"
+      ],
+      "deps": [
+        "S1",
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_envelope.py tests/test_flight_plugin.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "批准带去重",
+      "scenarios": [
+        "flight-approve-dedupe#approve-press-dedupes-same-fingerprint"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "tests/test_flight_plugin.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_plugin.py",
+      "packet": "slices/S5.md"
+    },
+    {
+      "id": "S6",
+      "title": "agent 定义、命令、skill 与新 ADR 写明收紧后的包络",
+      "scenarios": [
+        "flight-envelope-tightening-docs#docs-state-tightened-envelope"
+      ],
+      "owns": [
+        "template/plugins/flight/agents/executor.md",
+        "template/plugins/flight/agents/fixer.md",
+        "template/plugins/flight/agents/reviewer.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/openspec/adr/DRAFT-flight-envelope-tightening.md",
+        "tests/test_opsx_apply_engine.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_opsx_apply_engine.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_docs_iron_rules.py",
+      "packet": "slices/S6.md"
+    }
+  ],
+  "scenario_tests": {
+    "flight-envelope-tightening#bash-wrap-pins-worktree": "tests/test_flight_envelope.py::test_bash_wrap_pins_worktree",
+    "flight-envelope-tightening#mutating-git-must-target-own-worktree": "tests/test_flight_envelope.py::test_mutating_git_must_target_own_worktree",
+    "flight-envelope-tightening#deny-table-gaps-closed": "tests/test_flight_envelope.py::test_deny_table_gaps_closed",
+    "flight-envelope-tightening#stdin-scripts-and-heredoc-denied": "tests/test_flight_envelope.py::test_stdin_scripts_and_heredoc_denied",
+    "flight-envelope-tightening#upgrade-refuses-env-prefix-and-outside-git": "tests/test_flight_envelope.py::test_upgrade_refuses_env_prefix_and_outside_git",
+    "flight-envelope-tightening#read-upgrade-limited-to-repo": "tests/test_flight_envelope.py::test_read_upgrade_limited_to_repo",
+    "flight-merge-guards#merge-refuses-direct-commits-in-owns": "tests/test_flight_land.py::test_land_refuses_direct_commit_in_owns",
+    "flight-merge-guards#merge-refuses-empty-merge": "tests/test_flight_land.py::test_land_refuses_merge_without_change",
+    "flight-merge-guards#merge-records-already-integrated": "tests/test_flight_land.py::test_land_records_already_integrated_slice",
+    "flight-merge-guards#merge-refuses-zero-commit-as-integrated": "tests/test_flight_land.py::test_land_refuses_zero_commit_slice_as_integrated",
+    "flight-agent-ownership#owner-pending-until-dispatch": "tests/test_flight_io.py::test_owner_pending_until_dispatch",
+    "flight-agent-ownership#owner-miss-cached-until-dispatch": "tests/test_flight_io.py::test_owner_miss_cached_until_dispatch",
+    "flight-envelope-tightening#bash-runs-in-own-worktree": "tests/test_flight_orchestrator.py::test_bash_runs_in_own_worktree",
+    "flight-envelope-tightening#commit-outside-own-worktree-denied": "tests/test_flight_orchestrator.py::test_commit_outside_own_worktree_denied",
+    "flight-envelope-tightening#read-outside-repo-not-upgraded": "tests/test_flight_orchestrator.py::test_read_outside_repo_not_upgraded",
+    "flight-envelope-tightening#pending-agent-writes-denied": "tests/test_flight_orchestrator.py::test_pending_agent_writes_denied",
+    "flight-envelope-tightening#takeoff-refuses-old-git": "tests/test_flight_orchestrator.py::test_takeoff_refuses_old_git",
+    "flight-merge-guards#spawn-prompt-names-worktree": "tests/test_flight_orchestrator.py::test_spawn_prompt_names_worktree",
+    "flight-approve-dedupe#approve-press-dedupes-same-fingerprint": "tests/test_flight_plugin.py::test_approve_press_dedupes_same_fingerprint",
+    "flight-envelope-tightening-docs#docs-state-tightened-envelope": "tests/test_opsx_apply_engine.py::test_docs_state_tightened_envelope"
+  }
+}
