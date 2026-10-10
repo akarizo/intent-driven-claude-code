@@ -74,7 +74,7 @@ def test_land_refuses_merge_without_change():
     assert_ts_passed("land-refuses-merge-without-change")
 
 def test_land_records_already_integrated_slice():
-    # Given: S1 分支尖端已是 HEAD 的祖先（上一 attempt 已 integrate，账本缺 merge 事件）
+    # Given: S1 分支尖端是第一父链上合并提交的第二父（上一 attempt 已 integrate），账本缺 merge 事件
     # When: 合回 S1
     # Then: 不运行 merge --no-ff 与空合回检查，照常 record 并刷新接口摘要，返回 ok（PR #41 评审 HIGH，R2）
     assert_ts_passed("land-records-already-integrated-slice")
@@ -82,7 +82,7 @@ def test_land_records_already_integrated_slice():
 
 
 def test_land_refuses_zero_commit_slice_as_integrated():
-    # Given: 切片分支没有自己的提交，尖端就是派发时的 change 分支尖端（是 HEAD 的祖先，但不是任何合并提交的第二父）
-    # When: 合回该切片
+    # Given: S2 分支没有自己的提交，尖端就是派发时的 change 分支尖端（在第一父链上，不是任何合并提交的第二父）
+    # When: 合回 S2
     # Then: 不当作已合回：不 record、不 merge，返回失败并写明合回对第一父无变更（PR #41 复核 HIGH，R3）
     assert_ts_passed("land-refuses-zero-commit-slice-as-integrated")
