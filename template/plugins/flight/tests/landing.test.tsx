@@ -33,7 +33,18 @@ function gateJson(x: Partial<GateJson>): string {
 
 type Call = { argv: string[]; cwd?: string }
 type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[]; writes: string[]; logs: string[]; seq: string[] }
-type World = { ledger: FlightEvent[]; finalOut?: string; fixFinalOut?: string; ledgerFails?: boolean; timelineReport?: string; timelineFails?: string; dirty?: string }
+type World = {
+  ledger: FlightEvent[]
+  finalOut?: string
+  fixFinalOut?: string
+  ledgerFails?: boolean
+  timelineReport?: string
+  timelineFails?: string
+  timelineExit?: number
+  timelineThrows?: string
+  commandThrows?: string
+  dirty?: string
+}
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: '' })
 const has = (c: Call, ...parts: string[]) => parts.every(p => c.argv.some(a => a === p || a.endsWith(`/${p}`)))
@@ -48,7 +59,9 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'final')
     return ok(cwd === FIX_TREE ? (w.fixFinalOut ?? gateJson({})) : (w.finalOut ?? gateJson({})))
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok('ready\n')
-  if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineFails !== undefined) return { exitCode: 1, stdout: '', stderr: w.timelineFails }
+  if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineThrows !== undefined) throw new Error(w.timelineThrows)
+  if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineFails !== undefined)
+    return { exitCode: w.timelineExit ?? 1, stdout: '', stderr: w.timelineFails }
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py')) return ok(args[1] === 'report' ? (w.timelineReport ?? '') : '')
   if (cmd !== 'git') throw new Error(`unexpected argv: ${argv.join(' ')}`)
   const op = args[0] === '-C' ? args[2] : args[0]
@@ -93,6 +106,7 @@ function ctxOf(w: World): { ctx: Ctx; log: Log } {
     runCommand: async (command, args) => {
       log.commands.push(`${command} ${args}`)
       log.seq.push('command')
+      if (w.commandThrows !== undefined) throw new Error(w.commandThrows)
     },
     log: async text => {
       log.logs.push(text)
@@ -268,4 +282,56 @@ test('halt-prints-flight-record-when-report-fails', async () => {
   expect(log.logs).toHaveLength(1)
   expect(log.logs[0]).toContain('（timeline report 失败：boom: no timeline）')
   expect(log.logs[0]).not.toContain('second')
+})
+
+test('land-handoff-failure-keeps-landing', async () => {
+  // Given: S1 已合回且评审结果为空列表；slice-gate ship 为 ready；运行 /pr-ship 抛出 Error「no command named /pr-ship in this session」
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], commandThrows: 'no command named /pr-ship in this session' })
+
+  // When: drive 交来 land 动作
+  const thrown = await runLandingAction(ctx, FLIGHT, { kind: 'land' }).then(() => undefined, (e: unknown) => e)
+
+  // Then: 落地动作不抛错；账本末条为 land；toast 含「手动运行 /pr-ship」；Ctx.log 有一段含「接 /pr-ship 失败：no command named」的文本
+  expect(thrown).toBeUndefined()
+  expect(log.ledger.at(-1)).toMatchObject({ ev: 'land' })
+  expect(log.toasts.some(t => t.includes('手动运行 /pr-ship'))).toBe(true)
+  expect(log.logs.some(t => t.includes('接 /pr-ship 失败：no command named'))).toBe(true)
+})
+
+test('flight-record-survives-report-throw', async () => {
+  // Given: S1 已合回且评审结果为空列表、final 绿；timeline report 时 io.run 抛出 Error「spawn ENOENT」
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], timelineThrows: 'spawn ENOENT' })
+
+  // When: 推进飞行（final 后执行落地动作）
+  await advance(ctx, log)
+
+  // Then: Ctx.log 首段含「（timeline report 失败：spawn ENOENT）」；调用顺序为先 log 后运行 /pr-ship
+  expect(log.logs[0]).toContain('（timeline report 失败：spawn ENOENT）')
+  expect(log.seq).toEqual(['log', 'command'])
+})
+
+test('flight-record-shows-exit-code', async () => {
+  // Given: S1 已合回且评审结果为空列表；timeline report 以 2 退出、stderr 为空串
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], timelineFails: '', timelineExit: 2 })
+
+  // When: drive 交来停飞动作，原因「final 红：G2 lint」
+  await runLandingAction(ctx, FLIGHT, { kind: 'halt', reason: 'final 红：G2 lint' })
+
+  // Then: Ctx.log 收到一段文本，含「（timeline report 失败：exit 2）」
+  expect(log.logs).toHaveLength(1)
+  expect(log.logs[0]).toContain('（timeline report 失败：exit 2）')
+})
+
+test('flight-record-lists-routing-mismatch', async () => {
+  // Given: 起飞主模型 opus；A 结束时实际模型为 claude-sonnet-4-6（不符），R 结束时为 claude-opus-5-5（相符）；timeline report 输出空
+  const endedA = event('ended', { attempt: 1, agent: 'A', reason: 'completed', model: 'claude-sonnet-4-6' })
+  const endedR = event('ended', { attempt: 1, agent: 'R', reason: 'completed', model: 'claude-opus-5-5' })
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, endedA, MERGED, DISPATCH_R, REVIEWED, endedR] })
+
+  // When: drive 交来停飞动作，原因「final 红：G2 lint」
+  await runLandingAction(ctx, FLIGHT, { kind: 'halt', reason: 'final 红：G2 lint' })
+
+  // Then: Ctx.log 的文本含「路由对账：1 条不符」与「路由不符：executor（agent A）期望 opus，实际 claude-sonnet-4-6」
+  expect(log.logs[0]).toContain('路由对账：1 条不符')
+  expect(log.logs[0]).toContain('路由不符：executor（agent A）期望 opus，实际 claude-sonnet-4-6')
 })

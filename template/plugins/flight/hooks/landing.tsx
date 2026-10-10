@@ -8,6 +8,8 @@ import { closeout, commitRecords, validateFindings } from './land'
 import { fixerPrompt, reviewerPrompt } from './prompts'
 
 const FIX = 'fix'
+const firstLine = (s: string) => s.trim().split('\n')[0] ?? ''
+const errLine = (err: unknown) => firstLine(err instanceof Error ? err.message : String(err))
 const GATE_TIMEOUT_MS = 600000
 const DENY_OTHERS = '只有本次飞行派发的评审员可以提交 findings'
 const REMIND =
@@ -55,8 +57,13 @@ async function runFinal(io: Io, f: Flight, cwd: string): Promise<GateJson> {
 
 /** 飞行记录（铁律 8）：首行标题 + timeline report + 路由对账。report 失败只写一行原因，不拖垮落地 / 停飞。 */
 async function flightRecord(io: Io, f: Flight, state: State, title: string): Promise<string> {
-  const r = await judge(io, f, 'timeline', ['report', '--change-dir', f.changeDir], f.changeTree)
-  const body = r.exitCode === 0 ? r.stdout.trimEnd() : `（timeline report 失败：${r.stderr.trim().split('\n')[0] ?? ''}）`
+  let body: string
+  try {
+    const r = await judge(io, f, 'timeline', ['report', '--change-dir', f.changeDir], f.changeTree)
+    body = r.exitCode === 0 ? r.stdout.trimEnd() : `（timeline report 失败：${firstLine(r.stderr) || `exit ${r.exitCode}`}）`
+  } catch (err) {
+    body = `（timeline report 失败：${errLine(err)}）`
+  }
   const routing = routingFindings(state)
   const tail = routing.length ? [`路由对账：${routing.length} 条不符`, ...routing.map(x => x.summary)] : ['路由对账：一致']
   return [title, body, ...tail].join('\n')
@@ -149,7 +156,14 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     await ctx.status(undefined)
     await ctx.log(await flightRecord(io, f, state, `飞行记录 · ${f.change}`))
     // $.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
-    await ctx.runCommand('pr-ship', f.change)
+    // 交接失败不停飞：已落地，不向上抛（否则 drive 会补记 halt），只提示人手动接
+    try {
+      await ctx.runCommand('pr-ship', f.change)
+    } catch (err) {
+      const why = errLine(err)
+      await ctx.log(`落地完成，但接 /pr-ship 失败：${why}`)
+      await ctx.toast(`flight：${f.change} 已落地，但接 /pr-ship 失败：${why}；请手动运行 /pr-ship`)
+    }
     return
   }
   if (action.kind === 'halt') {
