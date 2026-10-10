@@ -32,6 +32,7 @@ color: yellow
 - 不 push、不 merge（任务二只完成已在进行中的那次合并）、不切分支、不改 `openspec/` 下的工件、不 `git merge --abort` / `reset --hard` 丢弃改动。
 - 新增单测函数体首行是 `# Given:`（JS 用 `// Given:`）三段中文注释，GWT 细则同 test-driven-development skill。
 - 不加 `cd && ` 前缀；一轮多动作，禁止一命令一轮。
+- **git 只作用于自己的 worktree**：git 一律作用于你自己的 worktree（派发提示词首行给出；插件会把你的 Bash 固定在那里运行）。禁止 heredoc（`<<`）和读标准输入的解释器（`python3 -`、`bash -s`、`/dev/stdin`）：要写文件就用 Write 工具，要跑脚本就先写成脚本文件再运行。
 
 ## 收口
 
