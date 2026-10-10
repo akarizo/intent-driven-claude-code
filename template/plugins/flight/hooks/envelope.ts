@@ -13,8 +13,12 @@ const ROLE_NAME: Record<Role, string> = { executor: '执行体', fixer: '修复�
 /** D6 拒绝表：移动 ref、改写历史或改动共享状态的 git 子命令 */
 const DENY_SUBS = new Set([
   'push', 'merge', 'rebase', 'reset', 'checkout', 'switch', 'worktree', 'update-ref', 'symbolic-ref',
-  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes',
+  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes', 'pull',
 ])
+/** git config 的只读用法（flight-envelope-tightening D3）；其余用法一律拒绝 */
+const CONFIG_READ = new Set(['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'])
+/** 读标准输入会挂起的解释器（D3）：python、python3、python3.x、node、bash、sh、zsh、ruby、perl */
+const STDIN_INTERPRETER = /^(python(3(\.\d+)?)?|node|bash|sh|zsh|ruby|perl)$/
 const REVIEWER_EXTRA = ['add', 'commit', 'rm', 'mv', 'apply', 'am']
 const MAIN_EXTRA = [...REVIEWER_EXTRA, 'restore']
 const READONLY_SUBS = new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'blame', 'grep'])
@@ -95,11 +99,78 @@ function denySegments(command: string): string[] {
   return command.replace(/\d*>&\d+/g, ' ').split(/&&|\|\||[;|&\n()`]/)
 }
 
-/** 段内跳过前导 `VAR=val` 与 git 全局选项，取出子命令；不是 git 调用返回 undefined */
-function parseGit(segment: string): GitCall | undefined {
+/** 段的词（按空白切）：去掉前导 `{`、`!` 与 `VAR=val`；hasEnv 标记是否带前导 `VAR=` */
+function words(segment: string): { toks: string[]; hasEnv: boolean } {
   const toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
   let i = 0
   while (i < toks.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[i])) i++
+  return { toks: toks.slice(i), hasEnv: i > 0 }
+}
+
+/** 去掉一层单引号（`'\''` 还原为 `'`）或双引号 */
+function unquote(s: string): string {
+  const m = /^'(.*)'$/s.exec(s)
+  return m ? m[1].replace(/'\\''/g, "'") : s.replace(/^"(.*)"$/s, '$1')
+}
+
+/**
+ * 目录：string = 已知绝对路径；undefined = 未设定（视为自己的 worktree）；null = 无法判定。
+ * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-` 开头一律无法判定。
+ */
+function resolveDir(base: string | null | undefined, p: string): string | null {
+  if (p.startsWith('/')) return normalizePath(p)
+  if (p === '' || /^[~$-]/.test(p) || typeof base !== 'string') return null
+  return normalizePath(base + '/' + p)
+}
+
+/** `cd <路径>` 段返回其参数（未去引号）；不是 cd 段返回 undefined */
+function cdArg(toks: readonly string[]): string | undefined {
+  return toks[0] === 'cd' ? toks.slice(1).join(' ') : undefined
+}
+
+/** D2：git 调用的全部作用目录（-C 逐级拼接后的目录，以及 --git-dir、--work-tree 指向的目录）；cwd 为前面 cd 设定的目录 */
+function gitTargets(g: GitCall, cwd: string | null | undefined, worktree: string): (string | null)[] {
+  let dir = cwd
+  const extra: (string | null)[] = []
+  for (let i = 0; i < g.globals.length; i++) {
+    const t = g.globals[i]
+    if (t === '-C') dir = resolveDir(dir, unquote(g.globals[++i] ?? ''))
+    else if (t === '--git-dir' || t === '--work-tree') extra.push(resolveDir(dir, unquote(g.globals[++i] ?? '')))
+    else if (t.startsWith('--git-dir=') || t.startsWith('--work-tree=')) extra.push(resolveDir(dir, unquote(t.slice(t.indexOf('=') + 1))))
+  }
+  return [dir === undefined ? normalizePath(worktree) : dir, ...extra]
+}
+
+/**
+ * 程序名（basename）是读标准输入的解释器，且解释器自己的选项里有单独的 `-` 或 `-s`。
+ * 只看脚本 / 模块之前的选项：`python3 -m pytest -s` 的 `-s` 属于 pytest，不拒。
+ * ceiling: 不识别带参数的解释器选项（如 `python3 -W x -`）-> 出现漏拒时按解释器补选项表。
+ */
+function readsStdin(toks: readonly string[]): boolean {
+  const prog = (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
+  if (!STDIN_INTERPRETER.test(prog)) return false
+  for (const a of toks.slice(1)) {
+    if (a === '-' || a === '-s') return true
+    if (!a.startsWith('-') || ['-c', '-m', '-e', '-p', '--eval', '--print'].includes(a)) return false
+  }
+  return false
+}
+
+/** 全局 `-c` 与 `--config-env` 设置的配置键名（`=` 之前，小写） */
+function configKeys(globals: readonly string[]): string[] {
+  const keys: string[] = []
+  for (let i = 0; i < globals.length; i++) {
+    const t = globals[i]
+    const v = t === '-c' || t === '--config-env' ? globals[++i] : t.startsWith('--config-env=') ? t.slice('--config-env='.length) : undefined
+    if (v !== undefined) keys.push(unquote(v).split('=')[0].toLowerCase())
+  }
+  return keys
+}
+
+/** 段内跳过前导 `VAR=val` 与 git 全局选项，取出子命令；不是 git 调用返回 undefined */
+function parseGit(segment: string): GitCall | undefined {
+  const toks = words(segment).toks
+  let i = 0
   const head = (toks[i] ?? '').replace(/^["']|["']$/g, '')
   if (head !== 'git' && !head.endsWith('/git')) return undefined
   i++
@@ -113,44 +184,81 @@ function parseGit(segment: string): GitCall | undefined {
   return { sub: toks[i], args: toks.slice(i + 1), globals }
 }
 
-/** 短选项簇（如 `-Df`）是否含某字母，或长选项（可缩写，至少到 minLen 个字符）命中 */
-function hasOpt(args: readonly string[], shorts: string, longs: readonly string[], minLen = 4): boolean {
+/** 短选项簇（如 `-Df`）是否含某字母，或长选项（可缩写，`--` 之后至少 1 个字符）命中 */
+function hasOpt(args: readonly string[], shorts: string, longs: readonly string[]): boolean {
   return args.some(a => {
     if (/^-[A-Za-z]+$/.test(a)) return [...a.slice(1)].some(ch => shorts.includes(ch))
     const opt = a.split('=')[0]
-    return opt.startsWith('--') && opt.length >= minLen && longs.some(l => l.startsWith(opt))
+    return opt.startsWith('--') && opt.length >= 3 && longs.some(l => l.startsWith(opt))
   })
 }
 
-/** 该 git 调用是否落入拒绝表（D6；extra 为角色或主会话追加的子命令），返回描述 */
+/** 该 git 调用是否落入拒绝表（D6 + tightening D3；extra 为角色或主会话追加的子命令），返回描述 */
 function dangerOf(g: GitCall, extra: readonly string[]): string | undefined {
   if (DENY_SUBS.has(g.sub) || extra.includes(g.sub)) return `git ${g.sub}`
+  if (configKeys(g.globals).includes('core.hookspath')) return 'git -c / --config-env core.hooksPath'
+  // ceiling: 只要带一个只读选项就放行（`--list --add` 之类的混用不细分） -> 出现混用绕过时改为逐项校验
+  if (g.sub === 'config' && !g.args.some(a => CONFIG_READ.has(a))) return 'git config 的写入用法'
   if (g.sub === 'branch' && hasOpt(g.args, 'dDmMfcC', ['--delete', '--move', '--copy', '--force'])) return 'git branch 的删改选项'
-  if (g.sub === 'commit' && hasOpt(g.args, 'n', ['--amend', '--no-verify'], 5)) return 'git commit --amend / --no-verify'
+  if (g.sub === 'commit' && hasOpt(g.args, 'n', ['--amend', '--no-verify'])) return 'git commit --amend / --no-verify'
   return undefined
 }
 
-export function bashVerdict(role: Role, command: string): Deny | undefined {
+/** D1：把命令固定在 worktree 里运行；已有同一前缀时原样返回 */
+export function inWorktree(command: string, worktree: string): string {
+  const prefix = `cd '${worktree.replace(/'/g, "'\\''")}' && `
+  return command.startsWith(prefix) ? command : prefix + command
+}
+
+/**
+ * worktree 给出时按 D2 检查改动类 git 的作用目录；只读子命令不查作用目录（主仓库内放行，树外交给引擎询问），
+ * 故 mainTree 在这里不参与判定，只为与 bashUpgradable 同签名。
+ */
+export function bashVerdict(role: Role, command: string, worktree?: string, _mainTree?: string): Deny | undefined {
   const name = ROLE_NAME[role]
   if (command.includes('refs/flight/')) return { deny: `${name}不得触及 refs/flight/（账本与门禁结论只由 flight 插件写入）` }
+  if (command.includes('<<')) return { deny: `${name}不得使用 heredoc（<<，会绕过写入包络）：改用 Write 工具写文件` }
+  if (command.includes('/dev/stdin')) return { deny: `${name}不得让程序读标准输入（/dev/stdin 会挂起）：写成脚本文件再运行` }
   const extra = role === 'reviewer' ? REVIEWER_EXTRA : []
+  let cwd: string | null | undefined
   for (const seg of denySegments(command)) {
+    const { toks } = words(seg)
+    const cd = cdArg(toks)
+    if (cd !== undefined) {
+      cwd = resolveDir(cwd, unquote(cd))
+      continue
+    }
+    if (readsStdin(toks)) return { deny: `${name}不得让解释器读标准输入（单独的 - 或 -s 会挂起）：写成脚本文件再运行` }
     const g = parseGit(seg)
-    const d = g && dangerOf(g, extra)
+    if (!g) continue
+    const d = dangerOf(g, extra)
     if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员只读）` }
+    if (worktree === undefined || READONLY_SUBS.has(g.sub)) continue
+    const wt = normalizePath(worktree)
+    const out = gitTargets(g, cwd, worktree).find(t => t === null || !within(wt, t))
+    if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；作用目录：${out ?? '无法判定（相对路径且无绝对基准）'}` }
   }
   return undefined
 }
 
-/** commands = 门禁 test / lint / typecheck 与各片 verify 中非空的 */
-export function bashUpgradable(role: Role, command: string, commands: readonly string[]): boolean {
-  if (bashVerdict(role, command)) return false
+/** commands = 门禁 test / lint / typecheck 与各片 verify 中非空的；worktree / mainTree 给出时按 D4 检查 git 作用目录 */
+export function bashUpgradable(role: Role, command: string, commands: readonly string[], worktree?: string, mainTree?: string): boolean {
+  if (bashVerdict(role, command, worktree, mainTree)) return false
   const c = command.replace(/2>&1/g, ' ')
   if (c.includes('$(') || /[`<>]/.test(c) || c.replace(/&&/g, '').includes('&')) return false
   const cmds = commands.map(x => x.trim()).filter(Boolean)
   const segs = c.split(/&&|\|\||[;|\n]/).map(s => s.trim()).filter(Boolean)
   if (segs.length === 0) return false
-  return segs.every(seg => {
+  let cwd: string | undefined
+  return segs.every((seg, idx) => {
+    const { toks, hasEnv } = words(seg)
+    if (hasEnv) return false
+    // D1 改写出的开头一段：cd 到的正是自己的 worktree
+    const cd = cdArg(toks)
+    if (idx === 0 && worktree !== undefined && cd !== undefined && resolveDir(undefined, unquote(cd)) === normalizePath(worktree)) {
+      cwd = normalizePath(worktree)
+      return true
+    }
     // 门禁 / verify 命令本身，或其后接空格的追加参数、`::` 的 pytest 节点选择
     if (cmds.some(x => seg === x || seg.startsWith(x + ' ') || seg.startsWith(x + '::'))) return true
     const g = parseGit(seg)
@@ -158,9 +266,21 @@ export function bashUpgradable(role: Role, command: string, commands: readonly s
     // ceiling: 只读子命令里能写文件 / 起进程的选项按黑名单挡（-c、--output、-O） -> 发现新的副作用选项时补进来
     if (g.globals.some(t => t === '-c' || t.startsWith('--config-env') || t.startsWith('--exec-path'))) return false
     if (g.args.some(a => a.startsWith('--output') || a.startsWith('-O') || a.startsWith('--open-files-in-pager'))) return false
-    if (READONLY_SUBS.has(g.sub)) return true
-    return (role === 'executor' || role === 'fixer') && (g.sub === 'add' || g.sub === 'commit')
+    const inside = (root: string | undefined) =>
+      root === undefined || gitTargets(g, cwd, worktree ?? root).every(t => t !== null && within(normalizePath(root), t))
+    if (READONLY_SUBS.has(g.sub)) return worktree === undefined || inside(mainTree)
+    return (role === 'executor' || role === 'fixer') && (g.sub === 'add' || g.sub === 'commit') && inside(worktree)
   })
+}
+
+/** D5：Read 取 file_path，Grep / Glob 取 path（缺省为 worktree）；规范化后在 mainTree 内才免询问 */
+export function readUpgradable(tool: string, input: unknown, worktree: string, mainTree: string): boolean {
+  const key = tool === 'Read' ? 'file_path' : tool === 'Grep' || tool === 'Glob' ? 'path' : undefined
+  if (!key || typeof input !== 'object' || input === null) return false
+  const v = (input as Record<string, unknown>)[key]
+  const target = typeof v === 'string' && v !== '' ? v : worktree
+  if (target.startsWith('~')) return false
+  return within(normalizePath(mainTree), normalizePath(target.startsWith('/') ? target : worktree + '/' + target))
 }
 
 /** 主会话（无 agentId）对在飞树只读（D8，尽力而为） */

@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-envelope（executor-write-limited-to-owns 等 6 条纯判定）。envelope 是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
-import { bashUpgradable, bashVerdict, globMatch, mainSessionVerdict, normalizePath, spawnVerdict, writeTarget, writeVerdict } from '../hooks/envelope'
+import { bashUpgradable, bashVerdict, globMatch, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from '../hooks/envelope'
 import type { ActiveTree, Who } from '../hooks/envelope'
 
 const W = '/repo/.claude/worktrees/flight-demo-S1'
@@ -239,4 +239,112 @@ test('envelope-normalize-path', () => {
 
   // Then: 依次为 /a/b/c、/c、/a/c/d
   expect(out).toEqual(['/a/b/c', '/c', '/a/c/d'])
+})
+
+// ---------------------------------------------------------------- spec flight-envelope-tightening（S1）
+
+test('bash-wrap-pins-worktree', () => {
+  // Given: 执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1，门禁 test 为 python3 -m pytest -q tests；另一 worktree /r/it's 含单引号
+  const wt = '/r/.claude/worktrees/flight-demo-S1'
+  const commands = ['python3 -m pytest -q tests']
+  const once = `cd '${wt}' && git commit -m x`
+
+  // When: 改写 git commit -m x、改写已改写的结果、改写 /r/it's 下的 ls，并判定改写后的门禁命令能否免询问
+  const [first, second, quoted] = [['git commit -m x', wt], [once, wt], ['ls', "/r/it's"]].map(([c, w]) => inWorktree(c, w))
+  const upgradable = bashUpgradable('executor', inWorktree('python3 -m pytest -q tests', wt), commands, wt, '/r')
+
+  // Then: 第一次结果为 cd '<worktree>' && git commit -m x；二次改写不变；单引号转义为 '\''；改写后的门禁命令可免询问
+  expect(first).toBe(once)
+  expect(second).toBe(once)
+  expect(quoted).toBe("cd '/r/it'\\''s' && ls")
+  expect(upgradable).toBe(true)
+})
+
+test('mutating-git-must-target-own-worktree', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 M，change worktree 为 T（M/.worktrees/demo）；六条 git 命令
+  const cmds = [
+    `git -C ${W} commit -m x`,
+    'git commit -m x',
+    `git -C ${T} commit -m x`,
+    `cd ${T} && git add a.py`,
+    'git -C sub commit -m x',
+    `git -C ${T} log`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 第三、四、五个被拒且理由含「自己的 worktree」；第一、二、六个不被拒
+  expect(v[2]?.deny).toContain('自己的 worktree')
+  expect(v[3]?.deny).toContain('自己的 worktree')
+  expect(v[4]?.deny).toContain('自己的 worktree')
+  expect([v[0], v[1], v[5]]).toEqual([undefined, undefined, undefined])
+})
+
+test('deny-table-gaps-closed', () => {
+  // Given: 执行体；七条应拒的命令与一条只读的 git config --get user.name
+  const cmds = [
+    'git pull',
+    'git config core.hooksPath /x',
+    'git -c core.hooksPath=/dev/null commit -m x',
+    'git -c CORE.HOOKSPATH=/x commit -m x',
+    'git --config-env=core.hooksPath=X commit -m x',
+    'git commit --am -m x',
+    'git branch --d x',
+    'git config --get user.name',
+  ]
+
+  // When: 逐条判定执行体的命令（不带 worktree）
+  const v = cmds.map(c => bashVerdict('executor', c))
+
+  // Then: 前七个被拒；git config --get user.name 不被拒
+  expect(v.slice(0, 7).every(x => typeof x?.deny === 'string')).toBe(true)
+  expect(v[7]).toBeUndefined()
+})
+
+test('stdin-scripts-and-heredoc-denied', () => {
+  // Given: 执行体；五条读标准输入或 heredoc 的命令与一条运行脚本文件的命令
+  const cmds = ['python3 -', "python3 - <<'EOF'", 'bash -s', 'python3 /dev/stdin', 'cat > a.py <<EOF', 'python3 scripts/x.py']
+
+  // When: 逐条判定执行体的命令
+  const v = cmds.map(c => bashVerdict('executor', c))
+
+  // Then: 前五个被拒且理由含「脚本文件」或「Write」；python3 scripts/x.py 不被拒
+  expect(v.slice(0, 5).every(x => /脚本文件|Write/.test(x?.deny ?? ''))).toBe(true)
+  expect(v[5]).toBeUndefined()
+})
+
+test('upgrade-refuses-env-prefix-and-outside-git', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 M；五条 git 命令，门禁命令为空
+  const cmds = [
+    'GIT_EXTERNAL_DIFF=/x git diff',
+    `GIT_DIR=/o git -C ${W} commit -m x`,
+    'git -C /tmp/other log',
+    `git -C ${W} diff`,
+    `git -C ${T} log`,
+  ]
+
+  // When: 逐条判定能否免询问
+  const results = cmds.map(c => bashUpgradable('executor', c, [], W, M))
+
+  // Then: 前三个不可免询问，后两个可免询问
+  expect(results).toEqual([false, false, false, true, true])
+})
+
+test('read-upgrade-limited-to-repo', () => {
+  // Given: 主仓库为 /r，执行体 worktree 为 /r/.claude/worktrees/flight-demo-S1；五个读取调用
+  const wt = '/r/.claude/worktrees/flight-demo-S1'
+  const calls: [string, unknown][] = [
+    ['Read', { file_path: `${wt}/a.py` }],
+    ['Read', { file_path: '/r/template/x.md' }],
+    ['Read', { file_path: '/Users/u/.ssh/id_rsa' }],
+    ['Grep', { pattern: 'x' }],
+    ['Glob', { pattern: '*', path: '/etc' }],
+  ]
+
+  // When: 逐个判定能否免询问
+  const results = calls.map(([tool, input]) => readUpgradable(tool, input, wt, '/r'))
+
+  // Then: 前两个 Read 与 Grep 可免询问；~/.ssh 与 /etc 不可
+  expect(results).toEqual([true, true, false, true, false])
 })
