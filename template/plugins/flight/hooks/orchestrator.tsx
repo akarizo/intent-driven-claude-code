@@ -6,7 +6,7 @@ import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './co
 import { bashUpgradable, bashVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
 import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, owners, readLedger, trees } from './io'
-import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
+import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
 
@@ -22,6 +22,8 @@ const GATE_TIMEOUT_MS = 600000
 /** 合回用 git merge-tree --write-tree，需要 git 2.38+ */
 const GIT_FLOOR = [2, 38]
 const MAX_ROUNDS = 50
+/** 起飞时授权插件提交本 change 工件的词（design D1） */
+const AUTHORIZE = '授权提交'
 
 function isOlder(a: string, b: string): boolean {
   const pa = a.split('.').map(s => parseInt(s, 10) || 0)
@@ -325,6 +327,16 @@ function drive($: Engine, f: Flight): Promise<void> {
   return run
 }
 
+/** slices.json 的 scenario_tests 映射到的测试文件（`::` 之前，去重）；读不出 / 不是 JSON 时为空，之后的 lint / preflight 会报 */
+async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+  try {
+    const tests = (JSON.parse((await io.read(path)) ?? '') as { scenario_tests?: Record<string, unknown> }).scenario_tests ?? {}
+    return [...new Set(Object.values(tests).map(t => String(t).split('::')[0] ?? ''))].filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 /** 起飞：版本 → 参数 → 定位 → 起飞检查 → 正在飞 → 写账本并 drive。返回回复文本。 */
 async function takeoff($: Engine, args: string[]): Promise<string> {
   let version: string
@@ -341,7 +353,13 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   const all = await trees(io, cwd)
   const main = all[0]
   if (main === undefined) return `flight：在 ${cwd} 读不到 git worktree 列表，不起飞`
-  let name = args.find(a => !a.startsWith('--'))
+  // 授权词「授权提交」：单独一个词，或粘在 change 名后面（design D1）；它本身不当 change 名
+  let authorized = args.includes(AUTHORIZE)
+  let name = args.find(a => !a.startsWith('--') && a !== AUTHORIZE)
+  if (name !== undefined && name.endsWith(AUTHORIZE)) {
+    name = name.slice(0, -AUTHORIZE.length)
+    authorized = true
+  }
   if (name === undefined) {
     const here = all.filter(t => cwd === t.path || cwd.startsWith(`${t.path}/`)).sort((x, y) => y.path.length - x.path.length)[0]
     if (here?.branch.startsWith('worktree-')) name = here.branch.slice('worktree-'.length)
@@ -374,13 +392,22 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
   if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
   // porcelain 的 XY 列可能以空格开头，不能先 trim
-  const dirty = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
-  if (dirty.length) {
-    const records = new Set(RECORD_FILES.map(r => `${changeDir}/${r}`))
-    if (!dirty.every(p => records.has(p))) return `flight：工作区不干净，不起飞：\n${st.stdout.trim()}`
-    // 只剩上一次飞行遗留的记录（停飞 / 会话中断不提交它们）：先提交再起飞
+  const dirty = classifyDirty(
+    st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3)),
+    { changeDir, scenarioFiles: await scenarioFiles(io, `${abs}/slices.json`) },
+  )
+  if (dirty.others.length) return `flight：工作区不干净，不起飞（工件之外的未提交改动）：\n${dirty.others.join('\n')}`
+  if (dirty.artifacts.length && !authorized) {
+    return `flight：工作区不干净，不起飞：未提交的只有本 change 的工件（${dirty.artifacts.length} 个）。确认无误后发 \`/opsx-apply ${name} ${AUTHORIZE}\`，插件只提交这些文件后起飞`
+  }
+  if (dirty.records.length) {
+    // 上一次飞行遗留的记录（停飞 / 会话中断不提交它们）：先提交再起飞
     const err = await commitRecords(io, f, 'chore(flight): 记录')
     if (err) return `flight：提交遗留飞行记录失败，不起飞：${err}`
+  }
+  if (dirty.artifacts.length) {
+    const err = await commitArtifacts(io, f, dirty.artifacts)
+    if (err) return `flight：提交工件失败，不起飞：${err}`
   }
   // slice-gate lint 的 argparse 要求 --change-dir
   const lint = await judge(io, f, 'slice-gate', ['lint', '--change-dir', changeDir], tree.path)
@@ -434,7 +461,8 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   const b = await base(ctx, flight)
   if (!(await appendEvent(io, flight, ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model })))) return 'flight：写 takeoff 事件失败，不起飞'
   await drive($, flight)
-  return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · attempt ${attempt}`
+  const committed = dirty.artifacts.length ? `\n已提交工件 ${dirty.artifacts.length} 个文件` : ''
+  return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · attempt ${attempt}${committed}`
 }
 
 export function registerOrchestrator(on: On): void {
