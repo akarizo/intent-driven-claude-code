@@ -370,6 +370,39 @@ def evidence_state(change_dir, slice_id):
     return "red_first" if any(r == "FAIL" for r in rows[:last_pass]) else "no_red"
 
 
+MEASURE_RED = ("FAILED", "ERROR")
+
+
+def g5_ledger_verdict(events, slice_id, base, pairs):
+    """G5 账本判据（纯函数）。pairs = [(scenario id, 映射目标)]；返回 (failed, warnings)。"""
+    failed, warnings = [], []
+    targets = []
+    for sid, t in pairs:
+        if t.split("::", 1)[0].endswith(".py"):
+            targets.append((sid, t))
+        else:
+            warnings.append("G5 measure: 非 pytest 目标无法测量：%s" % t)
+    ms = [e for e in events if e.get("ev") == "measure" and e.get("slice") == slice_id and e.get("base") == base]
+    starts = [e for e in ms if e.get("changed") == []]
+    if not starts:
+        return failed + ["G5 measure: 缺少本片起点测量（base %s）" % base[:8]], warnings
+    passed_at_start = set(t for e in starts for t, o in e.get("outcomes") or [] if o == "PASSED")
+    required = []
+    for sid, t in targets:
+        if t in passed_at_start:
+            warnings.append("G5 measure: %s 在本片起点已通过，免于先红" % t)
+        else:
+            required.append((sid, t))
+    reds = [(e, set(t for t, o in e.get("outcomes") or [] if o in MEASURE_RED)) for e in ms]
+    for sid, t in required:
+        if not any(t in r for _, r in reds):
+            failed.append("G5 measure: %s → %s 从未在控制面测量中红过（写好测试后调用 measure 看它红，再写实现）" % (sid, t))
+    need = set(t for _, t in required)
+    if need and not any(e.get("source") == [] and r & need for e, r in reds):
+        failed.append("G5 measure: 每次见红时都已改动生产代码（RED 须先于实现）")
+    return failed, warnings
+
+
 def report_has_row(change_dir, slice_id, commit):
     path = os.path.join(change_dir, REPORT)
     if not os.path.isfile(path):
@@ -923,7 +956,11 @@ def cmd_start(args):
             sys.exit(3)
     existing = _read_marker(root)
     if existing and existing.get("slice") == args.slice:
-        # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动
+        # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动（只补上缺的 evidence 字段）
+        if args.evidence == "ledger" and "evidence" not in existing:
+            existing["evidence"] = "ledger"
+            with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False)
         timeline_record(args.change_dir, "slice-start", "%s (resume)" % args.slice)
         print(json.dumps(existing, ensure_ascii=False))
         return
@@ -940,6 +977,8 @@ def cmd_start(args):
         _ckpt_delete(root, _gate_ref(args.change_dir, args.slice))
     marker = {"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
               "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
+    if args.evidence == "ledger":
+        marker["evidence"] = "ledger"
     with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
         json.dump(marker, f, ensure_ascii=False)
     timeline_record(args.change_dir, "slice-start", note)
@@ -996,14 +1035,28 @@ def cmd_gate(args):
     if source and not tests:
         failed.append("G3 pairing: 改了源码 %s 但区间内没有测试文件改动" % ", ".join(sorted(source)[:6]))
     failed.extend(gwt_violations(root, tests))
-    ev = evidence_state(args.change_dir, args.slice)
-    hooks_missing = ev == "missing_file"
-    if ev == "missing_file":
-        warnings.append("G5 evidence: 无 evidence.log（test-evidence hook 未安装或未触发），本切片留痕无法核对")
-    elif ev == "no_rows":
-        failed.append("G5 evidence: evidence.log 无本切片 %s 的测试运行记录（hook 在工作却没跑过测试）" % args.slice)
-    elif ev == "no_red":
-        warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
+    if args.evidence == "ledger":
+        hooks_missing = False
+        try:
+            import ledger  # 与 takeoff-gate.py 同：脚本目录在 sys.path 上
+            events = ledger.read_events(args.change_dir)
+        except Exception as e:  # noqa: BLE001 — 账本读不出来一律判红，不放行
+            failed.append("G5 measure: 账本读取失败：%s" % e)
+        else:
+            mapping = data.get("scenario_tests") or {}
+            pairs = [(sid, mapping[sid]) for sid in sl.get("scenarios") or [] if mapping.get(sid)]
+            f5, w5 = g5_ledger_verdict(events, args.slice, args.measure_base or base, pairs)
+            failed.extend(f5)
+            warnings.extend(w5)
+    else:
+        ev = evidence_state(args.change_dir, args.slice)
+        hooks_missing = ev == "missing_file"
+        if ev == "missing_file":
+            warnings.append("G5 evidence: 无 evidence.log（test-evidence hook 未安装或未触发），本切片留痕无法核对")
+        elif ev == "no_rows":
+            failed.append("G5 evidence: evidence.log 无本切片 %s 的测试运行记录（hook 在工作却没跑过测试）" % args.slice)
+        elif ev == "no_red":
+            warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
     failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel, committed))
     v7, _, _, w7 = scenario_status(root, data, {args.slice})
     failed.extend(v7)
@@ -1302,6 +1355,8 @@ def main():
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
     p.add_argument("--expect-branch", help="基点校验：HEAD 须是该分支最新 commit 的后代，否则 G0 拒绝起跑")
+    p.add_argument("--evidence", choices=["log", "ledger"], default="log",
+                   help="G5 留痕来源：log = evidence.log（缺省）；ledger = 控制面账本里的 measure 事件，标记里记 evidence=ledger")
     p.add_argument("--resume-checkpoint", action="store_true",
                    help="重派：无同片标记时把 refs/flight/<change>/<S> 快照恢复为未提交改动（基点须在快照祖先链上）")
     sub.add_parser("checkpoint", help="PostToolUse hook：stdin 载荷取 cwd，把本片 owns 内改动快照到 refs/flight/<change>/<S>；永远静默 exit 0")
@@ -1309,6 +1364,9 @@ def main():
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base")
+    p.add_argument("--evidence", choices=["log", "ledger"], default="log",
+                   help="G5 判据：log = evidence.log（缺省）；ledger = 账本 measure 事件（不读 evidence.log）")
+    p.add_argument("--measure-base", help="账本模式下匹配 measure 事件的 base；缺省为门禁 base")
     p = sub.add_parser("measure", help="只读测量：实跑本片 scenario 的 .py 目标，打印各目标结果与改动清单 JSON")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)

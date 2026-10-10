@@ -1467,7 +1467,6 @@ def test_x():
     assert any(f.startswith("G7") and "test_x" in f for f in g["failed"]), g["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2：G5 账本判据尚未实现")
 def test_g5_ledger_requires_red_per_target(git_repo):
     # Given: 起点测量里 T1、T2 都是 XFAIL；之后一次测量 T1 为 FAILED、T2 仍 XFAIL、source 为空；两者现已实现并通过
     change, base = _g5_repo(git_repo)
@@ -1484,7 +1483,6 @@ def test_g5_ledger_requires_red_per_target(git_repo):
     assert not any(T1 in f for f in g5), g5
 
 
-@pytest.mark.xfail(strict=True, reason="S2：G5 账本判据尚未实现")
 def test_g5_ledger_requires_red_before_source(git_repo):
     # Given: 起点测量里 T1、T2 都是 XFAIL；唯一一次见红时 source 已含 src/mod.py
     change, base = _g5_repo(git_repo)
@@ -1500,7 +1498,6 @@ def test_g5_ledger_requires_red_before_source(git_repo):
     assert any("每次见红时都已改动生产代码" in f for f in _g5(out)), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2：G5 账本判据尚未实现")
 def test_g5_ledger_exempts_targets_passing_at_start(git_repo):
     # Given: 起点测量里 T1 已 PASSED、T2 为 XFAIL；之后一次测量 T2 为 FAILED、source 为空；两者现已通过
     change, base = _g5_repo(git_repo)
@@ -1516,7 +1513,6 @@ def test_g5_ledger_exempts_targets_passing_at_start(git_repo):
     assert any(T1 in w and "起点已通过" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2：G5 账本判据尚未实现")
 def test_g5_ledger_needs_start_measure(git_repo):
     # Given: 账本里只有 changed 非空的测量（T1、T2 为 FAILED、source 为空），没有起点测量
     change, base = _g5_repo(git_repo)
@@ -1530,7 +1526,6 @@ def test_g5_ledger_needs_start_measure(git_repo):
     assert any("缺少本片起点测量" in f for f in _g5(out)), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2：--measure-base 尚未实现")
 def test_g5_ledger_uses_measure_base(git_repo):
     # Given: 起点测量与见红测量都记在 base B0；门禁 base 取另一个提交 B1（当前 HEAD）
     change, b0 = _g5_repo(git_repo)
@@ -1547,7 +1542,6 @@ def test_g5_ledger_uses_measure_base(git_repo):
     assert _g5(with_mb) == [], with_mb["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2：start / gate 的 --evidence 尚未实现")
 def test_start_tags_ledger_evidence(git_repo):
     # Given: 一个没有 evidence.log 的切片 S1（scenario cap#adds → test_mod_adds）
     change = git_repo / "openspec" / "changes" / "c"
