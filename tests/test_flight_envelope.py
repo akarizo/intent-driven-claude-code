@@ -47,3 +47,9 @@ def test_spawn_guard_decisions():
     # Then: 模型派 flight:executor、插件派但无 model、在飞 agent 再派发被拒（理由含「控制面」「model」「不得再派发」）；插件带 model 派 flight:reviewer 放行
     assert_ts_passed("spawn-guard-decisions")
 
+def test_spawn_guard_exempts_plugin_own_dispatch():
+    # Given: 父 agent 属于在飞飞行
+    # When: flight 插件带 model 派发 flight:reviewer / flight:executor；引擎来源派发 general-purpose
+    # Then: 插件自己的派发放行，引擎来源被拒（PR #41 评审 HIGH，R1）
+    assert_ts_passed("spawn-guard-exempts-plugin-own-dispatch")
+

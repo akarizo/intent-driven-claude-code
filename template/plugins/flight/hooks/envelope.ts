@@ -192,6 +192,7 @@ export function spawnVerdict(x: { subagentType: string; originPlugin: string | u
     if (x.originPlugin !== 'flight') return { deny: 'flight:* 只能由 flight 控制面派发' }
     if (!x.model?.trim()) return { deny: '派发须显式指定 model（铁律 11）' }
   }
-  if (x.parentInFlight) return { deny: '飞行中的 agent 不得再派发子 agent' }
+  // 插件自己的派发发生在飞行 agent 收口 / turn.complete 的帧里，父 agent 可能就是刚结束的那个：只拦非插件来源
+  if (x.parentInFlight && x.originPlugin !== 'flight') return { deny: '飞行中的 agent 不得再派发子 agent' }
   return undefined
 }

@@ -22,7 +22,7 @@
 3. **Bash：只给白名单免询问。** 每一段都命中白名单才把 ask 升为 allow：门禁命令（`gate.test` / `gate.lint` / `gate.typecheck`）与切片 `verify`、只读 git（`status`、`diff`、`log`、`show`、`rev-parse`、`ls-files`、`blame`、`grep`）、执行体与修复体的 `git add` / `git commit`。含命令替换、反引号、输入输出重定向（`2>&1` 除外）或后台 `&` 的一律不升级。白名单外的命令按用户自己的权限设置处理。
 4. **`tool.check` 只升 ask，只在包络内。** 先取引擎判定 `next(e)`：主会话或非飞行 agent 原样返回；判定不是 ask 原样返回（不推翻 deny、不收回 allow）；组织上限为 ask 原样返回。只有 Read / Grep / Glob、包络内的写入、白名单 Bash、评审员调用 `mcp__flight__submit_findings` 答 allow。包络外的写入与危险 Bash 已在 `tool.call` 被拒。
 5. **飞行中主会话对在飞 worktree 只读（尽力而为）。** 插件在账本写入点维护「在飞」集合（takeoff 加入，land / halt 移出），记录 change worktree 与切片 worktree 前缀。主会话在在飞树内的写入一律拒绝；主会话 Bash 命令文本含在飞树绝对路径且带改动类 git 子命令或 `>` 重定向时拒绝。
-6. **`agent.spawn` 守卫。** `flight:*` 类型只能由 flight 插件派发；由插件派发的 `flight:*` 必须显式指定 model（铁律 11）；飞行中的 agent 不得再派发子 agent；守卫自身抛错时对 `flight:*` 拒绝、其他类型放行。
+6. **`agent.spawn` 守卫。** `flight:*` 类型只能由 flight 插件派发；由插件派发的 `flight:*` 必须显式指定 model（铁律 11）；飞行中的 agent 不得再派发子 agent（只拦非 flight 插件发起的派发：插件自己是在飞行 agent 收口或 turn.complete 的帧里接着派发的，父 agent 可能就是刚结束的那个）；守卫自身抛错时对 `flight:*` 拒绝、其他类型放行。
 
 否决的方案：
 - **对飞行 agent 的 Bash 一律 allow**：执行测试本来就在人已批准的计划之内，所以门禁和 verify 可以免询问；但插件不能越过用户设置，把任意 shell 权限交给可能被注入提示的模型。

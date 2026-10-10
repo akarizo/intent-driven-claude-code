@@ -42,7 +42,7 @@ Feature: 评审页 D4-A：飞行中主会话对源码只读
 - **AND** Write `/other/y.py` 与 `git -C T status` 放行
 
 ### Requirement: flight 类型只能由控制面显式派发
-`agent.spawn` 时，`flight:*` 类型若不是由 flight 插件派发 SHALL 被拒绝；由 flight 插件派发但 `model` 为空 SHALL 被拒绝；`parentAgentId` 属于在飞飞行的 agent 时，任何派发 SHALL 被拒绝。
+`agent.spawn` 时，`flight:*` 类型若不是由 flight 插件派发 SHALL 被拒绝；由 flight 插件派发但 `model` 为空 SHALL 被拒绝；非 flight 插件发起的派发，`parentAgentId` 属于在飞飞行的 agent 时 SHALL 被拒绝；flight 插件自己发起的派发 SHALL NOT 因此被拒绝（PR #41 评审 HIGH：插件在飞行 agent 收口或 turn.complete 的帧里接着派发）。
 Feature: 铁律 11 事前强制；飞行 agent 不得自行扩张
 
 #### Scenario: spawn-guard-decisions

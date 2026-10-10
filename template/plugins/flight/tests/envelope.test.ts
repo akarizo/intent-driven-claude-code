@@ -177,6 +177,21 @@ test('envelope-main-session-bash-redirect', () => {
   expect(verdicts.slice(1)).toEqual([undefined, undefined, undefined])
 })
 
+test('spawn-guard-exempts-plugin-own-dispatch', () => {
+  // Given: 父 agent 属于在飞飞行（parentInFlight 为 true）：插件在它收口或 turn.complete 的帧里接着派发
+  const parentInFlight = true
+
+  // When: flight 插件带 model 派发 flight:reviewer、flight:executor；引擎来源（模型的 Agent 工具）派发 general-purpose
+  const reviewer = spawnVerdict({ subagentType: 'flight:reviewer', originPlugin: 'flight', model: 'opus', parentInFlight })
+  const executor = spawnVerdict({ subagentType: 'flight:executor', originPlugin: 'flight', model: 'opus', parentInFlight })
+  const child = spawnVerdict({ subagentType: 'general-purpose', originPlugin: 'engine', model: 'opus', parentInFlight })
+
+  // Then: 插件自己的两次派发放行；引擎来源的派发被拒，理由含「不得再派发」
+  expect(reviewer).toBeUndefined()
+  expect(executor).toBeUndefined()
+  expect(child).toMatchObject({ deny: expect.stringContaining('不得再派发') })
+})
+
 test('spawn-guard-decisions', () => {
   // Given: 四种派发：模型经 Agent 工具派 flight:executor；flight 插件派 flight:executor 无 model；flight 插件派 flight:reviewer 带 opus；在飞执行体派 general-purpose
   const xs = [
