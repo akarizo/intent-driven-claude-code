@@ -101,10 +101,9 @@ def test_takeoff_refuses_bad_fingerprint():
     assert_ts_passed("takeoff-refuses-bad-fingerprint/not-hex")
 
 # ---------------------------------------------------------------- flight-hardening
-# 骨架：S3 实现后去掉 xfail 标记。
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_drive_reports_fp_failure_distinctly():
     # Given: 已起飞，之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」
     # When: 处理 S1 执行体的结束
@@ -112,7 +111,6 @@ def test_drive_reports_fp_failure_distinctly():
     assert_ts_passed("drive-reports-fp-failure-distinctly")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_executor_dispatch_commits_records_first():
     # Given: 已起飞，waves [[S1, S2], [S3]]，S1、S2 已合回，change 目录 slices/_interfaces.md 有未提交改动
     # When: drive 派发 S3 的执行体
@@ -120,7 +118,6 @@ def test_executor_dispatch_commits_records_first():
     assert_ts_passed("executor-dispatch-commits-records-first")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_takeoff_waits_for_live_agents_after_halt():
     # Given: demo 的 attempt 1 已 halt，它派出的 agent-1 在 agent.list 里仍为 running
     # When: 人再次发出 /opsx-apply demo
@@ -128,7 +125,6 @@ def test_takeoff_waits_for_live_agents_after_halt():
     assert_ts_passed("takeoff-waits-for-live-agents-after-halt")
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_merge_survives_missing_interfaces_summary():
     # Given: 已起飞，测试世界的 fs.read 对不存在的文件抛 ENOENT，change 目录还没有 slices/_interfaces.md
     # When: S1 执行体以绿门禁结束
