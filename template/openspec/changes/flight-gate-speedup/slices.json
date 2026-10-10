@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "change": "flight-gate-speedup",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 97.0
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "final 先判 G7；全量测试按基线逐条差分",
+      "scenarios": [
+        "final-gate-fastpath#final-skips-full-suite-when-g7-red",
+        "final-gate-fastpath#final-runs-g7-before-full-suite",
+        "test-gate-baseline-diff#baseline-records-preexisting-failures",
+        "test-gate-baseline-diff#final-excludes-baseline-failures",
+        "test-gate-baseline-diff#final-flags-new-failures",
+        "test-gate-baseline-diff#diff-falls-back-when-unmeasurable",
+        "test-gate-baseline-diff#non-pytest-gate-keeps-exit-code"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate_final.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "final --reuse-fix；baseline 运行标记与 preflight；gate.test 必填",
+      "scenarios": [
+        "final-gate-fastpath#final-reuses-fresh-fix-gate",
+        "final-gate-fastpath#final-reuse-refused-after-code-change",
+        "final-gate-fastpath#final-reuse-needs-green-fix-gate",
+        "propose-parallel-baseline#lint-requires-gate-test",
+        "propose-parallel-baseline#baseline-marks-running",
+        "propose-parallel-baseline#preflight-reports-running-baseline",
+        "propose-parallel-baseline#preflight-reports-interrupted-baseline"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate_reuse_preflight.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "新引擎：有计划切片 blocked 时评审收齐后停飞",
+      "scenarios": [
+        "flight-blocked-halt#core-halts-when-slices-blocked",
+        "flight-blocked-halt#core-waits-reviews-before-halting",
+        "flight-blocked-halt#core-review-blocked-still-finals",
+        "flight-blocked-halt#core-resume-redispatches-blocked-slice"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/tests/core.test.ts",
+        "tests/test_flight_core.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "新引擎 final 动作带 --reuse-fix，修复体收口门禁不带；插件补丁版本 +1",
+      "scenarios": [
+        "final-gate-fastpath#landing-final-requests-fix-reuse",
+        "final-gate-fastpath#fixer-stop-final-never-reuses"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/tests/landing.test.tsx",
+        "tests/test_flight_landing.py",
+        "template/plugins/flight/.claude-plugin/plugin.json"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py",
+      "packet": "slices/S4.md"
+    },
+    {
+      "id": "S5",
+      "title": "propose 先交审批页、baseline 后台跑；schema 写明 gate.test 必填与测试差分",
+      "scenarios": [
+        "propose-parallel-baseline#propose-renders-panel-before-baseline",
+        "propose-parallel-baseline#schema-requires-gate-test"
+      ],
+      "owns": [
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/openspec/schemas/intent-driven/schema.yaml",
+        "tests/test_template_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py",
+      "packet": "slices/S5.md"
+    }
+  ],
+  "scenario_tests": {
+    "final-gate-fastpath#final-skips-full-suite-when-g7-red": "tests/test_slice_gate_final.py::test_final_skips_full_suite_when_g7_red",
+    "final-gate-fastpath#final-runs-g7-before-full-suite": "tests/test_slice_gate_final.py::test_final_runs_g7_before_full_suite",
+    "test-gate-baseline-diff#baseline-records-preexisting-failures": "tests/test_slice_gate_final.py::test_baseline_records_preexisting_failures",
+    "test-gate-baseline-diff#final-excludes-baseline-failures": "tests/test_slice_gate_final.py::test_final_excludes_baseline_failures",
+    "test-gate-baseline-diff#final-flags-new-failures": "tests/test_slice_gate_final.py::test_final_flags_new_failures",
+    "test-gate-baseline-diff#diff-falls-back-when-unmeasurable": "tests/test_slice_gate_final.py::test_diff_falls_back_when_unmeasurable",
+    "test-gate-baseline-diff#non-pytest-gate-keeps-exit-code": "tests/test_slice_gate_final.py::test_non_pytest_gate_keeps_exit_code",
+    "final-gate-fastpath#final-reuses-fresh-fix-gate": "tests/test_slice_gate_reuse_preflight.py::test_final_reuses_fresh_fix_gate",
+    "final-gate-fastpath#final-reuse-refused-after-code-change": "tests/test_slice_gate_reuse_preflight.py::test_final_reuse_refused_after_code_change",
+    "final-gate-fastpath#final-reuse-needs-green-fix-gate": "tests/test_slice_gate_reuse_preflight.py::test_final_reuse_needs_green_fix_gate",
+    "propose-parallel-baseline#lint-requires-gate-test": "tests/test_slice_gate_reuse_preflight.py::test_lint_requires_gate_test",
+    "propose-parallel-baseline#baseline-marks-running": "tests/test_slice_gate_reuse_preflight.py::test_baseline_marks_running",
+    "propose-parallel-baseline#preflight-reports-running-baseline": "tests/test_slice_gate_reuse_preflight.py::test_preflight_reports_running_baseline",
+    "propose-parallel-baseline#preflight-reports-interrupted-baseline": "tests/test_slice_gate_reuse_preflight.py::test_preflight_reports_interrupted_baseline",
+    "flight-blocked-halt#core-halts-when-slices-blocked": "tests/test_flight_core.py::test_core_halts_when_slices_blocked",
+    "flight-blocked-halt#core-waits-reviews-before-halting": "tests/test_flight_core.py::test_core_waits_reviews_before_halting",
+    "flight-blocked-halt#core-review-blocked-still-finals": "tests/test_flight_core.py::test_core_review_blocked_still_finals",
+    "flight-blocked-halt#core-resume-redispatches-blocked-slice": "tests/test_flight_core.py::test_core_resume_redispatches_blocked_slice",
+    "final-gate-fastpath#landing-final-requests-fix-reuse": "tests/test_flight_landing.py::test_landing_final_requests_fix_reuse",
+    "final-gate-fastpath#fixer-stop-final-never-reuses": "tests/test_flight_landing.py::test_fixer_stop_final_never_reuses",
+    "propose-parallel-baseline#propose-renders-panel-before-baseline": "tests/test_template_docs.py::test_propose_renders_panel_before_baseline",
+    "propose-parallel-baseline#schema-requires-gate-test": "tests/test_template_docs.py::test_schema_requires_gate_test"
+  }
+}

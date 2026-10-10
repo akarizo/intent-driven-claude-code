@@ -278,3 +278,39 @@ def test_reviewer_diff_empty_vs_unreachable():
     # Then: 同时含「无变更」（diff 为空时）与「取 diff 失败」（拉不到时）；不再出现「为空或拉不到」这种合并写法
     assert "无变更" in flow and "取 diff 失败" in flow
     assert "为空或拉不到" not in flow
+
+
+# ---------------------------------------------------------------- flight-gate-speedup · propose-parallel-baseline#*
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现：propose 先渲染审批页、baseline 后台跑")
+def test_propose_renders_panel_before_baseline():
+    # Given: opsx-propose.md 与 openspec-propose/SKILL.md
+    cmd = read(CMD / "opsx-propose.md")
+    skill = read(SKILLS / "openspec-propose" / "SKILL.md")
+
+    # When: 定位两者里 spec_html.py 与 slice-gate.py baseline 首次出现的位置，取 baseline 之后的正文
+    def parts(t):
+        at = t.index("slice-gate.py baseline")
+        return t.index("spec_html.py"), at, t[at:]
+
+    # Then: 两者都是 spec_html.py 在前；baseline 之后写明后台运行、跑完报告一行、跑完前起飞会被 preflight 拒绝；hook 集合一致
+    for t in (cmd, skill):
+        html_at, base_at, tail = parts(t)
+        assert html_at < base_at
+        assert "后台" in tail and "报告一行" in tail
+        assert "preflight" in tail and "拒绝" in tail
+    hooks = lambda t: set(re.findall(r"(slice-gate\.py|spec_html\.py|timeline\.py|session-decompose\.py)", t))
+    assert hooks(cmd) == hooks(skill)
+
+
+@pytest.mark.xfail(strict=True, reason="S5 未实现：schema 写明 gate.test 必填与测试差分")
+def test_schema_requires_gate_test():
+    # Given: schema.yaml 的 tasks 工件 instruction
+    schema = read(SCHEMA / "schema.yaml")
+
+    # When: 取 tasks 工件段
+    tasks = schema[schema.index("- id: tasks"):schema.index("apply:")]
+
+    # Then: 写明 gate.test 必填；写明预存红按基线差分、无需手写 deselect
+    assert "gate.test" in tasks and "必填" in tasks
+    assert "预存红" in tasks and "差分" in tasks and "deselect" in tasks
