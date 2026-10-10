@@ -1570,10 +1570,9 @@ def test_start_tags_ledger_evidence(git_repo):
     assert out["hooks_missing"] is False
 
 # ---------------------------------------------------------------- flight-measure S9
-# 骨架：S9 实现后去掉 xfail 标记。
+# S9 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S9：measure 的 changed 尚未排除切片标记与 change 目录")
 def test_measure_right_after_start_is_start_measure(git_repo):
     # Given: 切片 S1 的工件已提交，以 --evidence ledger 起跑后工作树没有其他改动
     change = git_repo / "openspec" / "changes" / "c"
