@@ -396,7 +396,6 @@ def _ev(change, **fields):
     return dict({"v": 1, "change": change, "at": "2026-10-10T10:00:00Z", "by": {"plugin": "flight", "session": "test"}}, **fields)
 
 
-@pytest.mark.xfail(strict=True, reason="S3：红次数与测量统计尚未改为读账本")
 def test_red_count_from_ledger(git_repo):
     # Given: timeline.md 没有 red 行；账本含 takeoff、2 条红 gate、1 条绿 gate、1 条红 final、3 条 measure（2 条有 FAILED）
     d = make_change(git_repo)
@@ -425,7 +424,6 @@ def test_red_count_from_ledger(git_repo):
     assert "测量：3 次（见红 2 次）" in out, out
 
 
-@pytest.mark.xfail(strict=True, reason="S3：test-evidence 尚未对账本模式让位")
 def test_evidence_skips_ledger_marked_slice(git_repo):
     # Given: 仓库根的切片标记写明 evidence=ledger
     change = marker_repo(git_repo)
