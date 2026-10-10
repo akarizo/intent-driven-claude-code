@@ -132,10 +132,9 @@ def test_merge_survives_missing_interfaces_summary():
     assert_ts_passed("merge-survives-missing-interfaces-summary")
 
 # ---------------------------------------------------------------- flight-envelope S4
-# 骨架：S4 实现后去掉 xfail 标记。
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_resume_regates_green_slice():
     # Given: attempt 1 派过 S1 执行体、S1 最近门禁 ok（base B）、无 S1 merge、已 halt；attempt 2 已起飞，S1 worktree 仍在
     # When: drive 处理 attempt 2
@@ -143,7 +142,6 @@ def test_resume_regates_green_slice():
     assert_ts_passed("resume-regates-green-slice")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_resume_red_regate_dispatches_with_original_base():
     # Given: 同上，但补跑的门禁为红
     # When: drive 处理 attempt 2
@@ -151,15 +149,14 @@ def test_resume_red_regate_dispatches_with_original_base():
     assert_ts_passed("resume-red-regate-dispatches-with-original-base")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_takeoff_commits_leftover_records():
     # Given: demo 已批准、attempt 1 已 halt；只有 change 目录的 timeline.md 与 gate-report.md 未提交（另一情形还有 src/x.py）
     # When: 人发出 /opsx-apply demo
     # Then: chore(flight): 记录 的提交排在 takeoff 之前、回复含「✈ 起飞」；另一情形回复含「工作区不干净」且没有新 takeoff
     assert_ts_passed("takeoff-commits-leftover-records")
+    assert_ts_passed("takeoff-commits-leftover-records/foreign-dirty")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_drive_stops_after_terminal_without_fp():
     # Given: attempt 1 已因指纹失败 halt，agent-2 仍在运行，plan_fp.py 仍以 1 退出
     # When: agent-2 结束（turn.complete）
