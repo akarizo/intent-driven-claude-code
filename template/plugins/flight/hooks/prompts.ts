@@ -6,6 +6,11 @@ type Finding = { severity: string; file: string; line: number; summary: string; 
 const GATE_NOTE = '门禁由控制面在你收口时运行：不要自己运行 slice-gate；红了控制面会把失败项告诉你，接着修。'
 const OWNS_NOTE = '只写切片包 owns 内的文件；写入被拒时不绕过，在最后一行写明该路径。'
 
+/** 派发时前置在每份提示词之首：引擎不保证 agent 落在 spawn 的 cwd 里（flight-envelope 实测执行体落在 change worktree 并在其上直接提交）。 */
+export function worktreeNote(worktree: string): string {
+  return `你的 worktree：\`${worktree}\`。读写文件一律用该目录下的绝对路径，git 一律 \`git -C ${worktree}\`；不得在别的 worktree 写入或提交。`
+}
+
 function slicePack(changeDir: string, slice: string): string {
   return `${changeDir}/slices/${slice}.md`
 }

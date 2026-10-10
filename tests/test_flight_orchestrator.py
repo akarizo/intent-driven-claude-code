@@ -193,3 +193,10 @@ def test_agent_spawn_guard_wired():
     # Then: agent.spawn 答 deny，理由含「控制面」
     assert_ts_passed("agent-spawn-guard-wired")
 
+
+
+def test_spawn_prompt_names_worktree():
+    # Given: demo 已批准，waves [[S1, S2], [S3]]；引擎派发的 agent 不一定落在 cwd 参数给的目录里
+    # When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
+    # Then: 每份提示词写明自己的切片 worktree 绝对路径与 git -C 该路径，不得在别的 worktree 写入或提交
+    assert_ts_passed("spawn-prompt-names-worktree")

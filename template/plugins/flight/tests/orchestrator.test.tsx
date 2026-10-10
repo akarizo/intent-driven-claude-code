@@ -262,6 +262,22 @@ test('opsx-apply-taken-over', async ($, on) => {
   ])
 })
 
+test('spawn-prompt-names-worktree', async ($, on) => {
+  // Given: demo 已批准，waves [[S1, S2], [S3]]；引擎派发的 agent 不一定落在 cwd 参数给的目录里
+  const log = useWorld(on, demoWorld())
+
+  // When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 每份提示词都写明自己的切片 worktree 绝对路径、git 一律 git -C 该路径，且不得在别的 worktree 写入或提交
+  expect(log.spawns.length).toBe(2)
+  for (const s of log.spawns) {
+    expect(s.prompt).toContain(`\`${s.cwd}\``)
+    expect(s.prompt).toContain(`git -C ${s.cwd}`)
+    expect(s.prompt).toContain('不得在别的 worktree 写入或提交')
+  }
+})
+
 test('takeoff-refused-without-approval', async ($, on) => {
   // Given: takeoff-gate.py 以 3 退出，stderr 为「未批准」
   const log = useWorld(on, demoWorld({ takeoff: res(3, '', '未批准') }))

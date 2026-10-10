@@ -8,7 +8,7 @@ import type { Deny, Who } from './envelope'
 import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, ownerOf, owners, readLedger, trees } from './io'
 import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
-import { executorPrompt, resolverPrompt } from './prompts'
+import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
 
 type Engine = EngineInterface
 type Ev = State['events'][number]
@@ -64,7 +64,7 @@ function ctxOf($: Engine): Ctx {
     io: ioHere($),
     now: () => $.clock.now(),
     async spawn({ f, role, cwd, prompt, description }) {
-      const r = await $.agent.spawn({ prompt, description, subagentType: agentType(role), model: f.model, cwd })
+      const r = await $.agent.spawn({ prompt: `${worktreeNote(cwd)}\n${prompt}`, description, subagentType: agentType(role), model: f.model, cwd })
       return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
     },
     async status(text) {
