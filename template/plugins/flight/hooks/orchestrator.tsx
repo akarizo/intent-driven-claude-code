@@ -3,9 +3,9 @@
 import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
-import { bashUpgradable, bashVerdict, mainSessionVerdict, normalizePath, spawnVerdict, writeTarget, writeVerdict } from './envelope'
+import { bashUpgradable, bashVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
-import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, ownerOf, owners, readLedger, trees } from './io'
+import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, owners, readLedger, trees } from './io'
 import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
@@ -19,6 +19,8 @@ const HIDDEN = ['flight:executor', 'flight:reviewer', 'flight:fixer']
 const PASS_THROUGH = ['--engine=workflow', '--gate=per-task']
 const LIVE = ['pending', 'running', 'waiting']
 const GATE_TIMEOUT_MS = 600000
+/** 合回用 git merge-tree --write-tree，需要 git 2.38+ */
+const GIT_FLOOR = [2, 38]
 const MAX_ROUNDS = 50
 
 function isOlder(a: string, b: string): boolean {
@@ -65,7 +67,10 @@ function ctxOf($: Engine): Ctx {
     now: () => $.clock.now(),
     async spawn({ f, role, cwd, prompt, description }) {
       const r = await $.agent.spawn({ prompt: `${worktreeNote(cwd)}\n${prompt}`, description, subagentType: agentType(role), model: f.model, cwd })
-      return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
+      if ('deny' in r) return { deny: r.deny }
+      // dispatch 写入账本之前先登记：这段时间里它的工具调用一律拒绝（design D6）
+      markPending(r.agentId, f.change)
+      return { agentId: r.agentId }
     },
     async status(text) {
       await $.ui.status(text)
@@ -119,16 +124,19 @@ async function envelopeOf(io: Io, f: Flight): Promise<Envelope> {
   return env
 }
 
-/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）与可免询问的命令。 */
-async function flyingWho(io: Io, agentId: string): Promise<{ who: Who; commands: string[] } | undefined> {
+type Flying = { who: Who; commands: string[]; mainTree: string }
+
+/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）、可免询问的命令与主 worktree；已派发、dispatch 未写入的为登记中。 */
+async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: true } | undefined> {
   // 没有在飞飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
   if (active.size === 0) return undefined
-  const owner = await ownerOf(io, agentId)
+  const owner = await ownership(io, agentId)
+  if (owner !== undefined && 'pending' in owner) return active.has(owner.change) ? { pending: true } : undefined
   const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
   if (owner === undefined || f === undefined) return undefined
   const env = await envelopeOf(io, f)
   const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : owner.role === 'reviewer' ? [] : Object.values(env.owns).flat()
-  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands }
+  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands, mainTree: f.mainTree }
 }
 
 const commandOf = (input: unknown) => {
@@ -136,16 +144,16 @@ const commandOf = (input: unknown) => {
   return typeof c === 'string' ? c : ''
 }
 
-function envelopeVerdict(who: Who, tool: string, input: unknown): Deny | undefined {
-  if (tool === 'Bash') return bashVerdict(who.role, commandOf(input))
+function envelopeVerdict({ who, mainTree }: Flying, tool: string, input: unknown): Deny | undefined {
+  if (tool === 'Bash') return bashVerdict(who.role, commandOf(input), who.worktree, mainTree)
   const target = writeTarget(tool, input)
   return target === undefined ? undefined : writeVerdict(who, normalizePath(target))
 }
 
 /** D7：可把引擎的 ask 改答 allow 的包络内操作。 */
-function inEnvelope(who: Who, commands: string[], tool: string, input: unknown): boolean {
-  if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return true
-  if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands)
+function inEnvelope({ who, commands, mainTree }: Flying, tool: string, input: unknown): boolean {
+  if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return readUpgradable(tool, input, who.worktree, mainTree)
+  if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands, who.worktree, mainTree)
   const target = writeTarget(tool, input)
   if (target !== undefined) return writeVerdict(who, normalizePath(target)) === undefined
   return who.role === 'reviewer' && tool === `mcp__flight__${FINDINGS_TOOL.name}`
@@ -357,6 +365,12 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
 
   const gate = await judge(io, f, 'takeoff-gate', ['--change-dir', abs], tree.path)
   if (gate.exitCode !== 0) return `flight：起飞守卫未通过：${gate.stderr.trim()}\n审阅并批准计划：${abs}/spec.html`
+  const git = await io.run(['git', '--version'])
+  const gv = /(\d+)\.(\d+)/.exec(git.stdout)
+  const [major, minor] = gv ? [Number(gv[1]), Number(gv[2])] : [-1, -1]
+  if (git.exitCode !== 0 || major < GIT_FLOOR[0] || (major === GIT_FLOOR[0] && minor < GIT_FLOOR[1])) {
+    return `flight：需要 git ≥ 2.38（合回用 merge-tree --write-tree），当前 ${firstLine(git.stdout || git.stderr)}，不起飞`
+  }
   const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
   if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
   // porcelain 的 XY 列可能以空格开头，不能先 trim
@@ -460,7 +474,11 @@ export function registerOrchestrator(on: On): void {
     if (!agentId) return mainSessionVerdict([...active.values()], tool, e) ?? next(e)
     const flying = await flyingWho(ctxOf($).io, agentId)
     if (flying === undefined) return next(e)
-    return envelopeVerdict(flying.who, tool, e) ?? next(e)
+    if ('pending' in flying) return { deny: 'flight：派发登记中，稍后重试' }
+    const deny = envelopeVerdict(flying, tool, e)
+    if (deny) return deny
+    // D1：飞行 agent 的 Bash 固定在自己的 worktree 里执行
+    return tool === 'Bash' ? next({ ...e, command: inWorktree(commandOf(e), flying.who.worktree) }) : next(e)
   }).catch(($, e, next) => {
     if (next.called) return next(e)
     const agentId = (e as unknown as { agentId?: string }).agentId
@@ -474,7 +492,7 @@ export function registerOrchestrator(on: On): void {
     if (!x.agentId || v.decision !== 'ask' || x.ceiling === 'ask') return v
     try {
       const flying = await flyingWho(ctxOf($).io, x.agentId)
-      if (flying === undefined || !inEnvelope(flying.who, flying.commands, x.tool, x.input)) return v
+      if (flying === undefined || 'pending' in flying || !inEnvelope(flying, x.tool, x.input)) return v
       return { decision: 'allow', reason: 'flight 包络内' }
     } catch {
       return v

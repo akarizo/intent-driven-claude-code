@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -217,10 +215,8 @@ def test_agent_spawn_guard_denies_child_of_flight_agent():
     assert_ts_passed("agent-spawn-guard-denies-child-of-flight-agent")
 
 # ---------------------------------------------------------------- flight-envelope-tightening S4
-# 骨架：S4 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_bash_runs_in_own_worktree():
     # Given: demo 已起飞，S1 执行体 agent-1 已派发
     # When: agent-1 调用 Bash git status
@@ -228,7 +224,6 @@ def test_bash_runs_in_own_worktree():
     assert_ts_passed("bash-runs-in-own-worktree")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_commit_outside_own_worktree_denied():
     # Given: demo 已起飞，S1 执行体 agent-1 已派发
     # When: agent-1 调用 Bash git -C <change worktree> commit -m x
@@ -236,7 +231,6 @@ def test_commit_outside_own_worktree_denied():
     assert_ts_passed("commit-outside-own-worktree-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_read_outside_repo_not_upgraded():
     # Given: demo 已起飞，S1 执行体 agent-1 已派发
     # When: 引擎对 agent-1 的 Read ~/.ssh/id_rsa 与 Read <S1 worktree>/a.py 都判 ask
@@ -244,7 +238,6 @@ def test_read_outside_repo_not_upgraded():
     assert_ts_passed("read-outside-repo-not-upgraded")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_pending_agent_writes_denied():
     # Given: demo 已起飞，agent-1 已派发但 dispatch 事件没能写入账本
     # When: agent-1 调用 Write <S1 worktree>/src/s1.py
@@ -252,7 +245,6 @@ def test_pending_agent_writes_denied():
     assert_ts_passed("pending-agent-writes-denied")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_takeoff_refuses_old_git():
     # Given: demo 已批准，git --version 输出 git version 2.37.1
     # When: 人发出 /opsx-apply demo
