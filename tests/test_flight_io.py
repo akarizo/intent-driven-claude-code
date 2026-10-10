@@ -90,7 +90,6 @@ def test_owner_miss_cached_until_dispatch():
 # 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_ledger_read_failure_not_cached():
     # Given: demo 是本进程登记的在飞飞行；ledger.py show 第一次退出 5、之后返回含 agent-7 dispatch 的账本
     # When: 连续两次查询 agent-7 的归属
@@ -98,9 +97,11 @@ def test_ledger_read_failure_not_cached():
     assert_ts_passed("ledger-read-failure-not-cached")
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_measure_event_checked_before_write():
     # Given: 一条字段齐全的 measure 与一条缺 base 的 measure
     # When: 分别 eventProblem 与 appendEvent
     # Then: 前者合规且写入；后者原因含「measure 的 base」、不写入、不调用 git hash-object
     assert_ts_passed("measure-event-checked-before-write")
+    assert_ts_passed("measure-event-checked-before-write/reason")
+    assert_ts_passed("measure-event-checked-before-write/bad-outcome")
+    assert_ts_passed("event-types-exported")
