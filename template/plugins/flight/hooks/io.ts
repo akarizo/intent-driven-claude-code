@@ -1,6 +1,7 @@
 // 飞行副作用层：判定器调用、账本读写、切片 worktree、按 agent 找飞行（spec flight-io · design D5）。$ 不能跨 import，适配与派发在 orchestrator.tsx。
 // 判定器一律取主 worktree 的副本；命令的工作目录是被判定的那个 worktree。
 import type { Flight, FlightEvent, Io, Role, RunResult } from './core'
+import type { ActiveTree } from './envelope'
 
 const HOOK_DIRS = ['.claude/hooks', 'template/.claude/hooks']
 const MAX_UPDATE_REF = 3
@@ -110,9 +111,39 @@ export async function appendEvent(io: Io, f: Flight, event: FlightEvent): Promis
     ])
     if (commit.exitCode !== 0) return false
     const moved = await git(['update-ref', ref, commit.stdout.trim(), parent === '' ? ZERO : parent])
-    if (moved.exitCode === 0) return true
+    if (moved.exitCode === 0) {
+      remember(f, event)
+      return true
+    }
   }
   return false
+}
+
+/** 在飞集合：takeoff 写入后登记，land / halt 写入后移除（design D8）。 */
+export const active: Map<string, ActiveTree> = new Map()
+
+export type Owner = { change: string; role: Role; slice: string; worktree: string }
+
+/** agent 归属缓存：dispatch 写入后登记。 */
+export const owners: Map<string, Owner> = new Map()
+
+// ceiling: 两张表只在本进程内维护，进程重启后要等下一次 takeoff 才重建在飞集合 -> 需要跨重启强制时，从账本 refs/flight/* 重建
+function remember(f: Flight, e: FlightEvent): void {
+  if (e.ev === 'takeoff') active.set(f.change, { change: f.change, changeTree: f.changeTree, slicePrefix: worktreePath(f, '') })
+  else if (e.ev === 'land' || e.ev === 'halt') active.delete(f.change)
+  else if (e.ev === 'dispatch') owners.set(String(e.agent), { change: f.change, role: e.role as Role, slice: String(e.slice), worktree: String(e.worktree) })
+}
+
+/** 按 agentId 查归属：缓存未命中时退回 flightOfAgent 扫账本，并写回缓存。 */
+export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
+  const hit = owners.get(agentId)
+  if (hit !== undefined) return hit
+  const found = await flightOfAgent(io, agentId)
+  const d = found?.events.filter(e => e.ev === 'dispatch' && e.agent === agentId).pop()
+  if (found === undefined || d === undefined) return undefined
+  const owner: Owner = { change: found.flight.change, role: d.role as Role, slice: String(d.slice), worktree: String(d.worktree) }
+  owners.set(agentId, owner)
+  return owner
 }
 
 export function worktreePath(f: Flight, name: string): string {

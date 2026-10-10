@@ -59,7 +59,7 @@ def test_io_refuses_invalid_event():
     assert_ts_passed("io-refuses-invalid-event/dispatch-without-agent")
 
 # ---------------------------------------------------------------- flight-hardening
-# 骨架：S2 实现后去掉 xfail 标记。
+# flight-hardening S2 的 scenario 测试。
 
 
 def test_io_refuses_prototype_ev():

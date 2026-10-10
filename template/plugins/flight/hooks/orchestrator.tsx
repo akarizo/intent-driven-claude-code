@@ -3,7 +3,9 @@
 import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
-import { agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, readLedger, trees } from './io'
+import { bashUpgradable, bashVerdict, mainSessionVerdict, normalizePath, spawnVerdict, writeTarget, writeVerdict } from './envelope'
+import type { Deny, Who } from './envelope'
+import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, ownerOf, owners, readLedger, trees } from './io'
 import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt } from './prompts'
@@ -93,6 +95,60 @@ async function slicesOf(io: Io, f: Flight): Promise<Record<string, SliceInfo>> {
     // slices.json 读不出 → 无依赖、无 owns；起飞前 lint / preflight 已校验过它
   }
   return out
+}
+
+// ---------------------------------------------------------------- 能力包络接线（design D5–D9；策略全在 envelope.ts）
+
+type Envelope = { owns: Record<string, string[]>; commands: string[] }
+/** 按 change 缓存 slices.json 里的 owns 与门禁 / verify 命令；起飞时作废 */
+const envelopes: Map<string, Envelope> = new Map()
+
+async function envelopeOf(io: Io, f: Flight): Promise<Envelope> {
+  const hit = envelopes.get(f.change)
+  if (hit !== undefined) return hit
+  // 读不出或解析失败照常抛出：tool.call 的 .catch 对飞行 agent 拒绝，tool.check 原样交回引擎判定
+  type Plan = { gate?: Record<string, unknown>; slices?: { id: string; owns?: string[]; verify?: unknown }[] }
+  const plan = JSON.parse((await io.read(`${absChangeDir(f)}/slices.json`)) ?? '') as Plan
+  const slices = plan.slices ?? []
+  const commands = [plan.gate?.test, plan.gate?.lint, plan.gate?.typecheck, ...slices.map(s => s.verify)]
+  const env: Envelope = {
+    owns: Object.fromEntries(slices.map(s => [s.id, s.owns ?? []])),
+    commands: commands.filter((c): c is string => typeof c === 'string' && c.trim() !== ''),
+  }
+  envelopes.set(f.change, env)
+  return env
+}
+
+/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）与可免询问的命令。 */
+async function flyingWho(io: Io, agentId: string): Promise<{ who: Who; commands: string[] } | undefined> {
+  // 没有在飞飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
+  if (active.size === 0) return undefined
+  const owner = await ownerOf(io, agentId)
+  const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
+  if (owner === undefined || f === undefined) return undefined
+  const env = await envelopeOf(io, f)
+  const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : owner.role === 'reviewer' ? [] : Object.values(env.owns).flat()
+  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands }
+}
+
+const commandOf = (input: unknown) => {
+  const c = typeof input === 'object' && input !== null ? (input as { command?: unknown }).command : undefined
+  return typeof c === 'string' ? c : ''
+}
+
+function envelopeVerdict(who: Who, tool: string, input: unknown): Deny | undefined {
+  if (tool === 'Bash') return bashVerdict(who.role, commandOf(input))
+  const target = writeTarget(tool, input)
+  return target === undefined ? undefined : writeVerdict(who, normalizePath(target))
+}
+
+/** D7：可把引擎的 ask 改答 allow 的包络内操作。 */
+function inEnvelope(who: Who, commands: string[], tool: string, input: unknown): boolean {
+  if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return true
+  if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands)
+  const target = writeTarget(tool, input)
+  if (target !== undefined) return writeVerdict(who, normalizePath(target)) === undefined
+  return who.role === 'reviewer' && tool === `mcp__flight__${FINDINGS_TOOL.name}`
 }
 
 /** 跑切片门禁并解析 JSON；stdout 不是门禁 JSON 时按红记。 */
@@ -350,6 +406,7 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   }
 
   flights.set(name, flight)
+  envelopes.delete(name)
   const attempt = ledger.events.filter(e => e.ev === 'takeoff').length + 1
   if (attempt === 1) {
     const t = await judge(io, flight, 'timeline', ['record', 'approve', '--change-dir', changeDir, '--note', gate.stdout.trim()], tree.path)
@@ -395,6 +452,46 @@ export function registerOrchestrator(on: On): void {
     const agentId = (e as unknown as { agentId?: string }).agentId
     return onFindings(ctx, agentId ? await flightOfAgent(ctx.io, agentId) : undefined, agentId, e)
   }).catch(() => ({ deny: 'flight：评审回收失败' }))
+
+  // 能力包络（D5 / D6 / D8）：飞行 agent 按角色限写与限 git；主会话对在飞树只读
+  on('tool.call', { tool: ['Write', 'Edit', 'NotebookEdit', 'Bash'] }, async ($, e, next) => {
+    const tool = String(e.tool)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    if (!agentId) return mainSessionVerdict([...active.values()], tool, e) ?? next(e)
+    const flying = await flyingWho(ctxOf($).io, agentId)
+    if (flying === undefined) return next(e)
+    return envelopeVerdict(flying.who, tool, e) ?? next(e)
+  }).catch(($, e, next) => {
+    if (next.called) return next(e)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    return agentId && owners.has(agentId) ? { deny: 'flight：包络判定出错' } : next(e)
+  })
+
+  // D7：只把飞行 agent 包络内的 ask 改答 allow；不推翻 deny、不收回 allow、不越过组织上限 ceiling=ask
+  on('tool.check', async ($, e, next) => {
+    const v = await next(e)
+    const x = e as unknown as { tool: string; input?: unknown; agentId?: string; ceiling?: string }
+    if (!x.agentId || v.decision !== 'ask' || x.ceiling === 'ask') return v
+    try {
+      const flying = await flyingWho(ctxOf($).io, x.agentId)
+      if (flying === undefined || !inEnvelope(flying.who, flying.commands, x.tool, x.input)) return v
+      return { decision: 'allow', reason: 'flight 包络内' }
+    } catch {
+      return v
+    }
+  }).catch(() => ({ decision: 'ask' }))
+
+  // D9：flight:* 只能由本插件带显式 model 派发；飞行 agent 不得再派发子 agent
+  on('agent.spawn', async ($, e, next) => {
+    const x = e as unknown as { subagentType?: string; model?: string; parentAgentId?: string }
+    const parentInFlight = x.parentAgentId ? (await flyingWho(ctxOf($).io, x.parentAgentId)) !== undefined : false
+    const origin = (next as unknown as { origin?: { plugin?: string } }).origin?.plugin
+    return spawnVerdict({ subagentType: x.subagentType ?? '', originPlugin: origin, model: x.model, parentInFlight }) ?? next(e)
+  }).catch(($, e, next) => {
+    if (next.called) return next(e)
+    const type = (e as unknown as { subagentType?: string }).subagentType ?? ''
+    return type.startsWith('flight:') ? { deny: 'flight：派发守卫出错，flight:* 一律拒绝' } : next(e)
+  })
 
   on('classic.SubagentStop', async ($, e, next) => {
     const ctx = ctxOf($)

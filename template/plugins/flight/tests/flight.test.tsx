@@ -115,7 +115,11 @@ function useWorld(on: On, w: World) {
     value: (w.dirs[e.path] ?? []).map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
   }))
   on('fs.stat', ($, e) => ({ value: { kind: 'file' as const, size: 1, mtimeMs: w.mtimes?.[e.path] ?? 1000, isLink: false } }))
-  on('fs.read', ($, e) => ({ value: w.files[e.path] ?? '' }))
+  // 与真实引擎一致：读不存在的文件抛错，原文 `$.fs.read(<path>) failed: ENOENT`
+  on('fs.read', ($, e) => {
+    if (!(e.path in w.files)) throw new Error(`$.fs.read(${e.path}) failed: ENOENT`)
+    return { value: w.files[e.path] }
+  })
   on('process.run', ($, e) => {
     const [cmd, ...args] = e.argv
     if (cmd === 'python3' && args[0]?.endsWith('/plan_fp.py')) {

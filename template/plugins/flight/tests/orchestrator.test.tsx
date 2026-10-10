@@ -44,6 +44,8 @@ type World = {
   paths?: string[]
   /** 预置的未提交路径（相对 change worktree 根）：整树 `git status --porcelain` 会报出它们，git commit 后清空 */
   dirty?: string[]
+  /** 插件之下 tool.check 的引擎判定队列（按调用顺序取；取完后为 ask） */
+  checks?: string[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -80,6 +82,8 @@ function useWorld(on: On, w: World) {
     logs: [] as string[],
     /** 每次 git commit 的提交信息与当时账本的事件数 */
     commits: [] as { message: string; events: number }[],
+    /** 到达插件之下工具执行端的调用：`<工具> <目标路径或命令>` */
+    reached: [] as string[],
     files,
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, `${TREE}/${CD}/slices.json`, ...(w.paths ?? [])])
@@ -108,6 +112,13 @@ function useWorld(on: On, w: World) {
     return { text: 'from-model' }
   })
   on('agent.offer', () => ({ isOffered: true }))
+  on('tool.call', ($, e) => {
+    const x = e as unknown as { tool: string; file_path?: string; notebook_path?: string; command?: string }
+    log.reached.push(`${x.tool} ${x.file_path ?? x.notebook_path ?? x.command ?? ''}`)
+    return { result: {}, text: '' } as never
+  })
+  const checks = [...(w.checks ?? [])]
+  on('tool.check', () => ({ decision: checks.shift() ?? 'ask' }) as never)
   on('agent.spawn', ($, e) => {
     const x = e as unknown as Omit<Spawn, 'agentId'>
     if (w.spawnThrows) throw new Error('spawn 炸了')
@@ -595,4 +606,73 @@ test('drive-stops-after-terminal-without-fp', async ($, on) => {
   // Then: 本次处理没有运行 plan_fp.py；账本里 attempt 1 的 halt 仍只有 1 条
   expect(log.runs.slice(before).some(x => String(x.argv[1]).endsWith('/plan_fp.py'))).toBe(false)
   expect(log.events.filter(x => x.ev === 'halt' && x.attempt === 1).length).toBe(1)
+})
+
+// ---------------------------------------------------------------- flight-envelope（S6）
+
+test('tool-call-denies-out-of-envelope-write', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/s1.py，worktree 为 S1 切片路径）；插件之下的执行端记录到达的调用
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const paths = [`${SLICE1}/src/b.py`, `${SLICE1}/src/s1.py`]
+
+  // When: agent-1 分别 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/s1.py
+  const results = await Promise.all(paths.map(file_path => $.tool.call({ tool: 'Write', file_path, content: 'x\n', agentId: 'agent-1' } as never)))
+
+  // Then: 前者答 deny 且理由含「owns」；只有后者到达执行端
+  expect(results[0]).toMatchObject({ deny: expect.stringContaining('owns') })
+  expect(log.reached).toEqual([`Write ${SLICE1}/src/s1.py`])
+})
+
+test('tool-check-upgrades-ask-only-in-envelope', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的引擎依次判 ask、deny、ask、ask、ask
+  useWorld(on, demoWorld({ checks: ['ask', 'deny', 'ask', 'ask', 'ask'] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const write = { tool: 'Write', input: { file_path: `${SLICE1}/src/s1.py`, content: 'x\n' } }
+  const calls = [
+    { ...write, agentId: 'agent-1' },
+    { ...write, agentId: 'agent-1' },
+    { ...write, agentId: 'agent-1', ceiling: 'ask' },
+    { tool: 'Bash', input: { command: 'npm install' }, agentId: 'agent-1' },
+    { tool: 'Write', input: { file_path: `${TREE}/src/s1.py`, content: 'x\n' } },
+  ]
+
+  // When: 依次对 agent-1 包络内的 Write（引擎 ask / deny / ask 且 ceiling 为 ask）、agent-1 的 Bash npm install、主会话的 Write 做权限判定
+  const answers: { decision?: string; reason?: string }[] = []
+  for (const c of calls) answers.push((await $.tool.check(c as never)) as { decision?: string; reason?: string })
+
+  // Then: 只有第一次改答 allow 且理由为「flight 包络内」；其余原样为引擎的 deny / ask / ask / ask
+  expect(answers[0]).toMatchObject({ decision: 'allow', reason: 'flight 包络内' })
+  expect(answers.slice(1).map(a => a.decision)).toEqual(['deny', 'ask', 'ask', 'ask'])
+})
+
+test('main-session-read-only-during-flight', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（在飞，S1 执行体 agent-1）；plan_fp.py 改为以 1 退出，agent-1 结束时 drive 会停飞
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.fpRun = res(1, '', 'plan_fp 超时')
+  const edit = { tool: 'Edit', file_path: `${TREE}/src/a.py`, old_string: 'a', new_string: 'b' }
+
+  // When: 主会话 Edit <change worktree>/src/a.py 一次；agent-1 结束、attempt 1 停飞后，主会话再 Edit 一次
+  const before = await $.tool.call(edit as never)
+  await $.turn.complete(ended('agent-1') as never)
+  await $.tool.call(edit as never)
+
+  // Then: 停飞前答 deny 且理由含「只读」；账本末条为 halt；停飞后的 Edit 到达执行端
+  expect(before).toMatchObject({ deny: expect.stringContaining('只读') })
+  expect(log.events.at(-1)?.ev).toBe('halt')
+  expect(log.reached).toEqual([`Edit ${TREE}/src/a.py`])
+})
+
+test('agent-spawn-guard-wired', async ($, on) => {
+  // Given: 插件已加载；插件之下的派发端记录派发
+  const log = useWorld(on, demoWorld())
+
+  // When: 以引擎来源（模型的 Agent 工具）派发 subagentType flight:executor、model opus
+  const r = await $.agent.spawn({ prompt: 'p', description: 'd', subagentType: 'flight:executor', model: 'opus' } as never)
+
+  // Then: 答 deny 且理由含「控制面」；派发没有到达派发端
+  expect(r).toMatchObject({ deny: expect.stringContaining('控制面') })
+  expect(log.spawns).toEqual([])
 })
