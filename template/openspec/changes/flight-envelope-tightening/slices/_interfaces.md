@@ -47,3 +47,10 @@ export function readUpgradable(tool: string, input: unknown, worktree: string, m
 export function mainSessionVerdict(active: readonly ActiveTree[], tool: string, input: unknown): Deny | undefined {
 export function spawnVerdict(x: { subagentType: string; originPlugin: string | undefined; model: string | undefined; parentInFlight: boolean }): Deny | undefined {
 ```
+
+## S5
+
+### template/plugins/flight/hooks/register.tsx
+```
+export const register: Register = on => {
+```
