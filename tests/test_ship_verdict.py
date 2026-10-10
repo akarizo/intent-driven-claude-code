@@ -326,7 +326,6 @@ def test_ship_stale_after_plan_change(git_repo):  # 既有行为守卫：同上
 # 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：_final_fresh 只放行本 change 目录的记账文件")
 def test_final_fresh_ignores_other_change_bookkeeping(git_repo):
     # Given: changes 下有 c、b 两个 change；c 的 final 记在提交 X 且 ok；X 之后一次提交只改了 b 的 gate-report.md 与 timeline.md
     c = ship_repo(git_repo)
@@ -346,7 +345,6 @@ def test_final_fresh_ignores_other_change_bookkeeping(git_repo):
     assert any("过期" in r for r in after), after
 
 
-@pytest.mark.xfail(strict=True, reason="S1：slices/_interfaces.md 不在记账文件里")
 def test_final_fresh_ignores_interfaces_summary(git_repo):
     # Given: change c 的 final 记在提交 X 且 ok；X 之后一次提交只改了 c 的 slices/_interfaces.md
     c = ship_repo(git_repo)
