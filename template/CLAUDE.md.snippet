@@ -23,7 +23,7 @@
 ## 铁律（零容忍）
 1. 先意图后代码：中级+ 无工件不写源码，门禁只加严不绕过。
 2. 规格即验收：scenario 测试骨架全部转 pass 才算 apply 完成。
-3. TDD 与留痕：先失败测试后代码；测试运行由 hook 留痕，不接受自述。
+3. TDD 与留痕：先失败测试后代码；测试由可信方运行并留痕（飞行中控制面测量入账本，回退路径 hook 写 evidence.log），不接受自述。
 4. 独立评审必有：CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁勾选、禁声明完成。
 6. Git 边界：一 change 一 worktree，不自动 merge / push / 删；ADR 只 supersede。

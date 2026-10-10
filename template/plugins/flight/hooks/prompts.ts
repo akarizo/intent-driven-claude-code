@@ -25,6 +25,7 @@ export function executorPrompt(x: {
     `为 OpenSpec change \`${x.change}\` 实现切片 ${x.slice}。`,
     `切片包：${slicePack(x.changeDir, x.slice)}（scenario、owns、verify、接口摘要都在里面，先读它）。`,
     `按切片包 TDD 实现；${OWNS_NOTE}每切片一个 commit。`,
+    '写好测试后、改生产代码前，调用 `measure` 工具让控制面测一次并看它红；自己跑的测试不算证据。',
     GATE_NOTE,
   ]
   if (x.continuation) {

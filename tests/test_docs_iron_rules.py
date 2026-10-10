@@ -150,7 +150,6 @@ def test_readme_links_control_plane_doc():
 import pytest  # noqa: E402
 
 
-@pytest.mark.xfail(strict=True, reason="S8：铁律 3 尚未改写")
 def test_iron_rule_3_trusted_runner():
     # Given: 根 CLAUDE.md、template/CLAUDE.md.snippet、README.md、docs/WORKFLOW_zh.md
     root, snippet = read("CLAUDE.md"), read("template/CLAUDE.md.snippet")
@@ -167,7 +166,6 @@ def test_iron_rule_3_trusted_runner():
         assert ("measure" in text or "测量" in text) and "账本" in text
 
 
-@pytest.mark.xfail(strict=True, reason="S8：新 ADR 与评审参考材料尚未写")
 def test_measure_adr_and_review_refs():
     # Given: 新 ADR、pr-ship.md 与 code-reviewer.md
     adr_path = ROOT / "template" / "openspec" / "adr" / "DRAFT-flight-measure-protocol.md"

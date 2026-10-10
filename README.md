@@ -239,7 +239,7 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - **铁律**：没有先失败过的测试，就没有生产代码
 - **GWT 注释先于代码**：测试函数体首行是 `// Given:`（Python 用 `#`）、`When:`、`Then:` 三段中文注释，之后才是 setup / mock / 被测调用 / 断言
 - 一个测试只触发一个被测动作（When 块单一）
-- 测试运行由 hook 留痕（`evidence.log`），**不接受自述**；反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
+- 测试由可信方运行并留痕，**不接受自述**：飞行中执行体调用 `measure` 工具，由控制面测量写入账本（G5 只认账本）；Workflow 回退路径由 hook 写 `evidence.log`；反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
 
 #### Workflow 前置条件
 
@@ -298,7 +298,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
-  → 读 gate-report.md + evidence.log 作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
+  → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；回退路径读 evidence.log）作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
   → 报告作为评论入库（签名必带）
   → 与用户逐条讨论修复 → 落地补丁到同 PR → 自动修复至多 2 轮增量复核（mode=follow-up，只审修复补丁）
 ```
@@ -316,7 +316,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | --- | --- |
 | Completeness | tasks checkbox 全勾 / 每个 requirement 都有实现 |
 | Correctness | requirement → 代码映射 / scenario 覆盖 |
-| **Test Discipline (TDD/BDD)** | 飞行模式：读 `gate-report.md` + `evidence.log`，确认全部切片门禁绿、scenario 已从 xfail 转 pass，不重复抽查（门禁已按 G4/G5 挡过）；legacy `--gate=per-task` 走逐 task 守门分流（见「Legacy 模式」） |
+| **Test Discipline (TDD/BDD)** | 飞行模式：读 `gate-report.md` + `timeline.py report` 的测量统计（账本；Workflow 回退路径读 `evidence.log`），确认全部切片门禁绿、scenario 已从 xfail 转 pass，不重复抽查（门禁已按 G4/G5 挡过）；legacy `--gate=per-task` 走逐 task 守门分流（见「Legacy 模式」） |
 | Coherence | design 决策被遵循 / 代码风格一致 |
 
 违反 TDD 纪律记 **CRITICAL**，阻止归档。

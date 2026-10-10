@@ -6,7 +6,7 @@
 ## 仓库铁律（零容忍：任何提速手段不得破坏）
 1. 先意图后代码：中级+ 变更无工件不写源码；intent-gate 只能加严不能绕过。
 2. 规格即验收：每个 scenario 有测试骨架与映射；apply 完成 = 全部 scenario 测试 pass 且骨架标记已去。
-3. TDD 与留痕：生产代码前必有先失败的测试；测试运行由 hook 留痕，不接受自述。
+3. TDD 与留痕：生产代码前必有先失败的测试；测试由可信方运行并留痕（飞行中 = 控制面测量写入账本；回退路径 = hook 写 evidence.log），不接受自述。
 4. 独立评审必有：每个 change 至少一次不带主会话立场的 reviewer；CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁止勾选、禁止声明完成、禁止 PR。
 6. Git 边界：每 change 一间 worktree；不自动 merge、不推 main、不删 worktree；ADR 不可改只 supersede。显式跑 `/opsx-apply` / `/pr-ship` = 授权该命令文档内的 commit · push feature 分支 · 建 PR · 贴 review 评论 · draft↔ready 转换。
