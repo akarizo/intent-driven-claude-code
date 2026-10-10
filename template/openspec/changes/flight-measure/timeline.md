@@ -8,3 +8,6 @@
 2026-10-10T16:01:25Z	gate	S4 ok
 2026-10-10T16:02:54Z	gate	S3 ok
 2026-10-10T16:07:02Z	gate	S2 ok
+2026-10-10T16:27:35Z	final	red
+2026-10-10T23:06:32Z	baseline	exit 2, 0.2s red
+2026-10-10T23:10:22Z	baseline	exit 0, 81.8s ok
