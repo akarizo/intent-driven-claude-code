@@ -70,6 +70,7 @@ function ctxOf($: Engine): Ctx {
       await $.ui.toast(text)
     },
     runCommand: (command, args) => $.command.run({ command, args }).then(() => undefined),
+    log: async text => { try { await $.ui.log(text) } catch { /* 打印失败不影响飞行 */ } },
   }
 }
 
