@@ -46,6 +46,8 @@ type World = {
   dirty?: string[]
   /** 插件之下 tool.check 的引擎判定队列（按调用顺序取；取完后为 ask） */
   checks?: string[]
+  /** 切片分支尖端已是 HEAD 祖先（已经 integrate 过）的切片：`git merge-base --is-ancestor` 对它们退出 0，其余退出 1 */
+  integrated?: string[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -196,6 +198,10 @@ function useWorld(on: On, w: World) {
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
       case 'merge-base':
+        if (args.includes('--is-ancestor')) {
+          const s = String(args[args.indexOf('--is-ancestor') + 1]).split('/').pop() ?? ''
+          return wrap(res((w.integrated ?? []).includes(s) ? 0 : 1, ''))
+        }
         return wrap(res(0, '0'.repeat(40) + '\n'))
       case 'log':
         return wrap(res(0, ''))
@@ -575,6 +581,21 @@ test('resume-regates-green-slice', async ($, on) => {
   ])
 })
 
+test('resume-regate-merges-already-integrated-slice', async ($, on) => {
+  // Given: 同 resume-regates-green-slice 的账本与 S1 worktree；S1 分支在上一 attempt 已 integrate（尖端是 HEAD 的祖先），账本缺 merge 事件
+  const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1], integrated: ['S1'] }))
+
+  // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 没有对 S1 运行 merge --no-ff；attempt 2 里 S1 的事件依次为 gate(regate, ok) 与 merge(ok)，没有 blocked
+  expect(log.runs.some(x => x.argv.includes('merge') && x.argv.includes('--no-ff') && x.argv.includes('flight/demo/S1'))).toBe(false)
+  expect(log.events.filter(x => x.attempt === 2 && x.slice === 'S1' && x.ev !== 'dispatch').map(x => [x.ev, x.agent ?? null, x.ok])).toEqual([
+    ['gate', 'regate', true],
+    ['merge', null, true],
+  ])
+})
+
 test('resume-red-regate-dispatches-with-original-base', async ($, on) => {
   // Given: 同 resume-regates-green-slice 的账本与 S1 worktree，但 S1 的补跑门禁为红 [G7 demo#s1]
   const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
@@ -631,6 +652,20 @@ test('drive-stops-after-terminal-without-fp', async ($, on) => {
 })
 
 // ---------------------------------------------------------------- flight-envelope（S6）
+
+test('agent-spawn-guard-denies-child-of-flight-agent', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的派发端记录派发
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const before = log.spawns.length
+
+  // When: 以非 flight 来源、父 agent 为 agent-1 派发 general-purpose
+  const r = await $.agent.spawn({ prompt: 'p', description: 'd', subagentType: 'general-purpose', model: 'opus', parentAgentId: 'agent-1' } as never)
+
+  // Then: 答 deny 且理由含「不得再派发」；派发没有到达派发端
+  expect(r).toMatchObject({ deny: expect.stringContaining('不得再派发') })
+  expect(log.spawns.length).toBe(before)
+})
 
 test('tool-call-denies-out-of-envelope-write', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/s1.py，worktree 为 S1 切片路径）；插件之下的执行端记录到达的调用

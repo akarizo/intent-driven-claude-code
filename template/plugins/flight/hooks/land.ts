@@ -120,12 +120,17 @@ async function emptyMerge(io: Io, f: Flight, branch: string): Promise<string | u
   return merged === headTree ? `合回对第一父无变更：${branch} 的改动已不经 integrate 进了 change 分支，不能当作正常合回` : undefined
 }
 
-/** 在 change worktree 里：提交飞行记录 → 越界检查 → merge --no-ff → record --json → 刷新接口摘要 */
+/** 在 change worktree 里：提交飞行记录 →（已合回则只补记账）→ 越界与空合回检查 → merge --no-ff → record --json → 刷新接口摘要 */
 export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]):
   Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[]; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, conflicts: [], failed: [err] }
   const branch = `flight/${f.change}/${slice}`
+  // 续飞补跑门禁后：分支尖端已是 HEAD 的祖先（上一 attempt 已 integrate、账本缺 merge 事件）→ 已合回，只补记账
+  if ((await git(io, f.changeTree, 'merge-base', '--is-ancestor', branch, 'HEAD')).exitCode === 0) {
+    const r = await afterMerge(io, f, slice, gate, owns)
+    return r.ok ? r : { ...r, conflicts: [] }
+  }
   const refused = (await directCommits(io, f, branch, owns)) ?? (await emptyMerge(io, f, branch))
   if (refused) return { ok: false, conflicts: [], failed: [refused] }
   const m = await mergeNoFf(io, f.changeTree, `flight/${f.change}/${slice}`, `integrate: ${slice}`)

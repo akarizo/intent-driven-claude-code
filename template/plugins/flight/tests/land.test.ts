@@ -18,8 +18,8 @@ function fakeIo(files: Record<string, string>, respond: Respond) {
   const io: Io = {
     async run(argv, opts) {
       calls.push({ argv: [...argv], cwd: opts?.cwd })
-      // 合回前的越界与空合回检查：未预设时分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
-      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
+      // 合回前的检查：未预设时切片分支不是 HEAD 的祖先（未合入过）、分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
+      const preset = argv.includes('--is-ancestor') ? { exitCode: 1 } : argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
       return { exitCode: 0, stdout: '', stderr: '', ...preset, ...(respond([...argv]) ?? {}) }
     },
     async read(p) {
@@ -111,6 +111,26 @@ test('land-refuses-direct-commit-in-owns', async () => {
   const failed = result.ok ? '' : result.failed.join('\n')
   expect(failed).toContain('466cf98 template/plugins/flight/hooks/landing.tsx')
   expect(failed).not.toContain('0247ab7')
+})
+
+test('land-records-already-integrated-slice', async () => {
+  // Given: 切片分支 flight/demo/S1 的尖端已是 HEAD 的祖先（上一 attempt 已 integrate，账本缺 merge 事件）；合并结果树与 HEAD 的树相同；HEAD 为 m1
+  const { io, calls, fs } = fakeIo({ [`${CT}/src/a.py`]: 'def run(x):\n' }, argv =>
+    has(argv, 'merge-base', '--is-ancestor', 'flight/demo/S1', 'HEAD') ? { exitCode: 0 }
+      : has(argv, 'merge-tree') ? { stdout: 't1\n' } : has(argv, 'rev-parse', 'HEAD^{tree}') ? { stdout: 't1\n' }
+        : has(argv, 'rev-parse', 'HEAD') ? { stdout: 'm1\n' } : undefined,
+  )
+  const gate = gateOf('S1')
+
+  // When: 合回 S1
+  const result = await mergeSlice(io, F, 'S1', gate, ['src/a.py'])
+
+  // Then: 不运行 merge --no-ff 与空合回检查，照常 record --json 并刷新接口摘要；返回 ok 与 m1
+  expect(find(calls, 'merge', '--no-ff')).toBe(-1)
+  expect(find(calls, 'merge-tree')).toBe(-1)
+  expect(find(calls, 'record', '--json')).toBeGreaterThan(-1)
+  expect(fs.get(`${CT}/${CD}/slices/_interfaces.md`) ?? '').toContain('## S1\n')
+  expect(result).toEqual({ ok: true, commit: 'm1' })
 })
 
 test('land-refuses-merge-without-change', async () => {

@@ -200,3 +200,17 @@ def test_spawn_prompt_names_worktree():
     # When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
     # Then: 每份提示词写明自己的切片 worktree 绝对路径与 git -C 该路径，不得在别的 worktree 写入或提交
     assert_ts_passed("spawn-prompt-names-worktree")
+
+def test_resume_regate_merges_already_integrated_slice():
+    # Given: attempt 1 的 S1 门禁绿且分支已 integrate、账本缺 merge，已 halt；S1 worktree 仍在
+    # When: 人再次发出 /opsx-apply demo
+    # Then: 不对 S1 运行 merge --no-ff；attempt 2 里 S1 依次为 gate(regate, ok) 与 merge(ok)（R2）
+    assert_ts_passed("resume-regate-merges-already-integrated-slice")
+
+
+def test_agent_spawn_guard_denies_child_of_flight_agent():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: 以非 flight 来源、父 agent 为 agent-1 派发 general-purpose
+    # Then: 答 deny 且理由含「不得再派发」（R1 的反向回归）
+    assert_ts_passed("agent-spawn-guard-denies-child-of-flight-agent")
+

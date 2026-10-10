@@ -72,3 +72,10 @@ def test_land_refuses_merge_without_change():
     # When: 合回 S5
     # Then: 不 merge、不 record，返回失败并写明合回对第一父无变更
     assert_ts_passed("land-refuses-merge-without-change")
+
+def test_land_records_already_integrated_slice():
+    # Given: S1 分支尖端已是 HEAD 的祖先（上一 attempt 已 integrate，账本缺 merge 事件）
+    # When: 合回 S1
+    # Then: 不运行 merge --no-ff 与空合回检查，照常 record 并刷新接口摘要，返回 ok（PR #41 评审 HIGH，R2）
+    assert_ts_passed("land-records-already-integrated-slice")
+

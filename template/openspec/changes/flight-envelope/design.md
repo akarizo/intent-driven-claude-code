@@ -28,7 +28,7 @@ flight 插件 0.2.1 的状态机已接管 `/opsx-apply`，首飞（PR #40）在�
 ### D1 · 续飞：控制面用原 base 补跑门禁（零 token）
 某个切片在上一 attempt 派过执行体（且那次没被记阻断），本 attempt 还没派过执行体时，处理方式如下：
 - **最近一次门禁绿，且切片 worktree 还在**：动作 `regate`。控制面在该 worktree 里跑 `slice-gate gate <S> --base <那次门禁的 base>`，结果记成本 attempt 的 gate 事件，`agent` 为 `regate`。
-  - 绿：照常合回。如果分支早已合入，`merge --no-ff` 只会得到 Already up to date，之后照常记 merge、刷新接口摘要。
+  - 绿：照常合回。如果切片分支尖端已是 HEAD 的祖先（早已合入、账本缺 merge 事件），视为已合回，跳过 merge 与合回前检查，直接 record、刷新接口摘要并记 merge ok（落地后按 PR #41 评审 HIGH 补充，R2）。
   - 红：续派执行体，`slice-gate start` 带 `--base <原 base>`。
 - **其余情况**照旧续派执行体；能从账本查到 base 时同样带 `--base`。
 
@@ -110,7 +110,7 @@ flight 插件 0.2.1 的状态机已接管 `/opsx-apply`，首飞（PR #40）在�
 ### D9 · `agent.spawn` 守卫
 - `subagentType` 以 `flight:` 开头，而 `next.origin.plugin !== 'flight'` → 拒绝：「flight:* 只能由 flight 控制面派发」。
 - 由 flight 插件派发的 `flight:*`，`model` 为空 → 拒绝：「派发须显式指定 model（铁律 11）」。
-- `parentAgentId` 属于某个在飞飞行的 agent → 拒绝：「飞行中的 agent 不得再派发子 agent」。
+- 非 flight 插件发起的派发，`parentAgentId` 属于某个在飞飞行的 agent → 拒绝：「飞行中的 agent 不得再派发子 agent」。flight 插件自己的派发不受这一条限制：插件是在飞行 agent 收口或 turn.complete 的帧里接着派发评审员、下一片和修复体的，父 agent 可能就是刚结束的那个。（落地后按 PR #41 评审 HIGH 修正，R1）
 - 守卫 hook 自身抛错时，对 `flight:*` 拒绝，其他类型放行（`.catch`）。
 
 ### D10 · 记录与版本
