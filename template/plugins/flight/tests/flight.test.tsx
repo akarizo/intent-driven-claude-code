@@ -302,6 +302,23 @@ test('approve-press-dedupes-same-fingerprint', async ($, on) => {
   expect(log.toasts.some(t => t.includes('已批准（指纹相同）'))).toBe(true)
 })
 
+test('approve-dedupe-prefills-command', async ($, on) => {
+  // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 为 approve F（之后没有 takeoff）；按下时 plan_fp 仍输出 F；prompt.fill 应答 isFilled=true
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.ledger = [ledgerEvent('approve', F)]
+
+  // When: 人再按一次 demo 的「批准起飞」
+  await ui.press({ key: `approve:demo:${F}` })
+
+  // Then: 没有写账本的 git 命令；出现含「已批准」的提示；prompt.fill 只收到一次 /opsx-apply demo
+  expect(writes(log)).toEqual([])
+  expect(log.toasts.some(t => t.includes('已批准'))).toBe(true)
+  expect(log.fills).toEqual(['/opsx-apply demo'])
+})
+
 test('approve-press-appends-after-takeoff-with-same-fingerprint', async ($, on) => {
   // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 依次为 approve F、takeoff F（takeoff 之后没有 approve）；按下时 plan_fp 仍输出 F
   const world = demoWorld(() => F)
