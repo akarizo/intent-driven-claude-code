@@ -58,3 +58,10 @@ def test_land_prepare_resolve_reports_non_conflict_failure():
     # Then: 返回错误且含该 stderr 首行，不返回冲突列表
     assert_ts_passed("land-prepare-resolve-reports-non-conflict-failure")
     assert_ts_passed("land-prepare-resolve-rejects-clean-merge")
+
+
+def test_land_refuses_direct_commit_in_owns():
+    # Given: S2 分叉点以来，change 分支第一父链上的非合并提交 466cf98 改了 S2 owns 内的 landing.tsx
+    # When: 合回 S2
+    # Then: 不 merge、不 record，返回失败并指出 466cf98 与该文件；只改飞行记录的提交不算
+    assert_ts_passed("land-refuses-direct-commit-in-owns")

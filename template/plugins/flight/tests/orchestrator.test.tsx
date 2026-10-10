@@ -195,6 +195,10 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, 'd'.repeat(40) + '\n'))
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
+      case 'merge-base':
+        return wrap(res(0, '0'.repeat(40) + '\n'))
+      case 'log':
+        return wrap(res(0, ''))
       case 'rev-list':
         return wrap(res(0, `${'f'.repeat(40)} ${'1'.repeat(40)} ${'2'.repeat(40)}\n`))
       case 'diff':

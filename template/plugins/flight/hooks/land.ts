@@ -1,6 +1,7 @@
 // 合回、冲突交接与快进、findings 校验、落地收口的机械过程（spec flight-integration）。
 // 只依赖 core.ts 的类型与 Io：不 import claude-code 的运行时值，不调用任何 $。git 一律 `git -C <worktree> ...`。
 import type { Finding, Flight, GateJson, Io, RunResult, Severity } from './core'
+import { globMatch } from './envelope'
 
 export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
 
@@ -92,11 +93,30 @@ async function afterMerge(io: Io, f: Flight, slice: string, gate: GateJson, owns
   return { ok: true, commit: await head(io, f.changeTree) }
 }
 
-/** 在 change worktree 里：提交飞行记录 → merge --no-ff → record --json → 刷新接口摘要 */
+/** 越界检查：切片分叉点以来，change 分支第一父链上的非合并提交改动了本片 owns（飞行记录除外）→ 返回说明；切片改动只能经 integrate 合并进来。 */
+async function directCommits(io: Io, f: Flight, branch: string, owns: readonly string[]): Promise<string | undefined> {
+  const mb = await git(io, f.changeTree, 'merge-base', 'HEAD', branch)
+  const base = mb.stdout.trim()
+  if (mb.exitCode !== 0 || base === '') return `git merge-base 失败：${firstLine(mb)}`
+  const log = await git(io, f.changeTree, 'log', '--first-parent', '--no-merges', '--name-only', '--format=@%h', `${base}..HEAD`)
+  if (log.exitCode !== 0) return `git log 失败：${firstLine(log)}`
+  const records = new Set(RECORD_FILES.map(r => `${f.changeDir}/${r}`))
+  const hits: string[] = []
+  let commit = ''
+  for (const l of lines(log.stdout)) {
+    if (l.startsWith('@')) commit = l.slice(1)
+    else if (!records.has(l) && owns.some(o => globMatch(l, o))) hits.push(`${commit} ${l}`)
+  }
+  return hits.length ? `change 分支上有改动本片 owns 的直接提交（切片改动只能经 integrate 合并进来）：${hits.join('、')}` : undefined
+}
+
+/** 在 change worktree 里：提交飞行记录 → 越界检查 → merge --no-ff → record --json → 刷新接口摘要 */
 export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]):
   Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[]; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, conflicts: [], failed: [err] }
+  const direct = await directCommits(io, f, `flight/${f.change}/${slice}`, owns)
+  if (direct) return { ok: false, conflicts: [], failed: [direct] }
   const m = await mergeNoFf(io, f.changeTree, `flight/${f.change}/${slice}`, `integrate: ${slice}`)
   if (!m.ok) return m
   const r = await afterMerge(io, f, slice, gate, owns)
