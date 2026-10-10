@@ -8,6 +8,7 @@ PR #39 合入后，flight 插件 0.2.0 的状态机接管了 `/opsx-apply`，本
 4. **下一个 wave 拿不到上一 wave 的接口摘要**（MEDIUM-3）：合回后刷新的 `_interfaces.md` 没提交，下一 wave 的切片 worktree 从已提交的尖端建出，看不到它。修复 agent 的 worktree 也一样。旧引擎每个 wave 合回后都会先提交记录，新引擎这里语义回退了。
 5. **停飞后仍有 agent 在跑时可以重复起飞**（MEDIUM-4）：「正在飞」只检查未落地、未停飞的那次飞行。插件无法终止已派出的 agent，重新批准后立刻起飞，新旧执行体可能同写一个切片 worktree。
 6. **事件校验没排除原型链上的键**（LOW）：`ev` 为 `toString` 等值时，字段表查出来不是 undefined，校验被放行。
+7. **真实 Io 读不存在的文件会抛异常**（首飞实况，attempt 1 因此停飞）：S1 合回后刷新接口摘要时 `slices/_interfaces.md` 还不存在，`$.fs.read` 抛 ENOENT。`Io.read` 的约定是缺文件返回 undefined，测试世界对缺失文件返回空串，偏差没被测出来。
 
 #39 评审的 MEDIUM-2（`turn.complete` 的 `.catch` 二次调用 `next`）经核实不成立。引擎文档：`next` 已调用时，`.catch` 里的 `next(e)` 只重放结果，不会再跑一遍。本 change 不改。
 
@@ -21,7 +22,8 @@ PR #39 合入后，flight 插件 0.2.0 的状态机接管了 `/opsx-apply`，本
   - 飞行中 `plan_fp.py` 失败时，以「计算计划指纹失败」停飞；
   - 派发执行体前先提交飞行记录；
   - 只要上一次飞行派出的 agent 还在运行，就不起飞，不论那次是否已停飞；
-  - `Ctx.log` 接到 `$.ui.log`。
+  - `Ctx.log` 接到 `$.ui.log`；
+  - 真实 Io 读不存在的文件返回 undefined，测试世界与真实引擎一致（缺文件抛 ENOENT）。
 - **事件校验**：`ev` 必须是字段表自己的键。
 
 无 BREAKING。
@@ -31,7 +33,7 @@ PR #39 合入后，flight 插件 0.2.0 的状态机接管了 `/opsx-apply`，本
 ### New Capabilities
 - `ship-verdict-freshness`：final 新鲜度判定放行任一 change 的记账文件与接口摘要。
 - `flight-landing-record`：落地与停飞打印飞行记录；派发修复 agent 前提交记录；事件校验不认原型链上的键。
-- `flight-engine-hardening`：飞行中指纹失败的停飞原因如实；派发执行体前提交记录；有 agent 在跑时不重复起飞。
+- `flight-engine-hardening`：飞行中指纹失败的停飞原因如实；派发执行体前提交记录；有 agent 在跑时不重复起飞；读缺失文件不停飞。
 
 ### Modified Capabilities
 （无。`openspec/specs/` 下没有已归档的规格。）

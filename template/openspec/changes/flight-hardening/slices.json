@@ -48,11 +48,12 @@
     },
     {
       "id": "S3",
-      "title": "编排加固：飞行中指纹失败如实停飞；派发执行体前提交记录；有 agent 在跑时不重复起飞；版本 0.2.1",
+      "title": "编排加固：飞行中指纹失败如实停飞；派发执行体前提交记录；有 agent 在跑时不重复起飞；读缺失文件不停飞；版本 0.2.1",
       "scenarios": [
         "flight-engine-hardening#drive-reports-fp-failure-distinctly",
         "flight-engine-hardening#executor-dispatch-commits-records-first",
-        "flight-engine-hardening#takeoff-waits-for-live-agents-after-halt"
+        "flight-engine-hardening#takeoff-waits-for-live-agents-after-halt",
+        "flight-engine-hardening#merge-survives-missing-interfaces-summary"
       ],
       "owns": [
         "template/plugins/flight/hooks/orchestrator.tsx",
@@ -76,6 +77,7 @@
     "flight-landing-record#io-refuses-prototype-ev": "tests/test_flight_io.py::test_io_refuses_prototype_ev",
     "flight-engine-hardening#drive-reports-fp-failure-distinctly": "tests/test_flight_orchestrator.py::test_drive_reports_fp_failure_distinctly",
     "flight-engine-hardening#executor-dispatch-commits-records-first": "tests/test_flight_orchestrator.py::test_executor_dispatch_commits_records_first",
-    "flight-engine-hardening#takeoff-waits-for-live-agents-after-halt": "tests/test_flight_orchestrator.py::test_takeoff_waits_for_live_agents_after_halt"
+    "flight-engine-hardening#takeoff-waits-for-live-agents-after-halt": "tests/test_flight_orchestrator.py::test_takeoff_waits_for_live_agents_after_halt",
+    "flight-engine-hardening#merge-survives-missing-interfaces-summary": "tests/test_flight_orchestrator.py::test_merge_survives_missing_interfaces_summary"
   }
 }

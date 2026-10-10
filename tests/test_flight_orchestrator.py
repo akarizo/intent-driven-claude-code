@@ -126,3 +126,11 @@ def test_takeoff_waits_for_live_agents_after_halt():
     # When: 人再次发出 /opsx-apply demo
     # Then: 回复含「仍在运行」，账本没有新的 takeoff
     assert_ts_passed("takeoff-waits-for-live-agents-after-halt")
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_merge_survives_missing_interfaces_summary():
+    # Given: 已起飞，测试世界的 fs.read 对不存在的文件抛 ENOENT，change 目录还没有 slices/_interfaces.md
+    # When: S1 执行体以绿门禁结束
+    # Then: 账本有 S1 的 merge 且 ok、没有 halt；_interfaces.md 被写出且含「## S1」
+    assert_ts_passed("merge-survives-missing-interfaces-summary")

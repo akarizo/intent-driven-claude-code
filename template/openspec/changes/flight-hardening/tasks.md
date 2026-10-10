@@ -7,4 +7,4 @@
 
 - [ ] S1 ship 的 final 新鲜度放行任一 change 的记账文件与接口摘要 （deps: - · verify: `python3 -m pytest -q tests/test_ship_verdict.py tests/test_slice_gate.py`）
 - [ ] S2 落地与停飞打印飞行记录（Ctx.log）；派发修复 agent 前提交记录；事件校验只认字段表自己的键 （deps: - · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_io.py tests/test_flight_plugin.py`）
-- [ ] S3 编排加固：飞行中指纹失败如实停飞；派发执行体前提交记录；有 agent 在跑时不重复起飞；版本 0.2.1 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_landing.py`）
+- [ ] S3 编排加固：飞行中指纹失败如实停飞；派发执行体前提交记录；有 agent 在跑时不重复起飞；读缺失文件不停飞；版本 0.2.1 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_landing.py`）

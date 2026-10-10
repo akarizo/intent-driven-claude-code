@@ -40,10 +40,16 @@ drive 计算 `fpNow` 时，`plan_fp.py` 非 0 或输出格式不对，直接交�
 ### D6 · MEDIUM-2 不改（核实为非问题）
 插件文档（plugin-authoring reference「Developing one」一节）原文：*「where the hook had not called `next` the handler refuses, and where it had, `next(e)` replays what that call settled to and nothing runs twice」*。`turn.complete` hook 的 `.catch(($, e, next) => next(e))` 在 `next` 已调用时只重放结果，下游不会再执行一遍。
 
+### D7 · 真实 Io 读缺失文件返回 undefined（首飞实况）
+首飞 attempt 1 在 S1 合回后停飞，账本原因：`动作异常：flight: $.fs.read(<change 目录>/slices/_interfaces.md) failed: ENOENT`。`refreshInterfaces` 按 `Io.read` 的约定（缺文件返回 undefined）读接口摘要，但 `ioHere.read` 直接调 `$.fs.read`，引擎对不存在的文件抛异常。测试世界的 `fs.read` 对缺失路径返回空串，偏差被掩盖。
+- **修法**：`ioHere.read` 先 `$.fs.exists`，不存在返回 undefined。测试世界改成与真实引擎一样抛 ENOENT，让同类偏差在测试里现形。归 S3（它已拥有 `orchestrator.tsx` 与 `orchestrator.test.tsx`）。
+- **本次飞行的绕行**：本次仍由已安装的 0.2.0 执行，修复要合入 main 并更新插件后才生效。为让 attempt 2 走过这一步，人工预建 `slices/_interfaces.md`，内容只有引擎缺省会写的标题行 `# 公开接口摘要`。它不在计划指纹内、不是门禁证据；单独提交，并在 PR 里写明。
+
 ## Risks / Trade-offs
 
-- [首飞撞上新引擎的未知缺陷] → 范围小、3 片 2 层，配额留足余量。人可以用 `/opsx-apply flight-hardening --engine=workflow` 显式改走旧引擎。飞行停在半路时，再发 `/opsx-apply` 即从账本接着飞。
+- [首飞撞上新引擎的未知缺陷] → 范围小、3 片 2 层，配额留足余量。attempt 1 已撞上一处（D7）。人可以用 `/opsx-apply flight-hardening --engine=workflow` 显式改走旧引擎。飞行停在半路时，再发 `/opsx-apply` 即从账本接着飞。
 - [本仓库没有注册 `/pr-ship` 命令]：本仓库根 `.claude/` 没有 commands 目录，`/pr-ship` 只在模板里。落地时插件运行 `/pr-ship` 可能报命令不存在，届时由主会话按命令文档完成。这一点会在首飞里如实记录。
+- [attempt 2 会重派 S1] attempt 1 的异常发生在记 merge 事件之前：git 里 S1 已合回（`integrate: S1`），账本却没有 S1 的 merge。attempt 2 会以「上一次飞行中断」续派 S1 执行体，它的分支已合回过，再次 `merge --no-ff` 只得到 Already up to date，之后照常记 merge、刷新接口摘要。
 - [`$.ui.log` 只显示前 2000 字] → 飞行记录主体是 timeline 报告，十几行；完整记录仍在 `timeline.md`。
 
 ## Migration Plan

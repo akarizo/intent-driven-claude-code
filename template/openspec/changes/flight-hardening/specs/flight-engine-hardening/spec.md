@@ -28,3 +28,13 @@ Feature: 插件无法终止已派出的 agent；停飞后立刻重新起飞，�
 - **WHEN** 人再次发出 `/opsx-apply demo`
 - **THEN** 回复含「仍在运行」
 - **AND** 账本没有新的 takeoff 事件
+
+### Requirement: 读不存在的文件按缺失处理，不让飞行停飞
+插件的真实 Io（`ioHere`）读取不存在的文件时 SHALL 返回 undefined（与 `Io.read` 的约定一致），SHALL NOT 抛异常；其他读取错误照常抛出。测试世界的 `fs.read` SHALL 与真实引擎一致：文件不存在时抛 ENOENT。
+Feature: 首飞实况——第一片合回后刷新接口摘要时 `slices/_interfaces.md` 尚不存在，`$.fs.read` 抛 ENOENT，飞行停飞；测试世界对缺失文件返回空串，掩盖了这处契约偏差
+
+#### Scenario: merge-survives-missing-interfaces-summary
+- **GIVEN** `/opsx-apply demo` 已起飞，测试世界的 `fs.read` 对不存在的文件抛 ENOENT，change 目录还没有 `slices/_interfaces.md`
+- **WHEN** S1 执行体以绿门禁结束
+- **THEN** 账本有 S1 的 merge 且 ok 为 true，没有 halt
+- **AND** `slices/_interfaces.md` 被写出，含 `## S1` 一节
