@@ -3,10 +3,12 @@
 import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
-import { agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, readLedger, trees } from './io'
-import { commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
+import { bashUpgradable, bashVerdict, mainSessionVerdict, normalizePath, spawnVerdict, writeTarget, writeVerdict } from './envelope'
+import type { Deny, Who } from './envelope'
+import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, ownerOf, owners, readLedger, trees } from './io'
+import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
-import { executorPrompt, resolverPrompt } from './prompts'
+import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
 
 type Engine = EngineInterface
 type Ev = State['events'][number]
@@ -62,7 +64,7 @@ function ctxOf($: Engine): Ctx {
     io: ioHere($),
     now: () => $.clock.now(),
     async spawn({ f, role, cwd, prompt, description }) {
-      const r = await $.agent.spawn({ prompt, description, subagentType: agentType(role), model: f.model, cwd })
+      const r = await $.agent.spawn({ prompt: `${worktreeNote(cwd)}\n${prompt}`, description, subagentType: agentType(role), model: f.model, cwd })
       return 'deny' in r ? { deny: r.deny } : { agentId: r.agentId }
     },
     async status(text) {
@@ -95,9 +97,64 @@ async function slicesOf(io: Io, f: Flight): Promise<Record<string, SliceInfo>> {
   return out
 }
 
+// ---------------------------------------------------------------- 能力包络接线（design D5–D9；策略全在 envelope.ts）
+
+type Envelope = { owns: Record<string, string[]>; commands: string[] }
+/** 按 change 缓存 slices.json 里的 owns 与门禁 / verify 命令；起飞时作废 */
+const envelopes: Map<string, Envelope> = new Map()
+
+async function envelopeOf(io: Io, f: Flight): Promise<Envelope> {
+  const hit = envelopes.get(f.change)
+  if (hit !== undefined) return hit
+  // 读不出或解析失败照常抛出：tool.call 的 .catch 对飞行 agent 拒绝，tool.check 原样交回引擎判定
+  type Plan = { gate?: Record<string, unknown>; slices?: { id: string; owns?: string[]; verify?: unknown }[] }
+  const plan = JSON.parse((await io.read(`${absChangeDir(f)}/slices.json`)) ?? '') as Plan
+  const slices = plan.slices ?? []
+  const commands = [plan.gate?.test, plan.gate?.lint, plan.gate?.typecheck, ...slices.map(s => s.verify)]
+  const env: Envelope = {
+    owns: Object.fromEntries(slices.map(s => [s.id, s.owns ?? []])),
+    commands: commands.filter((c): c is string => typeof c === 'string' && c.trim() !== ''),
+  }
+  envelopes.set(f.change, env)
+  return env
+}
+
+/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）与可免询问的命令。 */
+async function flyingWho(io: Io, agentId: string): Promise<{ who: Who; commands: string[] } | undefined> {
+  // 没有在飞飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
+  if (active.size === 0) return undefined
+  const owner = await ownerOf(io, agentId)
+  const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
+  if (owner === undefined || f === undefined) return undefined
+  const env = await envelopeOf(io, f)
+  const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : owner.role === 'reviewer' ? [] : Object.values(env.owns).flat()
+  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands }
+}
+
+const commandOf = (input: unknown) => {
+  const c = typeof input === 'object' && input !== null ? (input as { command?: unknown }).command : undefined
+  return typeof c === 'string' ? c : ''
+}
+
+function envelopeVerdict(who: Who, tool: string, input: unknown): Deny | undefined {
+  if (tool === 'Bash') return bashVerdict(who.role, commandOf(input))
+  const target = writeTarget(tool, input)
+  return target === undefined ? undefined : writeVerdict(who, normalizePath(target))
+}
+
+/** D7：可把引擎的 ask 改答 allow 的包络内操作。 */
+function inEnvelope(who: Who, commands: string[], tool: string, input: unknown): boolean {
+  if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return true
+  if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands)
+  const target = writeTarget(tool, input)
+  if (target !== undefined) return writeVerdict(who, normalizePath(target)) === undefined
+  return who.role === 'reviewer' && tool === `mcp__flight__${FINDINGS_TOOL.name}`
+}
+
 /** 跑切片门禁并解析 JSON；stdout 不是门禁 JSON 时按红记。 */
-async function runGate(io: Io, f: Flight, slice: string, worktree: string): Promise<GateJson> {
-  const r = await judge(io, f, 'slice-gate', ['gate', slice, '--change-dir', f.changeDir], worktree, GATE_TIMEOUT_MS)
+async function runGate(io: Io, f: Flight, slice: string, worktree: string, base?: string): Promise<GateJson> {
+  const args = ['gate', slice, '--change-dir', f.changeDir, ...(base ? ['--base', base] : [])]
+  const r = await judge(io, f, 'slice-gate', args, worktree, GATE_TIMEOUT_MS)
   try {
     const g = JSON.parse(r.stdout) as Partial<GateJson>
     if (g !== null && typeof g === 'object' && typeof g.ok === 'boolean') {
@@ -144,6 +201,12 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     record(ev.merge(b, { attempt: A, slice, ok: r.ok, commit: r.ok ? r.commit : '', failed: r.ok ? [] : r.failed }))
   const owns = (slice: string) => slices[slice]?.owns ?? []
 
+  if (a.kind === 'regate') {
+    // 切片 worktree 已不在：无从补跑，按全新派发处理
+    if (!(await io.exists(a.worktree))) return perform(ctx, f, state, { kind: 'dispatch', role: 'executor', slice: a.slice }, slices)
+    const gate = await runGate(io, f, a.slice, a.worktree, a.base)
+    return record(ev.gate(b, { attempt: A, agent: 'regate', ...gate }))
+  }
   if (a.kind === 'dispatch' && a.role === 'executor') {
     // 先提交飞行记录：切片 worktree 从分支尖端切出，未提交的记录（如刚刷新的接口摘要）会在合回时冲突
     const err = await commitRecords(io, f, 'chore(flight): 记录')
@@ -151,7 +214,8 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     const wt = await ensureWorktree(io, f, a.slice)
     if ('error' in wt) return blocked(a.slice, `建切片 worktree 失败：${firstLine(wt.error)}`)
     // 续接（worktree 已存在）不带 --expect-branch：change 分支可能已前移
-    const args = ['start', a.slice, '--change-dir', f.changeDir, ...(wt.created ? ['--expect-branch', f.branch] : [])]
+    // 续飞带原 base：worktree 里已有上一 attempt 的提交，以当前 HEAD 为起点会把它们判出区间
+    const args = ['start', a.slice, '--change-dir', f.changeDir, ...(wt.created ? ['--expect-branch', f.branch] : []), ...(a.base ? ['--base', a.base] : [])]
     const st = await judge(io, f, 'slice-gate', args, wt.path)
     if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
     const prompt = executorPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, continuation: a.continuation })
@@ -212,6 +276,8 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     seen = ledger.events.length
     const state = reduce(ledger.events)
     if (state.takeoff === undefined) return
+    // 本 attempt 已 land / halt：残留 agent 结束不再算指纹，避免重复停飞（PR #40 评审 MEDIUM）
+    if (state.events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === state.attempt)) return
     showStatus($, f, state)
     const slices = await slicesOf(io, f)
     const deps = Object.fromEntries(Object.entries(slices).map(([id, s]) => [id, s.deps]))
@@ -291,8 +357,17 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
 
   const gate = await judge(io, f, 'takeoff-gate', ['--change-dir', abs], tree.path)
   if (gate.exitCode !== 0) return `flight：起飞守卫未通过：${gate.stderr.trim()}\n审阅并批准计划：${abs}/spec.html`
-  const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain'])
-  if (st.exitCode !== 0 || st.stdout.trim() !== '') return `flight：工作区不干净，不起飞：\n${st.stdout.trim() || st.stderr.trim()}`
+  const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
+  if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
+  // porcelain 的 XY 列可能以空格开头，不能先 trim
+  const dirty = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
+  if (dirty.length) {
+    const records = new Set(RECORD_FILES.map(r => `${changeDir}/${r}`))
+    if (!dirty.every(p => records.has(p))) return `flight：工作区不干净，不起飞：\n${st.stdout.trim()}`
+    // 只剩上一次飞行遗留的记录（停飞 / 会话中断不提交它们）：先提交再起飞
+    const err = await commitRecords(io, f, 'chore(flight): 记录')
+    if (err) return `flight：提交遗留飞行记录失败，不起飞：${err}`
+  }
   // slice-gate lint 的 argparse 要求 --change-dir
   const lint = await judge(io, f, 'slice-gate', ['lint', '--change-dir', changeDir], tree.path)
   if (lint.exitCode !== 0) return `flight：slice-gate lint 未通过：${lint.stderr.trim()}`
@@ -331,6 +406,7 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   }
 
   flights.set(name, flight)
+  envelopes.delete(name)
   const attempt = ledger.events.filter(e => e.ev === 'takeoff').length + 1
   if (attempt === 1) {
     const t = await judge(io, flight, 'timeline', ['record', 'approve', '--change-dir', changeDir, '--note', gate.stdout.trim()], tree.path)
@@ -376,6 +452,46 @@ export function registerOrchestrator(on: On): void {
     const agentId = (e as unknown as { agentId?: string }).agentId
     return onFindings(ctx, agentId ? await flightOfAgent(ctx.io, agentId) : undefined, agentId, e)
   }).catch(() => ({ deny: 'flight：评审回收失败' }))
+
+  // 能力包络（D5 / D6 / D8）：飞行 agent 按角色限写与限 git；主会话对在飞树只读
+  on('tool.call', { tool: ['Write', 'Edit', 'NotebookEdit', 'Bash'] }, async ($, e, next) => {
+    const tool = String(e.tool)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    if (!agentId) return mainSessionVerdict([...active.values()], tool, e) ?? next(e)
+    const flying = await flyingWho(ctxOf($).io, agentId)
+    if (flying === undefined) return next(e)
+    return envelopeVerdict(flying.who, tool, e) ?? next(e)
+  }).catch(($, e, next) => {
+    if (next.called) return next(e)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    return agentId && owners.has(agentId) ? { deny: 'flight：包络判定出错' } : next(e)
+  })
+
+  // D7：只把飞行 agent 包络内的 ask 改答 allow；不推翻 deny、不收回 allow、不越过组织上限 ceiling=ask
+  on('tool.check', async ($, e, next) => {
+    const v = await next(e)
+    const x = e as unknown as { tool: string; input?: unknown; agentId?: string; ceiling?: string }
+    if (!x.agentId || v.decision !== 'ask' || x.ceiling === 'ask') return v
+    try {
+      const flying = await flyingWho(ctxOf($).io, x.agentId)
+      if (flying === undefined || !inEnvelope(flying.who, flying.commands, x.tool, x.input)) return v
+      return { decision: 'allow', reason: 'flight 包络内' }
+    } catch {
+      return v
+    }
+  }).catch(() => ({ decision: 'ask' }))
+
+  // D9：flight:* 只能由本插件带显式 model 派发；飞行 agent 不得再派发子 agent
+  on('agent.spawn', async ($, e, next) => {
+    const x = e as unknown as { subagentType?: string; model?: string; parentAgentId?: string }
+    const parentInFlight = x.parentAgentId ? (await flyingWho(ctxOf($).io, x.parentAgentId)) !== undefined : false
+    const origin = (next as unknown as { origin?: { plugin?: string } }).origin?.plugin
+    return spawnVerdict({ subagentType: x.subagentType ?? '', originPlugin: origin, model: x.model, parentInFlight }) ?? next(e)
+  }).catch(($, e, next) => {
+    if (next.called) return next(e)
+    const type = (e as unknown as { subagentType?: string }).subagentType ?? ''
+    return type.startsWith('flight:') ? { deny: 'flight：派发守卫出错，flight:* 一律拒绝' } : next(e)
+  })
 
   on('classic.SubagentStop', async ($, e, next) => {
     const ctx = ctxOf($)

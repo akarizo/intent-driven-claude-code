@@ -983,7 +983,7 @@ def cmd_gate(args):
             if w2:
                 warnings.append(w2)
 
-    source = [f for f in files if not is_test_path(f) and not is_doc_or_config(f) and not f.startswith(change_rel + "/")]
+    source = [f for f in files if not is_test_path(f) and not is_doc_or_config(f) and not f.startswith(change_rel + "/") and f != MARKER]
     tests = [f for f in files if is_test_path(f)]
     if source and not tests:
         failed.append("G3 pairing: 改了源码 %s 但区间内没有测试文件改动" % ", ".join(sorted(source)[:6]))

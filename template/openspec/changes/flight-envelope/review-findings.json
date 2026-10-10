@@ -1,0 +1,45 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 487,
+      "summary": "需进一步确认：agent.spawn 对插件自己的派发同样计算 parentInFlight。插件在 classic.SubagentStop / turn.complete（比如 agent-1 结束后 drive 派发评审员或下一片）里调用 $.agent.spawn 时，如果真实引擎把 parentAgentId 设成触发该 hook 帧的 agent-1，那么 agent-1 仍在缓存里、飞行仍在飞，plugin 自己的 flight:* 派发就会被以「飞行中的 agent 不得再派发子 agent」拒绝，整次飞行在第一片后停住。现有测试都由测试侧直接 turn.complete 触发，不带 parentAgentId，覆盖不到这种情况。",
+      "fix": "在 X 实测里确认引擎在 SubagentStop 帧内由插件发起的派发是否带 parentAgentId。若带：接线处在 origin 为 flight 时令 parentInFlight=false（或在 spawnVerdict 里豁免 originPlugin==='flight'），并补一条测试：以 parentAgentId=agent-1 触发插件来源的 flight:reviewer 派发，期望放行。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 138,
+      "summary": "ownerOf 只缓存命中结果，不缓存未命中。只要有飞行在飞（active 非空），任何非飞行 subagent（比如主会话派出的 Explore）的每一次 tool.call 和 tool.check 都会经 flyingWho 走到 flightOfAgent：对 flights 里每个飞行（含已落地的）读账本，再跑 for-each-ref、worktree list、judgesDir，并逐个读未登记 change 的账本。每次工具调用要起多个 git 子进程，而且 call 和 check 各来一遍。flightOfAgent 里注明的 ceiling（「非飞行 subagent 频繁时按 change 缓存负结果」）被本片搬到了热路径上。",
+      "fix": "在 ownerOf 里为未命中维护一个负缓存，比如 Map<agentId, 账本代数>，或者在 takeoff / dispatch 写入时清空负缓存；也可以先按 owners 判断，只有 owners 为空且刚重启时才回退扫账本。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 170,
+      "summary": "骨架的 Given/When 注释从 spec 的「owns 为 src/a.py / Write src/a.py」改成了「src/s1.py」，以迁就 demoWorld 的夹具，但 specs/flight-envelope/spec.md 第 59–60 行的 scenario 原文没改，骨架与规格的措辞不再一致。语义等价，但会让后续对照产生困惑。",
+      "fix": "把骨架注释恢复为 spec 原文，并在测试里注明夹具里 S1 的 owns 是 src/s1.py；或者在 demoWorld 里让 S1 的 owns 与 spec 一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 627,
+      "summary": "tool-check-upgrades-ask-only-in-envelope 只覆盖了写入升 allow 以及 deny / ceiling / 白名单外 Bash / 主会话这几种原样返回。inEnvelope 的其余升级分支没有接线层的测试：Read/Grep/Glob、slices.json 门禁 / verify 命令的 Bash 白名单（envelopeOf 拼 commands）、评审员 mcp__flight__submit_findings。commands 拼装或 FINDINGS_TOOL 名字一旦出错，不会被发现。",
+      "fix": "在同一测试或新测试里追加：agent-1 的 Bash `python3 -m pytest -q tests`（取自 demo 的 gate.test）在引擎答 ask 时应升 allow；评审员 agent 的 mcp__flight__submit_findings 在 ask 时应升 allow。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 128,
+      "summary": "owners 缓存只增不减，飞行落地或停飞后不清理，长会话里多次飞行会一直累积。对正确性无影响，因为 flyingWho 会再查 active。",
+      "fix": "在 land / halt 写入时删掉该 change 的 owners 条目，或者容忍这点增长，在注释里写明 ceiling。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "e5d2503d687d7396c63dbdeea65b3f9296f12f5f"
+  }
+}

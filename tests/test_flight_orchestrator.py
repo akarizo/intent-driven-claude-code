@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -130,3 +128,89 @@ def test_merge_survives_missing_interfaces_summary():
     # When: S1 执行体以绿门禁结束
     # Then: 账本有 S1 的 merge 且 ok、没有 halt；_interfaces.md 被写出且含「## S1」
     assert_ts_passed("merge-survives-missing-interfaces-summary")
+
+# ---------------------------------------------------------------- flight-envelope S4
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
+
+
+def test_resume_regates_green_slice():
+    # Given: attempt 1 派过 S1 执行体、S1 最近门禁 ok（base B）、无 S1 merge、已 halt；attempt 2 已起飞，S1 worktree 仍在
+    # When: drive 处理 attempt 2
+    # Then: 跑了带 --base B 的 slice-gate gate S1、没有派发 S1 执行体；账本依次有 gate(regate, ok) 与 merge(S1, ok)
+    assert_ts_passed("resume-regates-green-slice")
+
+
+def test_resume_red_regate_dispatches_with_original_base():
+    # Given: 同上，但补跑的门禁为红
+    # When: drive 处理 attempt 2
+    # Then: 派发了 S1 的续接执行体，派发前的 slice-gate start S1 带 --base B
+    assert_ts_passed("resume-red-regate-dispatches-with-original-base")
+
+
+def test_takeoff_commits_leftover_records():
+    # Given: demo 已批准、attempt 1 已 halt；只有 change 目录的 timeline.md 与 gate-report.md 未提交（另一情形还有 src/x.py）
+    # When: 人发出 /opsx-apply demo
+    # Then: chore(flight): 记录 的提交排在 takeoff 之前、回复含「✈ 起飞」；另一情形回复含「工作区不干净」且没有新 takeoff
+    assert_ts_passed("takeoff-commits-leftover-records")
+    assert_ts_passed("takeoff-commits-leftover-records/foreign-dirty")
+
+
+def test_drive_stops_after_terminal_without_fp():
+    # Given: attempt 1 已因指纹失败 halt，agent-2 仍在运行，plan_fp.py 仍以 1 退出
+    # When: agent-2 结束（turn.complete）
+    # Then: 没有运行 plan_fp.py，attempt 1 的 halt 仍只有 1 条
+    assert_ts_passed("drive-stops-after-terminal-without-fp")
+
+
+# ---------------------------------------------------------------- flight-envelope S6
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
+
+
+def test_tool_call_denies_out_of_envelope_write():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/s1.py）
+    # When: agent-1 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/s1.py
+    # Then: 前者 tool.call 答 deny 且理由含「owns」，后者交给下游执行
+    assert_ts_passed("tool-call-denies-out-of-envelope-write")
+
+
+def test_tool_check_upgrades_ask_only_in_envelope():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: 引擎对 agent-1 包络内的 Write 判 ask / deny / ask 且 ceiling 为 ask；对 agent-1 的 Bash npm install 判 ask；对主会话的 Write 判 ask
+    # Then: 只有第一种改答 allow，其余原样返回引擎判定
+    assert_ts_passed("tool-check-upgrades-ask-only-in-envelope")
+
+
+def test_main_session_read_only_during_flight():
+    # Given: demo 已起飞（在飞），之后 attempt 1 halt
+    # When: 起飞后、停飞前与停飞后，主会话各 Edit 一次 <change worktree>/src/a.py
+    # Then: 前者 tool.call 答 deny 且理由含「只读」，后者交给下游执行
+    assert_ts_passed("main-session-read-only-during-flight")
+
+
+def test_agent_spawn_guard_wired():
+    # Given: 插件已加载
+    # When: 主会话的模型经 Agent 工具派发 subagent_type: flight:executor
+    # Then: agent.spawn 答 deny，理由含「控制面」
+    assert_ts_passed("agent-spawn-guard-wired")
+
+
+
+def test_spawn_prompt_names_worktree():
+    # Given: demo 已批准，waves [[S1, S2], [S3]]；引擎派发的 agent 不一定落在 cwd 参数给的目录里
+    # When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
+    # Then: 每份提示词写明自己的切片 worktree 绝对路径与 git -C 该路径，不得在别的 worktree 写入或提交
+    assert_ts_passed("spawn-prompt-names-worktree")
+
+def test_resume_regate_merges_already_integrated_slice():
+    # Given: attempt 1 的 S1 门禁绿且分支已 integrate、账本缺 merge，已 halt；S1 worktree 仍在
+    # When: 人再次发出 /opsx-apply demo
+    # Then: 不对 S1 运行 merge --no-ff；attempt 2 里 S1 依次为 gate(regate, ok) 与 merge(ok)（R2）
+    assert_ts_passed("resume-regate-merges-already-integrated-slice")
+
+
+def test_agent_spawn_guard_denies_child_of_flight_agent():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: 以非 flight 来源、父 agent 为 agent-1 派发 general-purpose
+    # Then: 答 deny 且理由含「不得再派发」（R1 的反向回归）
+    assert_ts_passed("agent-spawn-guard-denies-child-of-flight-agent")
+

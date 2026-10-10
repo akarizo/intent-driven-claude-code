@@ -58,3 +58,31 @@ def test_land_prepare_resolve_reports_non_conflict_failure():
     # Then: 返回错误且含该 stderr 首行，不返回冲突列表
     assert_ts_passed("land-prepare-resolve-reports-non-conflict-failure")
     assert_ts_passed("land-prepare-resolve-rejects-clean-merge")
+
+
+def test_land_refuses_direct_commit_in_owns():
+    # Given: S2 分叉点以来，change 分支第一父链上的非合并提交 466cf98 改了 S2 owns 内的 landing.tsx
+    # When: 合回 S2
+    # Then: 不 merge、不 record，返回失败并指出 466cf98 与该文件；只改飞行记录的提交不算
+    assert_ts_passed("land-refuses-direct-commit-in-owns")
+
+
+def test_land_refuses_merge_without_change():
+    # Given: merge-tree 算出的 S5 合并结果树与 HEAD 的树相同
+    # When: 合回 S5
+    # Then: 不 merge、不 record，返回失败并写明合回对第一父无变更
+    assert_ts_passed("land-refuses-merge-without-change")
+
+def test_land_records_already_integrated_slice():
+    # Given: S1 分支尖端已是 HEAD 的祖先（上一 attempt 已 integrate，账本缺 merge 事件）
+    # When: 合回 S1
+    # Then: 不运行 merge --no-ff 与空合回检查，照常 record 并刷新接口摘要，返回 ok（PR #41 评审 HIGH，R2）
+    assert_ts_passed("land-records-already-integrated-slice")
+
+
+
+def test_land_refuses_zero_commit_slice_as_integrated():
+    # Given: 切片分支没有自己的提交，尖端就是派发时的 change 分支尖端（是 HEAD 的祖先，但不是任何合并提交的第二父）
+    # When: 合回该切片
+    # Then: 不当作已合回：不 record、不 merge，返回失败并写明合回对第一父无变更（PR #41 复核 HIGH，R3）
+    assert_ts_passed("land-refuses-zero-commit-slice-as-integrated")
