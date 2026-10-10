@@ -26,3 +26,5 @@ export function agentType(role: Role): string {
 export const flights: Map<string, Flight> = new Map()
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
 ```
+
+## S6
