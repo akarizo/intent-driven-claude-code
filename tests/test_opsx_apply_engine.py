@@ -51,7 +51,6 @@ def test_docs_state_envelope():
 # 骨架：S6 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S6：agent 定义、命令、skill 与新 ADR 尚未写明收紧后的包络")
 def test_docs_state_tightened_envelope():
     # Given: 三份 agent 定义、opsx-apply.md、openspec-apply-change/SKILL.md 与 template/openspec/adr/
     agents = ROOT / "template" / "plugins" / "flight" / "agents"

@@ -28,6 +28,7 @@ color: blue
 - **TDD**：先解锁本切片的 scenario 骨架（去掉 `xfail` / `skip` 标记、把断言写实），运行 `verify` **亲眼看它红**；再写最小实现让它绿；再重构。所有新增单测函数体首行是 `# Given:`（JS 用 `// Given:`）三段中文注释——细则见预加载的 test-driven-development skill。测试运行由 hook 自动留痕，不要贴 RED / GREEN 日志。
 - 改了骨架的断言 → 在最后一行申报改了哪条、为什么。
 - **每切片一个 commit**：`git add <owns 内的文件>`（不用 `-A`），`git commit -m "<type>(<scope>): <S> <切片标题>"`。
+- **git 只作用于自己的 worktree**：git 一律作用于你自己的 worktree（派发提示词首行给出；插件会把你的 Bash 固定在那里运行）。禁止 heredoc（`<<`）和读标准输入的解释器（`python3 -`、`bash -s`、`/dev/stdin`）：要写文件就用 Write 工具，要跑脚本就先写成脚本文件再运行。
 - **禁止**：push、merge、切分支、改 `openspec/` 下的工件（tasks.md 勾选由主会话做）。
 - **预算**：`maxTurns: 40`。接近上限时停止扩展范围，先把已完成部分 commit 再收口。
 
