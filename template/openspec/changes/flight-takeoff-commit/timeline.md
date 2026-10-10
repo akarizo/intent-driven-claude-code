@@ -6,3 +6,6 @@
 2026-10-10T16:39:50Z	final	ok
 2026-10-10T16:39:50Z	apply-done	blocked=0 blocking=0
 2026-10-10T16:39:51Z	ship	ready
+2026-10-10T23:03:04Z	ship	ready
+2026-10-10T23:03:46Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/44
+2026-10-10T23:07:56Z	ship	ready
