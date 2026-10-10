@@ -130,3 +130,75 @@ def test_merge_survives_missing_interfaces_summary():
     # When: S1 执行体以绿门禁结束
     # Then: 账本有 S1 的 merge 且 ok、没有 halt；_interfaces.md 被写出且含「## S1」
     assert_ts_passed("merge-survives-missing-interfaces-summary")
+
+# ---------------------------------------------------------------- flight-envelope S4
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_resume_regates_green_slice():
+    # Given: attempt 1 派过 S1 执行体、S1 最近门禁 ok（base B）、无 S1 merge、已 halt；attempt 2 已起飞，S1 worktree 仍在
+    # When: drive 处理 attempt 2
+    # Then: 跑了带 --base B 的 slice-gate gate S1、没有派发 S1 执行体；账本依次有 gate(regate, ok) 与 merge(S1, ok)
+    assert_ts_passed("resume-regates-green-slice")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_resume_red_regate_dispatches_with_original_base():
+    # Given: 同上，但补跑的门禁为红
+    # When: drive 处理 attempt 2
+    # Then: 派发了 S1 的续接执行体，派发前的 slice-gate start S1 带 --base B
+    assert_ts_passed("resume-red-regate-dispatches-with-original-base")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_takeoff_commits_leftover_records():
+    # Given: demo 已批准、attempt 1 已 halt；只有 change 目录的 timeline.md 与 gate-report.md 未提交（另一情形还有 src/x.py）
+    # When: 人发出 /opsx-apply demo
+    # Then: chore(flight): 记录 的提交排在 takeoff 之前、回复含「✈ 起飞」；另一情形回复含「工作区不干净」且没有新 takeoff
+    assert_ts_passed("takeoff-commits-leftover-records")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_drive_stops_after_terminal_without_fp():
+    # Given: attempt 1 已因指纹失败 halt，agent-2 仍在运行，plan_fp.py 仍以 1 退出
+    # When: agent-2 结束（turn.complete）
+    # Then: 没有运行 plan_fp.py，attempt 1 的 halt 仍只有 1 条
+    assert_ts_passed("drive-stops-after-terminal-without-fp")
+
+
+# ---------------------------------------------------------------- flight-envelope S6
+# 骨架：S6 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_tool_call_denies_out_of_envelope_write():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/a.py）
+    # When: agent-1 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/a.py
+    # Then: 前者 tool.call 答 deny 且理由含「owns」，后者交给下游执行
+    assert_ts_passed("tool-call-denies-out-of-envelope-write")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_tool_check_upgrades_ask_only_in_envelope():
+    # Given: demo 已起飞，S1 执行体 agent-1 已派发
+    # When: 引擎对 agent-1 包络内的 Write 判 ask / deny / ask 且 ceiling 为 ask；对 agent-1 的 Bash npm install 判 ask；对主会话的 Write 判 ask
+    # Then: 只有第一种改答 allow，其余原样返回引擎判定
+    assert_ts_passed("tool-check-upgrades-ask-only-in-envelope")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_main_session_read_only_during_flight():
+    # Given: demo 已起飞（在飞），之后 attempt 1 halt
+    # When: 起飞后、停飞前与停飞后，主会话各 Edit 一次 <change worktree>/src/a.py
+    # Then: 前者 tool.call 答 deny 且理由含「只读」，后者交给下游执行
+    assert_ts_passed("main-session-read-only-during-flight")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_agent_spawn_guard_wired():
+    # Given: 插件已加载
+    # When: 主会话的模型经 Agent 工具派发 subagent_type: flight:executor
+    # Then: agent.spawn 答 deny，理由含「控制面」
+    assert_ts_passed("agent-spawn-guard-wired")
+

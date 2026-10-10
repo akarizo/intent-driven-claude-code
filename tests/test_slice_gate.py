@@ -1292,3 +1292,30 @@ def test_g7_reports_collection_failure_detail(git_repo):
     assert out["ok"] is False, out
     assert any(f.startswith("G7") and "未被收集运行" in f and "rc=" in f and "RuntimeError" in f
                for f in out["failed"]), out["failed"]
+
+# ---------------------------------------------------------------- flight-envelope S1
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：G3 的源码列表没排除 .openspec-slice")
+def test_gate_pairing_ignores_marker(git_repo):
+    # Given: 切片 S1 已 start，区间内没有任何提交，工作树里只有未提交的 .openspec-slice 标记
+    change = git_repo / "openspec" / "changes" / "c"
+    data = plan(
+        [slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="true", scenarios=["cap#adds"])],
+        scenario_tests={"cap#adds": "tests/test_mod.py::test_mod_adds"},
+    )
+    write_plan(change, data)
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
+    write(git_repo / "tests" / "test_mod.py", GOOD_TEST)
+    commit_all(git_repo, "artifacts")
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+    assert p.returncode == 0, p.stderr
+
+    # When: 运行 slice-gate.py gate S1
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 输出 JSON 的 failed 里没有以「G3」开头的项
+    out = json.loads(p.stdout)
+    assert not any(f.startswith("G3") for f in out["failed"]), out["failed"]
