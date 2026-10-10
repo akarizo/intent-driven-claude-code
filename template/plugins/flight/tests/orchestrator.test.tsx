@@ -40,6 +40,10 @@ type World = {
   agents?: { id: string; status: string }[]
   /** 账本预置事件 */
   ledger?: Record<string, unknown>[]
+  /** 预置为已存在的路径（如上一 attempt 留下的切片 worktree） */
+  paths?: string[]
+  /** 预置的未提交路径（相对 change worktree 根）：整树 `git status --porcelain` 会报出它们，git commit 后清空 */
+  dirty?: string[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -74,10 +78,12 @@ function useWorld(on: On, w: World) {
     commands: [] as string[],
     runs: [] as { argv: string[]; cwd: string | undefined }[],
     logs: [] as string[],
+    /** 每次 git commit 的提交信息与当时账本的事件数 */
+    commits: [] as { message: string; events: number }[],
     files,
   }
-  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, `${TREE}/${CD}/slices.json`])
-  const dirty = new Set<string>()
+  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, `${TREE}/${CD}/slices.json`, ...(w.paths ?? [])])
+  const dirty = new Set<string>(w.dirty ?? [])
   let agents = 0
   let conflicted = ''
   let pending: Record<string, unknown> | undefined
@@ -160,8 +166,8 @@ function useWorld(on: On, w: World) {
         exists.add(String(args[4]))
         return wrap(res(0, ''))
       case 'status': {
-        // 带路径的 status（commitRecords 查飞行记录）才报 tracksRecords 跟踪到的改动；起飞前的整树检查照旧干净
-        const paths = args.includes('--') ? args.slice(args.indexOf('--') + 1).map(p => p.slice(`${TREE}/`.length)) : []
+        // 带路径的 status（commitRecords 查飞行记录）只报所列路径里的改动；不带路径的整树检查报全部改动
+        const paths = args.includes('--') ? args.slice(args.indexOf('--') + 1).map(p => p.slice(`${TREE}/`.length)) : [...dirty]
         return wrap(res(0, paths.filter(p => dirty.has(p)).map(p => ` M ${p}\n`).join('')))
       }
       case 'hash-object':
@@ -194,6 +200,7 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, ''))
       }
       case 'commit':
+        log.commits.push({ message: String(args[args.indexOf('-m') + 1]), events: log.events.length })
         dirty.clear()
         return wrap(res(0, ''))
       case 'add':
@@ -462,11 +469,12 @@ test('executor-dispatch-commits-records-first', async ($, on) => {
   // When: 处理 S2 执行体的结束，drive 合回 S2 后派发 S3 的执行体
   await $.turn.complete(ended('agent-2') as never)
 
-  // Then: S3 切片 worktree 的 git worktree add 发生过；它与 S2 合回之间有一次「chore(flight): 记录」的 git commit
+  // Then: S3 切片 worktree 的 git worktree add 与 S2 的合回都发生过；两者之间有一次「chore(flight): 记录」的 git commit
   const addS3 = log.runs.findIndex(x => x.argv[1] === 'worktree' && x.argv[2] === 'add' && x.argv.includes(SLICE3))
   const mergeS2 = log.runs.findIndex(x => x.argv.join(' ').includes('merge --no-ff flight/demo/S2'))
   const between = log.runs.slice(mergeS2, Math.max(addS3, 0))
   expect(addS3).toBeGreaterThan(-1)
+  expect(mergeS2).toBeGreaterThan(-1)
   expect(between.some(x => x.argv.includes('commit') && x.argv.includes('chore(flight): 记录'))).toBe(true)
 })
 
@@ -501,4 +509,90 @@ test('merge-survives-missing-interfaces-summary', async ($, on) => {
   expect(log.events.some(x => x.ev === 'merge' && x.slice === 'S1' && x.ok === true)).toBe(true)
   expect(log.events.some(x => x.ev === 'halt')).toBe(false)
   expect(log.files[`${TREE}/${CD}/slices/_interfaces.md`]).toContain('## S1')
+})
+
+// ---------------------------------------------------------------- flight-envelope（S4）
+
+const B0 = { change: 'demo', at: '2026-10-09T12:00:00.000Z', session: 'sess-1' }
+const BASE_B = 'b'.repeat(40)
+/** attempt 1：S1 执行体 agent-1 收口门禁绿（base B）后停飞，S1 未合回 */
+const haltedWithGreenS1 = () => [
+  ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+  ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'agent-1', model: 'opus', worktree: SLICE1 }),
+  ev.gate(B0, { attempt: 1, agent: 'agent-1', slice: 'S1', ok: true, commit: 'c'.repeat(40), failed: [], base: BASE_B }),
+  ev.halt(B0, { attempt: 1, reason: '计划指纹已变' }),
+]
+const isGateS1 = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'gate' && x.argv[3] === 'S1'
+const isStartS1 = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'start' && x.argv[3] === 'S1'
+const baseOf = (argv: string[]) => (argv.includes('--base') ? argv[argv.indexOf('--base') + 1] : undefined)
+
+test('resume-regates-green-slice', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 takeoff、S1 执行体 agent-1 的 dispatch（worktree 为 S1 切片路径）、S1 gate（ok，base B）、halt；S1 切片 worktree 仍在；补跑门禁缺省绿
+  const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1] }))
+
+  // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 在 S1 worktree 跑了带 --base B 的 slice-gate gate S1；S1 没有新的执行体派发；attempt 2 里 S1 的事件依次为 gate(regate, ok) 与 merge(ok)
+  expect(log.runs.some(x => isGateS1(x) && x.cwd === SLICE1 && baseOf(x.argv) === BASE_B)).toBe(true)
+  expect(log.spawns.filter(s => s.cwd === SLICE1)).toEqual([])
+  expect(log.events.filter(x => x.attempt === 2 && x.slice === 'S1' && x.ev !== 'dispatch').map(x => [x.ev, x.agent ?? null, x.ok])).toEqual([
+    ['gate', 'regate', true],
+    ['merge', null, true],
+  ])
+})
+
+test('resume-red-regate-dispatches-with-original-base', async ($, on) => {
+  // Given: 同 resume-regates-green-slice 的账本与 S1 worktree，但 S1 的补跑门禁为红 [G7 demo#s1]
+  const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
+
+  // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: slice-gate start S1 带 --base B；在 S1 worktree 派发了一次执行体
+  expect(log.runs.filter(isStartS1).map(x => baseOf(x.argv))).toEqual([BASE_B])
+  expect(log.spawns.filter(s => s.cwd === SLICE1).map(s => s.subagent_type)).toEqual(['flight:executor'])
+})
+
+test('takeoff-commits-leftover-records', async ($, on) => {
+  // Given: demo 已批准、attempt 1 已 halt；change worktree 只有 <change 目录>/timeline.md 与 gate-report.md 未提交
+  const ledger = haltedWithGreenS1()
+  const log = useWorld(on, demoWorld({ ledger, dirty: [`${CD}/timeline.md`, `${CD}/gate-report.md`] }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 「chore(flight): 记录」的提交发生在 takeoff 事件写入之前；回复含「✈ 起飞」
+  expect(log.commits.find(c => c.message === 'chore(flight): 记录')?.events).toBe(ledger.length)
+  expect(r.text).toContain('✈ 起飞')
+})
+
+test('takeoff-commits-leftover-records/foreign-dirty', async ($, on) => {
+  // Given: demo 已批准、attempt 1 已 halt；未提交的有 <change 目录>/timeline.md、gate-report.md 与 src/x.py
+  const ledger = haltedWithGreenS1()
+  const log = useWorld(on, demoWorld({ ledger, dirty: [`${CD}/timeline.md`, `${CD}/gate-report.md`, 'src/x.py'] }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「工作区不干净」；账本没有新的 takeoff
+  expect(r.text).toContain('工作区不干净')
+  expect(log.events.filter(x => x.ev === 'takeoff').length).toBe(1)
+})
+
+test('drive-stops-after-terminal-without-fp', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞（agent-1 派 S1、agent-2 派 S2）；plan_fp.py 改为以 1 退出，agent-1 结束后 attempt 1 已因「计算计划指纹失败」halt
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.fpRun = res(1, '', 'plan_fp 超时')
+  await $.turn.complete(ended('agent-1') as never)
+  const before = log.runs.length
+
+  // When: agent-2 结束（turn.complete）
+  await $.turn.complete(ended('agent-2') as never)
+
+  // Then: 本次处理没有运行 plan_fp.py；账本里 attempt 1 的 halt 仍只有 1 条
+  expect(log.runs.slice(before).some(x => String(x.argv[1]).endsWith('/plan_fp.py'))).toBe(false)
+  expect(log.events.filter(x => x.ev === 'halt' && x.attempt === 1).length).toBe(1)
 })

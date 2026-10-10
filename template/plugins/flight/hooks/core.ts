@@ -32,11 +32,12 @@ export interface Ctx {
   log(text: string): Promise<void> // 打印到转录（飞行记录）
 }
 export type Action =
-  | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] } }
+  | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] }; base?: string }
   | { kind: 'dispatch'; role: 'resolver'; slice: string; conflicts: string[] }
   | { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string }
   | { kind: 'dispatch'; role: 'fixer'; findings: Finding[] }
   | { kind: 'gate'; slice: string; agent: string } // 执行体未经收口结束后的补跑门禁
+  | { kind: 'regate'; slice: string; base: string; worktree: string } // 续飞：上一 attempt 已绿未合回的切片，以原 base 补跑门禁
   | { kind: 'merge'; slice: string; via: 'branch' | 'resolve' | 'fix' }
   | { kind: 'final' }
   | { kind: 'land' }
@@ -48,6 +49,7 @@ type Ev = FlightEvent & { seq: number }
 export type State = { readonly events: readonly Ev[]; readonly attempt: number; readonly takeoff: Ev | undefined }
 
 const FIX = 'fix'
+const REGATE = 'regate'
 const CONFLICT = 'conflict: '
 const BLOCKING: readonly Severity[] = ['CRITICAL', 'HIGH']
 
@@ -105,12 +107,26 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   const reviewed = (s: string) => evs.some(e => (e.ev === 'review' && e.slice === s) || (e.ev === 'blocked' && e.slice === `review:${s}`))
   const blocked = (slice: string, blockKind: 'gate' | 'infra', reason: string): Action => ({ kind: 'blocked', slice, blockKind, reason })
 
+  const baseOf = (e: Ev | undefined) => (e && typeof e.base === 'string' && e.base !== '' ? { base: e.base } : {})
+
   function firstDispatch(s: string): Action {
     const prev = last(evs.filter(e => e.ev === 'dispatch' && e.role === 'executor' && e.slice === s && Number(e.attempt) < A))
     const fresh: Action = { kind: 'dispatch', role: 'executor', slice: s }
     if (!prev || evs.some(e => e.ev === 'blocked' && e.slice === s && e.attempt === prev.attempt)) return fresh
     const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s))
-    return { ...fresh, continuation: { reason: '上一次飞行中断', failed: failedOf(g) } }
+    const b = baseOf(g)
+    if (g?.ok === true && b.base) return { kind: 'regate', slice: s, base: b.base, worktree: str(prev, 'worktree') }
+    return { ...fresh, continuation: { reason: '上一次飞行中断', failed: failedOf(g) }, ...b }
+  }
+
+  /** 本 attempt 还没派过执行体：有补跑结论按结论走，否则按首次派发判。 */
+  function beforeExecutor(s: string): Action[] {
+    const r = last(ofA('gate').filter(e => e.slice === s && e.agent === REGATE))
+    if (!r) return [firstDispatch(s)]
+    if (r.ok !== true) return [{ kind: 'dispatch', role: 'executor', slice: s, continuation: { reason: '上一次飞行中断', failed: failedOf(r) }, ...baseOf(last(evs.filter(e => e.ev === 'gate' && e.slice === s && baseOf(e).base))) }]
+    const m = last(ofA('merge').filter(e => e.slice === s))
+    if (m) return afterMergeFailed(s, m)
+    return [{ kind: 'merge', slice: s, via: 'branch' }]
   }
 
   function afterMergeFailed(s: string, m: Ev): Action[] {
@@ -145,7 +161,7 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const dep = (plan.deps[s] ?? []).find(d => blockedNow(d))
     if (dep) return [blocked(s, 'infra', `依赖已 blocked：${dep}`)]
     const execs = dispatchesA(s, 'executor')
-    if (!execs.length) return [firstDispatch(s)]
+    if (!execs.length) return beforeExecutor(s)
     const m = last(ofA('merge').filter(e => e.slice === s))
     if (m) return afterMergeFailed(s, m)
     return executorOutcome(s, str(last(execs)!, 'agent'), execs.length)

@@ -4,7 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
 import { agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, readLedger, trees } from './io'
-import { commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
+import { RECORD_FILES, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { executorPrompt, resolverPrompt } from './prompts'
 
@@ -96,8 +96,9 @@ async function slicesOf(io: Io, f: Flight): Promise<Record<string, SliceInfo>> {
 }
 
 /** 跑切片门禁并解析 JSON；stdout 不是门禁 JSON 时按红记。 */
-async function runGate(io: Io, f: Flight, slice: string, worktree: string): Promise<GateJson> {
-  const r = await judge(io, f, 'slice-gate', ['gate', slice, '--change-dir', f.changeDir], worktree, GATE_TIMEOUT_MS)
+async function runGate(io: Io, f: Flight, slice: string, worktree: string, base?: string): Promise<GateJson> {
+  const args = ['gate', slice, '--change-dir', f.changeDir, ...(base ? ['--base', base] : [])]
+  const r = await judge(io, f, 'slice-gate', args, worktree, GATE_TIMEOUT_MS)
   try {
     const g = JSON.parse(r.stdout) as Partial<GateJson>
     if (g !== null && typeof g === 'object' && typeof g.ok === 'boolean') {
@@ -144,6 +145,12 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     record(ev.merge(b, { attempt: A, slice, ok: r.ok, commit: r.ok ? r.commit : '', failed: r.ok ? [] : r.failed }))
   const owns = (slice: string) => slices[slice]?.owns ?? []
 
+  if (a.kind === 'regate') {
+    // 切片 worktree 已不在：无从补跑，按全新派发处理
+    if (!(await io.exists(a.worktree))) return perform(ctx, f, state, { kind: 'dispatch', role: 'executor', slice: a.slice }, slices)
+    const gate = await runGate(io, f, a.slice, a.worktree, a.base)
+    return record(ev.gate(b, { attempt: A, agent: 'regate', ...gate }))
+  }
   if (a.kind === 'dispatch' && a.role === 'executor') {
     // 先提交飞行记录：切片 worktree 从分支尖端切出，未提交的记录（如刚刷新的接口摘要）会在合回时冲突
     const err = await commitRecords(io, f, 'chore(flight): 记录')
@@ -151,7 +158,8 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     const wt = await ensureWorktree(io, f, a.slice)
     if ('error' in wt) return blocked(a.slice, `建切片 worktree 失败：${firstLine(wt.error)}`)
     // 续接（worktree 已存在）不带 --expect-branch：change 分支可能已前移
-    const args = ['start', a.slice, '--change-dir', f.changeDir, ...(wt.created ? ['--expect-branch', f.branch] : [])]
+    // 续飞带原 base：worktree 里已有上一 attempt 的提交，以当前 HEAD 为起点会把它们判出区间
+    const args = ['start', a.slice, '--change-dir', f.changeDir, ...(wt.created ? ['--expect-branch', f.branch] : []), ...(a.base ? ['--base', a.base] : [])]
     const st = await judge(io, f, 'slice-gate', args, wt.path)
     if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
     const prompt = executorPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, continuation: a.continuation })
@@ -212,6 +220,8 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     seen = ledger.events.length
     const state = reduce(ledger.events)
     if (state.takeoff === undefined) return
+    // 本 attempt 已 land / halt：残留 agent 结束不再算指纹，避免重复停飞（PR #40 评审 MEDIUM）
+    if (state.events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === state.attempt)) return
     showStatus($, f, state)
     const slices = await slicesOf(io, f)
     const deps = Object.fromEntries(Object.entries(slices).map(([id, s]) => [id, s.deps]))
@@ -291,8 +301,17 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
 
   const gate = await judge(io, f, 'takeoff-gate', ['--change-dir', abs], tree.path)
   if (gate.exitCode !== 0) return `flight：起飞守卫未通过：${gate.stderr.trim()}\n审阅并批准计划：${abs}/spec.html`
-  const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain'])
-  if (st.exitCode !== 0 || st.stdout.trim() !== '') return `flight：工作区不干净，不起飞：\n${st.stdout.trim() || st.stderr.trim()}`
+  const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
+  if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
+  // porcelain 的 XY 列可能以空格开头，不能先 trim
+  const dirty = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
+  if (dirty.length) {
+    const records = new Set(RECORD_FILES.map(r => `${changeDir}/${r}`))
+    if (!dirty.every(p => records.has(p))) return `flight：工作区不干净，不起飞：\n${st.stdout.trim()}`
+    // 只剩上一次飞行遗留的记录（停飞 / 会话中断不提交它们）：先提交再起飞
+    const err = await commitRecords(io, f, 'chore(flight): 记录')
+    if (err) return `flight：提交遗留飞行记录失败，不起飞：${err}`
+  }
   // slice-gate lint 的 argparse 要求 --change-dir
   const lint = await judge(io, f, 'slice-gate', ['lint', '--change-dir', changeDir], tree.path)
   if (lint.exitCode !== 0) return `flight：slice-gate lint 未通过：${lint.stderr.trim()}`
