@@ -69,6 +69,8 @@ def pytest_runtest_logreport(report):
     if report.when == "call":
         if hasattr(report, "wasxfail"):
             out = "XPASS" if report.passed else "XFAIL"
+        elif report.failed and isinstance(report.longrepr, str) and report.longrepr.startswith("[XPASS(strict)]"):
+            out = "XPASS"  # 严格 xfail 意外通过：pytest 记 failed、longrepr 带此前缀、不设 wasxfail
         else:
             out = report.outcome.upper()
     elif report.failed:
@@ -134,8 +136,8 @@ def run_cmd_full(cmd, cwd):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def _tail(out):
-    return "\n".join(out.strip().splitlines()[-6:])
+def _tail(out, n=6):
+    return "\n".join(out.strip().splitlines()[-n:])
 
 
 def run_cmd(cmd, cwd):
@@ -394,6 +396,12 @@ def is_doc_or_config(path):
         return True
     _, ext = os.path.splitext(path)
     return ext.lower() in DOC_EXT or ext.lower() in CONFIG_EXT
+
+
+def source_files(files, change_rel):
+    """改动里的源码：非测试、非文档 / 配置、不在 change 目录内、不是切片标记。"""
+    return [f for f in files if not is_test_path(f) and not is_doc_or_config(f)
+            and not f.startswith(change_rel + "/") and f != MARKER]
 
 
 def changed_files(root, base):
@@ -983,8 +991,8 @@ def cmd_gate(args):
             if w2:
                 warnings.append(w2)
 
-    source = [f for f in files if not is_test_path(f) and not is_doc_or_config(f) and not f.startswith(change_rel + "/") and f != MARKER]
-    tests = [f for f in files if is_test_path(f)]
+    source = source_files(files, change_rel)
+    tests =[f for f in files if is_test_path(f)]
     if source and not tests:
         failed.append("G3 pairing: 改了源码 %s 但区间内没有测试文件改动" % ", ".join(sorted(source)[:6]))
     failed.extend(gwt_violations(root, tests))
@@ -1031,6 +1039,46 @@ def cmd_gate(args):
                 pass
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
+
+
+MEASURE_RANK = ("PASSED", "SKIPPED", "XFAIL", "XPASS", "FAILED", "ERROR")  # 越靠后越差
+
+
+def cmd_measure(args):
+    """只读测量：实跑本片 scenario 的 .py 目标，报告各目标结果与相对 base 的改动清单；不写任何记录。"""
+    root = toplevel()
+    data = load_plan(args.change_dir)
+    by_id = {s["id"]: s for s in data.get("slices") or []}
+    if args.slice not in by_id:
+        die("切片 %s 不在 slices.json 中" % args.slice)
+    base = args.base or (_read_marker(root) or {}).get("base")
+    if not base:
+        die("没有 base：先运行 `slice-gate.py start %s`，或传 --base" % args.slice)
+    change_rel = os.path.relpath(os.path.abspath(args.change_dir), root).replace(os.sep, "/")
+    tests = data.get("scenario_tests") or {}
+    targets, unmeasurable = [], []
+    for sid in by_id[args.slice].get("scenarios") or []:
+        t = tests.get(sid)
+        if t and t.split("::", 1)[0].endswith(".py"):
+            targets.append(t)
+        else:
+            unmeasurable.append(t or sid)
+    outcomes, text = [], ""
+    if targets:
+        gate = data.get("gate") or {}
+        raw, rc, text, timed_out = _pytest_outcomes(root, targets, gate)
+        if timed_out or rc is None:
+            why = "pytest 运行超时（%g 秒）" % _g7_timeout(gate) if timed_out else "pytest 无法启动：%s" % text
+            print(json.dumps({"slice": args.slice, "error": why}, ensure_ascii=False))
+            sys.exit(1)
+        for t in targets:
+            outs = [o for i, o in raw if i == t or i.startswith(t + "[")]
+            outcomes.append([t, max(outs, key=MEASURE_RANK.index) if outs else "MISSING"])
+    committed, uncommitted = changed_files(root, base)
+    changed = sorted(committed | uncommitted)
+    print(json.dumps({"slice": args.slice, "base": base, "commit": git(root, "rev-parse", "HEAD"),
+                      "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed,
+                      "source": source_files(changed, change_rel), "tail": _tail(text, 40)}, ensure_ascii=False))
 
 
 def cmd_record(args):
@@ -1261,6 +1309,10 @@ def main():
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base")
+    p = sub.add_parser("measure", help="只读测量：实跑本片 scenario 的 .py 目标，打印各目标结果与改动清单 JSON")
+    p.add_argument("slice")
+    p.add_argument("--change-dir", required=True)
+    p.add_argument("--base")
     p = sub.add_parser("record", help="把切片门禁 JSON 幂等写回 gate-report.md / timeline.md（integrator 合回并行切片时用）")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--json")
@@ -1275,7 +1327,7 @@ def main():
     args = ap.parse_args()
     {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
      "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship,
-     "checkpoint": cmd_checkpoint}[args.cmd](args)
+     "checkpoint": cmd_checkpoint, "measure": cmd_measure}[args.cmd](args)
 
 
 if __name__ == "__main__":

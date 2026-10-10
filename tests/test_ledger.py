@@ -308,7 +308,6 @@ def test_approved_ignores_flight_events(git_repo):
 # 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：measure 事件与 events 子命令尚未实现")
 def test_ledger_accepts_measure_events(git_repo):
     # Given: 账本 A（demo）含 approve、takeoff 与一条字段齐全的 measure；账本 B（other）同上但 measure 缺 outcomes
     measure = {"ev": "measure", "attempt": 1, "slice": "S1", "agent": "a1", "base": "f" * 40, "commit": "e" * 40,

@@ -1385,7 +1385,6 @@ def _g5(out):
     return [f for f in out["failed"] if f.startswith("G5")]
 
 
-@pytest.mark.xfail(strict=True, reason="S1：measure 子命令尚未实现")
 def test_measure_reports_slice_outcomes(git_repo):
     # Given: S1 映射 test_red（断言失败）、test_marked（仍带 strict xfail）、web/a.test.ts::case；相对 base 改了 tests/test_a.py（已提交）与 src/a.py（未提交）
     change = git_repo / "openspec" / "changes" / "c"
@@ -1432,7 +1431,6 @@ def test_marked():
     assert out["source"] == ["src/a.py"], out["source"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1：measure 子命令与严格 XPASS 尚未实现")
 def test_measure_reports_strict_xpass(git_repo):
     # Given: S1 唯一的目标用别名装饰器带 strict xfail，但测试体已能通过；切片已 start
     change = git_repo / "openspec" / "changes" / "c"
