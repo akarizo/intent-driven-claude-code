@@ -157,3 +157,16 @@ export function readUpgradable(tool: string, input: unknown, worktree: string, m
 export function mainSessionVerdict(active: readonly ActiveTree[], tool: string, input: unknown): Deny | undefined {
 export function spawnVerdict(x: { subagentType: string; originPlugin: string | undefined; model: string | undefined; parentInFlight: boolean }): Deny | undefined {
 ```
+
+## S3
+
+### template/.claude/hooks/timeline.py
+```
+def now_iso():
+def record(change_dir, event, note=""):
+def parse_ts(s):
+def load(change_dir):
+def minutes(a, b):
+def report(change_dir):
+def main():
+```
