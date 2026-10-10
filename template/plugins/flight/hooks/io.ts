@@ -78,8 +78,9 @@ const EVENTS: Record<string, Record<string, Check>> = {
 export function eventProblem(event: FlightEvent, change: string): string | undefined {
   const e = event as Record<string, unknown>
   if (e.v !== 1) return 'v 不是 1'
-  const fields = EVENTS[String(e.ev)]
-  if (fields === undefined) return 'ev 非法'
+  // 只认字段表自己的键：toString / constructor 等原型链键不算合法 ev
+  if (typeof e.ev !== 'string' || !Object.prototype.hasOwnProperty.call(EVENTS, e.ev)) return 'ev 非法'
+  const fields = EVENTS[e.ev]
   if (e.change !== change) return 'change 与目录名不符'
   if (typeof e.at !== 'string') return 'at 不是字符串'
   if (typeof e.by !== 'object' || e.by === null || !('plugin' in e.by)) return 'by 缺 plugin'

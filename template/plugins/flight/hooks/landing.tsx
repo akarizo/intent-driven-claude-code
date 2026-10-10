@@ -1,8 +1,8 @@
 // 评审回收与落地（spec flight-findings-intake · design D5）：submit_findings 的处理、评审员 / 修复 agent 收口、
 // 以及 drive 交来的 dispatch(reviewer|fixer) / final / land / halt。不注册 hook、不碰 $：副作用全经调用方造的 Ctx 闭包。
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
-import { agentOf, currentAttempt, closeoutLists, ev, reduce, stopVerdict } from './core'
-import type { Action, Ctx, Flight, FlightEvent, Found, GateJson, Io, RunResult } from './core'
+import { agentOf, currentAttempt, closeoutLists, ev, reduce, routingFindings, stopVerdict } from './core'
+import type { Action, Ctx, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
 import { appendEvent, ensureWorktree, judge, readLedger } from './io'
 import { closeout, commitRecords, validateFindings } from './land'
 import { fixerPrompt, reviewerPrompt } from './prompts'
@@ -51,6 +51,15 @@ function parseGate(r: RunResult, slice: string): GateJson {
 
 async function runFinal(io: Io, f: Flight, cwd: string): Promise<GateJson> {
   return parseGate(await judge(io, f, 'slice-gate', ['final', '--change-dir', f.changeDir], cwd, GATE_TIMEOUT_MS), 'final')
+}
+
+/** 飞行记录（铁律 8）：首行标题 + timeline report + 路由对账。report 失败只写一行原因，不拖垮落地 / 停飞。 */
+async function flightRecord(io: Io, f: Flight, state: State, title: string): Promise<string> {
+  const r = await judge(io, f, 'timeline', ['report', '--change-dir', f.changeDir], f.changeTree)
+  const body = r.exitCode === 0 ? r.stdout.trimEnd() : `（timeline report 失败：${r.stderr.trim().split('\n')[0] ?? ''}）`
+  const routing = routingFindings(state)
+  const tail = routing.length ? [`路由对账：${routing.length} 条不符`, ...routing.map(x => x.summary)] : ['路由对账：一致']
+  return [title, body, ...tail].join('\n')
 }
 
 /** submit_findings 的处理：只认当前 attempt 里 role 为 reviewer 的调用者；校验通过就追加 review 事件 */
@@ -105,6 +114,12 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     return
   }
   if (action.kind === 'dispatch' && action.role === 'fixer') {
+    // 先提交飞行记录：修复 worktree 从分支尖端切出，未提交的记录会在合回时冲突
+    const err = await commitRecords(io, f, 'chore(flight): 记录')
+    if (err) {
+      await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `提交飞行记录失败：${err}` }))
+      return
+    }
     const wt = await ensureWorktree(io, f, FIX)
     if ('error' in wt) {
       await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `修复 worktree 创建失败：${wt.error}` }))
@@ -132,6 +147,7 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     const { verdict } = await closeout(io, f, closeoutLists(state), merged)
     await append(ev.land(b, { attempt, verdict }))
     await ctx.status(undefined)
+    await ctx.log(await flightRecord(io, f, state, `飞行记录 · ${f.change}`))
     // $.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
     await ctx.runCommand('pr-ship', f.change)
     return
@@ -140,5 +156,6 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     await append(ev.halt(b, { attempt, reason: action.reason }))
     await ctx.status(undefined)
     await ctx.toast(`flight：${f.change} 停飞：${action.reason}`)
+    await ctx.log(await flightRecord(io, f, state, `停飞 · ${f.change}：${action.reason}`))
   }
 }

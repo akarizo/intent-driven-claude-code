@@ -1,8 +1,6 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -58,7 +56,6 @@ def test_landing_stops_when_ledger_unreadable():
 # 骨架：S2 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_landing_prints_flight_record():
     # Given: 全部合回、评审有结果、final 绿；timeline report 输出「批准 → apply 完成：12.0 min」；各 agent 实际模型都是 claude-opus-5-5、主模型 opus
     # When: 执行落地动作
@@ -66,7 +63,6 @@ def test_landing_prints_flight_record():
     assert_ts_passed("landing-prints-flight-record")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_halt_prints_flight_record():
     # Given: timeline report 输出「门禁红次数：2」
     # When: 执行停飞动作（原因「final 红：G2 lint」）
@@ -74,7 +70,6 @@ def test_halt_prints_flight_record():
     assert_ts_passed("halt-prints-flight-record")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_fixer_dispatch_commits_records_first():
     # Given: change 目录的 slices/_interfaces.md 有未提交改动
     # When: 派发修复 agent

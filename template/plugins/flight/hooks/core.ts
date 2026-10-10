@@ -29,6 +29,7 @@ export interface Ctx {
   status(text: string | undefined): Promise<void>
   toast(text: string): Promise<void>
   runCommand(command: string, args: string): Promise<void>
+  log(text: string): Promise<void> // 打印到转录（飞行记录）
 }
 export type Action =
   | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] } }
