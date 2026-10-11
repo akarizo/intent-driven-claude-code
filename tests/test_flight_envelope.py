@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -178,10 +176,9 @@ def test_cd_two_args_denied():
     assert_ts_passed("cd-two-args-denied")
 
 # ---------------------------------------------------------------- flight-measure-followups
-# 骨架：S1 实现后去掉 xfail 标记。
+# S1 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_prefix_path_and_quotes_stripped():
     # Given: 执行体 worktree 为 W，主仓库为 /repo
     # When: 判定 /usr/bin/env -u FOO git push、/usr/bin/env GIT_DIR=… git commit、"exec" -a n git push、'command' cd /repo && git commit，以及 /usr/bin/env -u FOO python3 -m pytest -q
@@ -189,7 +186,6 @@ def test_prefix_path_and_quotes_stripped():
     assert_ts_passed("prefix-path-and-quotes-stripped")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_expanded_dir_args_undeterminable():
     # Given: 执行体 worktree 为 W
     # When: 判定 cd "$(printf /repo)"、cd ".$X"、git -C "./$X"、cd `echo /repo` 之后的改动类 git，以及 cd 'W/a b'、cd W/sub 之后的 git add
@@ -197,7 +193,6 @@ def test_expanded_dir_args_undeterminable():
     assert_ts_passed("expanded-dir-args-undeterminable")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_undeterminable_reason_neutral():
     # Given: 执行体 worktree 为 W
     # When: 判定 pushd +1 && git commit 与 cd "$X" && git add
