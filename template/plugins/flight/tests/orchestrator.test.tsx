@@ -65,6 +65,8 @@ type World = {
   env?: Record<string, string>
   /** 预置的文件内容（绝对路径） */
   files?: Record<string, string>
+  /** slice-gate final 的结论（缺省无输出，按红记） */
+  final?: Gate
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -214,6 +216,9 @@ function useWorld(on: On, w: World) {
       if (script === 'slice-gate.py' && sub === 'measure') {
         const s = String(argv[3])
         return wrap(w.measures?.[s] ?? res(0, measureJson(s, baseOf(argv) ?? '', [[`tests/test_demo.py::test_${s.toLowerCase()}`, 'XFAIL']], [])))
+      }
+      if (script === 'slice-gate.py' && sub === 'final' && w.final) {
+        return wrap(res(w.final.ok ? 0 : 1, JSON.stringify({ slice: 'final', ok: w.final.ok, commit: 'c'.repeat(40), failed: w.final.failed })))
       }
       if (script === 'slice-gate.py') return wrap(res(0, ''))
       throw new Error(`unexpected argv: ${argv.join(' ')}`)
@@ -1082,4 +1087,141 @@ test('unknown-owner-fails-closed', async ($, on) => {
   expect(answers).toEqual([denied, denied])
   expect(log.reached).toEqual([])
   expect(check.decision).toBe('ask')
+})
+
+// ---------------------------------------------------------------- flight-measure-followups（S5）
+
+const SLICE1_A2 = `${MAIN}/.claude/worktrees/flight-demo-S1-a2`
+const FIX_TREE = `${MAIN}/.claude/worktrees/flight-demo-fix`
+const FIX_A2 = `${MAIN}/.claude/worktrees/flight-demo-fix-a2`
+const OTHER = { ...B0, session: 'other-session-1234' }
+const HIGH_FINDING = { severity: 'HIGH' as const, file: 'src/s1.py', line: 3, summary: '漏判空列表', fix: '补判空' }
+const runOf = (log: { runs: { argv: string[] }[] }, text: string) => log.runs.some(x => x.argv.join(' ').includes(text))
+
+test('fresh-dispatch-gets-new-worktree', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 takeoff（指纹 F）、S1 执行体 old-1 在 flight-demo-S1 的 dispatch、S1 的 blocked 与 halt；flight-demo-S1 仍在；
+  //        人再次发 /opsx-apply demo（attempt 2）后，S1 的新执行体收口门禁绿
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'old-1', model: 'opus', worktree: SLICE1 }),
+    ev.blocked(B0, { attempt: 1, slice: 'S1', kind: 'gate', reason: '门禁红' }),
+    ev.halt(B0, { attempt: 1, reason: '切片 blocked' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, paths: [SLICE1] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const s1 = log.spawns.find(s => s.cwd === SLICE1_A2)
+  await $.classic.SubagentStop(subagentStop(s1?.agentId ?? '没有 S1 执行体') as never)
+
+  // When: S1 的新执行体结束（turn.complete），drive 合回 S1
+  await $.turn.complete(ended(s1?.agentId ?? '没有 S1 执行体') as never)
+
+  // Then: 执行端收到 git worktree add -b flight/demo/S1-a2 <flight-demo-S1-a2>；attempt 2 的 S1 dispatch 记该 worktree 与分支；
+  //       提示词含上一次的分支 `flight/demo/S1`；合回的 merge --no-ff 合并 flight/demo/S1-a2
+  expect(runOf(log, `worktree add -b flight/demo/S1-a2 ${SLICE1_A2} worktree-demo`)).toBe(true)
+  expect(log.events.find(x => x.ev === 'dispatch' && x.attempt === 2 && x.slice === 'S1')).toMatchObject({ worktree: SLICE1_A2, branch: 'flight/demo/S1-a2' })
+  expect(s1?.prompt).toContain('`flight/demo/S1`')
+  expect(runOf(log, `-C ${TREE} merge --no-ff flight/demo/S1-a2`)).toBe(true)
+})
+
+test('continuation-reuses-same-plan-worktree', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 takeoff（指纹 F）、S1 执行体 old-1 在 flight-demo-S1 的 dispatch（无 branch 字段）、S1 gate（ok false、base B）、halt；
+  //        flight-demo-S1 仍在；attempt 2 以同一指纹 F 起飞
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'old-1', model: 'opus', worktree: SLICE1 }),
+    ev.gate(B0, { attempt: 1, agent: 'old-1', slice: 'S1', ok: false, commit: 'c'.repeat(40), failed: ['G7 demo#s1'], base: BASE_B }),
+    ev.halt(B0, { attempt: 1, reason: '会话中断' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, paths: [SLICE1] }))
+
+  // When: 人发出 /opsx-apply demo，控制面派发 S1 的执行体
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 没有建 S1 的 worktree；S1 的执行体在 flight-demo-S1 派发；attempt 2 的 S1 dispatch 的 branch 为 flight/demo/S1；提示词含「这是续接」
+  expect(runOf(log, 'worktree add -b flight/demo/S1')).toBe(false)
+  expect(log.spawns.filter(s => s.cwd === SLICE1).length).toBe(1)
+  expect(log.events.find(x => x.ev === 'dispatch' && x.attempt === 2 && x.slice === 'S1')).toMatchObject({ worktree: SLICE1, branch: 'flight/demo/S1' })
+  expect(log.spawns.find(s => s.cwd === SLICE1)?.prompt).toContain('这是续接')
+})
+
+test('fixer-gets-new-worktree', async ($, on) => {
+  // Given: 账本预置 attempt 1：S1/S2/S3 都已合回并评审（S1 有一条 HIGH），派过修复体 old-fix（worktree flight-demo-fix）后 halt；flight-demo-fix 仍在；
+  //        修复 worktree 里 final 为绿；人再次发 /opsx-apply demo（attempt 2）派出修复体，它收口门禁绿
+  const merged = (slice: string) => ev.merge(B0, { attempt: 1, slice, ok: true, commit: 'c'.repeat(40), failed: [] })
+  const reviewed = (slice: string, findings: (typeof HIGH_FINDING)[]) => ev.review(B0, { attempt: 1, slice, agent: `r-${slice}`, findings })
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    merged('S1'), merged('S2'), merged('S3'),
+    reviewed('S1', [HIGH_FINDING]), reviewed('S2', []), reviewed('S3', []),
+    ev.dispatch(B0, { attempt: 1, slice: 'fix', role: 'fixer', agent: 'old-fix', model: 'opus', worktree: FIX_TREE }),
+    ev.halt(B0, { attempt: 1, reason: '会话中断' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, paths: [FIX_TREE], final: { ok: true, failed: [] } }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const fixer = log.spawns.find(s => s.cwd === FIX_A2)
+  await $.classic.SubagentStop({ ...subagentStop(fixer?.agentId ?? '没有修复体'), agent_type: 'flight:fixer' } as never)
+
+  // When: 修复体结束（turn.complete），drive 合回修复
+  await $.turn.complete(ended(fixer?.agentId ?? '没有修复体') as never)
+
+  // Then: 执行端收到 git worktree add -b flight/demo/fix-a2 <flight-demo-fix-a2>；attempt 2 的修复体 dispatch 的 branch 为 flight/demo/fix-a2；修复合回的 merge --no-ff 合并它
+  expect(runOf(log, `worktree add -b flight/demo/fix-a2 ${FIX_A2} worktree-demo`)).toBe(true)
+  expect(log.events.find(x => x.ev === 'dispatch' && x.attempt === 2 && x.role === 'fixer')).toMatchObject({ worktree: FIX_A2, branch: 'flight/demo/fix-a2' })
+  expect(runOf(log, `-C ${TREE} merge --no-ff flight/demo/fix-a2`)).toBe(true)
+})
+
+test('cross-session-takeoff-refused', async ($, on) => {
+  // Given: 账本只有 attempt 1 的 takeoff，by.session 为 other-session-1234，没有 land / halt；本会话 id 为 sess-1
+  const ledger = [ev.takeoff(OTHER, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })]
+  const log = useWorld(on, demoWorld({ ledger }))
+  const replies: string[] = []
+  const counts: number[] = []
+
+  // When: 本会话依次发出 /opsx-apply demo 与 /opsx-apply demo --takeover
+  for (const args of ['demo', 'demo --takeover']) {
+    replies.push(String((await $.command.run({ command: 'opsx-apply', args })).text))
+    counts.push(log.events.length)
+  }
+
+  // Then: 第一次回复含「另一个会话」「other-se」「--takeover」，账本仍只有 1 条；第二次回复含「✈ 起飞」，账本有 attempt 2 的 takeoff，其 takeover 为 other-session-1234
+  expect(replies[0]).toContain('另一个会话')
+  expect(replies[0]).toContain('other-se')
+  expect(replies[0]).toContain('--takeover')
+  expect(counts[0]).toBe(1)
+  expect(replies[1]).toContain('✈ 起飞')
+  expect(log.events.find(x => x.ev === 'takeoff' && x.attempt === 2)).toMatchObject({ takeover: 'other-session-1234' })
+})
+
+test('halted-attempt-from-other-session-resumes', async ($, on) => {
+  // Given: 账本有 attempt 1 的 takeoff 与 halt，都来自 other-session-1234；本会话 id 为 sess-1
+  const ledger = [
+    ev.takeoff(OTHER, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    ev.halt(OTHER, { attempt: 1, reason: '会话中断' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger }))
+
+  // When: 本会话发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「✈ 起飞」；账本有 attempt 2 的 takeoff，且它没有 takeover 字段
+  expect(r.text).toContain('✈ 起飞')
+  expect('takeover' in (log.events.find(x => x.ev === 'takeoff' && x.attempt === 2) ?? { takeover: '没有 attempt 2 的 takeoff' })).toBe(false)
+})
+
+test('measure-unknown-owner-says-retry', async ($, on) => {
+  // Given: demo 已起飞（在飞），agent-1 是 S1 的执行体；之后 ledger.py show 以 5 退出（账本读取失败）
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.ledgerFails = true
+  const runsBefore = log.runs.length
+
+  // When: agent-1 调用 mcp__flight__measure
+  const r = (await $.tool.call(measureCall('agent-1'))) as { deny?: string }
+
+  // Then: 被拒，理由含「暂时无法判定」与「稍后重试」、不含「只有本次飞行的执行体」；没有运行 slice-gate measure
+  expect(r.deny).toContain('暂时无法判定')
+  expect(r.deny).toContain('稍后重试')
+  expect(r.deny).not.toContain('只有本次飞行的执行体')
+  expect(log.runs.slice(runsBefore).filter(isMeasure)).toEqual([])
 })
