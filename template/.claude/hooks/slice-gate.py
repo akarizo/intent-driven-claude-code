@@ -166,7 +166,7 @@ def _summary_failed(line):
 def run_test_gate(cmd, root):
     """跑 gate.test，经 PYTEST_ADDOPTS 注入 --junitxml。
     返回 {"rc", "out", "failed": [classname::name, ...] | None, "why": str | None}；
-    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致），why 是不可度量的理由。"""
+    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致且非 0），why 是不可度量的理由。"""
     with tempfile.TemporaryDirectory() as tmp:
         junit = os.path.join(tmp, "junit.xml")
         env = dict(os.environ)
@@ -200,6 +200,9 @@ def run_test_gate(cmd, root):
     for tc in tree.iter("testcase"):
         if tc.find("failure") is not None or tc.find("error") is not None:
             ids.add("%s::%s" % (tc.get("classname") or "", tc.get("name") or ""))
+    if summary_n == 0 or not ids:
+        res["why"] = "exit 1 但没有失败用例（覆盖率门槛 / 插件判失败？）"
+        return res
     res["failed"] = sorted(ids)
     return res
 

@@ -146,3 +146,21 @@ def test_non_pytest_gate_keeps_exit_code(git_repo):
     assert p.returncode == 1, p.stdout + p.stderr
     bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
     assert any("exit 1" in r and "按退出码" in r for r in bl["reasons"]), bl["reasons"]
+
+
+FORCE_EXIT_1 = (
+    "def pytest_sessionfinish(session, exitstatus):\n"
+    "    session.exitstatus = 1\n"
+)
+
+
+def test_exit_1_without_failures_is_red(git_repo):
+    # Given: gate.test 为 pytest；全部用例通过，但 tests/conftest.py 在 sessionfinish 把 exitstatus 设成 1
+    change = _repo(git_repo, PYTEST, files={"tests/conftest.py": FORCE_EXIT_1})
+
+    # When: 运行 slice-gate.py final
+    out = _final(git_repo, change)
+
+    # Then: ok 为 false；failed 有一项以「G2 test」开头且含「按退出码判」
+    assert out["ok"] is False, out
+    assert any(f.startswith("G2 test") and "按退出码判" in f for f in out["failed"]), out["failed"]
