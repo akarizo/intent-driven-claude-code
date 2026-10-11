@@ -79,7 +79,7 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
    1. 打印 `spec.html` 的**绝对路径**（`openspec/changes/<name>/spec.html`，用 `pwd` 拼成绝对路径再打印），请人类打开审阅飞行计划。
    2. 告诉人类起飞三步：核对 `spec.html` 顶部的计划指纹与 Claude Code 输入框上方批准带显示的指纹一致 → 在批准带按「批准起飞」（flight 插件把计划指纹写入账本 `refs/flight/<name>/ledger`）→ 回车发出预填的 `/opsx-apply <name>`。批准带没出现 = 未装 flight 插件，在项目根执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
    3. 明确一行：**本命令到此结束。不得在同一轮继续 `/opsx-apply`；`takeoff-gate.py` 比对账本指纹与当前计划指纹，模型自证无效。**
-   4. 提示用户把工件单独 commit（artifacts-only commit）。
+   4. 提示用户把工件单独 commit（artifacts-only commit）；也可以直接发 `/opsx-apply <name> 授权提交`，由插件只提交工件后起飞。
 
 **Output**
 

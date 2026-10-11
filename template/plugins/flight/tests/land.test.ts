@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-integration（land-*）。land.ts 只经 Io 做副作用，这里用假 Io 记录调用、按 argv 返回预设结果。
 import { expect, test } from 'claude-code/testing'
-import { closeout, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
+import { classifyDirty, closeout, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
 import type { Flight, GateJson, Io, RunResult } from '../hooks/core'
 
 const CT = '/repo/.worktrees/demo'
@@ -349,4 +349,17 @@ test('land-closeout-writes-records', async () => {
   const steps = [find(calls, 'timeline.py', 'apply-done', 'blocked=1 blocking=0'), find(calls, 'commit', 'chore(flight): 收口'), find(calls, 'slice-gate.py', 'ship')]
   expect(steps.every((i, k) => i >= 0 && (k === 0 || i > steps[k - 1]))).toBe(true)
   expect(result).toEqual({ verdict: 'ready', reasons: 'ready: 全绿\n' })
+})
+
+test('classify-dirty-paths', () => {
+  // Given: change 目录 template/openspec/changes/demo、scenario 测试文件 tests/test_a.py；未提交 timeline.md、proposal.md、adr/DRAFT-x.md、adr/0001-y.md、tests/test_a.py、src/x.py
+  const paths = [`${CD}/timeline.md`, `${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'template/openspec/adr/0001-y.md', 'tests/test_a.py', 'src/x.py']
+
+  // When: 分类
+  const r = classifyDirty(paths, { changeDir: CD, scenarioFiles: ['tests/test_a.py'] })
+
+  // Then: 记录恰为 timeline.md；工件恰为 proposal.md、DRAFT-x.md、tests/test_a.py；工件之外恰为 0001-y.md 与 src/x.py
+  expect(r.records).toEqual([`${CD}/timeline.md`])
+  expect(r.artifacts).toEqual([`${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'tests/test_a.py'])
+  expect(r.others).toEqual(['template/openspec/adr/0001-y.md', 'src/x.py'])
 })

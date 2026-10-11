@@ -1,0 +1,35 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 21,
+      "summary": "示例放错了位置：「也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`」，但这个示例中间有空格，按 D1 属于「单独写」的一个词；真正「粘在后面」是 `add-auth授权提交`（候选名以授权提交结尾）。读者可能误解两种写法的区别。openspec-apply-change/SKILL.md:30 同一处问题相同。",
+      "fix": "示例改成同时给出两种写法，例如「如 `/opsx-apply add-auth 授权提交` 或 `/opsx-apply add-auth授权提交`」，或者把现有示例挪到「单独写」后面；命令与 skill 两处同改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_takeoff_commit_docs.py",
+      "line": 2,
+      "summary": "去掉骨架说明后，模块 docstring 的结束引号单独占了一行，留下一个空的续行，格式不整齐。",
+      "fix": "把结束的三引号合并回第 1 行末尾，写成单行 docstring。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 48,
+      "summary": "classifyDirty 没有像 D2 和它自己的 docstring 说的那样，把 porcelain 改名行（`a -> b`）归入 others。只用 startsWith(changeDir/) 判断，所以源路径在 change 目录内的已暂存改名（例如 `git mv <changeDir>/a.md src/a.md` 或 change 目录内部改名）会被当成 artifact，交给 commitArtifacts。后者把整串 `<tree>/<changeDir>/a.md -> src/a.md` 当一个 pathspec 去 git add，结果报「提交工件失败」，而不是 D4 的「工件之外」拒绝；此时遗留记录可能已被 commitRecords 提交（部分提交）。虽然仍是 fail-closed，但行为和拒绝信息都偏离了 D2/D4。",
+      "fix": "在循环最前面加一条判断：`if (p.includes(' -> ')) { out.others.push(p); continue }`（或在 records 判断之前用 `/ -> /.test(p)` 分流）；并在 land.test.ts 的 classify-dirty-paths 之外补一个子用例，断言 `${CD}/a.md -> src/a.md` 落在 others。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 239,
+      "summary": "takeoff-commits-artifacts-when-authorized 只断言了 git add 的路径，没有断言 git commit 带 `--` pathspec、且只限于这三个工件。D3 的核心保证是「暂存区里别的东西不会被带进提交」，这一点没有测试覆盖。",
+      "fix": "世界 mock 的 commit 分支同时记录 `args.slice(args.indexOf('--') + 1)`，在该用例里断言含「工件」的那次提交的 pathspec 恰为 ARTIFACTS.map(p => `${TREE}/${p}`)。"
+    }
+  ],
+  "fix": null
+}
