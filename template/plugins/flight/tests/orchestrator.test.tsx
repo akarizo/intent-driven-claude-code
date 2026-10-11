@@ -1192,6 +1192,24 @@ test('cross-session-takeoff-refused', async ($, on) => {
   expect(log.events.find(x => x.ev === 'takeoff' && x.attempt === 2)).toMatchObject({ takeover: 'other-session-1234' })
 })
 
+test('cross-session-takeoff-refused/old-session-stops-driving', async ($, on) => {
+  // Given: 本会话（sess-1）起飞 demo（attempt 1）并派出执行体；之后另一个会话 other-session-1234 以 --takeover 接管，
+  //   账本追加 attempt 2 的 takeoff（takeover 为 sess-1）
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const s1 = log.spawns[0]
+  log.events.push({ ...ev.takeoff(OTHER, { attempt: 2, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }), takeover: 'sess-1' })
+  const spawns = log.spawns.length
+  await $.classic.SubagentStop(subagentStop(s1?.agentId ?? '没有执行体') as never)
+
+  // When: 本会话 attempt 1 的执行体结束（turn.complete）
+  await $.turn.complete(ended(s1?.agentId ?? '没有执行体') as never)
+
+  // Then: 本会话不再驱动接管后的 attempt：账本里 attempt 2 只有那条 takeoff，也没有新的派发
+  expect(log.events.filter(x => Number(x.attempt) === 2).map(x => x.ev)).toEqual(['takeoff'])
+  expect(log.spawns.length).toBe(spawns)
+})
+
 test('halted-attempt-from-other-session-resumes', async ($, on) => {
   // Given: 账本有 attempt 1 的 takeoff 与 halt，都来自 other-session-1234；本会话 id 为 sess-1
   const ledger = [

@@ -347,6 +347,7 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
 async function driveNow($: Engine, f: Flight): Promise<void> {
   const ctx = ctxOf($)
   const io = ctx.io
+  const session = await $.session.id()
   let seen = -1
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const ledger = await readLedger(io, f)
@@ -359,6 +360,9 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     seen = ledger.events.length
     const state = reduce(ledger.events)
     if (state.takeoff === undefined) return
+    // 最新 takeoff 不是本会话起飞的（被 --takeover 接管）：残留 agent 结束不再驱动，免得替接管的会话派发、合回或停飞（PR #47 评审 HIGH）。
+    // 不能比 f.session：扫描账本拼出的 Flight 取的就是最新 takeoff 的会话
+    if (String(state.takeoff.by?.session ?? '') !== session) return
     // 本 attempt 已 land / halt：残留 agent 结束不再算指纹，避免重复停飞（PR #40 评审 MEDIUM）
     if (state.events.some(e => (e.ev === 'land' || e.ev === 'halt') && Number(e.attempt) === state.attempt)) return
     showStatus($, f, state)

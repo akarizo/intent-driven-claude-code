@@ -347,3 +347,12 @@ def test_measure_unknown_owner_says_retry():
     # When: agent-1 调用 mcp__flight__measure
     # Then: 被拒，理由含「暂时无法判定」与「稍后重试」、不含「只有本次飞行的执行体」；没有运行测量
     assert_ts_passed("measure-unknown-owner-says-retry")
+
+# ---------------------------------------------------------------- PR #47 评审修复
+
+
+def test_old_session_stops_driving():
+    # Given: 本会话起飞 attempt 1 后，另一个会话以 --takeover 接管（账本有 attempt 2 的 takeoff）
+    # When: 本会话 attempt 1 的执行体结束
+    # Then: 本会话不再驱动：attempt 2 只有那条 takeoff，没有新的派发
+    assert_ts_passed("cross-session-takeoff-refused/old-session-stops-driving")
