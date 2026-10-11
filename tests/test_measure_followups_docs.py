@@ -1,6 +1,4 @@
-"""flight-measure-followups 的文档（scenario: pr-ship-premerge#*, flight-takeover#docs-*）。骨架：S4 实现后去掉 xfail 标记。"""
-import pytest
-
+"""flight-measure-followups 的文档（scenario: pr-ship-premerge#*, flight-takeover#docs-*）。"""
 from conftest import ROOT
 
 
@@ -13,7 +11,6 @@ def step4(text):
     return text[start:text.index("5. **", start)]
 
 
-@pytest.mark.xfail(strict=True, reason="S4：pr-ship 预合并尚未改用 merge-tree --write-tree")
 def test_premerge_uses_write_tree():
     # Given: pr-ship.md
     text = read("template/.claude/commands/pr-ship.md")
@@ -26,7 +23,6 @@ def test_premerge_uses_write_tree():
     assert 'grep -c "^<<<<<<<"' not in part
 
 
-@pytest.mark.xfail(strict=True, reason="S4：opsx-apply 与 skill 尚未写明 --takeover 与另起 worktree")
 def test_docs_state_takeover_and_fresh_worktrees():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     docs = [read("template/.claude/commands/opsx-apply.md"), read("template/.claude/skills/openspec-apply-change/SKILL.md")]
