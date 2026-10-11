@@ -1,23 +1,77 @@
 # 公开接口摘要
 
-## S1 → S2（同一文件 `template/.claude/hooks/slice-gate.py`，S2 在 S1 合回后的版本上改）
+## S1
 
-S1 合回后，`slice-gate.py` 里应有以下形状（名字可以不同，但 S2 依赖这两个「接缝」）：
-
+### template/.claude/hooks/slice-gate.py
 ```
+def pytest_runtest_logreport(report):
+def now_iso():
+def die(msg, code=2):
+def git(root, *args):
+def toplevel(cwd=None):
+def load_plan(change_dir):
+def save_plan(change_dir, data):
+def run_cmd_full(cmd, cwd):
+def _tail(out):
+def run_cmd(cmd, cwd):
+def _summary_failed(line):
 def run_test_gate(cmd, root):
-    """跑 gate.test，经 PYTEST_ADDOPTS 注入 --junitxml。
-    返回 {"rc": int, "out": str, "failed": [标识, ...] | None, "why": str | None}
-    failed 非 None ⇔ 本次结果可度量（design D2 的四个条件）；why 是不可度量的理由。"""
-
+def normalize_lines(text):
+def plan_sha(data):
+def load_baseline(change_dir):
+def gate_cmd_verdict(kind, cmd, root, baseline):
+def full_suite_verdict(cmd, root, baseline):
+def glob_match(path, pattern):
+def globs_intersect(a, b):
+def compute_waves(slices):
+def lint_plan(data):
+def timeline_record(change_dir, event, note=""):
+def append_report(change_dir, result):
+def _cell(text):
+def ceiling_rows_from_json(raw):
+def record_ceilings(change_dir, slice_id, rows):
+def evidence_state(change_dir, slice_id):
+def report_has_row(change_dir, slice_id, commit):
+def is_test_path(path):
+def is_doc_or_config(path):
+def changed_files(root, base):
+def added_lines(root, base):
+def ceiling_rows(root, base):
+def gwt_violations(root, test_files):
+def _py_test_bodies(lines):
+def _test_bodies(rel, lines):
+def ownership_violations(files, owns, change_rel, committed=()):
+def _py_decorators(source, func):
+def _g7_runner(gate):
+def _g7_timeout(gate):
+def _pytest_outcomes(root, targets, gate=None):
+def _g7_diag(text):
+def scenario_status(root, data, slice_ids=None):
+def detect_test_cmd(root):
+def cmd_lint(args, print_waves=True):
+def _is_ancestor(root, anc, desc):
+def _base_check(root, branch):
+def _ckpt_ref(change_dir, slice_id):
+def _ckpt_delete(root, ref):
+def _gate_ref(change_dir, slice_id):
+def _gate_save(root, change_dir, result):
+def _gate_load(root, ref):
+def _slice_owns(change_dir, slice_id):
+def _checkpoint(root):
+def cmd_checkpoint(args):
+def _ckpt_restore(root, ref, owns):
+def cmd_start(args):
+def _read_marker(root):
+def cmd_gate(args):
+def cmd_record(args):
 def cmd_final(args):
-    # 顺序：G7 → lint / typecheck → G2
-    # G2 只在一处执行，形如：
-    #   if v7: warnings.append("G2 全量未跑：…")
-    #   else:  <跑 run_test_gate 并按基线差分>
+def cmd_baseline(args):
+def cmd_preflight(args):
+def report_latest(change_dir):
+def _final_fresh(root, change_dir, final_commit):
+def cmd_ship(args):
+def main():
 ```
-
-S2 在 G2 这一处之前插入复用判断（`--reuse-fix`），在 `cmd_baseline` 开头加运行标记，在 `cmd_preflight` 开头加标记识别，在 `lint_plan` 加 `gate.test` 必填。
 
 ## S3、S4、S5
 
