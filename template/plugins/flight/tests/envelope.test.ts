@@ -393,6 +393,21 @@ test('cd-variants-tracked', () => {
   expect(v[4]).toBeUndefined()
 })
 
+test('dir-stack-rotation-denied', () => {
+  // Given: 执行体 worktree 为 W；用 pushd +N / cd +N / pushd -N 旋转目录栈之后再做改动类 git
+  const cmds = [
+    `pushd /repo && pushd ${W} && pushd +1 && git commit -m x`,
+    'cd +1 && git add a',
+    'pushd -1 && git commit -m x',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 旋转后的目录无法判定，三条都被拒且理由含「自己的 worktree」
+  expect(v.every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
+})
+
 test('git-env-overrides-denied', () => {
   // Given: 执行体 worktree 为 W；五条借 GIT_* 环境变量改变作用对象的改动类 git，与一条 GIT_PAGER=cat git log -1
   const cmds = [

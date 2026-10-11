@@ -185,11 +185,11 @@ function unquote(s: string): string {
 
 /**
  * 目录：string = 已知绝对路径；undefined = 未设定（视为自己的 worktree）；null = 无法判定。
- * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-` 开头一律无法判定。
+ * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-`、`+` 开头一律无法判定（`+N` / `-N` 是目录栈旋转，不是路径）。
  */
 function resolveDir(base: string | null | undefined, p: string): string | null {
   if (p.startsWith('/')) return normalizePath(p)
-  if (p === '' || /^[~$-]/.test(p) || typeof base !== 'string') return null
+  if (p === '' || /^[~$+-]/.test(p) || typeof base !== 'string') return null
   return normalizePath(base + '/' + p)
 }
 

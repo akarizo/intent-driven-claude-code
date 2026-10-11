@@ -160,3 +160,12 @@ def test_prefix_options_with_arguments():
     # When: 判定 env -u FOO git push、exec -a n git push、env -C /repo git commit、env --chdir=/repo git add、env -Z x git commit，以及 env -u FOO python3 -m pytest、env -C W git commit
     # Then: 前五条被拒（git push / 自己的 worktree / 无法判定），后两条不拒
     assert_ts_passed("prefix-options-with-arguments")
+
+# ---------------------------------------------------------------- PR #46 评审修复
+
+
+def test_dir_stack_rotation_denied():
+    # Given: 执行体 worktree 为 W；用 pushd +N / cd +N / pushd -N 旋转目录栈之后再做改动类 git
+    # When: 逐条判定
+    # Then: 旋转后的目录无法判定，都被拒且理由含「自己的 worktree」
+    assert_ts_passed("dir-stack-rotation-denied")
