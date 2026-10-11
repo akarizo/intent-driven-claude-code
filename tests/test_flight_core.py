@@ -1,8 +1,6 @@
 """flight 状态机核心（scenario: flight-state-machine#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
-S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架。"""
-import pytest
-
+S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架（标记已去）。"""
 from test_flight_plugin import assert_ts_passed
 
 
@@ -80,7 +78,6 @@ def test_core_reports_routing_mismatch():
 
 # ---------------------------------------------------------------- flight-gate-speedup · flight-blocked-halt#*
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：有计划切片 blocked 时评审收齐后停飞")
 def test_core_halts_when_slices_blocked():
     # Given: waves [[S1, S2]]；attempt 1 里 S1 blocked（gate，G7 x），S2 已合回、评审给了 1 条 HIGH
     # When: 求下一批动作
@@ -88,7 +85,6 @@ def test_core_halts_when_slices_blocked():
     assert_ts_passed("core-halts-when-slices-blocked")
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：停飞前先收齐评审")
 def test_core_waits_reviews_before_halting():
     # Given: waves [[S1, S2]]；S1 blocked，S2 已合回、评审员已派发但还没结束
     # When: 求下一批动作
@@ -96,7 +92,6 @@ def test_core_waits_reviews_before_halting():
     assert_ts_passed("core-waits-reviews-before-halting")
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：评审未返回不算切片 blocked")
 def test_core_review_blocked_still_finals():
     # Given: waves [[S1, S2]] 全部合回；S1 评审为空列表，review:S2 blocked（infra，评审未返回）
     # When: 求下一批动作
@@ -104,7 +99,6 @@ def test_core_review_blocked_still_finals():
     assert_ts_passed("core-review-blocked-still-finals")
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：续飞只重派 blocked 的切片")
 def test_core_resume_redispatches_blocked_slice():
     # Given: attempt 1 里 S1 blocked、S2 已合回且评审为空列表、之后停飞；随后有 attempt 2 的 takeoff
     # When: 求下一批动作
