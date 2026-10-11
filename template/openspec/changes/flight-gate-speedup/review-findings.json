@@ -1,21 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/hooks/slice-gate.py",
-      "line": 195,
-      "summary": "run_test_gate 在 exit 1 但没有任何失败用例时（例如 pytest-cov 的 --cov-fail-under 没达标、插件或 conftest 把 exitstatus 设成 1、sessionfinish 判失败）仍判为可度量：汇总行合计 0 等于 junit 合计 0，failed=[]。结果是 final 判 G2 绿，只报一条警告「失败均为基线预存红（0 条已按基线排除）」，baseline 也判 ok 并记「预存红 0 条」，exit 1 被悄悄放行。已抽查复现：conftest 里写 pytest_sessionfinish 把 session.exitstatus 设成 1，实际返回 rc=1、failed=[]、why=None，full_suite_verdict 返回 (None, '...0 条已按基线排除')。",
-      "fix": "在 run_test_gate 的可度量判定里加一条：summary_n == 0 或 ids 为空时判为不可度量，写 res[\"why\"] = \"exit 1 但没有失败用例（覆盖率门槛 / 插件判失败？）\" 后返回，failed 保持 None。这样 baseline 写进 reasons，final 按退出码判红。补一个 GWT 用例：conftest 把 exitstatus 设成 1、全部用例通过，断言 final 的 failed 里有 G2 test 且带「按退出码判」。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/hooks/slice-gate.py",
-      "line": 1155,
-      "summary": "--reuse-fix 把修复门禁的全量结论当作 commit X 的结论，但修复体收口门禁（landing.tsx onLandingStop -> runFinal）是在修复 worktree 的工作树上跑的，cmd_final 不检查有没有未提交改动；合回（mergeFix 的 merge --no-ff）只带已提交内容。修复体留下未提交或未跟踪的文件让全量变绿时，账本里记的是 ok=true、commit=X，而 X 的树并没有被测过。以前 change worktree 上的 final 会在合回后的树上重跑 G2 兜住这种情况，本改动把这层兜底拿掉了，G7 只重判 scenario 测试，非 scenario 的回归会出现假绿，最后可能变成 ready PR。修复 agent 收口前是否另有机械约束保证提交干净，需进一步确认；目前插件侧没看到。",
-      "fix": "在本切片拥有的 slice-gate.py 内闭环。cmd_final 先用 git status --porcelain --untracked-files=all 取工作树里的未提交路径，排除本 change 目录下的记账文件（BOOKKEEPING）和 MARKER；还有剩余时，在结果 JSON 里写 \"dirty\": true，再加一条 warning，例如「工作树有未提交改动，结论不对应 commit」。插件把 gate JSON 展开写进账本（...gate），这个字段会随之入账。_reusable_fix_gate 要求 last.get(\"dirty\") 不为 true 才复用。如果账本 schema 或 parseGate 会丢掉额外字段，就改成在修复体收口时把「工作树有未提交改动」直接判为 failed。另补一个 GWT 测试：fix gate 事件带 dirty=true 时，--reuse-fix 不复用、照常跑 G2。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "LOW",
