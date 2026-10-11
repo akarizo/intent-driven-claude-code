@@ -335,3 +335,30 @@ test('flight-record-lists-routing-mismatch', async () => {
   expect(log.logs[0]).toContain('路由对账：1 条不符')
   expect(log.logs[0]).toContain('路由不符：executor（agent A）期望 opus，实际 claude-sonnet-4-6')
 })
+
+test('landing-final-requests-fix-reuse', async () => {
+  // Given: S1 已合回且评审结果为空列表，无阻断；change worktree 里 final 输出 ok true；slice-gate ship 退出 0（ready）
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED] })
+
+  // When: 推进飞行到 final 与落地
+  await advance(ctx, log)
+
+  // Then: slice-gate.py final 只调用一次，cwd 为 change worktree，argv 含 --reuse-fix
+  expect(finals(log)).toHaveLength(1)
+  expect(finals(log)[0].cwd).toBe(CT)
+  expect(finals(log)[0].argv).toContain('--reuse-fix')
+})
+
+test('fixer-stop-final-never-reuses', async () => {
+  // Given: 修复 agent F（slice fix、worktree /repo/.claude/worktrees/flight-demo-fix）已派发；修复 worktree 里 final 输出 ok true
+  const dispatchF = event('dispatch', { attempt: 1, slice: 'fix', role: 'fixer', agent: 'F', model: 'opus', worktree: FIX_TREE })
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, dispatchF] })
+  const found = foundOf(log)
+
+  // When: 处理 F 的收口
+  await onLandingStop(ctx, found, 'F')
+
+  // Then: slice-gate.py final 的调用 cwd 为修复 worktree，argv 不含 --reuse-fix
+  expect(finals(log).map(c => c.cwd)).toEqual([FIX_TREE])
+  expect(finals(log)[0].argv).not.toContain('--reuse-fix')
+})
