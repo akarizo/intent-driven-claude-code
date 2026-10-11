@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-io（io-*）。io 函数跑在记录调用的假 Io 上；git / python3 / 文件系统由假 Io 作答。
 // 不经 ioOf($)：测试侧 $ 只有事件面（无 fs / process），测试 hook 里的 $ 调 fs / process 会被宿主扫描规则拒绝（2.1.295 实测）。
 import { expect, test } from 'claude-code/testing'
-import { EVENT_TYPES, active, appendEvent, ensureWorktree, eventProblem, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
+import { EVENT_TYPES, active, appendEvent, ensureWorktree, eventProblem, freshWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
 import type { Flight, FlightEvent, Io, RunResult } from '../hooks/core'
 
 const MAIN = '/repo'
@@ -445,4 +445,42 @@ test('event-types-exported', () => {
 
   // Then: 恰为这 12 种事件类型
   expect(types).toEqual(['approve', 'blocked', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'takeoff'])
+})
+
+const SLICE_A2 = '/repo/.claude/worktrees/flight-demo-S1-a2'
+
+test('fresh-worktree-never-reuses-old', async () => {
+  // Given: 主 worktree /repo、change demo（分支 worktree-demo）；S1 的旧 worktree flight-demo-S1 已存在，flight-demo-S1-a2 不存在
+  const { io, calls } = world({ files: [SLICE] })
+
+  // When: 以 attempt 2 为 S1 另起 worktree
+  const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
+
+  // Then: 只在主 worktree 运行一次 git worktree add -b flight/demo/S1-a2 <flight-demo-S1-a2> worktree-demo（不碰旧树）；返回 S1-a2 的路径与分支
+  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo']])
+  expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
+})
+
+test('fresh-worktree-never-reuses-old/original-name', async () => {
+  // Given: 切片 S2 的 worktree /repo/.claude/worktrees/flight-demo-S2 不存在
+  const { io, calls } = world({ files: [] })
+
+  // When: 以 attempt 2 为 S2 另起 worktree
+  const r = await freshWorktree(io, flight(HOOKS), 'S2', 2)
+
+  // Then: 在主 worktree 运行 git worktree add -b flight/demo/S2 <flight-demo-S2> worktree-demo；返回原名的路径与分支
+  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S2', '/repo/.claude/worktrees/flight-demo-S2', 'worktree-demo']])
+  expect(r).toEqual({ path: '/repo/.claude/worktrees/flight-demo-S2', branch: 'flight/demo/S2' })
+})
+
+test('fresh-worktree-never-reuses-old/both-exist', async () => {
+  // Given: flight-demo-S1 与 flight-demo-S1-a2 两个 worktree 都已存在
+  const { io, calls } = world({ files: [SLICE, SLICE_A2] })
+
+  // When: 以 attempt 2 为 S1 另起 worktree
+  const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
+
+  // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2>」
+  expect(calls).toEqual([])
+  expect(r).toEqual({ error: `worktree 已存在：${SLICE_A2}` })
 })
