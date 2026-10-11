@@ -133,7 +133,8 @@ function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: str
       envKeys.push(m[1])
       continue
     }
-    const p = PREFIX_OPTS.get(t)
+    // 去一层引号再取 basename：`/usr/bin/env`、`"exec"`、`'command'` 与裸名同样剥掉
+    const p = PREFIX_OPTS.get(progName([t]))
     if (p) {
       prefix = p
       continue
@@ -186,8 +187,11 @@ function unquote(s: string): string {
 /**
  * 目录：string = 已知绝对路径；undefined = 未设定（视为自己的 worktree）；null = 无法判定。
  * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-`、`+` 开头一律无法判定（`+N` / `-N` 是目录栈旋转，不是路径）。
+ * p 已去一层引号：任意位置仍含 `$`、反引号、`'`、`"` 即视为 shell 展开，无法判定。
+ * ceiling: 不做真正的 shell 词法分析，路径里本身含引号字符的也判为无法判定 -> 误拒出现时换成 shell 词法分析。
  */
 function resolveDir(base: string | null | undefined, p: string): string | null {
+  if (/[$`'"]/.test(p)) return null
   if (p.startsWith('/')) return normalizePath(p)
   if (p === '' || /^[~$+-]/.test(p) || typeof base !== 'string') return null
   return normalizePath(base + '/' + p)
@@ -355,7 +359,7 @@ function segmentsVerdict(
     if (worktree === undefined) continue
     const wt = normalizePath(worktree)
     const out = gitTargets(g, cwd, worktree).find(t => t === null || !within(wt, t))
-    if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；作用目录：${out ?? '无法判定（相对路径且无绝对基准）'}` }
+    if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；${out === null ? '作用目录无法判定（目录栈旋转、相对路径无基准、变量或命令替换等）' : `作用目录：${out}`}` }
   }
   return undefined
 }
