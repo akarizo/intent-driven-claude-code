@@ -6,3 +6,5 @@
 2026-10-11T05:31:03Z	gate	S4 ok
 2026-10-11T05:32:59Z	gate	S3 ok
 2026-10-11T05:41:59Z	gate	S5 ok
+2026-10-11T05:45:44Z	final	ok
+2026-10-11T05:45:46Z	apply-done	blocked=0 blocking=0
