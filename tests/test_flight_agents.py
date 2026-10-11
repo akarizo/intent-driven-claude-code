@@ -1,8 +1,6 @@
 """随插件发布的 agent 类型与提示词（scenario: flight-agent-types#*）。
 agent 定义文件由 pytest 直接解析；提示词是 TS 纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S3 写定义文件、提示词与同名 TS 测试后逐条去掉 xfail 标记。"""
-import pytest
-
 from conftest import ROOT
 from test_flight_plugin import assert_ts_passed
 
@@ -122,7 +120,6 @@ def test_executor_follows_measure_protocol():
 # 骨架：S4 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_prompt_names_previous_branch():
     # Given: executorPrompt 的输入带 previous: { branch: 'flight/demo/S1', attempt: 1 }
     # When: 生成执行体提示词，另生成一份不带 previous 的
