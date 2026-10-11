@@ -1,5 +1,7 @@
 """flight 合回与收口过程（scenario: flight-integration#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -86,3 +88,14 @@ def test_land_refuses_zero_commit_slice_as_integrated():
     # When: 合回 S2
     # Then: 不当作已合回：不 record、不 merge，返回失败并写明合回对第一父无变更（PR #41 复核 HIGH，R3）
     assert_ts_passed("land-refuses-zero-commit-slice-as-integrated")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_merges_use_recorded_branch():
+    # Given: S1 在 flight/demo/S1-a2、修复体在 flight/demo/fix-a2，flight-demo-S1-resolve 已存在
+    # When: mergeSlice / prepareResolve（attempt 2）/ mergeFix 传入记下的分支
+    # Then: 合并的都是传入的分支；解冲突另建 flight-demo-S1-resolve-a2 并在其中合并 flight/demo/S1-a2
+    assert_ts_passed("merges-use-recorded-branch")

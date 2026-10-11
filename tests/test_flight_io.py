@@ -105,3 +105,14 @@ def test_measure_event_checked_before_write():
     assert_ts_passed("measure-event-checked-before-write/reason")
     assert_ts_passed("measure-event-checked-before-write/bad-outcome")
     assert_ts_passed("event-types-exported")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_fresh_worktree_never_reuses_old():
+    # Given: 主 worktree M、change demo，flight-demo-S1 已存在
+    # When: freshWorktree 取 S2 / S1（attempt 2），再在 S1-a2 也存在时取 S1
+    # Then: S2 按原名建；S1 改建 S1-a2 且不碰旧树；两者都在时报错且不执行 worktree add
+    assert_ts_passed("fresh-worktree-never-reuses-old")

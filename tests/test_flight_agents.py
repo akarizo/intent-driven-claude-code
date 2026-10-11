@@ -117,3 +117,14 @@ def test_executor_follows_measure_protocol():
     assert "measure" in body and "看它红" in body
     assert "不加 `cd && ` 前缀" not in body and "自动留痕" not in body
     assert_ts_passed("executor-prompt-states-measure-protocol")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_prompt_names_previous_branch():
+    # Given: executorPrompt 的输入带 previous: { branch: 'flight/demo/S1', attempt: 1 }
+    # When: 生成执行体提示词，另生成一份不带 previous 的
+    # Then: 前者含该分支、「git show」与「不得 cherry-pick」；后者不含「上一次」
+    assert_ts_passed("prompt-names-previous-branch")

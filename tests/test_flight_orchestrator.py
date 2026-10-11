@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -302,3 +304,54 @@ def test_unknown_owner_fails_closed():
     # When: agent-7 调用 Write 与 Bash，引擎对 Bash 判 ask
     # Then: Write 与 Bash 都被拒（理由含「归属判定失败」）；tool.check 仍为 ask
     assert_ts_passed("unknown-owner-fails-closed")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_fresh_dispatch_gets_new_worktree():
+    # Given: demo 的 S1 在 attempt 1 被 blocked，flight-demo-S1 仍在；attempt 2 起飞
+    # When: 派发 S1 执行体，收口绿后合回
+    # Then: worktree add -b flight/demo/S1-a2；dispatch 记该 worktree 与分支；提示词含 flight/demo/S1；合回合并 flight/demo/S1-a2
+    assert_ts_passed("fresh-dispatch-gets-new-worktree")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_continuation_reuses_same_plan_worktree():
+    # Given: S1 在 attempt 1（指纹 A）中断，flight-demo-S1 仍在；attempt 2 以同一指纹起飞
+    # When: 派发 S1 执行体
+    # Then: 没有新的 worktree add，在 flight-demo-S1 续接；dispatch 的 branch 为 flight/demo/S1，提示词含续接说明
+    assert_ts_passed("continuation-reuses-same-plan-worktree")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_fixer_gets_new_worktree():
+    # Given: attempt 1 派过修复体，flight-demo-fix 仍在；attempt 2 切片都已合回、评审有 HIGH
+    # When: 派发修复体，收口绿后合回
+    # Then: worktree add -b flight/demo/fix-a2；修复体 dispatch 的 branch 为 flight/demo/fix-a2；修复合回合并它
+    assert_ts_passed("fixer-gets-new-worktree")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_cross_session_takeoff_refused():
+    # Given: 账本最新 takeoff 来自 other-session-1234 且未 land / halt
+    # When: 本会话发 /opsx-apply demo，再发 /opsx-apply demo --takeover
+    # Then: 第一次拒飞（含另一个会话、other-se、--takeover）且无新事件；第二次起飞，takeoff 的 takeover 为原会话 id
+    assert_ts_passed("cross-session-takeoff-refused")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_halted_attempt_from_other_session_resumes():
+    # Given: 账本最新 takeoff 来自 other-session-1234 且该 attempt 已 halt
+    # When: 本会话发 /opsx-apply demo
+    # Then: 照常起飞，新 takeoff 没有 takeover 字段
+    assert_ts_passed("halted-attempt-from-other-session-resumes")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_measure_unknown_owner_says_retry():
+    # Given: demo 在飞，agent-1 是 S1 执行体；ledger.py show 对 demo 退出 5
+    # When: agent-1 调用 mcp__flight__measure
+    # Then: 被拒，理由含「暂时无法判定」与「稍后重试」、不含「只有本次飞行的执行体」；没有运行测量
+    assert_ts_passed("measure-unknown-owner-says-retry")

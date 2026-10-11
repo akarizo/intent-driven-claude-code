@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-measure-followups · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-measure-followups
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-envelope-remainders</span><span class="chip" data-state="done">specs/flight-fresh-worktrees</span><span class="chip" data-state="done">specs/flight-measure-polish</span><span class="chip" data-state="done">specs/flight-takeover</span><span class="chip" data-state="done">specs/pr-ship-premerge</span><span class="chip" data-state="done">计划指纹 53803e30</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">flight-measure（#46）的四次 attempt 暴露了控制面在<strong>续飞</strong>上的三个缺陷。#45 已修掉第四个（切片阻断仍派修复体）。</p><p class="why-body">1. <strong>续飞复用了过期的切片现场</strong>：attempt 1 后计划修订并重新批准，attempt 2/3 的 S7 执行体仍被派进旧 worktree。
+   - 那里的切片包和 <code>slices.json</code> 都是旧版本，门禁也按旧的 owns 判。
+   - 结果和 attempt 1 一模一样地红了三次。最后由用户手动跑清理脚本才过去。
+2. <strong>修复体复用了旧尖端的 worktree</strong>：修复体的 worktree 是从 attempt 1 的分支尖端切出的，里面没有之后合回的切片，全量 final 必然红。
+3. <strong>两个会话可以同时起飞同一个 change</strong>：attempt 2 来自另一个会话，attempt 3 来自本会话，相隔 1 分钟。起飞前「上一次的 agent 是否还在跑」只查本会话的 agent，所以两个 S7 执行体并发改了同一棵 worktree。</p><p class="why-body">#46 评审还留下几处包络缺口：
+- <code>/usr/bin/env</code>、<code>&quot;exec&quot;</code> 这类带路径或引号的前缀不会被剥掉，后面的拒绝表与 worktree 限制都绕得过去；
+- <code>cd &quot;$(…)&quot;</code>、<code>cd &quot;.$X&quot;</code> 这类目录参数里带 shell 展开时，会被当成 worktree 内的相对路径；
+- 「无法判定」的拒绝理由仍写「相对路径且无绝对基准」，和目录栈旋转等实际原因对不上。</p><p class="why-body">另外两处小问题：
+- <strong>测量工具的误导理由</strong>：在飞账本读不出时，测量工具回复「只有本次飞行的执行体可以请求测量」，执行体可能因此放弃测量。
+- <strong><code>/pr-ship</code> 第 4 步的冲突统计恒为 0</strong>：它用 <code>grep -c &quot;^&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;</code> 统计旧版 <code>merge-tree</code> 的输出，而那里的冲突标记前面带 <code>+</code>。#46 实际有 2 个文件冲突，它报的是 0。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>新派发另起 worktree</strong>（用户定）：新派发的执行体、修复体、解冲突 agent，如果同名 worktree 已存在，就从当前分支尖端另建 <code>&lt;名&gt;-a&lt;attempt&gt;</code>。</li><li>旧 worktree 原样保留，不删、不重置（铁律 6）。</li><li>dispatch 事件记下分支；合回、解冲突、修复合回都按记下的分支来合。</li><li>执行体提示词写明上一次的分支可以用 <code>git show</code> 参考。</li><li><strong>续接只限同一份计划</strong>：上一次 attempt 的计划指纹与本次不同时，不再续接旧现场、也不补跑门禁，一律按新派发处理。</li><li><strong>跨会话起飞默认拒飞</strong>（用户定）：最新一次起飞来自另一个会话、并且还没落地或停飞时，拒绝起飞，提示到原会话继续，或用 <code>--takeover</code> 接管。接管会记进 takeoff 事件。</li><li><strong>包络余项</strong>：</li><li>前缀命令按 basename 去引号后再查表；</li><li>目录参数（<code>cd</code> / <code>pushd</code> / <code>-C</code> / <code>--git-dir</code> / <code>--work-tree</code> / <code>env -C</code>）中任意位置出现 <code>$</code>、反引号或不配对的引号，一律判为无法判定；</li><li>「无法判定」的拒绝理由改成中性措辞。</li><li><strong>测量工具</strong>：调用者的归属判不出时，回复「暂时无法判定归属，稍后重试」。</li><li><strong><code>/pr-ship</code> 第 4 步</strong>改用 <code>git merge-tree --write-tree --name-only</code> 的退出码判断冲突。</li><li><code>/opsx-apply</code> 命令与同名 skill 写明 <code>--takeover</code> 和新派发另起 worktree 的语义。插件版本升到 0.4.1。</li></ul><div class="impact"><span class="tag"><strong>插件</strong>：<code>template/plugins/flight/hooks/</code> 下的 <code>core.ts</code>、<code>io.ts</code>、<code>land.ts</code>、<code>envelope.ts</code>、<code>prompts.ts</code>、<code>orchestrator.tsx</code>、<code>landing.tsx</code>，以及对应的 TS 测试与 pytest 包装；插件版本 0.4.1。</span><span class="tag"><strong>文档</strong>：<code>template/.claude/commands/pr-ship.md</code>、<code>opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code>。</span><span class="tag"><strong>本 change 是测量协议的首飞</strong>（在已安装的 0.4.0 上飞）：执行体须先让测试红并调用 <code>measure</code>，G5 按账本判定，不满足即判红。首飞中如果发现测量协议本身的问题，如实记录，不绕过。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-fresh-worktrees</code>：新派发另起 worktree、续接只限同一份计划、按记下的分支合回、提示词给出上一次的分支。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-takeover</code>：跨会话起飞拒飞，以及 <code>--takeover</code> 接管。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-envelope-remainders</code>：前缀路径与引号、目录参数的 shell 展开、中性的拒绝理由。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-measure-polish</code>：测量工具在归属判不出时的提示。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>pr-ship-premerge</code>：预合并用 <code>merge-tree --write-tree</code> 判断冲突。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-envelope-remainders <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 带路径或引号的前缀命令照样剥掉</p><p><code>words</code> 判断段首前缀（<code>builtin</code>、<code>command</code>、<code>exec</code>、<code>env</code>）时 SHALL 先去掉一层引号再取 basename；<code>/usr/bin/env</code>、<code>&quot;exec&quot;</code>、<code>&#x27;command&#x27;</code> 这类写法 SHALL 与裸名同样剥掉，其后的命令照常判定。
+Feature: #46 S9 评审 MEDIUM：<code>/usr/bin/env -u FOO git push</code> 放行</p><div class="scenario"><p class="scenario-name">Scenario: prefix-path-and-quotes-stripped</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W，主仓库为 /repo</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>/usr/bin/env -u FOO git push origin HEAD:main</code>、<code>/usr/bin/env GIT_DIR=/repo/.git git commit -m x</code>、<code>&quot;exec&quot; -a n git push</code>、<code>&#x27;command&#x27; cd /repo &amp;&amp; git commit -m x</code>，以及 <code>/usr/bin/env -u FOO python3 -m pytest -q</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前四条被拒：第一、三条理由含「git push」，第二条含「GIT_」，第四条含「自己的 worktree」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>最后一条不被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 目录参数里的 shell 展开判为无法判定</p><p><code>resolveDir</code> 对参数去掉一层引号后，若任意位置仍含 <code>$</code>、反引号、<code>&#x27;</code> 或 <code>&quot;</code>，SHALL 返回无法判定；<code>cd</code>、<code>pushd</code>、<code>git -C</code>、<code>--git-dir</code>、<code>--work-tree</code>、<code>env -C</code> 都经此判定。不含这些字符的引号路径（如 <code>&#x27;W/a b&#x27;</code>）不受影响。
+Feature: #46 follow-up 复核的范围外线索：<code>cd &quot;$(printf /repo)&quot;</code>、<code>cd &quot;.$X&quot;</code> 被当成 worktree 内的相对路径</p><div class="scenario"><p class="scenario-name">Scenario: expanded-dir-args-undeterminable</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>cd W &amp;&amp; cd &quot;$(printf /repo)&quot; &amp;&amp; git commit -m x</code>、<code>cd W &amp;&amp; X=/../../../..; cd &quot;.$X&quot; &amp;&amp; git commit -m x</code>、<code>git -C &quot;./$X&quot; commit -m x</code>、`<code> cd </code>echo /repo<code> &amp;&amp; git add a </code><code>，以及 </code>cd &#x27;W/a b&#x27; &amp;&amp; git add x<code>、</code>cd W/sub &amp;&amp; git add x`</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前四条被拒，理由含「自己的 worktree」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后两条不被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 「无法判定」的拒绝理由用中性措辞</p><p>改动类 git 因作用目录无法判定而被拒时，理由 SHALL 写「作用目录无法判定（目录栈旋转、相对路径无基准、变量或命令替换等）」，SHALL NOT 再写「相对路径且无绝对基准」。
+Feature: #46 follow-up 评审 LOW：理由与实际原因对不上，执行体会照错误的提示改</p><div class="scenario"><p class="scenario-name">Scenario: undeterminable-reason-neutral</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>pushd +1 &amp;&amp; git commit -m x</code> 与 <code>cd &quot;$X&quot; &amp;&amp; git add a</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两条都被拒，理由含「无法判定」与「目录栈旋转」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>理由都不含「相对路径且无绝对基准」</span></li></ul></div></div></div><div class="spec-card"><h3>flight-fresh-worktrees <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 新派发遇到同名 worktree 时另起一棵</p><p><code>io.freshWorktree(io, f, name, attempt)</code> SHALL：
+- <code>flight-&lt;change&gt;-&lt;name&gt;</code> 不存在时，基于 change 分支尖端以 <code>name</code> 建 worktree（分支 <code>flight/&lt;change&gt;/&lt;name&gt;</code>）；
+- 已存在时，改建 <code>&lt;name&gt;-a&lt;attempt&gt;</code>（分支 <code>flight/&lt;change&gt;/&lt;name&gt;-a&lt;attempt&gt;</code>），SHALL NOT 改动已存在的 worktree；
+- 两者都已存在时返回错误；
+- 返回 <code>{ path, branch }</code>。
+Feature: flight-measure attempt 2/3：S7 被派进计划修订前的旧 worktree，按旧 owns 判门禁</p><div class="scenario"><p class="scenario-name">Scenario: fresh-worktree-never-reuses-old</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>主 worktree M、change demo；<code>M/.claude/worktrees/flight-demo-S1</code> 已存在</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别以 <code>name=&#x27;S2&#x27;, attempt=2</code> 与 <code>name=&#x27;S1&#x27;, attempt=2</code> 调用 <code>freshWorktree</code>，再在 <code>flight-demo-S1-a2</code> 也已存在时以 <code>name=&#x27;S1&#x27;, attempt=2</code> 调用</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次执行 <code>git worktree add -b flight/demo/S2 &lt;M&gt;/.claude/worktrees/flight-demo-S2 worktree-demo</code>，返回该路径与分支</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次执行 <code>git worktree add -b flight/demo/S1-a2 &lt;M&gt;/.claude/worktrees/flight-demo-S1-a2 worktree-demo</code>，没有任何作用于 <code>flight-demo-S1</code> 的 git 命令</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三次返回错误，没有执行 <code>git worktree add</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 合回、解冲突、修复合回按记下的分支</p><p><code>land.mergeSlice</code>、<code>prepareResolve</code>、<code>finishResolve</code>、<code>mergeFix</code> SHALL 接受调用方给出的分支（解冲突另给 worktree 与分支），并对该分支做合并、已合回判定、越界与空合回检查；不给时沿用旧的分支拼法。解冲突 worktree SHALL 按「新派发另起」的规则命名。
+Feature: 另起的 worktree 用的是新分支名，写死的拼法会合错分支</p><div class="scenario"><p class="scenario-name">Scenario: merges-use-recorded-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo 的切片 S1 在分支 <code>flight/demo/S1-a2</code> 上有提交；修复体在分支 <code>flight/demo/fix-a2</code> 上</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以 <code>branch=&#x27;flight/demo/S1-a2&#x27;</code> 调用 <code>mergeSlice</code>；以该分支、<code>attempt=2</code> 调用 <code>prepareResolve</code>（<code>flight-demo-S1-resolve</code> 已存在）；以 <code>branch=&#x27;flight/demo/fix-a2&#x27;</code> 调用 <code>mergeFix</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>mergeSlice</code> 的 <code>git merge --no-ff</code> 合并的是 <code>flight/demo/S1-a2</code>，不出现 <code>flight/demo/S1</code> 这个分支名</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>prepareResolve</code> 新建 <code>flight-demo-S1-resolve-a2</code>（分支 <code>flight/demo/S1-resolve-a2</code>），在其中合并 <code>flight/demo/S1-a2</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>mergeFix</code> 合并的是 <code>flight/demo/fix-a2</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 续接只限同一份计划</p><p><code>core.next</code> 在本 attempt 首次派发某片时，若上一个执行体 dispatch 所在 attempt 的 takeoff 指纹与本次 takeoff 不同，SHALL 给出不带续接说明、不带 base 的新派发，SHALL NOT 给出 regate；指纹相同时行为不变。
+Feature: 计划修订后续接旧现场 = 按旧切片包继续做</p><div class="scenario"><p class="scenario-name">Scenario: plan-change-forces-fresh-dispatch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>attempt 1（指纹 A）派发过 S1 的执行体，S1 的门禁已绿但未合回；另一份账本的 S2 在 attempt 1 中断（门禁红）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>attempt 2 以指纹 B 起飞后求下一批动作；再把 attempt 2 的指纹改为 A 求一次</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>指纹 B 时 S1 与 S2 都是不带 <code>continuation</code>、不带 <code>base</code> 的执行体派发</span></li><li><span class="step-key" data-kw="AND">AND</span><span>指纹 A 时 S1 为 regate、S2 为带续接说明的派发（与现状相同）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: dispatch 事件记下分支</p><p><code>ev.dispatch</code> SHALL 接受可选的 <code>branch</code> 并写入事件；<code>agentOf</code> SHALL 返回该 dispatch 的 <code>branch</code>。旧事件没有 <code>branch</code> 时，SHALL 由 worktree 路径（<code>…/flight-&lt;change&gt;-&lt;name&gt;</code>）推出 <code>flight/&lt;change&gt;/&lt;name&gt;</code>。
+Feature: 合回与续接都要知道该片实际所在的分支</p><div class="scenario"><p class="scenario-name">Scenario: dispatch-records-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一条带 <code>branch: &#x27;flight/demo/S1-a2&#x27;</code> 的 dispatch 事件，以及一条不带 <code>branch</code>、worktree 为 <code>/m/.claude/worktrees/flight-demo-S3</code> 的 dispatch 事件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对两个 agent 分别调用 <code>agentOf</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前者的 <code>branch</code> 为 <code>flight/demo/S1-a2</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>后者的 <code>branch</code> 为 <code>flight/demo/S3</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 另起 worktree 时提示上一次的分支</p><p>执行体提示词 SHALL 支持可选的 <code>previous: { branch, attempt }</code>；给出时 SHALL 写明「上一次（attempt k）的分支 &lt;branch&gt; 留作参考：可 git show / git diff 读取，不得 cherry-pick 或 merge；以当前切片包为准」。
+Feature: 旧现场里的成果可以参考，但不能合并（D4）</p><div class="scenario"><p class="scenario-name">Scenario: prompt-names-previous-branch</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>executorPrompt</code> 的输入带 <code>previous: { branch: &#x27;flight/demo/S1&#x27;, attempt: 1 }</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>生成执行体提示词，并另生成一份不带 <code>previous</code> 的</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前者含 <code>flight/demo/S1</code>、「git show」与「不得 cherry-pick」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后者不含「上一次」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 控制面派发时另起 worktree 并按记下的分支合回</p><p>控制面 SHALL：
+- 对新派发的执行体、每个 attempt 首次派发的修复体、每次派发的解冲突 agent，用 <code>freshWorktree</code> 取得 worktree；
+- 把分支记进 dispatch 事件；
+- 续接时复用上一个执行体 dispatch 的 worktree 与分支（该 worktree 已不存在时按新派发处理）；
+- 合回时使用本片最后一次门禁绿的 agent 的分支，修复合回使用修复体 dispatch 的分支；
+- 另起 worktree 且本片先前有过执行体 dispatch 时，在提示词中给出上一次的分支。
+Feature: flight-measure attempt 2/3 与修复体复用旧现场</p><div class="scenario"><p class="scenario-name">Scenario: fresh-dispatch-gets-new-worktree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的 S1 在 attempt 1 中被 blocked，其 worktree <code>flight-demo-S1</code> 仍在；attempt 2 起飞</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>控制面派发 S1 的执行体，执行体收口门禁绿后合回</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>执行端收到 <code>git worktree add -b flight/demo/S1-a2 …/flight-demo-S1-a2</code>，dispatch 事件的 worktree 与 branch 都指向它</span></li><li><span class="step-key" data-kw="AND">AND</span><span>执行体提示词含 <code>flight/demo/S1</code>（上一次的分支）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>合回的 <code>git merge --no-ff</code> 合并 <code>flight/demo/S1-a2</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: continuation-reuses-same-plan-worktree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的 S1 在 attempt 1（指纹 A）中断，worktree <code>flight-demo-S1</code> 仍在；attempt 2 以同一指纹 A 起飞</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>控制面派发 S1 的执行体</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>没有新的 <code>git worktree add</code>，执行体在 <code>flight-demo-S1</code> 里续接</span></li><li><span class="step-key" data-kw="AND">AND</span><span>dispatch 事件的 branch 为 <code>flight/demo/S1</code>，提示词含续接说明</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: fixer-gets-new-worktree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在 attempt 1 派过修复体，<code>flight-demo-fix</code> 仍在；attempt 2 的切片都已合回，评审有 HIGH</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>控制面派发修复体，修复体收口绿后合回</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>执行端收到 <code>git worktree add -b flight/demo/fix-a2 …/flight-demo-fix-a2</code>，修复体 dispatch 事件的 branch 为 <code>flight/demo/fix-a2</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>修复合回的 <code>git merge --no-ff</code> 合并 <code>flight/demo/fix-a2</code></span></li></ul></div></div></div><div class="spec-card"><h3>flight-measure-polish <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 测量工具在归属判不出时提示稍后重试</p><p><code>mcp__flight__measure</code> 的调用处理 SHALL 先查调用者的归属：结果为判不出（在飞账本读取失败）时，SHALL 拒绝并回复含「暂时无法判定」与「稍后重试」的理由，SHALL NOT 回复「只有本次飞行的执行体可以请求测量」；不运行测量、不记事件。
+Feature: #46 full 评审 LOW：误导理由可能让执行体放弃测量，之后 G5 永远拿不到先红证据</p><div class="scenario"><p class="scenario-name">Scenario: measure-unknown-owner-says-retry</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞，agent-1 是 S1 的执行体；<code>ledger.py show</code> 对 demo 退出 5</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>agent-1 调用 <code>mcp__flight__measure</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>调用被拒，理由含「暂时无法判定」与「稍后重试」，不含「只有本次飞行的执行体」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有运行 <code>slice-gate.py measure</code></span></li></ul></div></div></div><div class="spec-card"><h3>flight-takeover <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 跨会话起飞默认拒飞，--takeover 显式接管</p><p>起飞 SHALL 在读到账本之后、写任何事件或记录之前检查：最新 takeoff 的 <code>by.session</code> 不是本会话，且该 attempt 没有 land / halt 时，不带 <code>--takeover</code> SHALL 拒飞，回复含原会话 id 的前 8 位、「另一个会话」与「--takeover」，账本 SHALL NOT 新增事件；带 <code>--takeover</code> 时 SHALL 照常起飞，takeoff 事件 SHALL 带 <code>takeover</code> 字段记原会话 id。最新 attempt 已 land / halt 时，跨会话起飞不受影响。<code>--takeover</code> SHALL NOT 被当作 change 名或透传参数。
+Feature: flight-measure attempt 2 与 3 由两个会话相隔 1 分钟起飞，两个 S7 执行体并发改同一棵 worktree · 用户定：拒飞 + --takeover</p><div class="scenario"><p class="scenario-name">Scenario: cross-session-takeoff-refused</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准；账本最新 takeoff（attempt 1）的 <code>by.session</code> 为 <code>other-session-1234</code>，没有 land / halt</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>本会话发出 <code>/opsx-apply demo</code>，再发出 <code>/opsx-apply demo --takeover</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次回复含「另一个会话」「other-se」与「--takeover」，账本没有新增事件</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次回复含「✈ 起飞」，账本新增 attempt 2 的 takeoff，其 <code>takeover</code> 为 <code>other-session-1234</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: halted-attempt-from-other-session-resumes</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 账本最新 takeoff（attempt 1）来自 <code>other-session-1234</code>，且 attempt 1 已 halt</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>本会话发出 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「✈ 起飞」，账本新增 attempt 2 的 takeoff，且没有 <code>takeover</code> 字段</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 文档写明 --takeover 与另起 worktree</p><p><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code> SHALL 同步写明：<code>--takeover</code> 的含义与适用场合（原会话已结束才用）；续飞时新派发遇到同名 worktree 另起一棵、旧现场保留、清理交给人。
+Feature: 命令与同名 skill 同改，禁漂移</p><div class="scenario"><p class="scenario-name">Scenario: docs-state-takeover-and-fresh-worktrees</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本 change 合入后的 opsx-apply.md 与 openspec-apply-change/SKILL.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取两份文档</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份都含「--takeover」「另一个会话」与「另起」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两份都写明旧 worktree 保留、由人清理</span></li></ul></div></div></div><div class="spec-card"><h3>pr-ship-premerge <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: /pr-ship 预合并用 merge-tree --write-tree 判断冲突</p><p><code>template/.claude/commands/pr-ship.md</code> 第 4 步 SHALL 用 <code>git merge-tree --write-tree --name-only HEAD origin/&lt;target&gt;</code> 的退出码判断：0 为无冲突，1 为有冲突并列出冲突文件，其他退出码报告错误；SHALL NOT 再用 <code>grep -c &quot;^&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;</code> 统计旧版三参数 <code>merge-tree</code> 的输出。
+Feature: #46 实测：旧检查对 2 个冲突文件报 0（冲突标记前带 <code>+</code>）</p><div class="scenario"><p class="scenario-name">Scenario: premerge-uses-write-tree</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本 change 合入后的 pr-ship.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取第 4 步</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>含 <code>merge-tree --write-tree</code> 与「退出」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>不含 <code>grep -c &quot;^&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;</code></span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>flight-measure（#46）飞了四次 attempt，证据都在账本 <code>refs/flight/flight-measure/ledger</code> 和 PR #46 正文的「飞行实况」里： - <strong>attempt 1</strong>：S7 阻断后，控制面仍派出修复体。#45 已修，切片阻断时直接停飞。 - <strong>计划修订之后</strong>：attempt 2/3 的 S7 被派进旧 worktree。<code>ensureWorktree</code> 见到路径已存在就原样复用，切片包、<code>slices.json</code> 与门禁判定的 owns 都是旧版本。 - <strong>attempt 2 与 3 来自两个会话</strong>：起飞前的并发检查用 <code>$.agent.list()</code>，只看得到本会话的 agent。 - <strong>修复体</strong>：<code>ensureWorktree(FIX)</code> 复用了 attempt 1 从旧尖端切出的 worktree，它的全量 final 必然红。</p><p><strong>用户在本 change 规划时定的两点</strong>（2026-10-11）： - 跨会话起飞默认拒飞，<code>--takeover</code> 显式接管； - 新派发遇到同名旧 worktree 时另起一棵，旧的原样保留。</p><p><strong>相关事实</strong>： - 合回、解冲突、修复合回现在都把分支名写死为 <code>flight/&lt;change&gt;/&lt;S&gt;</code>、<code>flight/&lt;change&gt;/&lt;S&gt;-resolve</code>、<code>flight/&lt;change&gt;/fix</code>。 - 账本的 dispatch 事件允许表外字段（<code>ledger.py</code> 与 <code>io.ts</code> 都只校验必需字段）。 - 铁律 6：不删 worktree。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong>： - 续飞永远不会把执行体或修复体派进过期的现场； - 同一个 change 不会被两个会话同时驱动，除非人显式接管； - #46 评审留下的包络缺口闭合； - <code>/pr-ship</code> 的冲突检查如实。</p><p><strong>Non-Goals</strong>： - <strong>清理旧 worktree</strong>：清理仍是人的动作，交给用户执行（铁律 6）。 - <strong>判断另一个会话是否还活着</strong>：插件没有这种能力，由人用 <code>--takeover</code> 表态。 - <strong>default 权限模式下 <code>cd</code> 前缀判 ask 还是 deny</strong>：仍待实测。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><strong>函数</strong></summary><p>新增 <code>io.freshWorktree(io, f, name, attempt)</code>。</p></details><details><summary><code>&lt;主 worktree&gt;/.claude/worktrees/flight-&lt;change&gt;-&lt;name&gt;</code> 不存在 → 按 <code>name</code> 建，分支为 <code>flight/&lt;change&gt;/&lt;name&gt;</code>；</summary></details><details><summary>已存在 → 建 <code>&lt;name&gt;-a&lt;attempt&gt;</code>，分支为 <code>flight/&lt;change&gt;/&lt;name&gt;-a&lt;attempt&gt;</code>；</summary></details><details><summary>两者都已存在 → 报错（本片记 blocked infra）。</summary></details><details><summary>返回 <code>{ path, branch }</code>。</summary></details><details><summary><strong>新派发</strong>指</summary><p>没有续接说明的执行体派发、每个 attempt 第一次派修复体、每次派解冲突 agent。</p></details><details><summary><strong>续接</strong>（带 <code>continuation</code>）复用上一个执行体 dispatch 记下的 worktree 与分支；那棵 worktree 已不存在时退回新派发。</summary></details><details><summary><strong>dispatch 事件</strong></summary><p>多记一个表外字段 <code>branch</code>。旧账本的 dispatch 没有这个字段时，由 worktree 路径推出分支（<code>flight-&lt;change&gt;-&lt;name&gt;</code> → <code>flight/&lt;change&gt;/&lt;name&gt;</code>）。</p></details><details><summary><strong>否决</strong></summary><p>重置或删除旧 worktree。会丢掉旧现场里未提交的工作，也违反铁律 6。</p></details><details><summary><strong>计划指纹不同</strong></summary><p>上一个执行体 dispatch 所在 attempt 的 takeoff 指纹，与本次 takeoff 不同 → 一律新派发，不续接、不补跑门禁（regate）。旧现场是按旧计划做的。</p></details><details><summary><strong>指纹相同</strong></summary><p>行为不变，即上次已绿就 regate，否则带续接说明续接。</p></details><details><summary>上一次被 blocked 的切片仍按新派发处理（现状如此）。</summary></details><details><summary><code>land.mergeSlice(…, branch)</code></summary><p>合并、已合回判定、越界与空合回检查都改用传入的分支。</p></details><details><summary><code>land.prepareResolve(…, { branch, attempt })</code></summary><p>解冲突 worktree 同样按 D1 另起，合并传入的切片分支。</p></details><details><summary><code>land.finishResolve(…, resolve)</code></summary><p>用解冲突 dispatch 记下的 worktree 与分支。</p></details><details><summary><code>land.mergeFix(…, branch)</code></summary><p>用修复体 dispatch 记下的分支。</p></details><details><summary>缺省（不传分支）时沿用旧的拼法，兼容旧账本。</summary></details><details><summary>控制面传入的分支取自本片最后一次门禁绿的那个 agent 的 dispatch。</summary></details><details><summary><strong>没有 <code>--takeover</code></strong> → 拒飞，回复</summary></details><details><summary><strong>有 <code>--takeover</code></strong> → 照常起飞，takeoff 事件多记表外字段 <code>takeover: &lt;原会话 id&gt;</code>。</summary></details><details><summary><strong>前缀命令</strong></summary><p><code>words</code> 判前缀（<code>builtin</code>、<code>command</code>、<code>exec</code>、<code>env</code>）时，对词先去一层引号，再取 basename。<code>/usr/bin/env -u FOO git push</code> 与 <code>&quot;exec&quot; -a n git push</code> 都按前缀剥掉，后面的 git 照常判定。</p></details><details><summary><strong>目录参数中的展开</strong></summary><p><code>resolveDir</code> 对参数做一次去引号后，只要任意位置还有 <code>$</code>、反引号、<code>&#x27;</code> 或 <code>&quot;</code>，就返回 null（无法判定）。<code>cd</code>、<code>pushd</code>、<code>git -C</code>、<code>--git-dir</code>、<code>--work-tree</code>、<code>env -C</code> 都走这里，一处改全覆盖。</p></details><details><summary><strong>拒绝理由</strong></summary><p>「无法判定」的拒绝理由改为「作用目录无法判定（目录栈旋转、相对路径无基准、变量或命令替换等）」。</p></details><details><summary><strong>退出 0</strong></summary><p>无冲突。</p></details><details><summary><strong>退出 1</strong></summary><p>有冲突，输出第一行之后、空行之前列出冲突文件，报告这些文件后停下交用户。</p></details><details><summary><strong>其他退出码</strong></summary><p>报告错误。</p></details><details><summary><strong>文档</strong></summary><p><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code> 同步写明：</p></details><details><summary><code>--takeover</code> 的含义与适用场景；</summary></details><details><summary>新派发另起 worktree、旧现场保留，以及清理交给人。</summary></details><details><summary><strong>版本</strong></summary><p>插件升到 0.4.1。</p></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>测量协议首飞</strong></summary><p>本 change 是测量协议上线后的第一次飞行。执行体须先让测试红并调用 <code>measure</code>，G5 按账本判定、不满足即判红。如果首飞暴露出测量协议本身的问题（误判红、测量超时等），如实记入 PR，不绕过门禁。</p></details><details><summary><strong>旧 worktree 越积越多</strong></summary><p>另起 worktree 不删旧的，清理靠用户（现在已有清理脚本的做法）。这是遵守铁律 6 的代价。</p></details><details><summary><strong><code>--takeover</code> 依赖人的判断</strong></summary><p>人误接管时，原会话仍在跑的 agent 可能与新 attempt 并发。D1 让新派发另起 worktree，所以两边至少不会改同一棵树；续接的那片仍有风险，接管提示里写明「确认它已结束」。</p></details><details><summary><strong>天花板</strong></summary></details><details><summary>目录参数里只要有引号字符就判为无法判定（去掉一层引号之后），宁可多拒；</summary></details><details><summary>兼容旧账本时，分支由 worktree 路径推出。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><p>合入后：主检出快进，<code>claude plugin update flight@intent-driven</code>，再 <code>/reload-plugins</code>，确认起飞回复显示「插件 0.4.1」。</p></div><div class="design-block"><h3>Open Questions</h3><p>无。两处取舍已由用户定（见 Context）。</p></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart TD
+  T[&quot;/opsx-apply X&quot;] --&gt; L{&quot;最新 takeoff 已 land / halt？&quot;}
+  L -- 是 --&gt; GO[&quot;起飞（新 attempt）&quot;]
+  L -- 否 --&gt; S{&quot;by.session 是本会话？&quot;}
+  S -- 是 --&gt; A{&quot;本会话里它派出的 agent 仍在跑？&quot;}
+  A -- 是 --&gt; R1[&quot;拒：等 agent 结束&quot;]
+  A -- 否 --&gt; GO
+  S -- 否 --&gt; K{&quot;带 --takeover？&quot;}
+  K -- 否 --&gt; R2[&quot;拒：到原会话继续，或 --takeover 接管&quot;]
+  K -- 是 --&gt; GO2[&quot;起飞，takeover 记入 takeoff 事件&quot;]</div><pre class="diagram-fallback">flowchart TD
+  T[&quot;/opsx-apply X&quot;] --&gt; L{&quot;最新 takeoff 已 land / halt？&quot;}
+  L -- 是 --&gt; GO[&quot;起飞（新 attempt）&quot;]
+  L -- 否 --&gt; S{&quot;by.session 是本会话？&quot;}
+  S -- 是 --&gt; A{&quot;本会话里它派出的 agent 仍在跑？&quot;}
+  A -- 是 --&gt; R1[&quot;拒：等 agent 结束&quot;]
+  A -- 否 --&gt; GO
+  S -- 否 --&gt; K{&quot;带 --takeover？&quot;}
+  K -- 否 --&gt; R2[&quot;拒：到原会话继续，或 --takeover 接管&quot;]
+  K -- 是 --&gt; GO2[&quot;起飞，takeover 记入 takeoff 事件&quot;]</pre><div class="caption">同会话的「agent 仍在运行」检查不变。<code>--takeover</code> 不属于透传给 Workflow 的参数。</div></div><div class="diagram-frame"><div class="mermaid">flowchart LR
+  subgraph W1[&quot;wave 1（并行，owns 不相交）&quot;]
+    S1[&quot;S1 包络余项（envelope.ts）&quot;]
+    S2[&quot;S2 core：续接只限同计划 · dispatch 记分支&quot;]
+    S3[&quot;S3 io / land：freshWorktree · 按记下的分支合回&quot;]
+    S4[&quot;S4 提示词上一次分支 · pr-ship 预合并 · opsx-apply / skill 文档&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S5[&quot;S5 接线：派发另起 worktree · 修复体 / 解冲突 · 跨会话拒飞 · 测量提示 · 0.4.1&quot;]
+  end
+  S2 --&gt; S5
+  S3 --&gt; S5
+  S4 --&gt; S5</div><pre class="diagram-fallback">flowchart LR
+  subgraph W1[&quot;wave 1（并行，owns 不相交）&quot;]
+    S1[&quot;S1 包络余项（envelope.ts）&quot;]
+    S2[&quot;S2 core：续接只限同计划 · dispatch 记分支&quot;]
+    S3[&quot;S3 io / land：freshWorktree · 按记下的分支合回&quot;]
+    S4[&quot;S4 提示词上一次分支 · pr-ship 预合并 · opsx-apply / skill 文档&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S5[&quot;S5 接线：派发另起 worktree · 修复体 / 解冲突 · 跨会话拒飞 · 测量提示 · 0.4.1&quot;]
+  end
+  S2 --&gt; S5
+  S3 --&gt; S5
+  S4 --&gt; S5</pre><div class="caption">### 切片与 wave</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>包络余项：带路径或引号的前缀、目录参数里的 shell 展开、中性的拒绝理由</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/envelope.ts<br>template/plugins/flight/tests/envelope.test.ts<br>tests/test_flight_envelope.py</td><td><code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S2</td><td>core：续接只限同一份计划；dispatch 记分支、agentOf 返回分支</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/tests/core.test.ts<br>tests/test_flight_core.py</td><td><code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S3</td><td>io / land：freshWorktree 另起 worktree；合回、解冲突、修复合回按传入的分支</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/hooks/land.ts<br>template/plugins/flight/tests/io.test.ts<br>template/plugins/flight/tests/land.test.ts<br>tests/test_flight_io.py<br>tests/test_flight_land.py</td><td><code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_land.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S4</td><td>提示词给出上一次的分支；pr-ship 预合并改用 merge-tree --write-tree；opsx-apply 与 skill 写明 --takeover 与另起 worktree</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/prompts.ts<br>template/plugins/flight/tests/prompts.test.ts<br>tests/test_flight_agents.py<br>template/.claude/commands/pr-ship.md<br>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>tests/test_measure_followups_docs.py</td><td><code>python3 -m pytest -q tests/test_measure_followups_docs.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py</code></td></tr><tr><td class="mono">S5</td><td>接线：派发另起 worktree 并按记下的分支合回、修复体与解冲突同理、跨会话拒飞与 --takeover、测量判不出的提示；版本 0.4.1</td><td>wave 2</td><td>S2, S3, S4</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/landing.tsx<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/tests/landing.test.tsx<br>tests/test_flight_orchestrator.py<br>template/plugins/flight/.claude-plugin/plugin.json</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_plugin.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-envelope-remainders#prefix-path-and-quotes-stripped</td><td><code>tests/test_flight_envelope.py::test_prefix_path_and_quotes_stripped</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-envelope-remainders#expanded-dir-args-undeterminable</td><td><code>tests/test_flight_envelope.py::test_expanded_dir_args_undeterminable</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-envelope-remainders#undeterminable-reason-neutral</td><td><code>tests/test_flight_envelope.py::test_undeterminable_reason_neutral</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#plan-change-forces-fresh-dispatch</td><td><code>tests/test_flight_core.py::test_plan_change_forces_fresh_dispatch</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#dispatch-records-branch</td><td><code>tests/test_flight_core.py::test_dispatch_records_branch</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#fresh-worktree-never-reuses-old</td><td><code>tests/test_flight_io.py::test_fresh_worktree_never_reuses_old</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#merges-use-recorded-branch</td><td><code>tests/test_flight_land.py::test_merges_use_recorded_branch</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#prompt-names-previous-branch</td><td><code>tests/test_flight_agents.py::test_prompt_names_previous_branch</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>pr-ship-premerge#premerge-uses-write-tree</td><td><code>tests/test_measure_followups_docs.py::test_premerge_uses_write_tree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-takeover#docs-state-takeover-and-fresh-worktrees</td><td><code>tests/test_measure_followups_docs.py::test_docs_state_takeover_and_fresh_worktrees</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#fresh-dispatch-gets-new-worktree</td><td><code>tests/test_flight_orchestrator.py::test_fresh_dispatch_gets_new_worktree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#continuation-reuses-same-plan-worktree</td><td><code>tests/test_flight_orchestrator.py::test_continuation_reuses_same_plan_worktree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-fresh-worktrees#fixer-gets-new-worktree</td><td><code>tests/test_flight_orchestrator.py::test_fixer_gets_new_worktree</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-takeover#cross-session-takeoff-refused</td><td><code>tests/test_flight_orchestrator.py::test_cross_session_takeoff_refused</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-takeover#halted-attempt-from-other-session-resumes</td><td><code>tests/test_flight_orchestrator.py::test_halted_attempt_from_other_session_resumes</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure-polish#measure-unknown-owner-says-retry</td><td><code>tests/test_flight_orchestrator.py::test_measure_unknown_owner_says_retry</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-10-11T03:26:00Z</td><td>baseline</td><td>exit 0, 170.9s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 包络余项：带路径或引号的前缀、目录参数里的 shell 展开、中性的拒绝理由 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 core：续接只限同一份计划；dispatch 记分支、agentOf 返回分支 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 io / land：freshWorktree 另起 worktree；合回、解冲突、修复合回按传入的分支 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_land.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 提示词给出上一次的分支；pr-ship 预合并改用 merge-tree --write-tree；opsx-apply 与 skill 写明 --takeover 与另起 worktree （deps: - · verify: <code>python3 -m pytest -q tests/test_measure_followups_docs.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S5 接线：派发另起 worktree 并按记下的分支合回、修复体与解冲突同理、跨会话拒飞与 --takeover、测量判不出的提示；版本 0.4.1 （deps: S2, S3, S4 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_plugin.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-11 03:26 · 章节 9 · 图示 2 · 任务 5
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

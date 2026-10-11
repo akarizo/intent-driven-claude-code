@@ -1,6 +1,8 @@
 """flight 状态机核心（scenario: flight-state-machine#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架（标记已去）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -104,3 +106,22 @@ def test_core_resume_redispatches_blocked_slice():
     # When: 求下一批动作
     # Then: 恰为派发 S1 的执行体，没有 S2 的动作
     assert_ts_passed("core-resume-redispatches-blocked-slice")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_plan_change_forces_fresh_dispatch():
+    # Given: attempt 1（指纹 A）派过 S1 执行体（门禁已绿未合回），S2 中断（门禁红）
+    # When: attempt 2 以指纹 B 求下一批动作，再以指纹 A 求一次
+    # Then: 指纹 B 时 S1、S2 都是不带续接与 base 的新派发；指纹 A 时 S1 regate、S2 带续接说明
+    assert_ts_passed("plan-change-forces-fresh-dispatch")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_dispatch_records_branch():
+    # Given: 一条带 branch 的 dispatch 与一条不带 branch、worktree 为 …/flight-demo-S3 的 dispatch
+    # When: 分别 agentOf
+    # Then: 前者 branch 为记下的分支，后者推出 flight/demo/S3
+    assert_ts_passed("dispatch-records-branch")
