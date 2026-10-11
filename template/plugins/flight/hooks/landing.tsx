@@ -51,8 +51,10 @@ function parseGate(r: RunResult, slice: string): GateJson {
   return { slice, ok: false, commit: '', failed: [`G? 门禁输出无法解析：${r.stderr.trim().split('\n')[0] ?? ''}`] }
 }
 
-async function runFinal(io: Io, f: Flight, cwd: string): Promise<GateJson> {
-  return parseGate(await judge(io, f, 'slice-gate', ['final', '--change-dir', f.changeDir], cwd, GATE_TIMEOUT_MS), 'final')
+/** reuseFix：final 动作请求复用修复体收口门禁的结果（是否可复用由 slice-gate.py final --reuse-fix 判定，design D3）；修复体自己的收口不传。 */
+async function runFinal(io: Io, f: Flight, cwd: string, opts?: { reuseFix?: boolean }): Promise<GateJson> {
+  const argv = ['final', '--change-dir', f.changeDir, ...(opts?.reuseFix ? ['--reuse-fix'] : [])]
+  return parseGate(await judge(io, f, 'slice-gate', argv, cwd, GATE_TIMEOUT_MS), 'final')
 }
 
 /** 飞行记录（铁律 8）：首行标题 + timeline report + 路由对账。report 失败只写一行原因，不拖垮落地 / 停飞。 */
@@ -145,7 +147,7 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       await append(ev.final(b, { attempt, ok: false, commit: '', failed: [err] }))
       return
     }
-    const g = await runFinal(io, f, f.changeTree)
+    const g = await runFinal(io, f, f.changeTree, { reuseFix: true })
     await append(ev.final(b, { attempt, ok: g.ok, commit: g.commit, failed: g.failed }))
     return
   }
