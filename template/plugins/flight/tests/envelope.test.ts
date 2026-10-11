@@ -408,6 +408,22 @@ test('dir-stack-rotation-denied', () => {
   expect(v.every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
 })
 
+test('cd-two-args-denied', () => {
+  // Given: 执行体 worktree 为 W；zsh 的双参数 cd / pushd（替换当前路径里的片段，不是路径）之后再做改动类 git，与一条带空格的引号路径
+  const cmds = [
+    `cd ${W} && cd .claude/worktrees/flight-demo-S1 . && git commit -m x`,
+    `cd ${W} && pushd S1 S2 && git add a`,
+    `cd '${W}/a b' && git add x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条的目录无法判定而被拒（理由含「自己的 worktree」）；引号内带空格的单个路径不被误拒
+  expect(v.slice(0, 2).every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
+  expect(v[2]).toBeUndefined()
+})
+
 test('git-env-overrides-denied', () => {
   // Given: 执行体 worktree 为 W；五条借 GIT_* 环境变量改变作用对象的改动类 git，与一条 GIT_PAGER=cat git log -1
   const cmds = [

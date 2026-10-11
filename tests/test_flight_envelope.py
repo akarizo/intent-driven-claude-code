@@ -169,3 +169,10 @@ def test_dir_stack_rotation_denied():
     # When: 逐条判定
     # Then: 旋转后的目录无法判定，都被拒且理由含「自己的 worktree」
     assert_ts_passed("dir-stack-rotation-denied")
+
+
+def test_cd_two_args_denied():
+    # Given: 执行体 worktree 为 W；zsh 的双参数 cd / pushd 之后再做改动类 git，与一条带空格的引号路径
+    # When: 逐条判定
+    # Then: 前两条无法判定而被拒；引号内带空格的单个路径不被误拒
+    assert_ts_passed("cd-two-args-denied")

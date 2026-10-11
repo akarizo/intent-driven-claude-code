@@ -198,6 +198,15 @@ function cdArg(toks: readonly string[]): string | undefined {
   return toks[0] === 'cd' ? toks.slice(1).join(' ') : undefined
 }
 
+/**
+ * cd / pushd 段的目录参数：至多一个参数（引号内的空格不算分隔）→ 该参数；多于一个 → null（无法判定）。
+ * zsh 的 `cd old new` 是把 $PWD 里的 old 替换成 new，不是路径；带选项的写法（`cd -P x`）也按多参数宁可多拒。
+ */
+function dirArg(args: readonly string[]): string | null {
+  const text = args.join(' ')
+  return args.length <= 1 || /^'[^']*'$/.test(text) || /^"[^"]*"$/.test(text) ? text : null
+}
+
 /** D2：git 调用的全部作用目录（-C 逐级拼接后的目录，以及 --git-dir、--work-tree 指向的目录）；cwd 为前面 cd 设定的目录 */
 function gitTargets(g: GitCall, cwd: string | null | undefined, worktree: string): (string | null)[] {
   let dir = cwd
@@ -314,9 +323,9 @@ function segmentsVerdict(
     if (unknownOpt !== undefined) return { deny: `${name}的前缀选项 ${unknownOpt} 无法判定（不在 env / exec / command 的已知选项表里）：去掉该选项或写成脚本文件再运行` }
     const ownGitEnv = envKeys.filter(k => k.startsWith('GIT_'))
     const gitEnv = [...inheritedEnv, ...ownGitEnv]
-    const cd = cdArg(toks) ?? (toks[0] === 'pushd' ? toks.slice(1).join(' ') : undefined)
-    if (cd !== undefined) {
-      state.cwd = resolveDir(state.cwd, unquote(cd))
+    if (toks[0] === 'cd' || toks[0] === 'pushd') {
+      const p = dirArg(toks.slice(1))
+      state.cwd = p === null ? null : resolveDir(state.cwd, unquote(p))
       continue
     }
     if (toks[0] === 'popd') {
