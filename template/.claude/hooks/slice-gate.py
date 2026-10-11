@@ -14,13 +14,16 @@
 #   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
-#   final    --change-dir DIR                 全量 test / lint / typecheck（按基线差分）+ 全部 scenario 状态
+#   final    --change-dir DIR                 先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
+#                                              G7 红不跑全量
 #   baseline --change-dir DIR                 起飞前预检：跑 gate.test / lint / typecheck 与每片 verify，写 gate-baseline.json；
 #                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
 #   preflight --change-dir DIR                lint_plan + 基线四项校验（存在 / ok / plan_sha / commit 在分支历史）；通过打印 waves
 #
 # G2 差分：gate / final 的 lint / typecheck 非 0 时，与 gate-baseline.json 里规范化后的输出行比对，只为新增行判红；
 #          无基线或该项基线为 null 时行为不变（直接判红）。
+#          gate.test 经 PYTEST_ADDOPTS 注入 --junitxml，可度量的 exit 1 按失败用例标识（classname::name）逐条差分：
+#          baseline 记 test.failed，final 只为基线外的失败判红；不可度量（非 pytest / 多次 pytest / 计数不一致 / exit≠1）按退出码判。
 #
 # JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...],
 #             "ceilings": [[路径, 行号, 限制, 升级路径], ...], "summary"}；failed 每项以 G<n> 开头并点名对象。
@@ -37,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 MAX_SLICES = 9
@@ -143,6 +147,61 @@ def run_cmd(cmd, cwd):
     return rc, _tail(out)
 
 
+# pytest 汇总行：`1 failed, 2 passed in 0.03s`，可带 `=` 包围与 `(0:01:02)` 时长
+PYTEST_SUMMARY_RE = re.compile(r"^=*\s*(\d+ [a-z]+(?:, \d+ [a-z]+)*) in [\d.]+s(?: \([^)]*\))?\s*=*$")
+
+
+def _summary_failed(line):
+    """汇总行里 failed + error(s) 的合计。"""
+    n = 0
+    for part in PYTEST_SUMMARY_RE.match(line).group(1).split(", "):
+        count, word = part.split(" ", 1)
+        if word in ("failed", "error", "errors"):
+            n += int(count)
+    return n
+
+
+def run_test_gate(cmd, root):
+    """跑 gate.test，经 PYTEST_ADDOPTS 注入 --junitxml。
+    返回 {"rc", "out", "failed": [classname::name, ...] | None, "why": str | None}；
+    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致），why 是不可度量的理由。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        junit = os.path.join(tmp, "junit.xml")
+        env = dict(os.environ)
+        env["PYTEST_ADDOPTS"] = (env.get("PYTEST_ADDOPTS", "") + " --junitxml=" + shlex.quote(junit)).strip()
+        p = subprocess.run(cmd, cwd=root, shell=True, capture_output=True, text=True, env=env)
+        rc, out = p.returncode, (p.stdout or "") + (p.stderr or "")
+        res = {"rc": rc, "out": out, "failed": None, "why": None}
+        if rc == 0:
+            return res
+        if rc != 1:
+            res["why"] = "exit %d" % rc
+            return res
+        if not os.path.isfile(junit):
+            res["why"] = "没有 junit 输出（不是 pytest？）"
+            return res
+        try:
+            tree = ET.parse(junit).getroot()
+        except (ET.ParseError, OSError):
+            res["why"] = "junit 无法解析"
+            return res
+    summaries = [l.strip() for l in ANSI_RE.sub("", out).splitlines() if PYTEST_SUMMARY_RE.match(l.strip())]
+    if len(summaries) != 1:
+        res["why"] = "汇总行 %d 行（调用了多次 pytest？）" % len(summaries)
+        return res
+    junit_n = sum(int(s.get("failures") or 0) + int(s.get("errors") or 0) for s in tree.iter("testsuite"))
+    summary_n = _summary_failed(summaries[0])
+    if junit_n != summary_n:
+        res["why"] = "计数不一致（汇总行 %d，junit %d）" % (summary_n, junit_n)
+        return res
+    ids = set()
+    for tc in tree.iter("testcase"):
+        if tc.find("failure") is not None or tc.find("error") is not None:
+            ids.add("%s::%s" % (tc.get("classname") or "", tc.get("name") or ""))
+    res["failed"] = sorted(ids)
+    return res
+
+
 def normalize_lines(text):
     """去 ANSI、数字折成 #（行列号 / 错误码漂移不算新问题）、strip、丢空行，保序去重。"""
     seen, out = set(), []
@@ -195,6 +254,21 @@ def gate_cmd_verdict(kind, cmd, root, baseline):
     if not new:
         return None, "G2 %s: exit %d，输出与基线一致（既有 %d 行已按基线排除）" % (kind, rc, len(old))
     return "G2 %s: exit %d（新增 %d 行）\n%s" % (kind, rc, len(new), "\n".join(new[:6])), None
+
+
+def full_suite_verdict(cmd, root, baseline):
+    """跑 gate.test，返回 (failed_item, warning_item)。可度量的 exit 1 按基线 test.failed 逐条差分（缺失视为空集）。"""
+    tg = run_test_gate(cmd, root)
+    rc = tg["rc"]
+    if rc == 0:
+        return None, None
+    if tg["failed"] is None:
+        return "G2 test: exit %d（按退出码判：%s）\n%s" % (rc, tg["why"], _tail(tg["out"])), None
+    old = set(((baseline or {}).get("test") or {}).get("failed") or [])
+    new = [t for t in tg["failed"] if t not in old]
+    if not new:
+        return None, "G2 test: exit 1，失败均为基线预存红（%d 条已按基线排除）" % len(tg["failed"])
+    return "G2 test: exit 1（新增 %d 条失败）\n%s" % (len(new), "\n".join(new[:6])), None
 
 
 def glob_match(path, pattern):
@@ -1067,13 +1141,9 @@ def cmd_final(args):
     data = load_plan(args.change_dir)
     gate = data.get("gate") or {}
     failed, warnings = [], []
-    test_cmd = gate.get("test") or detect_test_cmd(root)
-    if not test_cmd:
-        warnings.append("未配置也未探测到全量测试命令")
-    else:
-        rc, tail = run_cmd(test_cmd, root)
-        if rc != 0:
-            failed.append("G2 test: exit %d\n%s" % (rc, tail))
+    v7, total, passed, w7 = scenario_status(root, data)
+    failed.extend(v7)
+    warnings.extend(w7)
     baseline = load_baseline(args.change_dir)
     for key in ("lint", "typecheck"):
         cmd = gate.get(key)
@@ -1083,9 +1153,18 @@ def cmd_final(args):
                 failed.append(f2)
             if w2:
                 warnings.append(w2)
-    v7, total, passed, w7 = scenario_status(root, data)
-    failed.extend(v7)
-    warnings.extend(w7)
+    if v7:
+        warnings.append("G2 全量未跑：G7 已红，scenario 全绿后重跑 final")
+    else:
+        test_cmd = gate.get("test") or detect_test_cmd(root)
+        if not test_cmd:
+            warnings.append("未配置也未探测到全量测试命令")
+        else:
+            f2, w2 = full_suite_verdict(test_cmd, root, baseline)
+            if f2:
+                failed.append(f2)
+            if w2:
+                warnings.append(w2)
     result = {"slice": "final", "ok": not failed, "commit": git(root, "rev-parse", "HEAD"),
               "failed": failed, "warnings": warnings,
               "scenarios": {"total": total, "passed": passed if not failed else min(passed, total - len(v7))},
@@ -1105,13 +1184,17 @@ def cmd_baseline(args):
         die("未配置也未探测到全量测试命令")
     gate["test"] = test_cmd
     t0 = time.time()
-    rc, out = run_cmd_full(test_cmd, root)
+    tg = run_test_gate(test_cmd, root)
+    rc, out = tg["rc"], tg["out"]
     gate["full_suite_sec"] = round(time.time() - t0, 1)
     reasons = []
-    if rc != 0:
-        reasons.append("全量测试在基线上红（exit %d）" % rc)
     bl = {"commit": git(root, "rev-parse", "HEAD"), "at": now_iso(), "plan_sha": None,
           "ok": None, "reasons": reasons, "test": {"exit": rc, "sec": gate["full_suite_sec"]}}
+    if rc != 0 and tg["failed"] is not None:
+        bl["test"]["failed"] = tg["failed"]
+        bl["warnings"] = ["预存红 %d 条已记录，final 按基线差分" % len(tg["failed"])]
+    elif rc != 0:
+        reasons.append("全量测试在基线上红（exit %d；按退出码判：%s）" % (rc, tg["why"]))
     for key in ("lint", "typecheck"):
         cmd = gate.get(key)
         if cmd:
