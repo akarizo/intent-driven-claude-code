@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -254,10 +252,9 @@ def test_takeoff_refuses_old_git():
     assert_ts_passed("takeoff-refuses-old-git")
 
 # ---------------------------------------------------------------- flight-measure
-# 骨架：S7 实现后去掉 xfail 标记。
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_measure_tool_records_event():
     # Given: demo 在飞，agent-1 是 S1 的执行体，dispatch 记有 base B；测量应答为一个目标 FAILED、source 为空
     # When: agent-1 调用 mcp__flight__measure
@@ -265,7 +262,6 @@ def test_measure_tool_records_event():
     assert_ts_passed("measure-tool-records-event")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_measure_tool_only_for_flight_executors():
     # Given: demo 在飞；agent-2 是 S1 的评审员；agent-x 不属于任何飞行
     # When: 两者分别调用 mcp__flight__measure
@@ -273,7 +269,6 @@ def test_measure_tool_only_for_flight_executors():
     assert_ts_passed("measure-tool-only-for-flight-executors")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_measure_tool_upgraded_for_executor():
     # Given: demo 在飞；引擎对 mcp__flight__measure 判 ask
     # When: tool.check 处理执行体 agent-1 与评审员 agent-2 的调用
@@ -281,7 +276,6 @@ def test_measure_tool_upgraded_for_executor():
     assert_ts_passed("measure-tool-upgraded-for-executor")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_fresh_dispatch_takes_start_measure():
     # Given: demo 起飞，S1 的切片 worktree 新建、start 打印 base B；S2 的测量应答为退出 1
     # When: 控制面派发 S1 与 S2 的执行体
@@ -289,7 +283,6 @@ def test_fresh_dispatch_takes_start_measure():
     assert_ts_passed("fresh-dispatch-takes-start-measure")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_gate_runs_with_ledger_evidence():
     # Given: S1 的 start 打印 base B；另一次飞行 S2 合回冲突，执行体 base B2、解冲突 start 打印 R
     # When: S1 执行体收口；解冲突 agent 收口
@@ -297,15 +290,13 @@ def test_gate_runs_with_ledger_evidence():
     assert_ts_passed("gate-runs-with-ledger-evidence")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_takeoff_checks_versions():
-    # Given: demo 已批准、其余起飞检查都过
-    # When: 三次起飞：安装记录指向另一缓存目录；ledger.py events 缺 measure；两项都正常
-    # Then: 前两次回复分别含 /reload-plugins 与主检出且账本无新事件；第三次回复含「✈ 起飞」与「插件 」且新增 takeoff
+    # Given: demo 已批准、其余起飞检查都过；CLAUDE_CONFIG_DIR 为 C，C 下没有 installed_plugins.json
+    # When: 两次起飞：ledger.py events 缺 measure；ledger.py events 列出全部类型
+    # Then: 第一次回复含「主检出」且账本无新事件；第二次回复含「✈ 起飞」「插件 」「已安装版本未核对」、读取过 C/plugins/installed_plugins.json、新增 takeoff
     assert_ts_passed("takeoff-checks-versions")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_unknown_owner_fails_closed():
     # Given: demo 在飞；对 agent-7 的账本读取失败
     # When: agent-7 调用 Write 与 Bash，引擎对 Bash 判 ask

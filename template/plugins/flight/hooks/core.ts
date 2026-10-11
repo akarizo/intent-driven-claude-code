@@ -68,9 +68,9 @@ export function currentAttempt(state: State): number {
   return state.attempt
 }
 
-export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number } | undefined {
+export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number; base?: string } | undefined {
   const d = last(state.events.filter(e => e.ev === 'dispatch' && e.agent === agent))
-  return d && { role: d.role as Role, slice: str(d, 'slice'), worktree: str(d, 'worktree'), attempt: Number(d.attempt) }
+  return d && { role: d.role as Role, slice: str(d, 'slice'), worktree: str(d, 'worktree'), attempt: Number(d.attempt), ...(typeof d.base === 'string' && d.base !== '' ? { base: d.base } : {}) }
 }
 
 /** 一个 agent 结束前的收口门禁结论、结束事件、结束后的补跑门禁结论。 */
@@ -257,7 +257,7 @@ const make = (ev: string) => (b: Base, x: object): FlightEvent => ({
 /** 事件构造：产出完整事件（含 v / by），字段对照 spec flight-ledger-events。本 change 不构造 approve。 */
 export const ev: {
   takeoff(b: Base, x: { attempt: number; fp: string; branch: string; waves: string[][]; model: string }): FlightEvent
-  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string }): FlightEvent
+  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string; base?: string }): FlightEvent
   gate(b: Base, x: { attempt: number; agent: string } & GateJson): FlightEvent
   ended(b: Base, x: { attempt: number; agent: string; reason: string; model: string | null }): FlightEvent
   merge(b: Base, x: { attempt: number; slice: string; ok: boolean; commit: string; failed: string[] }): FlightEvent
@@ -266,6 +266,7 @@ export const ev: {
   final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[] }): FlightEvent
   land(b: Base, x: { attempt: number; verdict: 'ready' | 'draft' }): FlightEvent
   halt(b: Base, x: { attempt: number; reason: string }): FlightEvent
+  measure(b: Base, x: { attempt: number; slice: string; agent: string; base: string; commit: string; outcomes: [string, string][]; changed: string[]; source: string[] }): FlightEvent
 } = {
   takeoff: make('takeoff'),
   dispatch: make('dispatch'),
@@ -277,4 +278,5 @@ export const ev: {
   final: make('final'),
   land: make('land'),
   halt: make('halt'),
+  measure: make('measure'),
 }

@@ -88,7 +88,7 @@ def test_bash_guard_denies_ledger_writes():
 def test_no_model_callable_approval_path():
     # Given: 插件已加载、会话已启动
     # When: 列出插件注册的工具与斜杠命令
-    # Then: 工具恰为 submit_findings（只能写 review 事件），没有斜杠命令
+    # Then: 工具恰为 submit_findings（只能写 review 事件）与 measure（只能写 measure 事件），没有斜杠命令
     assert_ts_passed("no-model-callable-approval-path")
 
 
@@ -136,8 +136,8 @@ def test_guard_denies_gate_record_writes():
 
 def test_only_findings_tool_registered():
     # Given: 插件已加载、会话已启动
-    # When: 列出插件注册的工具与斜杠命令，并以各种输入调用 submit_findings
-    # Then: 工具只有 submit_findings、没有斜杠命令；任何调用都不追加 approve 事件
+    # When: 列出插件注册的工具与斜杠命令，并以各种输入（非飞行调用者、空输入、伪造 approve 字段）调用 submit_findings 与 measure
+    # Then: 工具恰为 submit_findings 与 measure、没有斜杠命令；任何调用都不追加 approve 事件
     assert_ts_passed("only-findings-tool-registered")
 
 # ---------------------------------------------------------------- flight-envelope-tightening S5
