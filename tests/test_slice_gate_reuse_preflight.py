@@ -54,7 +54,6 @@ def _final_reuse(git_repo, change):
     return run_hook("slice-gate", "final", "--change-dir", str(change), "--reuse-fix", cwd=git_repo)
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：final --reuse-fix 复用新鲜的修复门禁")
 def test_final_reuses_fresh_fix_gate(git_repo):
     # Given: 账本最后一条 fix gate ok、commit 为 X；X 之后只有改 timeline.md 的提交；scenario 测试通过；gate.test 运行时写 ran-g2
     change = _repo(git_repo)
@@ -73,7 +72,6 @@ def test_final_reuses_fresh_fix_gate(git_repo):
     assert "| final | ok | %s |" % head[:10] in report, report
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：修复门禁之后改过代码就不复用")
 def test_final_reuse_refused_after_code_change(git_repo):
     # Given: 同上，但 X 之后还有一个改 src/mod.py 的提交
     change = _repo(git_repo)
@@ -91,7 +89,6 @@ def test_final_reuse_refused_after_code_change(git_repo):
     assert not any("复用" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：修复门禁红时不复用")
 def test_final_reuse_needs_green_fix_gate(git_repo):
     # Given: 账本最后一条 fix gate 的 ok 为 false，之后只有记账提交
     change = _repo(git_repo)
@@ -107,7 +104,6 @@ def test_final_reuse_needs_green_fix_gate(git_repo):
     assert not any("复用" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：lint 要求 gate.test")
 def test_lint_requires_gate_test(tmp_path):
     # Given: slices.json 合法，但 gate 里没有 test
     data = plan([slice_("S1", ["a/**"])], gate={"test": None, "lint": None, "typecheck": None, "full_suite_sec": None})
@@ -121,7 +117,6 @@ def test_lint_requires_gate_test(tmp_path):
     assert "gate.test" in p.stderr, p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：baseline 运行期间写 running 标记")
 def test_baseline_marks_running(git_repo):
     # Given: gate.test 是一个读取 gate-baseline.json、running 为 true 才退出 0 的脚本
     write(git_repo / "check_running.py", CHECK_RUNNING)
@@ -136,7 +131,6 @@ def test_baseline_marks_running(git_repo):
     assert bl["ok"] is True and "running" not in bl, bl
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：preflight 识别仍在跑的基线")
 def test_preflight_reports_running_baseline(git_repo):
     # Given: gate-baseline.json 为 running 标记，pid 是当前仍存活的进程
     change = _repo(git_repo)
@@ -150,7 +144,6 @@ def test_preflight_reports_running_baseline(git_repo):
     assert "仍在跑" in p.stderr, p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="S2 未实现：preflight 识别中断的基线")
 def test_preflight_reports_interrupted_baseline(git_repo):
     # Given: gate-baseline.json 为 running 标记，pid 是一个已经退出的进程
     change = _repo(git_repo)

@@ -14,11 +14,13 @@
 #   gate     S --change-dir DIR [--base REF]  跑 G1–G8；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记，红时标记 red_count+1
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
-#   final    --change-dir DIR                 先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
-#                                              G7 红不跑全量
-#   baseline --change-dir DIR                 起飞前预检：跑 gate.test / lint / typecheck 与每片 verify，写 gate-baseline.json；
+#   final    --change-dir DIR [--reuse-fix]   先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
+#                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿且其后只有记账改动 → 复用其全量结论
+#   baseline --change-dir DIR                 起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
+#                                              再跑 gate.test / lint / typecheck 与每片 verify，结束时整体覆盖为结果；
 #                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
-#   preflight --change-dir DIR                lint_plan + 基线四项校验（存在 / ok / plan_sha / commit 在分支历史）；通过打印 waves
+#   preflight --change-dir DIR                lint_plan + 运行标记识别（仍在跑 / 已中断）+ 基线四项校验（存在 / ok / plan_sha /
+#                                              commit 在分支历史）；通过打印 waves
 #
 # G2 差分：gate / final 的 lint / typecheck 非 0 时，与 gate-baseline.json 里规范化后的输出行比对，只为新增行判红；
 #          无基线或该项基线为 null 时行为不变（直接判红）。
@@ -305,6 +307,8 @@ def compute_waves(slices):
 
 def lint_plan(data):
     errors = []
+    if not ((data.get("gate") or {}).get("test") or "").strip():
+        errors.append("gate: gate.test 缺失（须显式写出，baseline 不再自动探测写回，避免改动计划指纹）")
     slices = data.get("slices") or []
     ids = [s.get("id") for s in slices]
     if len(ids) != len(set(ids)):
@@ -1136,6 +1140,24 @@ def cmd_record(args):
     print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 
 
+def _reusable_fix_gate(root, change_dir):
+    """返回 (可复用的 fix gate commit | None, 读账本失败原因 | None)。
+    取证只认账本：最后一条 ev=gate 且 slice=fix 的事件，ok 为 true、commit 非空，且其后只有记账改动。"""
+    import ledger  # 同目录模块（与 takeoff-gate.py 同法）；惰性导入，不带 --reuse-fix 时不依赖它
+    try:
+        events = ledger.read_events(change_dir)
+    except (ledger.LedgerInvalid, ledger.LedgerUnreadable, OSError) as e:
+        return None, "final --reuse-fix：读账本失败（%s），照常跑全量" % e
+    fixes = [e for e in events if e.get("ev") == "gate" and e.get("slice") == "fix"]
+    if not fixes:
+        return None, None
+    last = fixes[-1]
+    commit = last.get("commit")
+    if last.get("ok") is True and isinstance(commit, str) and commit and _final_fresh(root, change_dir, commit):
+        return commit, None
+    return None, None
+
+
 def cmd_final(args):
     root = toplevel()
     data = load_plan(args.change_dir)
@@ -1153,9 +1175,16 @@ def cmd_final(args):
                 failed.append(f2)
             if w2:
                 warnings.append(w2)
+    reused = None
+    if not v7 and getattr(args, "reuse_fix", False):
+        reused, why = _reusable_fix_gate(root, args.change_dir)
+        if why:
+            warnings.append(why)
+        elif reused:
+            warnings.append("G2 test: 复用修复门禁 %s 的全量结论（其后只有记账改动）" % reused[:10])
     if v7:
         warnings.append("G2 全量未跑：G7 已红，scenario 全绿后重跑 final")
-    else:
+    elif not reused:
         test_cmd = gate.get("test") or detect_test_cmd(root)
         if not test_cmd:
             warnings.append("未配置也未探测到全量测试命令")
@@ -1169,6 +1198,8 @@ def cmd_final(args):
               "failed": failed, "warnings": warnings,
               "scenarios": {"total": total, "passed": passed if not failed else min(passed, total - len(v7))},
               "summary": "final %s：scenario %d/%d" % ("通过" if not failed else "阻断", passed, total)}
+    if reused:
+        result["reused"] = reused
     append_report(args.change_dir, result)
     timeline_record(args.change_dir, "final", "ok" if result["ok"] else "red")
     print(json.dumps(result, ensure_ascii=False))
@@ -1183,6 +1214,10 @@ def cmd_baseline(args):
     if not test_cmd:
         die("未配置也未探测到全量测试命令")
     gate["test"] = test_cmd
+    # 运行标记：preflight 据此分辨「还在跑」与「跑到一半中断」，不把半成品当缺基线
+    with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
+        json.dump({"running": True, "pid": os.getpid(), "started": now_iso()}, f, ensure_ascii=False)
+        f.write("\n")
     t0 = time.time()
     tg = run_test_gate(test_cmd, root)
     rc, out = tg["rc"], tg["out"]
@@ -1219,6 +1254,30 @@ def cmd_baseline(args):
     sys.exit(0 if bl["ok"] else 1)
 
 
+def _die_running_baseline(change_dir, bl, data):
+    """gate-baseline.json 仍是运行标记：进程活着 → 等；进程已不在 / pid 不合法 → 中断，重跑。"""
+    pid = bl.get("pid")
+    alive = False
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        try:
+            os.kill(pid, 0)
+            alive = True
+        except PermissionError:
+            alive = True
+        except OSError:  # ProcessLookupError 等：进程已不在
+            alive = False
+    if not alive:
+        die("基线中断（进程 %s 已不在）：重跑 slice-gate.py baseline --change-dir %s" % (pid, change_dir))
+    try:
+        started = datetime.strptime(bl.get("started") or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        mins = "%d" % ((datetime.now(timezone.utc) - started).total_seconds() // 60)
+    except ValueError:
+        mins = "?"
+    sec = (data.get("gate") or {}).get("full_suite_sec")
+    est = "%s 秒" % sec if isinstance(sec, (int, float)) and not isinstance(sec, bool) else "未知"
+    die("基线仍在跑（已 %s 分钟，上次全量约 %s）：等它结束再起飞" % (mins, est))
+
+
 def cmd_preflight(args):
     """起飞前四项校验：计划合法、基线存在且绿、基线未过期、基线 commit 在当前分支历史。通过打印 waves。"""
     root = toplevel()
@@ -1227,6 +1286,8 @@ def cmd_preflight(args):
     if errors:
         die("slices.json 不合法：\n  - " + "\n  - ".join(errors))
     bl = load_baseline(args.change_dir)
+    if isinstance(bl, dict) and bl.get("running") is True:
+        _die_running_baseline(args.change_dir, bl, data)
     if bl is None:
         die("缺基线：先运行 slice-gate.py baseline --change-dir %s" % args.change_dir)
     if not bl.get("ok"):
@@ -1332,6 +1393,9 @@ def main():
     for name in ("lint", "waves", "final", "baseline", "preflight"):
         p = sub.add_parser(name)
         p.add_argument("--change-dir", required=True)
+        if name == "final":
+            p.add_argument("--reuse-fix", action="store_true",
+                           help="账本最后一条 fix gate 绿且其后只有记账改动 → 跳过全量 test，复用其结论")
     p = sub.add_parser("start")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
