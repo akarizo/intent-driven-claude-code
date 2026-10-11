@@ -206,6 +206,20 @@ export async function ensureWorktree(io: Io, f: Flight, name: string): Promise<{
   return { path, created: true }
 }
 
+/** 续飞另起：<name> 不存在用原名，已存在改用 <name>-a<attempt>，两者都在则报错；一律基于 change 分支尖端新建，从不复用旧树。 */
+export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
+  let path = worktreePath(f, name)
+  if (await io.exists(path)) {
+    name = `${name}-a${attempt}`
+    path = worktreePath(f, name)
+    if (await io.exists(path)) return { error: `worktree 已存在：${path}` }
+  }
+  const branch = `flight/${f.change}/${name}`
+  const r = await io.run(['git', 'worktree', 'add', '-b', branch, path, f.branch], { cwd: f.mainTree })
+  if (r.exitCode !== 0) return { error: r.stderr }
+  return { path, branch }
+}
+
 export function agentType(role: Role): string {
   return role === 'executor' ? 'flight:executor' : role === 'reviewer' ? 'flight:reviewer' : 'flight:fixer'
 }
