@@ -35,14 +35,14 @@ def _repo(git_repo, gate_test="touch ran-g2"):
     return change
 
 
-def _fix_gate(git_repo, commit, ok=True):
-    """账本追加一条修复体收口门禁事件（slice fix）。"""
-    ledger_append(git_repo, "c", {
+def _fix_gate(git_repo, commit, ok=True, extra=None):
+    """账本追加一条修复体收口门禁事件（slice fix）；extra 合入事件（如 dirty）。"""
+    ledger_append(git_repo, "c", dict({
         "v": 1, "ev": "gate", "change": "c", "at": "2026-10-10T00:00:00Z",
         "by": {"plugin": "flight", "session": "test"},
         "attempt": 1, "agent": "F", "slice": "fix", "ok": ok, "commit": commit,
         "failed": [] if ok else ["G2 test: exit 1"],
-    })
+    }, **(extra or {})))
 
 
 def _bookkeeping(git_repo, change):
@@ -102,6 +102,47 @@ def test_final_reuse_needs_green_fix_gate(git_repo):
     assert (git_repo / "ran-g2").exists()
     out = json.loads(p.stdout)
     assert not any("复用" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_final_reuse_refused_when_fix_gate_dirty(git_repo):
+    # Given: 账本最后一条 fix gate ok、commit 为 X，但带 dirty=true；X 之后只有记账提交
+    change = _repo(git_repo)
+    _fix_gate(git_repo, git(git_repo, "rev-parse", "HEAD"), extra={"dirty": True})
+    _bookkeeping(git_repo, change)
+
+    # When: 运行 slice-gate.py final --reuse-fix
+    p = _final_reuse(git_repo, change)
+
+    # Then: ran-g2 存在；warnings 不含「复用」
+    assert (git_repo / "ran-g2").exists()
+    out = json.loads(p.stdout)
+    assert not any("复用" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_final_marks_dirty_worktree(git_repo):
+    # Given: 已提交的单片计划；工作树另有未跟踪的 src/extra.py
+    change = _repo(git_repo)
+    write(git_repo / "src" / "extra.py", "y = 1\n")
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: 结果带 dirty=true，warnings 有一项含「未提交改动」与 src/extra.py
+    assert out.get("dirty") is True, out
+    assert any("未提交改动" in w and "src/extra.py" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_final_ignores_bookkeeping_dirt(git_repo):
+    # Given: 已提交的单片计划；只有本 change 的 timeline.md 未提交
+    change = _repo(git_repo)
+    write(change / "timeline.md", "x\n")
+
+    # When: 运行 slice-gate.py final
+    out = json.loads(run_hook("slice-gate", "final", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: 结果不带 dirty，warnings 不含「未提交改动」
+    assert "dirty" not in out, out
+    assert not any("未提交改动" in w for w in out["warnings"]), out["warnings"]
 
 
 def test_lint_requires_gate_test(tmp_path):
