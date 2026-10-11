@@ -45,3 +45,14 @@ export function routingFindings(state: State): Finding[] {
 export function closeoutLists(state: State): {
 export const ev: {
 ```
+
+## S4
+
+### template/plugins/flight/hooks/prompts.ts
+```
+export function worktreeNote(worktree: string): string {
+export function executorPrompt(x: {
+export function reviewerPrompt(x: { change: string; changeDir: string; slice: string; commit: string }): string {
+export function resolverPrompt(x: { change: string; changeDir: string; slice: string; conflicts: string[] }): string {
+export function fixerPrompt(x: { change: string; changeDir: string; findings: Finding[] }): string {
+```
