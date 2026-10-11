@@ -172,6 +172,49 @@ def test_baseline_marks_running(git_repo):
     assert bl["ok"] is True and "running" not in bl, bl
 
 
+def _edit_plan_script(git_repo, field, value):
+    """写一个脚本作 gate.test：运行时把 slices.json 里 S1 的 field 改成 value（模拟 baseline 后台跑期间人改计划）。"""
+    write(git_repo / "edit_plan.py", (
+        "import json\n"
+        "p = 'openspec/changes/c/slices.json'\n"
+        "d = json.load(open(p, encoding='utf-8'))\n"
+        "d['slices'][0][%r] = %r\n"
+        "json.dump(d, open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)\n"
+    ) % (field, value))
+    return "%s edit_plan.py" % shlex.quote(sys.executable)
+
+
+def test_baseline_keeps_plan_edits_made_while_running(git_repo):
+    # Given: gate.test 运行时把 S1 的 owns 改成 ["src/**", "tests/**", "docs/**"]
+    change = _repo(git_repo, gate_test=_edit_plan_script(git_repo, "owns", ["src/**", "tests/**", "docs/**"]))
+
+    # When: 运行 slice-gate.py baseline
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 退出 0；slices.json 里 S1 的 owns 保留了 docs/**，且 gate.full_suite_sec 已写入
+    assert p.returncode == 0, p.stdout + p.stderr
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    assert "docs/**" in data["slices"][0]["owns"], data["slices"][0]
+    assert isinstance(data["gate"]["full_suite_sec"], (int, float)), data["gate"]
+
+
+def test_baseline_red_when_verify_edited_while_running(git_repo):
+    # Given: gate.test 运行时把 S1 的 verify 改成 "test -d src"
+    change = _repo(git_repo, gate_test=_edit_plan_script(git_repo, "verify", "test -d src"))
+
+    # When: 运行 slice-gate.py baseline，再运行 preflight
+    p = run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
+    pre = run_hook("slice-gate", "preflight", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: baseline 退出非 0、reasons 有一项含「重跑 baseline」；slices.json 保留新的 verify；preflight 拒绝起飞
+    assert p.returncode != 0, p.stdout + p.stderr
+    bl = json.loads((change / "gate-baseline.json").read_text(encoding="utf-8"))
+    assert any("重跑 baseline" in r for r in bl["reasons"]), bl
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    assert data["slices"][0]["verify"] == "test -d src", data["slices"][0]
+    assert pre.returncode != 0
+
+
 def test_preflight_reports_running_baseline(git_repo):
     # Given: gate-baseline.json 为 running 标记，pid 是当前仍存活的进程
     change = _repo(git_repo)

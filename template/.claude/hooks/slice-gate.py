@@ -1244,6 +1244,7 @@ def cmd_baseline(args):
     if not test_cmd:
         die("未配置也未探测到全量测试命令")
     gate["test"] = test_cmd
+    sha0 = plan_sha(data)
     # 运行标记：preflight 据此分辨「还在跑」与「跑到一半中断」，不把半成品当缺基线
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump({"running": True, "pid": os.getpid(), "started": now_iso()}, f, ensure_ascii=False)
@@ -1273,8 +1274,16 @@ def cmd_baseline(args):
         bl["verify"][s["id"]] = {"exit": vrc}
         if vrc != 0:
             reasons.append("%s verify 在基线上红（exit %d）：命令不可运行或含既有错误" % (s["id"], vrc))
-    save_plan(args.change_dir, data)
-    bl["plan_sha"] = plan_sha(data)
+    # 后台跑期间人可能改了 slices.json：重读当前文件，只写回耗时，不拿开跑时的旧数据整份覆盖
+    cur = load_plan(args.change_dir)
+    cg = cur.setdefault("gate", {})
+    if not cg.get("test"):
+        cg["test"] = test_cmd
+    cg["full_suite_sec"] = gate["full_suite_sec"]
+    save_plan(args.change_dir, cur)
+    bl["plan_sha"] = sha0
+    if plan_sha(cur) != sha0:
+        reasons.append("基线运行期间 gate / verify 被修改，重跑 baseline")
     bl["ok"] = not reasons
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump(bl, f, ensure_ascii=False, indent=2)
