@@ -10,3 +10,4 @@
 2026-10-11T00:33:23Z	fix	blocking=2
 2026-10-11T00:34:45Z	final	ok
 2026-10-11T00:34:46Z	apply-done	blocked=0 blocking=2
+2026-10-11T00:34:46Z	ship	draft: 2 条 CRITICAL/HIGH 评审未闭环
