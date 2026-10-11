@@ -437,6 +437,11 @@ def source_files(files, change_rel):
             and not f.startswith(change_rel + "/") and f != MARKER]
 
 
+def is_bytecode(path):
+    """Python 字节码（__pycache__ 目录或 .pyc）：跑测试的副产物，不算任何切片的改动。"""
+    return "__pycache__" in path.split("/") or path.endswith(".pyc")
+
+
 def changed_files(root, base):
     head = git(root, "rev-parse", "HEAD")
     committed = set()
@@ -448,7 +453,7 @@ def changed_files(root, base):
     for line in porcelain.splitlines():
         if len(line) > 3:
             uncommitted.add(line[3:].split(" -> ")[-1].strip())
-    return committed, uncommitted
+    return set(f for f in committed if not is_bytecode(f)), set(f for f in uncommitted if not is_bytecode(f))
 
 
 def added_lines(root, base):
@@ -637,7 +642,8 @@ def _pytest_outcomes(root, targets, gate=None):
         with open(os.path.join(tmp, "flight_g7_outcomes.py"), "w", encoding="utf-8") as f:
             f.write(G7_PLUGIN)
         out = os.path.join(tmp, "outcomes.jsonl")
-        env = dict(os.environ, FLIGHT_G7_OUT=out,
+        # 不写字节码：__pycache__ 落进被测 worktree 会被当成改动（G5 起点测量、source 判定）
+        env = dict(os.environ, FLIGHT_G7_OUT=out, PYTHONDONTWRITEBYTECODE="1",
                    PYTHONPATH=os.pathsep.join(p for p in (tmp, os.environ.get("PYTHONPATH")) if p))
         argv = prefix + ["-p", "flight_g7_outcomes", "-p", "no:cacheprovider", "--rootdir", root, *targets]
         timed_out, rc, text = False, None, ""

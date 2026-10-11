@@ -1594,3 +1594,38 @@ def test_measure_right_after_start_is_start_measure(git_repo):
     # Then: changed 为空；G5 不报「缺少本片起点测量」
     assert out["changed"] == [], out["changed"]
     assert not any("缺少本片起点测量" in f for f in _g5(g)), g["failed"]
+
+# ---------------------------------------------------------------- PR #46 评审修复
+
+
+def test_measure_ignores_bytecode_and_disables_it(git_repo):
+    # Given: S1 的目标测试在 base 就存在、断言 pytest 进程关了字节码写入；起跑后工作树里有 Python 写出的未跟踪 __pycache__
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_env.py::test_no_bytecode"
+    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_env.py"], scenarios=["cap#env"])],
+                            scenario_tests={"cap#env": target}))
+    write(git_repo / "tests" / "test_env.py", '''
+import os
+
+
+def test_no_bytecode():
+    # Given: 测量启动的 pytest 进程
+    flag = os.environ.get("PYTHONDONTWRITEBYTECODE")
+    # When: 读取字节码开关
+    value = flag
+    # Then: 已关掉字节码写入
+    assert value == "1"
+''')
+    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
+    commit_all(git_repo, "artifacts")
+    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
+    base = json.loads(s.stdout)["base"]
+    write(git_repo / "src" / "__pycache__" / "mod.cpython-39.pyc", "x")
+    write(git_repo / "tests" / "__pycache__" / "test_env.cpython-39-pytest-8.4.2.pyc", "x")
+
+    # When: 运行 measure
+    out = json.loads(run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo).stdout)
+
+    # Then: 目标通过（pytest 进程关了字节码写入）；changed 与 source 都不含字节码，为空
+    assert out["outcomes"] == [[target, "PASSED"]], out
+    assert out["changed"] == [] and out["source"] == [], out
