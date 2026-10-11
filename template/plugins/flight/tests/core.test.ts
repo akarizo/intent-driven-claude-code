@@ -387,6 +387,30 @@ test('plan-change-forces-fresh-dispatch', () => {
   ])
 })
 
+test('plan-change-forces-fresh-dispatch/old-plan-gate', () => {
+  // Given: waves [[S1, S2]]；attempt 1（指纹 F）里 S1 的执行体 a1 门禁绿（base b1）未合回；
+  //   attempt 2（指纹 G）重新派发了 S1 的执行体 a2，它在第一次收口前就中断；attempt 3 仍以指纹 G 起飞
+  const evs = [
+    approve,
+    ev.takeoff(B, { attempt: 1, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.gate(B, { attempt: 1, agent: 'a1', slice: 'S1', ok: true, commit: 'c-S1', failed: [], base: 'b1' }),
+    ended(1, 'a1'),
+    ev.takeoff(B, { attempt: 2, fp: G, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+    dispatch(2, 'S1', 'executor', 'a2'),
+    ev.takeoff(B, { attempt: 3, fp: G, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+  ]
+
+  // When: 以指纹 G 求 attempt 3 的下一批动作
+  const got = next(reduce(evs), ONE, G)
+
+  // Then: S1 不拿旧计划（指纹 F）下的绿门禁补跑：是带续接说明、不带 base 的派发；S2 是新派发
+  expect(got).toEqual([
+    { kind: 'dispatch', role: 'executor', slice: 'S1', continuation: { reason: '上一次飞行中断', failed: [] } },
+    { kind: 'dispatch', role: 'executor', slice: 'S2' },
+  ])
+})
+
 test('dispatch-records-branch', () => {
   // Given: change demo 的三条 dispatch：a1 带 branch flight/demo/S1-a2；
   //   a3 不带 branch、worktree 为 /m/.claude/worktrees/flight-demo-S3；a4 不带 branch、worktree 为 /wt/S4（推不出）

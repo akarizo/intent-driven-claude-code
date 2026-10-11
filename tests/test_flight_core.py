@@ -123,3 +123,12 @@ def test_dispatch_records_branch():
     # When: 分别 agentOf
     # Then: 前者 branch 为记下的分支，后者推出 flight/demo/S3
     assert_ts_passed("dispatch-records-branch")
+
+# ---------------------------------------------------------------- PR #47 评审修复
+
+
+def test_old_plan_gate_not_regated():
+    # Given: attempt 1（指纹 F）S1 门禁绿未合回；attempt 2（指纹 G）重派 S1 后在收口前中断；attempt 3 仍为指纹 G
+    # When: 求 attempt 3 的下一批动作
+    # Then: S1 是带续接、不带 base 的派发，不拿旧计划的绿门禁补跑
+    assert_ts_passed("plan-change-forces-fresh-dispatch/old-plan-gate")

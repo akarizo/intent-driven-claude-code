@@ -125,7 +125,8 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     // 续接只限同一份计划：上一个执行体所在 attempt 的起飞指纹与当前不同就另起新派发（design D2）
     const prevTakeoff = last(evs.filter(e => e.ev === 'takeoff' && e.attempt === prev.attempt))
     if (prevTakeoff?.fp !== takeoff!.fp) return fresh
-    const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s))
+    // 门禁结论也只认上一个执行体派发之后的：更早的属于旧计划或旧现场，不得拿来补跑（PR #47 评审 MEDIUM）
+    const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s && e.seq > prev.seq))
     const b = baseOf(g)
     if (g?.ok === true && b.base) return { kind: 'regate', slice: s, base: b.base, worktree: str(prev, 'worktree') }
     return { ...fresh, continuation: { reason: '上一次飞行中断', failed: failedOf(g) }, ...b }
