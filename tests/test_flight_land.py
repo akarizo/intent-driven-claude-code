@@ -99,3 +99,12 @@ def test_merges_use_recorded_branch():
     assert_ts_passed("merges-use-recorded-branch/resolve")
     assert_ts_passed("merges-use-recorded-branch/finish")
     assert_ts_passed("merges-use-recorded-branch/fix")
+
+# ---------------------------------------------------------------- PR #47 评审修复
+
+
+def test_resolve_branch_left():
+    # Given: 解冲突 worktree flight-demo-S1-resolve 已删，但分支 flight/demo/S1-resolve 还在
+    # When: 以 attempt 2 准备 S1 的解冲突现场
+    # Then: 另建 flight-demo-S1-resolve-a2
+    assert_ts_passed("merges-use-recorded-branch/resolve-branch-left")

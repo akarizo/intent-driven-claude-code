@@ -117,3 +117,12 @@ def test_fresh_worktree_never_reuses_old():
     assert_ts_passed("fresh-worktree-never-reuses-old")
     assert_ts_passed("fresh-worktree-never-reuses-old/original-name")
     assert_ts_passed("fresh-worktree-never-reuses-old/both-exist")
+
+# ---------------------------------------------------------------- PR #47 评审修复
+
+
+def test_fresh_worktree_branch_left():
+    # Given: S1 的旧 worktree 已删，但分支 flight/demo/S1 还在（另一份世界里 S1-a2 的分支也在）
+    # When: 以 attempt 2 为 S1 另起 worktree
+    # Then: 改建 S1-a2；两个分支都在时报「分支已存在」且不运行 worktree add
+    assert_ts_passed("fresh-worktree-never-reuses-old/branch-left")

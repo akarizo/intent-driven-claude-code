@@ -128,6 +128,8 @@ function useWorld(on: On, w: World) {
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
+  // worktree add -b 建过的分支（freshWorktree 用 rev-parse --verify refs/heads/<分支> 查占用）
+  const branches = new Set<string>()
   let agents = 0
   let conflicted = ''
   let pending: Record<string, unknown> | undefined
@@ -233,6 +235,7 @@ function useWorld(on: On, w: World) {
       case 'worktree':
         if (args[1] === 'list') return wrap(res(0, `worktree ${MAIN}\nbranch refs/heads/main\n\nworktree ${TREE}\nbranch refs/heads/worktree-demo\n`))
         exists.add(String(args[4]))
+        branches.add(String(args[3]))
         return wrap(res(0, ''))
       case 'status': {
         // 带路径的 status（commitRecords 查飞行记录）只报所列路径里的改动；不带路径的整树检查报全部改动
@@ -250,6 +253,8 @@ function useWorld(on: On, w: World) {
       case 'mktree':
         return wrap(res(0, 'e'.repeat(40) + '\n'))
       case 'rev-parse': {
+        const head = args.find(a => String(a).startsWith('refs/heads/'))
+        if (head) return wrap(res(branches.has(String(head).slice('refs/heads/'.length)) ? 0 : 1, ''))
         // 切片分支尖端：tip-<切片>（integrated 的切片据此在第一父链的合并提交里当第二父）
         const ref = args.find(a => String(a).startsWith('flight/demo/'))
         return wrap(res(0, ref ? `tip-${String(ref).split('/').pop()}\n` : 'd'.repeat(40) + '\n'))

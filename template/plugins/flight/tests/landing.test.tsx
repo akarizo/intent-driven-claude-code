@@ -72,6 +72,8 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
     case 'mktree':
       return ok('e'.repeat(40) + '\n')
     case 'rev-parse':
+      // rev-parse --verify refs/heads/<分支>（freshWorktree 查占用）：分支都不存在
+      if (args.some(a => String(a).startsWith('refs/heads/'))) return { exitCode: 1, stdout: '', stderr: '' }
       return ok('d'.repeat(40) + '\n')
     case 'commit-tree':
       return ok('c'.repeat(40) + '\n')

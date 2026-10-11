@@ -26,7 +26,7 @@ function flight(hooksDir: string): Flight {
 }
 
 /** 假 Io：files 为存在的路径；updateRefFailures 为前几次 update-ref 旧值不符。 */
-function world(w: { files: string[]; updateRefFailures?: number }): { io: Io; calls: Call[] } {
+function world(w: { files: string[]; updateRefFailures?: number; branches?: string[] }): { io: Io; calls: Call[] } {
   const calls: Call[] = []
   let updateRefs = 0
   const io: Io = {
@@ -39,6 +39,8 @@ function world(w: { files: string[]; updateRefFailures?: number }): { io: Io; ca
         case 'mktree':
           return ok('e'.repeat(40) + '\n')
         case 'rev-parse':
+          // rev-parse --verify --quiet refs/heads/<分支>：只有 w.branches 里的分支存在
+          if (argv.some(a => a.startsWith('refs/heads/'))) return (w.branches ?? []).some(b => argv.includes(`refs/heads/${b}`)) ? ok(HEAD + '\n') : fail('')
           return ok(HEAD + '\n')
         case 'commit-tree':
           return ok('c'.repeat(40) + '\n')
@@ -456,8 +458,11 @@ test('fresh-worktree-never-reuses-old', async () => {
   // When: 以 attempt 2 为 S1 另起 worktree
   const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
 
-  // Then: 只在主 worktree 运行一次 git worktree add -b flight/demo/S1-a2 <flight-demo-S1-a2> worktree-demo（不碰旧树）；返回 S1-a2 的路径与分支
-  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo']])
+  // Then: 在主 worktree 先查分支 flight/demo/S1-a2 不存在，再运行一次 git worktree add -b flight/demo/S1-a2 <flight-demo-S1-a2> worktree-demo（不碰旧树）；返回 S1-a2 的路径与分支
+  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([
+    [MAIN, 'git', 'rev-parse', '--verify', '--quiet', 'refs/heads/flight/demo/S1-a2'],
+    [MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo'],
+  ])
   expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
 })
 
@@ -468,8 +473,11 @@ test('fresh-worktree-never-reuses-old/original-name', async () => {
   // When: 以 attempt 2 为 S2 另起 worktree
   const r = await freshWorktree(io, flight(HOOKS), 'S2', 2)
 
-  // Then: 在主 worktree 运行 git worktree add -b flight/demo/S2 <flight-demo-S2> worktree-demo；返回原名的路径与分支
-  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S2', '/repo/.claude/worktrees/flight-demo-S2', 'worktree-demo']])
+  // Then: 在主 worktree 先查分支 flight/demo/S2 不存在，再运行 git worktree add -b flight/demo/S2 <flight-demo-S2> worktree-demo；返回原名的路径与分支
+  expect(calls.map(c => [c.cwd, ...c.argv])).toEqual([
+    [MAIN, 'git', 'rev-parse', '--verify', '--quiet', 'refs/heads/flight/demo/S2'],
+    [MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S2', '/repo/.claude/worktrees/flight-demo-S2', 'worktree-demo'],
+  ])
   expect(r).toEqual({ path: '/repo/.claude/worktrees/flight-demo-S2', branch: 'flight/demo/S2' })
 })
 
@@ -483,4 +491,20 @@ test('fresh-worktree-never-reuses-old/both-exist', async () => {
   // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2>」
   expect(calls).toEqual([])
   expect(r).toEqual({ error: `worktree 已存在：${SLICE_A2}` })
+})
+
+test('fresh-worktree-never-reuses-old/branch-left', async () => {
+  // Given: S1 的旧 worktree 已被人删掉，但没合并的分支 flight/demo/S1 还在（branch -d 删不掉）；另一份世界里 flight/demo/S1-a2 也还在
+  const left = world({ files: [], branches: ['flight/demo/S1'] })
+  const both = world({ files: [], branches: ['flight/demo/S1', 'flight/demo/S1-a2'] })
+
+  // When: 两份世界各以 attempt 2 为 S1 另起 worktree
+  const r = await freshWorktree(left.io, flight(HOOKS), 'S1', 2)
+  const r2 = await freshWorktree(both.io, flight(HOOKS), 'S1', 2)
+
+  // Then: 前者不按原名建（worktree add -b 会撞上已有分支），改建 flight-demo-S1-a2；后者不运行 worktree add，返回 error「分支已存在：flight/demo/S1-a2」
+  expect(left.calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo']])
+  expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
+  expect(both.calls.filter(c => c.argv[1] === 'worktree')).toEqual([])
+  expect(r2).toEqual({ error: '分支已存在：flight/demo/S1-a2' })
 })

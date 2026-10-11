@@ -2,7 +2,7 @@
 // 只依赖 core.ts 的类型与 Io：不 import claude-code 的运行时值，不调用任何 $。git 一律 `git -C <worktree> ...`。
 import type { Finding, Flight, GateJson, Io, RunResult, Severity } from './core'
 import { globMatch } from './envelope'
-import { worktreePath } from './io'
+import { occupied, worktreePath } from './io'
 
 export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
 
@@ -178,14 +178,15 @@ export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJso
   return r.ok ? r : { ...r, conflicts: [] }
 }
 
-/** 解冲突 worktree 按 io.freshWorktree 的规则命名：<S>-resolve 已存在则另起 <S>-resolve-a<attempt>，都在则报错；不传 attempt 时只认原名。 */
+/** 解冲突 worktree 按 io.freshWorktree 的规则命名：<S>-resolve 被占用（worktree 或分支已存在）则另起 <S>-resolve-a<attempt>，都被占用则报错；不传 attempt 时只认原名。 */
 async function freshResolve(io: Io, f: Flight, slice: string, attempt?: number): Promise<{ path: string; branch: string } | { error: string }> {
   const names = [`${slice}-resolve`, ...(attempt === undefined ? [] : [`${slice}-resolve-a${attempt}`])]
+  let why = ''
   for (const name of names) {
-    const path = worktreePath(f, name)
-    if (!(await io.exists(path))) return { path, branch: `flight/${f.change}/${name}` }
+    why = (await occupied(io, f, name)) ?? ''
+    if (!why) return { path: worktreePath(f, name), branch: `flight/${f.change}/${name}` }
   }
-  return { error: `worktree 已存在：${worktreePath(f, names[names.length - 1])}` }
+  return { error: why }
 }
 
 /** 冲突时：merge --abort；另起解冲突 worktree（flight-<change>-<S>-resolve，已存在则 -a<attempt>，基于 f.branch）并在其中合并 x.branch（缺省 flight/<change>/<S>） */

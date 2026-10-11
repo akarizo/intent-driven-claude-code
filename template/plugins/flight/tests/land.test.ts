@@ -19,7 +19,9 @@ function fakeIo(files: Record<string, string>, respond: Respond) {
     async run(argv, opts) {
       calls.push({ argv: [...argv], cwd: opts?.cwd })
       // 合回前的检查：未预设时第一父链上没有以切片尖端为第二父的合并提交（未合入过）、分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
-      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
+      // rev-parse --verify 查分支：未预设时分支不存在
+      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' }
+        : argv.some(a => a.startsWith('refs/heads/')) ? { exitCode: 1 } : {}
       return { exitCode: 0, stdout: '', stderr: '', ...preset, ...(respond([...argv]) ?? {}) }
     },
     async read(p) {
@@ -322,6 +324,22 @@ test('merges-use-recorded-branch/resolve', async () => {
   expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S1-resolve-a2', RESOLVE_S1_A2, 'worktree-demo'])
   expect(calls[find(calls, RESOLVE_S1_A2, 'merge', '--no-ff')].argv).toEqual(['git', '-C', RESOLVE_S1_A2, 'merge', '--no-ff', S1_A2, '-m', 'integrate: S1'])
   expect(calls.filter(c => c.argv.includes(RESOLVE_S1))).toEqual([])
+  expect(result).toEqual({ path: RESOLVE_S1_A2, conflicts: ['a.py'], branch: 'flight/demo/S1-resolve-a2' })
+})
+
+test('merges-use-recorded-branch/resolve-branch-left', async () => {
+  // Given: 解冲突 worktree flight-demo-S1-resolve 已被人删掉，但分支 flight/demo/S1-resolve 还在；
+  //   新解冲突现场里合并 flight/demo/S1-a2 时 git merge 退出 1，diff --diff-filter=U 输出 a.py
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'refs/heads/flight/demo/S1-resolve') ? { exitCode: 0 }
+      : has(argv, RESOLVE_S1_A2, 'merge', '--no-ff') ? { exitCode: 1 } : has(argv, RESOLVE_S1_A2, '--diff-filter=U') ? { stdout: 'a.py\n' } : undefined,
+  )
+
+  // When: 以 attempt 2、分支 flight/demo/S1-a2 准备 S1 的解冲突现场
+  const result = await prepareResolve(io, F, 'S1', { branch: S1_A2, attempt: 2 })
+
+  // Then: 不按原名建（worktree add -b 会撞上已有分支），另建 flight-demo-S1-resolve-a2（分支 flight/demo/S1-resolve-a2）；返回新路径、冲突 [a.py] 与解冲突分支
+  expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S1-resolve-a2', RESOLVE_S1_A2, 'worktree-demo'])
   expect(result).toEqual({ path: RESOLVE_S1_A2, conflicts: ['a.py'], branch: 'flight/demo/S1-resolve-a2' })
 })
 
