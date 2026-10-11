@@ -22,3 +22,13 @@ S2 在 G2 这一处之前插入复用判断（`--reuse-fix`），在 `cmd_baseli
 ## S3、S4、S5
 
 彼此之间、与 S1 / S2 之间没有代码接口。约定只有一条：S4 让插件以 `slice-gate.py final --change-dir <dir> --reuse-fix` 调用 final，参数语义由 S2 实现（design D3）。S4 的测试用假 io，不依赖 S2 的实现。
+
+## S4
+
+### template/plugins/flight/hooks/landing.tsx
+```
+export const FINDINGS_TOOL: { name: 'submit_findings'; description: string; inputSchema: Record<string, unknown> } = {
+export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
+export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
+export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
+```
