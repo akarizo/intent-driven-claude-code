@@ -15,7 +15,7 @@
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
 #   final    --change-dir DIR [--reuse-fix]   先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
-#                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿且其后只有记账改动 → 复用其全量结论
+#                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿、未带 dirty 且其后只有记账改动 → 复用其全量结论
 #   baseline --change-dir DIR                 起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
 #                                              再跑 gate.test / lint / typecheck 与每片 verify，结束时整体覆盖为结果；
 #                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
@@ -166,7 +166,7 @@ def _summary_failed(line):
 def run_test_gate(cmd, root):
     """跑 gate.test，经 PYTEST_ADDOPTS 注入 --junitxml。
     返回 {"rc", "out", "failed": [classname::name, ...] | None, "why": str | None}；
-    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致），why 是不可度量的理由。"""
+    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致且非 0），why 是不可度量的理由。"""
     with tempfile.TemporaryDirectory() as tmp:
         junit = os.path.join(tmp, "junit.xml")
         env = dict(os.environ)
@@ -200,6 +200,9 @@ def run_test_gate(cmd, root):
     for tc in tree.iter("testcase"):
         if tc.find("failure") is not None or tc.find("error") is not None:
             ids.add("%s::%s" % (tc.get("classname") or "", tc.get("name") or ""))
+    if summary_n == 0 or not ids:
+        res["why"] = "exit 1 但没有失败用例（覆盖率门槛 / 插件判失败？）"
+        return res
     res["failed"] = sorted(ids)
     return res
 
@@ -1153,9 +1156,30 @@ def _reusable_fix_gate(root, change_dir):
         return None, None
     last = fixes[-1]
     commit = last.get("commit")
-    if last.get("ok") is True and isinstance(commit, str) and commit and _final_fresh(root, change_dir, commit):
+    # dirty：那次门禁测的是带未提交改动的工作树，结论不对应 commit，不复用
+    if (last.get("ok") is True and last.get("dirty") is not True and isinstance(commit, str) and commit
+            and _final_fresh(root, change_dir, commit)):
         return commit, None
     return None, None
+
+
+def _dirty_paths(root, change_dir):
+    """工作树里未提交 / 未跟踪的路径，排除本 change 的记账文件与 MARKER。"""
+    change_rel = os.path.relpath(os.path.abspath(change_dir), root).replace(os.sep, "/")
+    skip = {MARKER} | {"%s/%s" % (change_rel, b) for b in BOOKKEEPING}
+    raw = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"], cwd=root,
+                         capture_output=True, text=True).stdout
+    paths, rename = [], False
+    for e in raw.split("\0"):
+        if rename:  # 重命名 / 复制项后随原路径
+            rename = False
+            continue
+        if len(e) < 4:
+            continue
+        rename = e[0] in "RC"
+        if e[3:] not in skip:
+            paths.append(e[3:])
+    return sorted(paths)
 
 
 def cmd_final(args):
@@ -1163,6 +1187,10 @@ def cmd_final(args):
     data = load_plan(args.change_dir)
     gate = data.get("gate") or {}
     failed, warnings = [], []
+    # 先于任何测试运行取证：测的是工作树，合回只带已提交内容
+    dirty = _dirty_paths(root, args.change_dir)
+    if dirty:
+        warnings.append("工作树有未提交改动，结论不对应 commit：%s" % ", ".join(dirty[:8]))
     v7, total, passed, w7 = scenario_status(root, data)
     failed.extend(v7)
     warnings.extend(w7)
@@ -1200,6 +1228,8 @@ def cmd_final(args):
               "summary": "final %s：scenario %d/%d" % ("通过" if not failed else "阻断", passed, total)}
     if reused:
         result["reused"] = reused
+    if dirty:
+        result["dirty"] = True
     append_report(args.change_dir, result)
     timeline_record(args.change_dir, "final", "ok" if result["ok"] else "red")
     print(json.dumps(result, ensure_ascii=False))
