@@ -1624,8 +1624,23 @@ def test_no_bytecode():
     write(git_repo / "tests" / "__pycache__" / "test_env.cpython-39-pytest-8.4.2.pyc", "x")
 
     # When: 运行 measure
-    out = json.loads(run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo).stdout)
+    out = json.loads(run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo,
+                              env={"PYTHONDONTWRITEBYTECODE": ""}).stdout)  # 外层先清空，测的是 hook 自己设的值
 
     # Then: 目标通过（pytest 进程关了字节码写入）；changed 与 source 都不含字节码，为空
     assert out["outcomes"] == [[target, "PASSED"]], out
     assert out["changed"] == [] and out["source"] == [], out
+
+
+def test_gate_flags_committed_bytecode(git_repo):
+    # Given: 切片 S1 的提交里夹带了 src/__pycache__/mod.cpython-39.pyc（git add -f），owns 不含它
+    change = gate_repo(git_repo)
+    write(git_repo / "src" / "__pycache__" / "mod.cpython-39.pyc", "x")
+    git(git_repo, "add", "-f", "src/__pycache__/mod.cpython-39.pyc")
+    git(git_repo, "commit", "-q", "-m", "pyc")
+
+    # When: 运行 gate S1
+    out = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: G6 点名这个已提交的字节码（只有未提交的副产物才被忽略）
+    assert any(f.startswith("G6") and "__pycache__" in f for f in out["failed"]), out["failed"]

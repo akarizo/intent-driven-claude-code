@@ -438,7 +438,7 @@ def source_files(files, change_rel):
 
 
 def is_bytecode(path):
-    """Python 字节码（__pycache__ 目录或 .pyc）：跑测试的副产物，不算任何切片的改动。"""
+    """Python 字节码（__pycache__ 目录或 .pyc）：未提交时是跑测试的副产物，不算切片改动；已提交的照常受所有权检查。"""
     return "__pycache__" in path.split("/") or path.endswith(".pyc")
 
 
@@ -453,7 +453,7 @@ def changed_files(root, base):
     for line in porcelain.splitlines():
         if len(line) > 3:
             uncommitted.add(line[3:].split(" -> ")[-1].strip())
-    return set(f for f in committed if not is_bytecode(f)), set(f for f in uncommitted if not is_bytecode(f))
+    return committed, set(f for f in uncommitted if not is_bytecode(f))
 
 
 def added_lines(root, base):
