@@ -51,7 +51,6 @@ def _baseline(git_repo, change):
     return run_hook("slice-gate", "baseline", "--change-dir", str(change), cwd=git_repo)
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：final 先判 G7，G7 红不跑全量")
 def test_final_skips_full_suite_when_g7_red(git_repo):
     # Given: cap#adds 的测试仍带 strict xfail；gate.test 运行时写下 ran-g2，gate.lint 运行时写下 ran-lint
     change = _repo(git_repo, "touch ran-g2", cap_test=STILL_XFAIL, lint="touch ran-lint")
@@ -67,7 +66,6 @@ def test_final_skips_full_suite_when_g7_red(git_repo):
     assert any("G2 全量未跑" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：final 的判定顺序为 G7 在 G2 之前")
 def test_final_runs_g7_before_full_suite(git_repo):
     # Given: cap#adds 的测试通过、运行时向 order.log 追加 g7；gate.test 运行时向 order.log 追加 g2
     change = _repo(git_repo, "echo g2 >> order.log", cap_test=ORDERED)
@@ -80,7 +78,6 @@ def test_final_runs_g7_before_full_suite(git_repo):
     assert (git_repo / "order.log").read_text(encoding="utf-8").split() == ["g7", "g2"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：baseline 记录可度量的预存红")
 def test_baseline_records_preexisting_failures(git_repo):
     # Given: gate.test 为 pytest；tests 里 test_old 失败、其余通过
     change = _repo(git_repo, PYTEST, files={"tests/test_old.py": OLD_RED})
@@ -96,7 +93,6 @@ def test_baseline_records_preexisting_failures(git_repo):
     assert any("预存红" in w for w in bl.get("warnings") or []), bl.get("warnings")
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：final 按基线排除预存红")
 def test_final_excludes_baseline_failures(git_repo):
     # Given: 上述基线已生成；test_old 仍失败，cap#adds 的测试通过
     change = _repo(git_repo, PYTEST, files={"tests/test_old.py": OLD_RED})
@@ -110,7 +106,6 @@ def test_final_excludes_baseline_failures(git_repo):
     assert any("按基线排除" in w for w in out["warnings"]), out["warnings"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：final 只对基线外的失败判红")
 def test_final_flags_new_failures(git_repo):
     # Given: 上述基线已生成；又新增一个失败的 test_new
     change = _repo(git_repo, PYTEST, files={"tests/test_old.py": OLD_RED})
@@ -127,7 +122,6 @@ def test_final_flags_new_failures(git_repo):
     assert "新增" in g2[0] and "test_new" in g2[0] and "test_old" not in g2[0], g2[0]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：汇总行不止一行时按退出码判")
 def test_diff_falls_back_when_unmeasurable(git_repo):
     # Given: gate.test 先后运行两次 pytest（输出两行汇总），其中有失败
     change = _repo(git_repo, "%s; %s" % (PYTEST, PYTEST), files={"tests/test_old.py": OLD_RED})
@@ -141,7 +135,6 @@ def test_diff_falls_back_when_unmeasurable(git_repo):
     assert any("按退出码" in r and "汇总行" in r for r in bl["reasons"]), bl["reasons"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：非 pytest 的 gate.test 写明按退出码判")
 def test_non_pytest_gate_keeps_exit_code(git_repo):
     # Given: gate.test 为 sh -c 'exit 1'
     change = _repo(git_repo, "sh -c 'exit 1'")
