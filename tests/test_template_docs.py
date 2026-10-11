@@ -186,9 +186,11 @@ def test_propose_baseline_red_stops():
     cmd = read(CMD / "opsx-propose.md")
     skill = read(SKILLS / "openspec-propose" / "SKILL.md")
 
-    # When: 取两者的 step 4 段
+    # When: 取两者的 baseline 步骤段（从 slice-gate.py baseline 到下一个步骤标题）
     def step4(t):
-        return t[t.index("slice-gate.py baseline"):t.index("spec_html.py")]
+        at = t.index("slice-gate.py baseline")
+        nxt = re.search(r"\n\d+(?:\.\d+)?\.? \*\*", t[at:])
+        return t[at:at + nxt.start()]
 
     # Then: 两者都含 gate-baseline.json 与「停下报告」，并说明 verify 在基线上必须绿；hook 脚本集合一致
     for t in (cmd, skill):
@@ -282,7 +284,6 @@ def test_reviewer_diff_empty_vs_unreachable():
 
 # ---------------------------------------------------------------- flight-gate-speedup · propose-parallel-baseline#*
 
-@pytest.mark.xfail(strict=True, reason="S5 未实现：propose 先渲染审批页、baseline 后台跑")
 def test_propose_renders_panel_before_baseline():
     # Given: opsx-propose.md 与 openspec-propose/SKILL.md
     cmd = read(CMD / "opsx-propose.md")
@@ -303,7 +304,6 @@ def test_propose_renders_panel_before_baseline():
     assert hooks(cmd) == hooks(skill)
 
 
-@pytest.mark.xfail(strict=True, reason="S5 未实现：schema 写明 gate.test 必填与测试差分")
 def test_schema_requires_gate_test():
     # Given: schema.yaml 的 tasks 工件 instruction
     schema = read(SCHEMA / "schema.yaml")
