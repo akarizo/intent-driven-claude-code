@@ -1,0 +1,214 @@
+{
+  "blocked": [],
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 292,
+      "summary": "eval 内层的 cd / pushd / popd 不回传给外层：`eval cd /repo && git commit -m x` 判定为放行（定向抽查已确认返回 undefined）。eval 在当前 shell 执行，真实的作用目录已是 /repo，这样改动类 git 就逃出了自己的 worktree。本切片新加的 eval 递归与换目录跟踪合在一起留下了这个缺口",
+      "fix": "让 segmentsVerdict 同时返回结束时的 cwd（例如返回 { deny?, cwd }，或单独写一个内部函数）。prog 为 eval 时，用内层返回的 cwd 覆盖外层 cwd。bash/sh/zsh -c 跑在子进程里，外层 cwd 保持不变。最保守的做法是只要遇到 eval 段，就把 cwd 置为 null，与 popd 同样处理。补一个用例：`eval cd /repo && git commit -m x` 必须被拒，理由含「自己的 worktree」"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 290,
+      "summary": "段首的 GIT_* 赋值没有带进 -c / eval 的内层判定：`GIT_DIR=/repo/.git bash -c \"git commit -m x\"` 和 `env GIT_WORK_TREE=/repo eval git add a` 都判定为放行（抽查已确认）。外层段的 envKeys 在递归时被丢掉，内层的改动类 git 看不到 GIT_*，git-env-overrides-denied 要拦的作用对象改写因此能绕过去",
+      "fix": "在 `if (inner !== undefined)` 分支里，gitEnv 非空就直接 `return gitEnvDeny(gitEnv)`（最简单，宁可多拒）。也可以给 segmentsVerdict 加一个继承的 envKeys 参数，与内层各段自己的 envKeys 合并后再判定。git-env-overrides-denied 补上这两条命令作为拒绝用例"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 388,
+      "summary": "判据 1 认定起点测量的条件是 `changed == []`，但真实飞行里按 D3 的顺序（先 `slice-gate start`、再起点测量）这个条件基本不可能成立。原因有两处：一是 start 在 toplevel 写的 `.openspec-slice` 标记是未跟踪文件，仓库没有 gitignore 它，`git status --porcelain` 会列出 `?? .openspec-slice`；二是 start 调 timeline_record 改了 change 目录下的 timeline.md。changed_files 把这两类都算进 uncommitted，所以 cmd_measure 输出的 changed 不会为空。cmd_gate 自己算 stray 时专门排除了 MARKER，说明标记确实出现在 uncommitted 里；S1 的 measure 测试也只用子集断言 `<= set(out[\"changed\"])`。结果是账本模式的 G5 在实际飞行中会一律判「缺少本片起点测量」，全部变红。本片测试直接往账本写 `changed=[]` 的事件，没有覆盖到这个集成路径。（基于代码推理，未实跑，需进一步确认）",
+      "fix": "统一起点测量的口径，两种改法任选其一。(a) 在 cmd_measure 里计算 changed 时排除簿记文件：`changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + \"/\"))`，与 source_files 的排除口径保持一致。(b) 在 g5_ledger_verdict 里认定起点测量时，先剔除 MARKER 和 change 目录下的路径，再判是否为空，change_rel 作为参数传入。另补一条集成用例：起跑 S1 后立即运行 `slice-gate measure S1`，断言 changed 为 `[]`，同时断言账本模式的 gate 能认出这次起点测量。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/versions.ts",
+      "line": 33,
+      "summary": "选条目只认 scope 为 project 和 user 两种，与切片包一致；但 Claude Code 的插件安装还有 local 作用域（需进一步确认 installed_plugins.json 里是否会出现 scope:'local' 且带 projectPath 的条目）。如果有，本项目按 local 安装的 flight 会被跳过，转而拿 user 条目比较。user 条目若是另一个版本，起飞会被误拒，并提示 /reload-plugins，而照提示操作也解决不了。",
+      "fix": "先在本机用 `claude plugin install --scope local` 实测 installed_plugins.json 的格式。确认存在后，在 pickEntry 里把『scope 为 local 且 projectPath 等于 mainTree』的条目与 project 条目同等优先（或排在 project 之前），并补一条用假 Io 的测试；同时更新 spec 和 S6.md 里的选条目规则。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/versions.ts",
+      "line": 65,
+      "summary": "只要 ledger.py events 退出码非 0，都报成『判定器过旧（没有 events 子命令）』。python3 不存在（127）、ledger.py 路径错误、语法错误等其他原因也会得到这条提示，排查方向会被带偏。文案本身是切片包规定的，不算偏离规格。",
+      "fix": "可选：在规定文案后面附上 r.stderr 的首行（或退出码），例如 `…：先把主检出更新到与插件同一版本（退出 ${r.exitCode}：${firstLine(r.stderr)}）`。要动文案，先同步修改 spec/S6.md 和对应的测试断言。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/versions.ts",
+      "line": 56,
+      "summary": "两处理由里的路径口径不一致：『本会话加载的不是安装副本（…）』用的是原始 x.pluginRoot，拒飞理由里的路径却是规范化后的 install/root。功能不受影响，但同一模块里输出口径不统一。",
+      "fix": "统一用规范化后的 root（或者统一用原始值），并同步调整 installed-unverifiable-noted 测试第 ④ 种情形的期望文本。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/versions.test.ts",
+      "line": 46,
+      "summary": "选条目时『没有匹配的 project 条目就退回 user 条目』这一分支没有测试覆盖。现有用例中 project 条目都能命中，user 条目只用来证明 project 优先；测试里也没有 projectPath 不匹配、改选 user 条目的情形。",
+      "fix": "补一个用例（可以作为 loaded-matches-installed 的附加断言，或另起非 scenario 的测试）：project 条目的 projectPath 设为 /other，user 条目的 installPath 等于 pluginRoot，期望结果为 { ok: true, line: '插件 x' }。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 172,
+      "summary": "ownership 新增的 Unknown 分支在本 commit 里没有调用方能正确处理。orchestrator.tsx:133 的 flyingWho 只排除了 pending，Unknown 带的 change 在 active 里，于是会继续往下走：owner.role / slice / worktree 都是 undefined，role 既不是 executor 也不是 reviewer，就落进 fixer 分支，owns 取 Object.values(env.owns).flat()。也就是在 S5 合入、S7 尚未合入的中间状态，判不出会退化成按 fixer 的全部 owns、worktree 为 undefined 放行，与 fail-closed 的意图相反。按 TS 类型，这里访问 owner.role 也应当报类型错误（仓库是否对插件跑 tsc，需进一步确认）。S7.md:56 已安排由 S7 修 flyingWho，所以只列 MEDIUM。",
+      "fix": "确认 S7 与 S5 一定在同一个 PR 内合入，且 S7 的 unknown-owner-fails-closed 测试覆盖『Unknown 不得落入 fixer 分支』。也可以在 flyingWho 里先加一行最小守卫：owner 带 'unknown' 时直接 return，或按 S7 约定返回 { unknown: true, error }，免得中间提交 fail-open。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/io.test.ts",
+      "line": 385,
+      "summary": "ledger-read-failure-not-cached 在 expect 之后才执行 flights.clear() / active.clear()，而且没有放进 finally。一旦断言失败，demo 会残留在 flights 和 active 里，后续用例的 scanAgent / scanRefs 行为跟着改变，造成连锁假红，不好定位。",
+      "fix": "把清理放进 try/finally，或者在依赖 flights / active 的用例开头统一 clear。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_io.py",
+      "line": 106,
+      "summary": "Python 骨架 test_measure_event_checked_before_write 把与本 scenario 无关的 TS 用例 event-types-exported（导出事件类型表）也挂在 flight-measure#measure-event-checked-before-write 名下。scenario 与测试的映射因此变宽：event-types-exported 失败时，会被报成 measure 写入校验的 scenario 失败。",
+      "fix": "把 assert_ts_passed(\"event-types-exported\") 从这个骨架里移走（EVENT_TYPES 的消费方 S7 有自己的 scenario），或者单独起一个不映射 scenario 的普通测试。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/io.test.ts",
+      "line": 355,
+      "summary": "切片包写明的边界『refs/flight/* 里不在 flights 的 change、或已不在 active 的已登记 flight，账本读失败仍按没找到处理，不得让非飞行 agent 判不出』，没有对应的测试；现有用例只覆盖在飞账本读失败这一条路径。实现看起来是对的（scanRefs 遇到读失败就 continue；只有 active.has 时才置 unread），但以后有人回归时不会被测出来。",
+      "fix": "补一个用例：flights 里有 demo 但不在 active 里（或 demo 只出现在 refs 里），ledger.py show 退出 5，断言 ownership 返回 undefined，而不是 { unknown: true }。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_docs_iron_rules.py",
+      "line": 150,
+      "summary": "去掉文件里最后两个 xfail 标记后，`import pytest  # noqa: E402` 已经没有任何地方用到。这是本切片造成的孤立 import，而且 `noqa: E402` 压不住 F401（未使用的 import）。",
+      "fix": "删掉第 150 行的 `import pytest  # noqa: E402`；如果打算给后续骨架保留，就改成 `# noqa: E402,F401` 并注明用途。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_agents.py",
+      "line": 4,
+      "summary": "`test_executor_follows_measure_protocol` 的 xfail 装饰器是文件里唯一用到 `pytest` 的地方，去掉后第 4 行的 `import pytest` 成了孤立 import。",
+      "fix": "删掉 `import pytest`（文件里已经没有 `pytest.` 的调用）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1069,
+      "summary": "「pytest 起不来」只覆盖 Popen 抛 OSError（rc is None）这一种情况。G7 的 runner 前缀通常就是 sys.executable 或 python3，这条路径几乎走不到。更常见的起不来情形（解释器里没装 pytest 报 No module named pytest，rc=1；目标 nodeid 不存在报 usage error，rc=4 且整次运行中止）都不会走 error 分支：所有目标记成 MISSING，以退出 0 输出正常 JSON，下游会把基础设施故障当成「测试未收集」。另外，只要有一个目标不存在，pytest 就整次中止，其余目标的真实结果也一并丢失。需进一步确认切片包里「起不来」的本意。",
+      "fix": "若意图是把这类情况算作起不来：raw 为空且 rc 不在 (0, 1, 5) 之内（或 rc 非 0 且 raw 为空）时，按 error 分支输出 {slice, error: 'pytest 未产出任何结果（rc=%s）：<_g7_diag(text)>'} 并退出 1。若有意保留 MISSING 语义，就在切片包或 docstring 里写明「rc 非 0 且全部 MISSING」由下游自行判断。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1075,
+      "summary": "max(outs, key=MEASURE_RANK.index) 假定 raw 的结果只有六种。插件的 else 分支是 report.outcome.upper()，若用户仓库装了 pytest-rerunfailures 这类插件，outcome 可能是 'rerun' 等表外值，此时 .index 抛 ValueError，measure 以 traceback 退出、不输出 JSON。需进一步确认目标仓库是否会用到这类插件。",
+      "fix": "把排序 key 换成 lambda o: MEASURE_RANK.index(o) if o in MEASURE_RANK else len(MEASURE_RANK)（未知结果按最差处理，或归为 ERROR）。也可以在 G7_PLUGIN 里把表外的 outcome 映射成 ERROR。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1052,
+      "summary": "base 来自 --base 或标记时都没有校验。传了不存在的 base 时，要先跑完整轮 pytest（可能长达数百秒），之后 changed_files 里的 git diff 才抛 RuntimeError，以未捕获的 traceback 退出、不输出 JSON。另外，标记里的 slice 与 args.slice 不一致时会静默借用别片的 base（cmd_gate 也是这样，属沿袭）。",
+      "fix": "取到 base 后立即执行 git(root, 'rev-parse', '--verify', base + '^{commit}')，失败就 die('base 无效：...')。用标记里的 base 时，若 marker.get('slice') != args.slice，也应 die 或至少给出警告。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 995,
+      "summary": "抽取 source_files 时，顺手把相邻行改成了 `tests =[f for f in files if is_test_path(f)]`，等号后少了空格，属无关的格式回退。",
+      "fix": "恢复成 `tests = [f for f in files if is_test_path(f)]`。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 119,
+      "summary": "words 碰到带参数的前缀选项时会失守（fail-open）：`env -u FOO git push origin HEAD:main`、`exec -a n git push`、`env -C /repo git commit -m x` 都判定为放行（抽查已确认），选项的参数被当成了程序名，parseGit 认不出 git，整张拒绝表与 worktree 限制都绕得过去。ceiling 注释已经写明这一点，但这和切片约束「宁可多拒」相反，而且 env -C 本身就是一种换目录写法",
+      "fix": "在 words 里给前缀命令配一张带参数选项表：env 的 -u/-C/-S/-P/-L/-U/--unset/--chdir/--split-string，exec 的 -a。遇到这些选项时连同后面的参数一起剥掉；env -C/--chdir 还要让调用方把 cwd 置为 null（或按参数 resolveDir）。另一种更保守的做法：前缀之后出现不认识的 `-` 选项，就把整段标为无法判定并拒绝。补上这三条拒绝用例"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/timeline.py",
+      "line": 13,
+      "summary": "`import ledger` 放在模块顶层，不在读账本的 try 里。一旦 ledger.py 缺失或导入出错（比如下游只升级了 timeline.py），整个脚本直接崩溃，连 `record` 子命令也一起挂掉。这超出了规格「读账本抛异常 → 按 timeline 统计」的降级语义，也让原本与账本无关的 record 路径多了一个新的失败点。",
+      "fix": "把 `import ledger` 挪进 report 里现有的 `try:` 块（`import ledger; events = ledger.read_events(change_dir)`），由同一个 `except Exception` 兜底、走带「（账本读取失败，按 timeline 统计）」后缀的回退路径；record 路径不再依赖 ledger。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_evidence_timeline.py",
+      "line": 399,
+      "summary": "新加的两条回退分支没有测试覆盖：一是读账本抛异常时附「（账本读取失败，按 timeline 统计）」，二是账本存在但没有 takeoff 时按 timeline 统计且不带后缀。test_timeline_report 用的是 tmp_path（非 git 目录），实际会走异常分支，但只断言了 \"30\" 和 \"approve\"，后缀对不对没有验证。",
+      "fix": "可选补两条用例：(1) 非 git 目录或账本损坏时，断言输出含「门禁红次数：1（账本读取失败，按 timeline 统计）」；(2) git_repo 里账本只有 approve、没有 takeoff 时，断言输出含「门禁红次数：N」且不含「账本」字样。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 961,
+      "summary": "切片包第 1 条要求：重试同一切片且带 `--evidence ledger` 时，如果标记里缺 evidence 字段，要补上再写回。实现里有这段逻辑，但没有任何测试覆盖。test_start_tags_ledger_evidence 只测了首次 start。",
+      "fix": "补一条用例：先不带 --evidence 运行 start S1，再带 `--evidence ledger` 重跑 start S1。断言标记里 evidence 为 ledger，base 与 red_count 保持不变，打印的 JSON 与标记一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 392,
+      "summary": "多个 scenario 映射到同一个目标时，g5_ledger_verdict 会对同一目标重复输出豁免警告，「从未红过」的失败项也会每个 scenario 各出一条，信息冗余。",
+      "fix": "豁免警告按目标去重输出一次。失败项保留按 scenario 点名也可以接受；如果想精简，可以改成同一目标合并成一条，列出所有 scenario id。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 136,
+      "summary": "前缀命令按精确词查表（PREFIX_OPTS.get(t)），带路径或带引号的写法不剥：定向抽查确认 `/usr/bin/env -u FOO git push`、`/usr/bin/env GIT_DIR=/repo/.git git commit -m x`、`\"exec\" -a n git push` 都返回 undefined（放行），toks[0] 停在 `/usr/bin/env`，parseGit 认不出 git。这和本片要修的 MEDIUM（「env -u FOO git push 让整段判定失守」）是同一类 fail-open，只是换成绝对路径写法。旧代码 PREFIX_CMDS 也是精确匹配，所以不算本片新引入的回退；但查表这一行是本片重写的，ceiling 注释也没写明这个缺口",
+      "fix": "查表前先对词去引号、取 basename（与 progName 同口径），例如 `const p = PREFIX_OPTS.get(t.replace(/^[\"']|[\"']$/g, '').split('/').pop() ?? '')`；在 prefix-options-with-arguments 或新用例里补 `/usr/bin/env -u FOO git push` 与 `\"exec\" -a n git push` 两条应拒的断言；如果决定不修，就在 words 的 ceiling 注释里写明「前缀命令只认裸名，带路径 / 引号的不剥」"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 146,
+      "summary": "words 遇到不认识的前缀选项时返回空 toks，只有 segmentsVerdict 据 unknownOpt 拒绝。mainSessionVerdict 经 parseGit 调 words，不看 unknownOpt，所以主会话的 `env -Z x git push <在飞路径>` 不会被认成改动类 git。旧代码同样漏判，不算回退，但和注释「调用方须拒绝」的约定不一致",
+      "fix": "在 mainSessionVerdict 的 mutating 判定里把 words(seg).unknownOpt !== undefined 也算作 mutating；或者把注释改成只要求 bashVerdict 路径拒绝"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 326,
+      "summary": "需进一步确认：本片让 eval 与外层共用 state，但没有处理段首 GIT_* 赋值在特殊内建（eval / export / :）前留在当前 shell 的情形。POSIX 模式下 `GIT_DIR=/x eval : && git commit -m x` 里的 GIT_DIR 会保留到后续段，而现在只有 toks 为空时才拒 ownGitEnv，这条会放行。bash 非 POSIX 模式下这类赋值是临时的；zsh 的行为取决于 POSIX_BUILTINS 选项",
+      "fix": "保守做法：progName 为 eval（或其他特殊内建）且带 ownGitEnv 时，把这些键名并入后续各段的 inheritedEnv，或直接拒绝；至少在 ceiling 注释里记下这个缺口"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 631,
+      "summary": "切片包要求 runGate 的三条路径（执行体 SubagentStop / gate 补跑动作、regate、解冲突）一律带 --evidence ledger。新测试 gate-runs-with-ledger-evidence 只断言了执行体 SubagentStop 和解冲突两条；regate 路径（resume-regates-green-slice 只查 --base B）和 gate 补跑动作（gateBases 经 perform 的 kind==='gate'）都没有断言 --evidence ledger，这两处以后回退不会被测出来。",
+      "fix": "在 resume-regates-green-slice 的断言里加一条：该 gate 调用的 argv 含 '--evidence' 且下一项是 'ledger'。另在 silent-end-runs-gate-and-respawns 里断言补跑门禁的 argv 含 --evidence ledger 与 --base <dispatch base>。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 3,
+      "summary": "本片已去掉全部 xfail 和 import pytest，但模块 docstring 仍写着「骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。」，与现状不符。",
+      "fix": "把这行改为说明同名 TS 测试在 orchestrator.test.tsx，或直接删掉。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/measure.ts",
+      "line": 79,
+      "summary": "onMeasure 靠 flightOfAgent 找飞行；在飞账本暂时读不出时 flightOfAgent 返回 undefined，真实执行体会收到「只有本次飞行的执行体可以请求测量」。拒绝本身是安全的（fail-closed），但理由有误导，执行体可能据此放弃测量而不是稍后重试。需进一步确认 flightOfAgent 在读失败时是否确实返回 undefined。",
+      "fix": "在 orchestrator 的 measure tool.call 里先调 ownership(io, agentId)：结果为 unknown 且在 active 中时，返回 { deny: 'flight：归属判定失败（…），稍后重试' }，与 Write/Bash 的判不出路径一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/measure.ts",
+      "line": 54,
+      "summary": "outcomes 只检查了 Array.isArray，就直接断言成 [string,string][]。判定器输出畸形时，io 的写入校验会拒收，执行体看到的是「写账本失败」，掩盖了真实原因是判定器输出不合约。",
+      "fix": "解析时逐项校验 outcomes，要求每项是长度为 2 的字符串数组；不合格就返回 { error: 'slice-gate measure 输出的 outcomes 不合约' }，不去写账本。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "cc09cb00c199cdd36ba505314f05d279c65ec240"
+  }
+}

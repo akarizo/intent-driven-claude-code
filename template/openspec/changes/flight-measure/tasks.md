@@ -6,12 +6,12 @@
 
 ## 切片
 
-- [ ] S1 判定器：measure 子命令、measure 事件与 events 子命令、严格 XPASS （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_ledger.py`）
-- [ ] S2 G5 账本判据；start 与 gate 的 --evidence ledger、--measure-base （deps: S1 · verify: `python3 -m pytest -q tests/test_slice_gate.py`）
-- [ ] S3 门禁红次数与测量统计取自账本；test-evidence 对账本模式切片让位 （deps: S1 · verify: `python3 -m pytest -q tests/test_evidence_timeline.py`）
-- [ ] S4 包络补漏：解释器 -c 与 eval、换目录写法、GIT_* 环境变量、共享 config 与 fetch、Glob pattern （deps: - · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py`）
-- [ ] S5 io.ts：在飞账本读失败判不出、measure 事件写入校验、导出事件类型表 （deps: - · verify: `python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py`）
-- [ ] S6 versions.ts：插件副本核对与判定器事件表核对（纯函数） （deps: - · verify: `python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py`）
-- [ ] S7 接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0 （deps: S5, S6 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py`）
-- [ ] S8 铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议 （deps: - · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py`）
-- [ ] S9 评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径 （deps: S2, S4 · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py`）
+- [x] S1 判定器：measure 子命令、measure 事件与 events 子命令、严格 XPASS （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate.py tests/test_ledger.py`）
+- [x] S2 G5 账本判据；start 与 gate 的 --evidence ledger、--measure-base （deps: S1 · verify: `python3 -m pytest -q tests/test_slice_gate.py`）
+- [x] S3 门禁红次数与测量统计取自账本；test-evidence 对账本模式切片让位 （deps: S1 · verify: `python3 -m pytest -q tests/test_evidence_timeline.py`）
+- [x] S4 包络补漏：解释器 -c 与 eval、换目录写法、GIT_* 环境变量、共享 config 与 fetch、Glob pattern （deps: - · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py`）
+- [x] S5 io.ts：在飞账本读失败判不出、measure 事件写入校验、导出事件类型表 （deps: - · verify: `python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py`）
+- [x] S6 versions.ts：插件副本核对与判定器事件表核对（纯函数） （deps: - · verify: `python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py`）
+- [x] S7 接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0 （deps: S5, S6 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py`）
+- [x] S8 铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议 （deps: - · verify: `python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py`）
+- [x] S9 评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径 （deps: S2, S4 · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py`）
