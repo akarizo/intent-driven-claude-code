@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -356,3 +358,14 @@ def test_old_session_stops_driving():
     # When: 本会话 attempt 1 的执行体结束
     # Then: 本会话不再驱动：attempt 2 只有那条 takeoff，没有新的派发
     assert_ts_passed("cross-session-takeoff-refused/old-session-stops-driving")
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_measure_hints_unguarded_pass():
+    # Given: demo 在飞，agent-1 是 S1 执行体；测量应答 test_a PASSED、test_b FAILED、source 为空，guards 分别为空与 [test_a]
+    # When: agent-1 两次调用 mcp__flight__measure
+    # Then: 第一次结果含 test_a、「在改生产代码之前就已通过」「护栏」「不要改坏生产代码造红」；第二次不含「在改生产代码之前就已通过」
+    assert_ts_passed("measure-hints-unguarded-pass")

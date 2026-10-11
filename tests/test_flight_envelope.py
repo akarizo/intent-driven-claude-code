@@ -1,4 +1,6 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -198,3 +200,22 @@ def test_undeterminable_reason_neutral():
     # When: 判定 pushd +1 && git commit 与 cd "$X" && git add
     # Then: 都被拒，理由含「无法判定」与「目录栈旋转」，不含「相对路径且无绝对基准」
     assert_ts_passed("undeterminable-reason-neutral")
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_quoted_command_words_recognized():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 \git push、g''it push origin x、git "push"、git p\ush、"git" -C /repo commit -m x、git commit "--amend"、\env git push、\cd /repo && git commit -m x、\bash -c 'git push'，以及 W 内的 git commit -m "$(cat msg)"
+    # Then: 前九条都被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_expanded_command_word_undeterminable():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 $G push、${GIT:-git} push、$(which git) push、`which git` push、git $SUB origin，以及 echo $HOME、git status
+    # Then: 前五条都被拒且理由含「无法判定」，后两条不拒
+    assert_ts_passed("expanded-command-word-undeterminable")

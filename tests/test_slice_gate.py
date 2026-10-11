@@ -1644,3 +1644,54 @@ def test_gate_flags_committed_bytecode(git_repo):
 
     # Then: G6 点名这个已提交的字节码（只有未提交的副产物才被忽略）
     assert any(f.startswith("G6") and "__pycache__" in f for f in out["failed"]), out["failed"]
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_g5_red_after_source_not_counted(git_repo):
+    # Given: S1 映射 T1、T2（非护栏）；起点测量两者 XFAIL；source 为空的测量里 T1 FAILED、T2 XFAIL；之后 source 含 src/mod.py 的测量里 T2 FAILED
+    # When: 以账本模式运行 gate
+    # Then: 门禁红；G5 失败项点名 T2 且含「只在改了生产代码之后测到红」，不点名 T1
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_g5_unguarded_pass_before_source_red(git_repo):
+    # Given: S1 映射 T1、T2（非护栏）；起点测量 T1 PASSED、T2 XFAIL；source 为空的测量里 T1 PASSED、T2 FAILED
+    # When: 以账本模式运行 gate
+    # Then: 门禁红；G5 失败项点名 T1，含「在改生产代码之前就已通过」与「护栏」；警告里没有「免于先红」
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_g5_guard_exempt_when_passing_at_start(git_repo):
+    # Given: S1 的 guards 为 [cap#one]（T1）；起点测量 T1 PASSED、T2 XFAIL；source 为空的测量里 T2 FAILED
+    # When: 以账本模式运行 gate
+    # Then: G5 无失败项、门禁绿；警告点名 T1 并含「护栏」
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_g5_guard_must_pass_at_start(git_repo):
+    # Given: S1 的 guards 为 [cap#one]（T1）；起点测量 T1、T2 都 XFAIL；source 为空的测量里两者都 FAILED
+    # When: 以账本模式运行 gate
+    # Then: 门禁红；G5 失败项点名 T1，含「护栏」与「起点测量里未通过」
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_lint_checks_guards(git_repo):
+    # Given: 三份计划：S1 的 guards 含不在 scenarios 里的 cap#other；护栏 cap#one 没有 scenario_tests 映射；护栏 cap#one 的测试带 strict xfail
+    # When: 分别运行 slice-gate lint
+    # Then: 三次都非 0 退出，输出含 guards:、S1 与对应 scenario id；第三次含「xfail」
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_measure_lists_guard_targets(git_repo):
+    # Given: S1 映射 T1、T2，guards 为 [cap#one]（T1），已 start
+    # When: 运行 slice-gate measure S1
+    # Then: 输出 JSON 的 guards 为 [T1]
+    pytest.fail("骨架：S1 写实断言")

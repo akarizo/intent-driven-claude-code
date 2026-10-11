@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "change": "flight-measure-strict",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 88.2
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "slice-gate：G5 逐目标先红、护栏须起点已通过；lint 校验 guards；measure 输出列出护栏目标",
+      "scenarios": [
+        "flight-g5-per-target#g5-red-after-source-not-counted",
+        "flight-g5-per-target#g5-unguarded-pass-before-source-red",
+        "flight-g5-per-target#g5-guard-exempt-when-passing-at-start",
+        "flight-g5-per-target#g5-guard-must-pass-at-start",
+        "flight-guard-scenarios#lint-checks-guards",
+        "flight-guard-scenarios#measure-lists-guard-targets"
+      ],
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_slice_gate.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate.py tests/test_slice_gate_final.py tests/test_slice_gate_reuse_preflight.py",
+      "packet": "slices/S1.md"
+    },
+    {
+      "id": "S2",
+      "title": "envelope：命令名与 git 词先做 shell 去引号；命令名位置的展开判为无法判定",
+      "scenarios": [
+        "flight-envelope-shell-words#quoted-command-words-recognized",
+        "flight-envelope-shell-words#expanded-command-word-undeterminable"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/envelope.ts",
+        "template/plugins/flight/tests/envelope.test.ts",
+        "tests/test_flight_envelope.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py",
+      "packet": "slices/S2.md"
+    },
+    {
+      "id": "S3",
+      "title": "core / prompts / measure.ts：续接只认同一 agent 的门禁；提示词禁止造红；测量回复提示非护栏目标提前通过；版本 0.4.2",
+      "scenarios": [
+        "flight-continuation-agent#gate-from-other-agent-not-regated",
+        "flight-guard-scenarios#prompt-forbids-fabricated-red",
+        "flight-guard-scenarios#measure-hints-unguarded-pass"
+      ],
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/tests/core.test.ts",
+        "tests/test_flight_core.py",
+        "template/plugins/flight/hooks/prompts.ts",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "tests/test_flight_agents.py",
+        "template/plugins/flight/hooks/measure.ts",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py",
+        "template/plugins/flight/.claude-plugin/plugin.json"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_core.py tests/test_flight_agents.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py",
+      "packet": "slices/S3.md"
+    },
+    {
+      "id": "S4",
+      "title": "审批页标出护栏；schema、/opsx-propose、/opsx-continue 与同名 skill、执行体定义、测量协议 ADR 写明护栏规则",
+      "scenarios": [
+        "flight-guard-scenarios#approval-page-marks-guards",
+        "flight-guard-scenarios#docs-state-guard-rule"
+      ],
+      "owns": [
+        "template/.claude/hooks/spec_html.py",
+        "tests/test_spec_html.py",
+        "template/openspec/schemas/intent-driven/schema.yaml",
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/.claude/commands/opsx-continue.md",
+        "template/.claude/skills/openspec-continue-change/SKILL.md",
+        "template/plugins/flight/agents/executor.md",
+        "template/openspec/adr/DRAFT-flight-measure-protocol.md",
+        "tests/test_measure_strict_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_measure_strict_docs.py tests/test_spec_html.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_agents_workflow.py tests/test_takeoff_commit_docs.py tests/test_flight_agents.py",
+      "packet": "slices/S4.md"
+    }
+  ],
+  "scenario_tests": {
+    "flight-g5-per-target#g5-red-after-source-not-counted": "tests/test_slice_gate.py::test_g5_red_after_source_not_counted",
+    "flight-g5-per-target#g5-unguarded-pass-before-source-red": "tests/test_slice_gate.py::test_g5_unguarded_pass_before_source_red",
+    "flight-g5-per-target#g5-guard-exempt-when-passing-at-start": "tests/test_slice_gate.py::test_g5_guard_exempt_when_passing_at_start",
+    "flight-g5-per-target#g5-guard-must-pass-at-start": "tests/test_slice_gate.py::test_g5_guard_must_pass_at_start",
+    "flight-guard-scenarios#lint-checks-guards": "tests/test_slice_gate.py::test_lint_checks_guards",
+    "flight-guard-scenarios#measure-lists-guard-targets": "tests/test_slice_gate.py::test_measure_lists_guard_targets",
+    "flight-envelope-shell-words#quoted-command-words-recognized": "tests/test_flight_envelope.py::test_quoted_command_words_recognized",
+    "flight-envelope-shell-words#expanded-command-word-undeterminable": "tests/test_flight_envelope.py::test_expanded_command_word_undeterminable",
+    "flight-continuation-agent#gate-from-other-agent-not-regated": "tests/test_flight_core.py::test_gate_from_other_agent_not_regated",
+    "flight-guard-scenarios#prompt-forbids-fabricated-red": "tests/test_flight_agents.py::test_prompt_forbids_fabricated_red",
+    "flight-guard-scenarios#measure-hints-unguarded-pass": "tests/test_flight_orchestrator.py::test_measure_hints_unguarded_pass",
+    "flight-guard-scenarios#approval-page-marks-guards": "tests/test_spec_html.py::test_approval_page_marks_guards",
+    "flight-guard-scenarios#docs-state-guard-rule": "tests/test_measure_strict_docs.py::test_docs_state_guard_rule"
+  }
+}

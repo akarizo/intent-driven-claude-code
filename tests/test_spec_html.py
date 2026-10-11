@@ -210,3 +210,14 @@ def test_spec_html_shows_fingerprint(tmp_path):
     assert p.returncode == 0, p.stderr
     html = (d / "spec.html").read_text(encoding="utf-8")
     assert "计划指纹" in html and short.stdout.strip() in html
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：尚未实现")
+def test_approval_page_marks_guards(tmp_path):
+    # Given: change 的 slices.json：S1 的 scenarios 为 cap#one、cap#two，guards 为 [cap#one]
+    # When: 渲染 spec.html
+    # Then: cap#one 所在行含「护栏」，cap#two 所在行不含
+    pytest.fail("骨架：S4 写实断言")
