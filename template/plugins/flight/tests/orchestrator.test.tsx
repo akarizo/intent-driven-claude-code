@@ -76,7 +76,10 @@ const SLICES = {
     { id: 'S2', owns: ['a.py'], deps: [] },
     { id: 'S3', owns: ['src/s3.py'], deps: ['S1'] },
   ],
+  scenario_tests: { 'demo#s1': 'tests/test_s1.py::test_s1', 'demo#s2': 'tests/test_s1.py::test_s2' },
 }
+/** 本 change 的工件（相对 change worktree 根）：change 目录下的 proposal、同一 openspec 根下的 ADR 草稿、scenario 测试文件 */
+const ARTIFACTS = [`${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'tests/test_s1.py']
 
 // 测试里 $.plugin.root 是插件真实目录（本测试文件的上一级）
 const PLUGIN_ROOT = String(import.meta.dir).replace(/\/tests$/, '')
@@ -113,6 +116,8 @@ function useWorld(on: On, w: World) {
     logs: [] as string[],
     /** 每次 git commit 的提交信息与当时账本的事件数 */
     commits: [] as { message: string; events: number }[],
+    /** 每次 git add 在 `--` 之后的路径 */
+    adds: [] as string[][],
     /** 到达插件之下工具执行端的调用：`<工具> <目标路径或命令>` */
     reached: [] as string[],
     /** fs.exists / fs.read 问过的路径（Io.read 先问 exists，不存在就不再读） */
@@ -278,6 +283,7 @@ function useWorld(on: On, w: World) {
         dirty.clear()
         return wrap(res(0, ''))
       case 'add':
+        log.adds.push(args.slice(args.indexOf('--') + 1))
         return wrap(res(0, ''))
       case 'for-each-ref':
         // 只有本次飞行的账本：demo 已在插件进程登记，扫描不会再读别的 change
@@ -687,6 +693,75 @@ test('takeoff-commits-leftover-records/foreign-dirty', async ($, on) => {
   // Then: 回复含「工作区不干净」；账本没有新的 takeoff
   expect(r.text).toContain('工作区不干净')
   expect(log.events.filter(x => x.ev === 'takeoff').length).toBe(1)
+})
+
+const artifactCommit = (log: { commits: { message: string; events: number }[] }) => log.commits.find(c => c.message.includes('工件'))
+
+test('takeoff-commits-artifacts-when-authorized', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的只有 <change 目录>/proposal.md、template/openspec/adr/DRAFT-x.md 与 scenario 测试文件 tests/test_s1.py
+  const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+
+  // Then: 有一次说明含「工件」的提交、发生在 takeoff 事件写入之前（当时账本 0 条）；加入 proposal.md 的那次 git add 路径恰为这三个的绝对路径；回复含「✈ 起飞」
+  expect(artifactCommit(log)?.events).toBe(0)
+  expect(log.adds.find(a => a.includes(`${TREE}/${CD}/proposal.md`))).toEqual(ARTIFACTS.map(p => `${TREE}/${p}`))
+  expect(r.text).toContain('✈ 起飞')
+})
+
+test('takeoff-accepts-glued-authorization', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的只有 proposal.md、DRAFT-x.md 与 tests/test_s1.py
+  const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo授权提交（授权词粘在 change 名后面）
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo授权提交' })
+
+  // Then: 按 change demo 起飞：有一次说明含「工件」的提交，回复含「✈ 起飞 demo」
+  expect(artifactCommit(log)).toBeDefined()
+  expect(r.text).toContain('✈ 起飞 demo')
+})
+
+test('takeoff-never-commits-before-approval', async ($, on) => {
+  // Given: takeoff-gate.py 以 1 退出、stderr「未批准」；未提交的只有 proposal.md、DRAFT-x.md 与 tests/test_s1.py
+  const log = useWorld(on, demoWorld({ takeoff: res(1, '', '未批准'), dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+
+  // Then: 回复含「起飞守卫未通过」；没有任何提交；账本没有 takeoff
+  expect(r.text).toContain('起飞守卫未通过')
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+test('takeoff-hints-authorization-for-artifacts', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的只有 proposal.md、DRAFT-x.md 与 tests/test_s1.py
+  const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo（不带授权词）
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: 回复含「工作区不干净」与 `/opsx-apply demo 授权提交`；没有提交；账本没有 takeoff
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('/opsx-apply demo 授权提交')
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+test('takeoff-refuses-foreign-dirt-even-authorized', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的有 proposal.md、DRAFT-x.md、tests/test_s1.py，还有 src/x.py
+  const log = useWorld(on, demoWorld({ dirty: [...ARTIFACTS, 'src/x.py'] }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+
+  // Then: 回复含「工作区不干净」与 src/x.py、不含任何工件路径；没有提交；账本没有 takeoff
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('src/x.py')
+  expect(ARTIFACTS.filter(p => r.text.includes(p))).toEqual([])
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
 })
 
 test('drive-stops-after-terminal-without-fp', async ($, on) => {

@@ -18,6 +18,7 @@ description: 飞行模式 apply：批准后从门禁 lint 直跑到 PR，中途�
 飞行模式跑完一次 apply：批准自检（`takeoff-gate.py` 比对账本指纹；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
 
 **Input**：可选指定 change 名（如 `/opsx-apply add-auth`）。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 跳过飞行模式，转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令 step 3–7 不适用）。
+`授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
 `--engine=workflow`（可选）→ 显式选旧引擎：由模型按下面的 step 0–7 用 Workflow 引擎飞；不加则由 flight 插件状态机执行，插件缺席即停飞。
 

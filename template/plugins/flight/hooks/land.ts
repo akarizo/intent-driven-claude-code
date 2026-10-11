@@ -34,6 +34,33 @@ export async function commitRecords(io: Io, f: Flight, message: string, extra: r
   return undefined
 }
 
+/**
+ * 未提交路径（相对 change worktree 根）的机械分类（design D2）：
+ * records = 飞行记录；artifacts = change 目录下其余文件、同一 openspec 根下 adr/DRAFT-*.md、scenario 测试文件；others = 其余（含已编号 ADR、porcelain 改名行）。
+ */
+export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
+  const records = new Set(RECORD_FILES.map(r => `${x.changeDir}/${r}`))
+  const adr = `${x.changeDir.replace(/\/changes\/[^/]+$/, '')}/adr/`
+  const isDraft = (p: string) => p.startsWith(adr) && /^DRAFT-[^/]*\.md$/.test(p.slice(adr.length))
+  const out = { records: [] as string[], artifacts: [] as string[], others: [] as string[] }
+  for (const p of paths) {
+    if (records.has(p)) out.records.push(p)
+    else if (p.startsWith(`${x.changeDir}/`) || isDraft(p) || x.scenarioFiles.includes(p)) out.artifacts.push(p)
+    else out.others.push(p)
+  }
+  return out
+}
+
+/** 只 add 并提交所列工件（相对 change worktree 根，pathspec 限定）；返回错误信息，无错为 undefined。 */
+export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
+  const abs = paths.map(p => `${f.changeTree}/${p}`)
+  const add = await git(io, f.changeTree, 'add', '--', ...abs)
+  if (add.exitCode !== 0) return `git add 失败：${firstLine(add)}`
+  const commit = await git(io, f.changeTree, 'commit', '-m', `docs(openspec): ${f.change} 工件（起飞时经「授权提交」提交）`, '--', ...abs)
+  if (commit.exitCode !== 0) return `git commit 失败：${firstLine(commit)}`
+  return undefined
+}
+
 async function unmerged(io: Io, tree: string): Promise<string[]> {
   return lines((await git(io, tree, 'diff', '--name-only', '--diff-filter=U')).stdout)
 }
