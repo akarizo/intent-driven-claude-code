@@ -3,7 +3,7 @@
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
 import { agentOf, currentAttempt, closeoutLists, ev, reduce, routingFindings, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
-import { appendEvent, ensureWorktree, judge, readLedger } from './io'
+import { appendEvent, freshWorktree, judge, readLedger } from './io'
 import { closeout, commitRecords, validateFindings } from './land'
 import { fixerPrompt, reviewerPrompt } from './prompts'
 
@@ -129,14 +129,15 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `提交飞行记录失败：${err}` }))
       return
     }
-    const wt = await ensureWorktree(io, f, FIX)
+    // 每个 attempt 另起修复 worktree：flight-<change>-fix 已在则用 fix-a<attempt>，从不复用旧树
+    const wt = await freshWorktree(io, f, FIX, attempt)
     if ('error' in wt) {
       await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `修复 worktree 创建失败：${wt.error}` }))
       return
     }
     const prompt = fixerPrompt({ change: f.change, changeDir: f.changeDir, findings: action.findings })
     const r = await ctx.spawn({ f, role: 'fixer', cwd: wt.path, prompt, description: '批量修复' })
-    if (r.agentId) await append(ev.dispatch(b, { attempt, slice: FIX, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path }))
+    if (r.agentId) await append(ev.dispatch(b, { attempt, slice: FIX, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch }))
     else await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
     return
   }

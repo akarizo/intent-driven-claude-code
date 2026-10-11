@@ -535,3 +535,58 @@ test('prefix-options-with-arguments', () => {
   expect(v[5]).toBeUndefined()
   expect(v[6]).toBeUndefined()
 })
+
+// ---------------------------------------------------------------- spec flight-envelope-remainders（flight-measure-followups S1）
+
+test('prefix-path-and-quotes-stripped', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；带路径的 /usr/bin/env、带引号的 "exec" 与 'command' 包住四条危险命令，与 /usr/bin/env -u FOO 包住的 pytest
+  const cmds = [
+    '/usr/bin/env -u FOO git push origin HEAD:main',
+    '/usr/bin/env GIT_DIR=/repo/.git git commit -m x',
+    '"exec" -a n git push',
+    "'command' cd /repo && git commit -m x",
+    '/usr/bin/env -u FOO python3 -m pytest -q',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 第一、三条理由含「git push」；第二条含「GIT_」；第四条含「自己的 worktree」；最后一条不被拒
+  expect(v[0]?.deny).toContain('git push')
+  expect(v[2]?.deny).toContain('git push')
+  expect(v[1]?.deny).toContain('GIT_')
+  expect(v[3]?.deny).toContain('自己的 worktree')
+  expect(v[4]).toBeUndefined()
+})
+
+test('expanded-dir-args-undeterminable', () => {
+  // Given: 执行体 worktree 为 W；目录参数里含命令替换 / 变量 / 反引号的四条改动类 git，与引号内带空格的 W/a b、W/sub 之后的 git add
+  const cmds = [
+    `cd ${W} && cd "$(printf /repo)" && git commit -m x`,
+    `cd ${W} && X=/../../../..; cd ".$X" && git commit -m x`,
+    'git -C "./$X" commit -m x',
+    'cd `echo /repo` && git add a',
+    `cd '${W}/a b' && git add x`,
+    `cd ${W}/sub && git add x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前四条被拒且理由含「自己的 worktree」；后两条不被拒
+  expect(v.slice(0, 4).map(x => (x?.deny ?? '').includes('自己的 worktree'))).toEqual([true, true, true, true])
+  expect(v.slice(4)).toEqual([undefined, undefined])
+})
+
+test('undeterminable-reason-neutral', () => {
+  // Given: 执行体 worktree 为 W；目录栈旋转 pushd +1 与变量目录 cd "$X" 之后的改动类 git
+  const cmds = ['pushd +1 && git commit -m x', 'cd "$X" && git add a']
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M)?.deny ?? '')
+
+  // Then: 两条理由都含「无法判定」与「目录栈旋转」，都不含「相对路径且无绝对基准」
+  expect(v.map(d => d.includes('无法判定'))).toEqual([true, true])
+  expect(v.map(d => d.includes('目录栈旋转'))).toEqual([true, true])
+  expect(v.map(d => d.includes('相对路径且无绝对基准'))).toEqual([false, false])
+})

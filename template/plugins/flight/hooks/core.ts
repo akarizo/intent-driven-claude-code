@@ -68,9 +68,18 @@ export function currentAttempt(state: State): number {
   return state.attempt
 }
 
-export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number; base?: string } | undefined {
+/** dispatch 所在分支：事件记了就用；旧事件由 worktree basename `flight-<change>-<name>` 推出 `flight/<change>/<name>`，推不出为空串。 */
+function branchOf(d: Ev): string {
+  if (typeof d.branch === 'string' && d.branch !== '') return d.branch
+  const change = str(d, 'change')
+  const base = str(d, 'worktree').replace(/\/+$/, '').split('/').pop() ?? ''
+  const prefix = `flight-${change}-`
+  return change && base.startsWith(prefix) && base.length > prefix.length ? `flight/${change}/${base.slice(prefix.length)}` : ''
+}
+
+export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number; branch: string; base?: string } | undefined {
   const d = last(state.events.filter(e => e.ev === 'dispatch' && e.agent === agent))
-  return d && { role: d.role as Role, slice: str(d, 'slice'), worktree: str(d, 'worktree'), attempt: Number(d.attempt), ...(typeof d.base === 'string' && d.base !== '' ? { base: d.base } : {}) }
+  return d && { role: d.role as Role, slice: str(d, 'slice'), worktree: str(d, 'worktree'), attempt: Number(d.attempt), branch: branchOf(d), ...(typeof d.base === 'string' && d.base !== '' ? { base: d.base } : {}) }
 }
 
 /** 一个 agent 结束前的收口门禁结论、结束事件、结束后的补跑门禁结论。 */
@@ -113,7 +122,11 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const prev = last(evs.filter(e => e.ev === 'dispatch' && e.role === 'executor' && e.slice === s && Number(e.attempt) < A))
     const fresh: Action = { kind: 'dispatch', role: 'executor', slice: s }
     if (!prev || evs.some(e => e.ev === 'blocked' && e.slice === s && e.attempt === prev.attempt)) return fresh
-    const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s))
+    // 续接只限同一份计划：上一个执行体所在 attempt 的起飞指纹与当前不同就另起新派发（design D2）
+    const prevTakeoff = last(evs.filter(e => e.ev === 'takeoff' && e.attempt === prev.attempt))
+    if (prevTakeoff?.fp !== takeoff!.fp) return fresh
+    // 门禁结论也只认上一个执行体派发之后的：更早的属于旧计划或旧现场，不得拿来补跑（PR #47 评审 MEDIUM）
+    const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s && e.seq > prev.seq))
     const b = baseOf(g)
     if (g?.ok === true && b.base) return { kind: 'regate', slice: s, base: b.base, worktree: str(prev, 'worktree') }
     return { ...fresh, continuation: { reason: '上一次飞行中断', failed: failedOf(g) }, ...b }
@@ -264,7 +277,7 @@ const make = (ev: string) => (b: Base, x: object): FlightEvent => ({
 /** 事件构造：产出完整事件（含 v / by），字段对照 spec flight-ledger-events。本 change 不构造 approve。 */
 export const ev: {
   takeoff(b: Base, x: { attempt: number; fp: string; branch: string; waves: string[][]; model: string }): FlightEvent
-  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string; base?: string }): FlightEvent
+  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string; base?: string; branch?: string }): FlightEvent
   gate(b: Base, x: { attempt: number; agent: string } & GateJson): FlightEvent
   ended(b: Base, x: { attempt: number; agent: string; reason: string; model: string | null }): FlightEvent
   merge(b: Base, x: { attempt: number; slice: string; ok: boolean; commit: string; failed: string[] }): FlightEvent

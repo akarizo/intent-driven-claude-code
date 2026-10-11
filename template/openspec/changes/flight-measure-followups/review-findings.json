@@ -1,0 +1,77 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_agents.py",
+      "line": 120,
+      "summary": "S4 的骨架已去掉 xfail，但分段注释「# 骨架：S4 实现后去掉 xfail 标记。」仍留着，成了过时说明（同文件 S2/S8 段落也有类似残留，属既有风格）。",
+      "fix": "把该行注释删掉，或改为只写 scenario 归属，例如「# flight-fresh-worktrees#prompt-names-previous-branch」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 137,
+      "summary": "前缀识别改为对任意词取 basename 后查 PREFIX_OPTS，任何以 env/exec/command/builtin 结尾的路径（如 ./scripts/env、tools/exec）都会被当作前缀剥掉；其后的未知选项会触发 unknownOpt 拒绝，hasEnv 也让 bashUpgradable 不再免询问。方向只会更严、符合「只能更严」约束，但会出现误拒，且 words 的 ceiling 注释没有写明这一点。",
+      "fix": "可选：在 words 的 ceiling 注释里补一句「按 basename 认前缀，同名的自定义脚本也会被当作前缀（误拒）-> 出现误拒时只认裸名与 /bin、/usr/bin 下的绝对路径」；本片不必改逻辑。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 128,
+      "summary": "续接边界从门禁结论 g 这里漏了过去。firstDispatch 只按 prev 所在 attempt 的指纹判是否续接，但 g = last(evs.filter(gate && slice===s)) 不限范围，会取到 prev 之前、旧计划下的门禁。可达路径：attempt 1（指纹 F）S1 门禁绿、base 为 b1、未合回；attempt 2（指纹 G）按新逻辑新派发 S1，执行体在第一次门禁前飞行就中断了；attempt 3（指纹 G）时 prev 是 attempt 2 的 dispatch，指纹相同，g 却是 attempt 1 那条旧计划的绿门禁，于是在 attempt 2 的新 worktree 上以旧 base b1 发 regate。这正是 D2 说的「旧现场按旧计划做的、不得续接/补跑」。beforeExecutor 里 r.ok!==true 分支按 slice 取最后一条带 base 的 gate，也有同样问题。spec 只写了「相同 → 行为不变」，实现照字面做了，属规格缺口，现有 scenario 覆盖不到。",
+      "fix": "把 g 限定在 prev 之后：`const g = last(evs.filter(e => e.ev === 'gate' && e.slice === s && e.seq > prev.seq))`。beforeExecutor 的 base 查找同样加 seq 下限，例如限定在本片最后一次 executor dispatch 之后，或限定在与当前 takeoff 指纹相同的 attempt 内。再补一个用例：F 下绿 → G 下新派发、无门禁 → G 再起飞，期望得到新派发或不带旧 base 的续接，而不是 regate b1。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 127,
+      "summary": "`takeoff!.fp` 用了非空断言。函数开头已经判过 takeoff 存在，但闭包里窄化不生效，只能靠 `!` 撑着，可读性一般。",
+      "fix": "在 next 开头取 `const fpTakeoff = takeoff.fp`，闭包里直接比较 `prevTakeoff?.fp !== fpTakeoff`，去掉 `!`。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 211,
+      "summary": "freshWorktree 只按 worktree 路径是否存在决定用原名还是改用 -a<attempt>，不检查分支是否已存在。常见情况：旧 worktree 目录被人手动 `git worktree remove` 掉，但分支 flight/<change>/<name> 因未合并而保留（`branch -d` 会拒删）。这时会走原名分支，`git worktree add -b` 报 branch already exists，直接返回 error，不会退到 -a<attempt>，续飞因此卡住。prepareResolve 里的 freshResolve 也有同样的问题。规格只写了按路径判断，这算边界缺口，需进一步确认是否要覆盖。",
+      "fix": "判断原名是否可用时，把分支存在也算作已占用：先跑 `git -C <mainTree> rev-parse --verify --quiet refs/heads/flight/<change>/<name>`，路径或分支任一已存在就改用 -a<attempt>；-a<attempt> 也照此判断，两者都被占用才返回 error。另补一条用例：路径不存在但分支已存在时应改用 -a<attempt>。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 182,
+      "summary": "freshResolve 把 io.freshWorktree 的命名规则（原名 → -a<attempt> → 报错）重写了一遍，没有复用；同时 resolvePath（land.ts:19）也是对 worktreePath(f, `${slice}-resolve`) 的重复拼写。两份实现以后可能对不上。不复用的原因是要保留 `git -C changeTree` 的调用形式，这可以理解。",
+      "fix": "把 resolvePath 改成 `worktreePath(f, `${slice}-resolve`)`；在 io.ts 抽出一个只算名字、不跑 git 的函数（例如 freshName(io, f, name, attempt)），freshWorktree 和 freshResolve 都调它。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/land.test.ts",
+      "line": 355,
+      "summary": "顺手改了一行无关代码：`const finding = (severity: string) =>({` 删掉了 => 后面的空格，属于本片范围外的格式漂移。",
+      "fix": "恢复为 `const finding = (severity: string) => ({ ... })`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 210,
+      "summary": "freshWorktree 直接对形参 name 重新赋值，读代码时容易把输入的名字和最终采用的名字搞混。",
+      "fix": "改用局部变量，例如 `const picked = (await io.exists(worktreePath(f, name))) ? `${name}-a${attempt}` : name`，后面的路径和分支都从 picked 推出。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 595,
+      "summary": "测量判不出走了两条路：spec 写的 `'unknown' in owner` 分支只有进程重启后才会走到。appendEvent 写 dispatch 时 io.ts:145 已经把 owners 缓存好，所以同进程内 ownership 总是返回缓存的 Owner。measure-unknown-owner-says-retry 实际靠的是后面补的「已缓存且在飞却读不出」分支才通过，unknown 分支没有任何用例覆盖。另外 ownership 未命中缓存时会扫一遍账本，flightOfAgent 又扫一遍，同一次调用里账本读两次。owner 为 pending 时如果账本读不出，仍会落到 onMeasure，给出「只有执行体可用」这个误导理由。",
+      "fix": "在 io.ts 导出一个保留 Unknown 的扫描（例如把 scanAgent 导出，或者让 flightOfAgent 可选地返回 Unknown）。tool.call 只扫一次：结果为 unknown 就 deny MEASURE_RETRY，否则交给 onMeasure。这样两个补丁分支和 pending 漏洞可以一起去掉。也可以保留现状，补一个清空 owners 缓存、只让 ledger.py show 退出 5 的用例来覆盖 unknown 分支。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 478,
+      "summary": "最新 takeoff 没有 by.session（或为空串）时，owner 为 ''，与本会话不等，于是被判成「另一个会话」，拒飞提示里的会话 id 是空括号「（）」。当前事件类型要求一定有 by.session，这种账本是否真会出现需进一步确认。",
+      "fix": "owner 为空时在提示里写明「来源会话未知」，例如 `${foreign ? foreign.slice(0, 8) : '未知会话'}`；或者明确空 session 也按跨会话处理，并在注释里写上。"
+    }
+  ],
+  "fix": null
+}

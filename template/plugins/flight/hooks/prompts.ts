@@ -20,14 +20,20 @@ export function executorPrompt(x: {
   changeDir: string
   slice: string
   continuation?: { reason: string; failed: string[] }
+  previous?: { branch: string; attempt: number }
 }): string {
   const lines = [
     `为 OpenSpec change \`${x.change}\` 实现切片 ${x.slice}。`,
     `切片包：${slicePack(x.changeDir, x.slice)}（scenario、owns、verify、接口摘要都在里面，先读它）。`,
     `按切片包 TDD 实现；${OWNS_NOTE}每切片一个 commit。`,
     '写好测试后、改生产代码前，调用 `measure` 工具让控制面测一次并看它红；自己跑的测试不算证据。',
-    GATE_NOTE,
   ]
+  if (x.previous) {
+    lines.push(
+      `上一次（attempt ${x.previous.attempt}）的分支 \`${x.previous.branch}\` 留作参考：可 \`git show\` / \`git diff\` 读取，不得 cherry-pick 或 merge；一切以当前切片包为准。`,
+    )
+  }
+  lines.push(GATE_NOTE)
   if (x.continuation) {
     const failed = x.continuation.failed.length ? x.continuation.failed.map(f => `- ${f}`).join('\n') : '- （无）'
     lines.push(

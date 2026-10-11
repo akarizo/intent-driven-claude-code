@@ -206,6 +206,30 @@ export async function ensureWorktree(io: Io, f: Flight, name: string): Promise<{
   return { path, created: true }
 }
 
+/** 名字被占用的原因：worktree 已存在，或分支已存在（人删了旧 worktree，未合并的分支 branch -d 删不掉而留下）；都没有时为 undefined。 */
+export async function occupied(io: Io, f: Flight, name: string): Promise<string | undefined> {
+  const path = worktreePath(f, name)
+  if (await io.exists(path)) return `worktree 已存在：${path}`
+  const branch = `flight/${f.change}/${name}`
+  const r = await io.run(['git', 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: f.mainTree })
+  return r.exitCode === 0 ? `分支已存在：${branch}` : undefined
+}
+
+/** 续飞另起：<name> 未被占用（见 occupied）用原名，否则改用 <name>-a<attempt>，两者都被占用则报错；一律基于 change 分支尖端新建，从不复用旧树。 */
+export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
+  let picked = name
+  if (await occupied(io, f, name)) {
+    picked = `${name}-a${attempt}`
+    const why = await occupied(io, f, picked)
+    if (why) return { error: why }
+  }
+  const path = worktreePath(f, picked)
+  const branch = `flight/${f.change}/${picked}`
+  const r = await io.run(['git', 'worktree', 'add', '-b', branch, path, f.branch], { cwd: f.mainTree })
+  if (r.exitCode !== 0) return { error: r.stderr }
+  return { path, branch }
+}
+
 export function agentType(role: Role): string {
   return role === 'executor' ? 'flight:executor' : role === 'reviewer' ? 'flight:reviewer' : 'flight:fixer'
 }

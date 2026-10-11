@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -176,3 +174,27 @@ def test_cd_two_args_denied():
     # When: 逐条判定
     # Then: 前两条无法判定而被拒；引号内带空格的单个路径不被误拒
     assert_ts_passed("cd-two-args-denied")
+
+# ---------------------------------------------------------------- flight-measure-followups
+# S1 已实现：骨架标记已去。
+
+
+def test_prefix_path_and_quotes_stripped():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 /usr/bin/env -u FOO git push、/usr/bin/env GIT_DIR=… git commit、"exec" -a n git push、'command' cd /repo && git commit，以及 /usr/bin/env -u FOO python3 -m pytest -q
+    # Then: 前四条被拒（git push / GIT_ / 自己的 worktree），最后一条不拒
+    assert_ts_passed("prefix-path-and-quotes-stripped")
+
+
+def test_expanded_dir_args_undeterminable():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 cd "$(printf /repo)"、cd ".$X"、git -C "./$X"、cd `echo /repo` 之后的改动类 git，以及 cd 'W/a b'、cd W/sub 之后的 git add
+    # Then: 前四条被拒（理由含自己的 worktree），后两条不拒
+    assert_ts_passed("expanded-dir-args-undeterminable")
+
+
+def test_undeterminable_reason_neutral():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 pushd +1 && git commit 与 cd "$X" && git add
+    # Then: 都被拒，理由含「无法判定」与「目录栈旋转」，不含「相对路径且无绝对基准」
+    assert_ts_passed("undeterminable-reason-neutral")

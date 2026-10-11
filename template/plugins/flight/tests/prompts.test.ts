@@ -37,6 +37,21 @@ test('executor-prompt-states-measure-protocol', async () => {
   expect(prompt).toContain('不算证据')
 })
 
+test('prompt-names-previous-branch', async () => {
+  // Given: change demo、切片 S1；一份输入带 previous: { branch: 'flight/demo/S1', attempt: 1 }，另一份不带
+  const base = { change: 'demo', changeDir: CHANGE_DIR, slice: 'S1' }
+  const previous = { branch: 'flight/demo/S1', attempt: 1 }
+
+  // When: 分别生成两份执行体提示词
+  const [withPrev, plain] = [executorPrompt({ ...base, previous }), executorPrompt(base)]
+
+  // Then: 带 previous 的含 flight/demo/S1、「git show」与「不得 cherry-pick」；不带的不含「上一次」
+  expect(withPrev).toContain('flight/demo/S1')
+  expect(withPrev).toContain('git show')
+  expect(withPrev).toContain('不得 cherry-pick')
+  expect(plain).not.toContain('上一次')
+})
+
 test('prompts-reviewer-resolver-fixer', async () => {
   // Given: S1 合回后的 commit c1、合回 S2 时的冲突文件 a.py、一条 HIGH finding（summary「空 body 未校验」）
   const finding = { severity: 'HIGH', file: 'src/api.py', line: 42, summary: '空 body 未校验', fix: '先判空' }

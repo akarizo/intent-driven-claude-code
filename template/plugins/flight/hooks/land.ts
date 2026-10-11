@@ -2,6 +2,7 @@
 // 只依赖 core.ts 的类型与 Io：不 import claude-code 的运行时值，不调用任何 $。git 一律 `git -C <worktree> ...`。
 import type { Finding, Flight, GateJson, Io, RunResult, Severity } from './core'
 import { globMatch } from './envelope'
+import { occupied, worktreePath } from './io'
 
 export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
 
@@ -160,11 +161,10 @@ async function integrated(io: Io, f: Flight, branch: string): Promise<boolean> {
 }
 
 /** 在 change worktree 里：提交飞行记录 →（已合回则只补记账）→ 越界与空合回检查 → merge --no-ff → record --json → 刷新接口摘要 */
-export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]):
+export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], branch = `flight/${f.change}/${slice}`):
   Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[]; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, conflicts: [], failed: [err] }
-  const branch = `flight/${f.change}/${slice}`
   // 续飞补跑门禁后：上一 attempt 已 integrate、账本缺 merge 事件 → 已合回，只补记账
   if (await integrated(io, f, branch)) {
     const r = await afterMerge(io, f, slice, gate, owns)
@@ -172,45 +172,59 @@ export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJso
   }
   const refused = (await directCommits(io, f, branch, owns)) ?? (await emptyMerge(io, f, branch))
   if (refused) return { ok: false, conflicts: [], failed: [refused] }
-  const m = await mergeNoFf(io, f.changeTree, `flight/${f.change}/${slice}`, `integrate: ${slice}`)
+  const m = await mergeNoFf(io, f.changeTree, branch, `integrate: ${slice}`)
   if (!m.ok) return m
   const r = await afterMerge(io, f, slice, gate, owns)
   return r.ok ? r : { ...r, conflicts: [] }
 }
 
-/** 冲突时：merge --abort；建 <mainTree>/.claude/worktrees/flight-<change>-<S>-resolve（分支 flight/<change>/<S>-resolve，基于 f.branch）并在其中重做合并 */
-export async function prepareResolve(io: Io, f: Flight, slice: string): Promise<{ path: string; conflicts: string[] } | { error: string }> {
+/** 解冲突 worktree 按 io.freshWorktree 的规则命名：<S>-resolve 被占用（worktree 或分支已存在）则另起 <S>-resolve-a<attempt>，都被占用则报错；不传 attempt 时只认原名。 */
+async function freshResolve(io: Io, f: Flight, slice: string, attempt?: number): Promise<{ path: string; branch: string } | { error: string }> {
+  const names = [`${slice}-resolve`, ...(attempt === undefined ? [] : [`${slice}-resolve-a${attempt}`])]
+  let why = ''
+  for (const name of names) {
+    why = (await occupied(io, f, name)) ?? ''
+    if (!why) return { path: worktreePath(f, name), branch: `flight/${f.change}/${name}` }
+  }
+  return { error: why }
+}
+
+/** 冲突时：merge --abort；另起解冲突 worktree（flight-<change>-<S>-resolve，已存在则 -a<attempt>，基于 f.branch）并在其中合并 x.branch（缺省 flight/<change>/<S>） */
+export async function prepareResolve(io: Io, f: Flight, slice: string, x: { branch?: string; attempt?: number } = {}):
+  Promise<{ path: string; conflicts: string[]; branch: string } | { error: string }> {
   // mergeSlice 冲突时已 abort；这里再 abort 一次兜住中途中断留下的合并现场，没有进行中的合并时 git 报错，忽略
   await git(io, f.changeTree, 'merge', '--abort')
-  const path = resolvePath(f, slice)
-  // ceiling: 解冲突 worktree 已存在（上次中断留下）时直接报错 -> 需要续用时改为检测 worktree list 并复用现场
-  const add = await git(io, f.changeTree, 'worktree', 'add', '-b', resolveBranch(f, slice), path, f.branch)
+  const at = await freshResolve(io, f, slice, x.attempt)
+  if ('error' in at) return { error: `建解冲突 worktree 失败：${at.error}` }
+  const { path, branch } = at
+  const add = await git(io, f.changeTree, 'worktree', 'add', '-b', branch, path, f.branch)
   if (add.exitCode !== 0) return { error: `建解冲突 worktree 失败：${firstLine(add)}` }
-  const m = await git(io, path, 'merge', '--no-ff', `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
+  const m = await git(io, path, 'merge', '--no-ff', x.branch ?? `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
   if (m.exitCode === 0) return { error: '解冲突现场合并意外成功：无需解冲突' }
   const conflicts = await unmerged(io, path)
   if (!conflicts.length) return { error: `git merge 失败：${firstLine(m)}` }
-  return { path, conflicts }
+  return { path, conflicts, branch }
 }
 
 /** 解冲突完成：无未合并文件且 HEAD 有两个父 → change worktree 里 merge --ff-only flight/<change>/<S>-resolve；之后同 mergeSlice 的 record 与接口摘要 */
-export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
-  const path = resolvePath(f, slice)
+export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], resolve = { path: resolvePath(f, slice), branch: resolveBranch(f, slice) }):
+  Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+  const { path } = resolve
   const left = await unmerged(io, path)
   if (left.length) return { ok: false, failed: [`解冲突未完成：仍有未合并文件 ${left.join(', ')}`] }
   const parents = (await git(io, path, 'rev-list', '--parents', '-n', '1', 'HEAD')).stdout.trim().split(/\s+/).filter(Boolean)
   if (parents.length !== 3) return { ok: false, failed: ['解冲突未完成：HEAD 不是合并提交'] }
   // ceiling: change 分支在解冲突期间前进（如同 wave 其他切片已合回）时 --ff-only 失败并记阻断 -> 需要时改为在解冲突 worktree 先 rebase/merge change 分支再快进
-  const ff = await git(io, f.changeTree, 'merge', '--ff-only', resolveBranch(f, slice))
+  const ff = await git(io, f.changeTree, 'merge', '--ff-only', resolve.branch)
   if (ff.exitCode !== 0) return { ok: false, failed: [`git merge --ff-only 失败：${firstLine(ff)}`] }
   return afterMerge(io, f, slice, gate, owns)
 }
 
-/** 合回修复：提交飞行记录 → merge --no-ff flight/<change>/fix -m "integrate: fix" → timeline.py record fix */
-export async function mergeFix(io: Io, f: Flight, note: string): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+/** 合回修复：提交飞行记录 → merge --no-ff <branch>（缺省 flight/<change>/fix）-m "integrate: fix" → timeline.py record fix */
+export async function mergeFix(io: Io, f: Flight, note: string, branch = `flight/${f.change}/fix`): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, failed: [err] }
-  const m = await mergeNoFf(io, f.changeTree, `flight/${f.change}/fix`, 'integrate: fix')
+  const m = await mergeNoFf(io, f.changeTree, branch, 'integrate: fix')
   if (!m.ok) return { ok: false, failed: m.failed }
   const t = await judge(io, f, 'timeline', 'record', 'fix', '--change-dir', f.changeDir, '--note', note)
   if (t.exitCode !== 0) return { ok: false, failed: [`timeline record 失败：${firstLine(t)}`] }

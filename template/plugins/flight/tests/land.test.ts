@@ -19,7 +19,9 @@ function fakeIo(files: Record<string, string>, respond: Respond) {
     async run(argv, opts) {
       calls.push({ argv: [...argv], cwd: opts?.cwd })
       // 合回前的检查：未预设时第一父链上没有以切片尖端为第二父的合并提交（未合入过）、分叉点为 b0、合并结果树 t-merged 与 HEAD 的树 t-head 不同
-      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' } : {}
+      // rev-parse --verify 查分支：未预设时分支不存在
+      const preset = argv.includes('merge-base') ? { stdout: 'b0\n' } : argv.includes('merge-tree') ? { stdout: 't-merged\n' } : argv.includes('HEAD^{tree}') ? { stdout: 't-head\n' }
+        : argv.some(a => a.startsWith('refs/heads/')) ? { exitCode: 1 } : {}
       return { exitCode: 0, stdout: '', stderr: '', ...preset, ...(respond([...argv]) ?? {}) }
     },
     async read(p) {
@@ -182,7 +184,7 @@ test('land-aborts-conflict-and-prepares-resolver', async () => {
   expect(calls[find(calls, 'merge', '--abort')].argv).toEqual(['git', '-C', CT, 'merge', '--abort'])
   expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S2-resolve', RESOLVE, 'worktree-demo'])
   expect(calls[find(calls, RESOLVE, 'merge', '--no-ff')].argv).toEqual(['git', '-C', RESOLVE, 'merge', '--no-ff', 'flight/demo/S2', '-m', 'integrate: S2'])
-  expect(result).toEqual({ path: RESOLVE, conflicts: ['a.py'] })
+  expect(result).toEqual({ path: RESOLVE, conflicts: ['a.py'], branch: 'flight/demo/S2-resolve' })
 })
 
 test('land-prepare-resolve-reports-non-conflict-failure', async () => {
@@ -292,7 +294,83 @@ test('land-merges-fix', async () => {
   expect(result).toEqual({ ok: true, commit: 'f1' })
 })
 
-const finding = (severity: string) => ({ severity, file: 'a.py', line: 3, summary: 's', fix: 'f' })
+const S1_A2 = 'flight/demo/S1-a2'
+const RESOLVE_S1 = '/repo/.claude/worktrees/flight-demo-S1-resolve'
+const RESOLVE_S1_A2 = '/repo/.claude/worktrees/flight-demo-S1-resolve-a2'
+
+test('merges-use-recorded-branch', async () => {
+  // Given: S1 这一轮在分支 flight/demo/S1-a2 上；飞行记录无改动，未合入过，合并后 HEAD 为 m2
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'rev-parse', 'HEAD') ? { stdout: 'm2\n' } : undefined))
+
+  // When: 传入记下的分支 flight/demo/S1-a2 合回 S1
+  const result = await mergeSlice(io, F, 'S1', gateOf('S1'), [], S1_A2)
+
+  // Then: merge --no-ff 合并的是 flight/demo/S1-a2；任何 git 调用都不出现 flight/demo/S1；返回 ok 与 m2
+  expect(calls[find(calls, 'merge', '--no-ff')].argv).toEqual(['git', '-C', CT, 'merge', '--no-ff', S1_A2, '-m', 'integrate: S1'])
+  expect(calls.filter(c => c.argv.includes('flight/demo/S1'))).toEqual([])
+  expect(result).toEqual({ ok: true, commit: 'm2' })
+})
+
+test('merges-use-recorded-branch/resolve', async () => {
+  // Given: 解冲突 worktree flight-demo-S1-resolve 已存在（上一轮留下）；新解冲突现场里合并 flight/demo/S1-a2 时 git merge 退出 1，diff --diff-filter=U 输出 a.py
+  const { io, calls } = fakeIo({ [RESOLVE_S1]: '' }, argv =>
+    has(argv, RESOLVE_S1_A2, 'merge', '--no-ff') ? { exitCode: 1 } : has(argv, RESOLVE_S1_A2, '--diff-filter=U') ? { stdout: 'a.py\n' } : undefined,
+  )
+
+  // When: 以 attempt 2、分支 flight/demo/S1-a2 准备 S1 的解冲突现场
+  const result = await prepareResolve(io, F, 'S1', { branch: S1_A2, attempt: 2 })
+
+  // Then: 基于 worktree-demo 另建 flight-demo-S1-resolve-a2（分支 flight/demo/S1-resolve-a2）；在其中 merge --no-ff flight/demo/S1-a2；不碰旧的 flight-demo-S1-resolve；返回新路径、冲突 [a.py] 与解冲突分支
+  expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S1-resolve-a2', RESOLVE_S1_A2, 'worktree-demo'])
+  expect(calls[find(calls, RESOLVE_S1_A2, 'merge', '--no-ff')].argv).toEqual(['git', '-C', RESOLVE_S1_A2, 'merge', '--no-ff', S1_A2, '-m', 'integrate: S1'])
+  expect(calls.filter(c => c.argv.includes(RESOLVE_S1))).toEqual([])
+  expect(result).toEqual({ path: RESOLVE_S1_A2, conflicts: ['a.py'], branch: 'flight/demo/S1-resolve-a2' })
+})
+
+test('merges-use-recorded-branch/resolve-branch-left', async () => {
+  // Given: 解冲突 worktree flight-demo-S1-resolve 已被人删掉，但分支 flight/demo/S1-resolve 还在；
+  //   新解冲突现场里合并 flight/demo/S1-a2 时 git merge 退出 1，diff --diff-filter=U 输出 a.py
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'refs/heads/flight/demo/S1-resolve') ? { exitCode: 0 }
+      : has(argv, RESOLVE_S1_A2, 'merge', '--no-ff') ? { exitCode: 1 } : has(argv, RESOLVE_S1_A2, '--diff-filter=U') ? { stdout: 'a.py\n' } : undefined,
+  )
+
+  // When: 以 attempt 2、分支 flight/demo/S1-a2 准备 S1 的解冲突现场
+  const result = await prepareResolve(io, F, 'S1', { branch: S1_A2, attempt: 2 })
+
+  // Then: 不按原名建（worktree add -b 会撞上已有分支），另建 flight-demo-S1-resolve-a2（分支 flight/demo/S1-resolve-a2）；返回新路径、冲突 [a.py] 与解冲突分支
+  expect(calls[find(calls, 'worktree', 'add')].argv).toEqual(['git', '-C', CT, 'worktree', 'add', '-b', 'flight/demo/S1-resolve-a2', RESOLVE_S1_A2, 'worktree-demo'])
+  expect(result).toEqual({ path: RESOLVE_S1_A2, conflicts: ['a.py'], branch: 'flight/demo/S1-resolve-a2' })
+})
+
+test('merges-use-recorded-branch/finish', async () => {
+  // Given: 解冲突现场为 flight-demo-S1-resolve-a2（分支 flight/demo/S1-resolve-a2），无未合并文件、HEAD 有两个父；快进后 HEAD 为 r3
+  const { io, calls } = fakeIo({}, argv =>
+    has(argv, 'rev-list', '--parents') ? { stdout: 'r3 p1 p2\n' } : has(argv, 'rev-parse', 'HEAD') ? { stdout: 'r3\n' } : undefined,
+  )
+
+  // When: 传入该解冲突现场完成 S1 的合回
+  const result = await finishResolve(io, F, 'S1', gateOf('S1'), [], { path: RESOLVE_S1_A2, branch: 'flight/demo/S1-resolve-a2' })
+
+  // Then: 在 flight-demo-S1-resolve-a2 里查未合并文件；change worktree 里 merge --ff-only flight/demo/S1-resolve-a2；返回 ok 与 r3
+  expect(calls[find(calls, '--diff-filter=U')].argv).toEqual(['git', '-C', RESOLVE_S1_A2, 'diff', '--name-only', '--diff-filter=U'])
+  expect(calls[find(calls, 'merge', '--ff-only')].argv).toEqual(['git', '-C', CT, 'merge', '--ff-only', 'flight/demo/S1-resolve-a2'])
+  expect(result).toEqual({ ok: true, commit: 'r3' })
+})
+
+test('merges-use-recorded-branch/fix', async () => {
+  // Given: 修复体这一轮在分支 flight/demo/fix-a2 上；飞行记录无改动，合并后 HEAD 为 f2
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'rev-parse', 'HEAD') ? { stdout: 'f2\n' } : undefined))
+
+  // When: 以备注 blocking=1、分支 flight/demo/fix-a2 合回修复
+  const result = await mergeFix(io, F, 'blocking=1', 'flight/demo/fix-a2')
+
+  // Then: merge --no-ff 合并的是 flight/demo/fix-a2；返回 ok 与 f2
+  expect(calls[find(calls, 'merge', '--no-ff')].argv).toEqual(['git', '-C', CT, 'merge', '--no-ff', 'flight/demo/fix-a2', '-m', 'integrate: fix'])
+  expect(result).toEqual({ ok: true, commit: 'f2' })
+})
+
+const finding = (severity: string) =>({ severity, file: 'a.py', line: 3, summary: 's', fix: 'f' })
 
 test('land-validates-findings', () => {
   // Given: findings 两项，第 1 项合法，第 2 项 severity 为 "SEVERE"
