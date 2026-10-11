@@ -5,8 +5,8 @@
 
 ## 切片
 
-- [ ] S1 final 先判 G7；全量测试按基线逐条差分 （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py`）
-- [ ] S2 final --reuse-fix；baseline 运行标记与 preflight；gate.test 必填 （deps: S1 · verify: `python3 -m pytest -q tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py`）
-- [ ] S3 新引擎：有计划切片 blocked 时评审收齐后停飞 （deps: - · verify: `python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py`）
-- [ ] S4 新引擎 final 动作带 --reuse-fix，修复体收口门禁不带；插件补丁版本 +1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py`）
-- [ ] S5 propose 先交审批页、baseline 后台跑；schema 写明 gate.test 必填与测试差分 （deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py`）
+- [x] S1 final 先判 G7；全量测试按基线逐条差分 （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py`）
+- [x] S2 final --reuse-fix；baseline 运行标记与 preflight；gate.test 必填 （deps: S1 · verify: `python3 -m pytest -q tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py tests/test_slice_gate.py tests/test_ship_verdict.py`）
+- [x] S3 新引擎：有计划切片 blocked 时评审收齐后停飞 （deps: - · verify: `python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py`）
+- [x] S4 新引擎 final 动作带 --reuse-fix，修复体收口门禁不带；插件补丁版本 +1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py`）
+- [x] S5 propose 先交审批页、baseline 后台跑；schema 写明 gate.test 必填与测试差分 （deps: - · verify: `python3 -m pytest -q tests/test_template_docs.py tests/test_docs_iron_rules.py`）
