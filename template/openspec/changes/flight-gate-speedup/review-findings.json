@@ -1,0 +1,66 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 150,
+      "summary": "在本 commit 上，slice-gate.py 的 final 子命令只注册了 --change-dir（slice-gate.py:1248-1250），argparse 会以 unrecognized arguments 退出 2，所以新引擎的 final 动作在 S2 合回之前必然失败。这是 fail-closed，不会误放行；但 tasks.md 把 S4 的 deps 标为「-」，S4 对 S2 的运行时依赖没有声明。如果 S2 被 blocked 而 change 照常进入 final，失败原因只会显示成「G? 门禁输出无法解析」，不易定位。",
+      "fix": "不需要改 S4 的代码。收口时确认 S2 已合回、final 子命令已接受 --reuse-fix 后再跑 final。也可以在 _interfaces.md 或 tasks.md 里写明 S4 对 S2 有运行时依赖（final 须在 S2 合回后运行）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 309,
+      "summary": "core-waits-reviews-before-halting 只断言「没有 halt」，在本例状态下 next() 实际返回空列表；只要不出 halt，任何错误动作（比如提前派 fixer 或返回 final）都能通过，起不到「评审收齐前不进 closing」的守护作用",
+      "fix": "把断言改为 expect(actions).toEqual([])，或至少再断言其中没有 final 和 fixer 派发"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 292,
+      "summary": "core-halts-when-slices-blocked 没有覆盖 reason 中的续飞指引（「/opsx-apply demo」「只重派这些切片」），也没有测 takeoff.change 取值这一分支；D4 规定的 reason 格式只验了一部分",
+      "fix": "在 every 的关键词列表里加上 '/opsx-apply demo'（B.change 为 demo），确保 change 名确实拼进了 reason"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 188,
+      "summary": "汇总行是对整段输出逐行做正则匹配找出来的。被测套件里如果有用例在子进程里跑 pytest，失败时 Captured stdout 段原样打印的子 pytest 汇总行也会被算进去，变成「汇总行 N 行」，退回按退出码判（偏保守，不会误判绿，但这类仓库的差分会失效）。另外注入的 --junitxml 经 PYTEST_ADDOPTS 传给所有嵌套 pytest，会写同一个文件（最后由外层覆盖）。",
+      "fix": "可以只取输出最后一条匹配的汇总行，并要求它出现在最后几行之内；或者在 why 里注明可能是嵌套 pytest 输出。现状偏保守，可以先不改，记进 backlog。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate_final.py",
+      "line": 7,
+      "summary": "xfail 装饰器全部去掉后，import pytest 只剩字符串里的出现（第 15–16 行是写进临时文件的源码），成了本次改动留下的未使用 import。",
+      "fix": "如果文件里已经没有别的 pytest.xxx 用法，删掉第 7 行的 import pytest。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1262,
+      "summary": "_die_running_baseline 只拦了 pid 的类型和正负，没拦上限。pid 超出平台 pid_t 范围（比如手改或损坏成 2**40）时，os.kill 抛 OverflowError，它不是 OSError 的子类，结果 preflight 以 traceback 退出（exit 1），而不是按规格的「pid 不合法 -> 基线中断」走 die。另外进程退出后 pid 被复用，会一直报「仍在跑」，提示里只有已运行分钟数作参考。",
+      "fix": "在 except OSError 旁边加 except (OverflowError, ValueError): alive = False；或者先判断 pid <= 2**31-1，超出就按不合法处理。pid 复用的问题可以接受，但最好在「仍在跑」的提示里注明 pid，方便人工核对。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 310,
+      "summary": "lint_plan 新增的 gate.test 校验假定 gate 是 dict、test 是字符串。gate 写成列表或 test 写成非字符串（比如 [\"pytest\"]）时，.get / .strip 抛 AttributeError，lint 和 preflight 以 traceback 退出，而不是报一条可读的 lint 错误。",
+      "fix": "改成 g = data.get(\"gate\"); t = g.get(\"test\") if isinstance(g, dict) else None；if not (isinstance(t, str) and t.strip()): errors.append(...)。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate_reuse_preflight.py",
+      "line": 56,
+      "summary": "规格要求复用时 JSON 带上 \"reused\": <commit>，读账本失败时 warnings 记一行原因，并且照常跑 G2；现有 scenario 测试两者都没断言，这两条契约没有回归保护。骨架断言不归本切片改，这里只是提醒覆盖缺口。",
+      "fix": "后续补两条断言或测试：test_final_reuses_fresh_fix_gate 里加 assert out.get(\"reused\") == x；再加一个用例，把 refs/flight/c/ledger 指向一个 blob，断言 warnings 含「读账本失败」且 ran-g2 存在。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "6b08637fe9786f11f126060e119ec1f757bba5c1"
+  }
+}

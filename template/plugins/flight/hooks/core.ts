@@ -176,6 +176,13 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   }
 
   function closing(): Action[] {
+    // 评审已收齐才会走到这里；有计划切片 blocked 时 final 必红，停飞等续飞只重派它们
+    const stuck = plan.waves.flat().filter(s => blockedNow(s))
+    if (stuck.length) {
+      const list = stuck.map(s => `${s}（${str(blockedNow(s)!, 'reason').split('\n')[0]}）`).join('、')
+      const change = str(takeoff, 'change')
+      return [{ kind: 'halt', reason: `切片 blocked：${list}；未派修复、未跑 final。修好后重发 /opsx-apply${change ? ` ${change}` : ''} 续飞，只重派这些切片` }]
+    }
     const findings = reviewFindings(state).filter(f => BLOCKING.includes(f.severity))
     const fixed = evs.some(e => e.ev === 'merge' && e.slice === FIX && e.ok === true)
     if (findings.length && !fixed && !blockedNow(FIX)) {

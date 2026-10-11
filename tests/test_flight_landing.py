@@ -1,7 +1,6 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
-同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。"""
-
+同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
 from test_flight_plugin import assert_ts_passed
 
 
@@ -100,4 +99,20 @@ def test_flight_record_shows_exit_code():
     # When: 执行停飞动作
     # Then: Ctx.log 收到含「（timeline report 失败：exit 2）」的文本
     assert_ts_passed("flight-record-shows-exit-code")
+
+
+# ---------------------------------------------------------------- flight-gate-speedup · final-gate-fastpath#landing-* / fixer-*
+
+def test_landing_final_requests_fix_reuse():
+    # Given: S1 已合回、评审结果为空列表
+    # When: 推进飞行到 final
+    # Then: slice-gate.py final 的调用在 change worktree 里运行，参数含 --reuse-fix
+    assert_ts_passed("landing-final-requests-fix-reuse")
+
+
+def test_fixer_stop_final_never_reuses():
+    # Given: 修复 agent F 已派发，worktree 为修复 worktree
+    # When: 处理 F 的收口
+    # Then: slice-gate.py final 的调用在修复 worktree 里运行，参数不含 --reuse-fix
+    assert_ts_passed("fixer-stop-final-never-reuses")
 

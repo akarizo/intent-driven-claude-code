@@ -265,3 +265,90 @@ test('core-reports-routing-mismatch', () => {
   expect(blocking[0]).toMatchObject({ severity: 'HIGH', file: 'routing', line: 0 })
   expect(['路由不符', 'executor', 'opus', 'claude-sonnet-5-5'].every(w => blocking[0]?.summary.includes(w))).toBe(true)
 })
+
+// scenario 来源：spec flight-blocked-halt（flight-gate-speedup）
+
+test('core-halts-when-slices-blocked', () => {
+  // Given: waves [[S1, S2]]；attempt 1 里 S1 记 blocked（gate，G7 x），S2 已合回、评审员 r2 给了 1 条 HIGH 并结束
+  const high = { severity: 'HIGH' as const, file: 'a.ts', line: 3, summary: '空指针', fix: '判空' }
+  const state = reduce([
+    approve,
+    takeoff(1, ONE.waves),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G7 x' }),
+    ...landed(1, 'S2', 'a2'),
+    dispatch(1, 'S2', 'reviewer', 'r2'),
+    ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [high] }),
+    ended(1, 'r2'),
+  ])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 恰为一条停飞动作（因而没有修复派发与 final），原因含 S1、G7 x 与「未跑 final」
+  const halt = actions[0]
+  expect(actions).toHaveLength(1)
+  expect(halt?.kind === 'halt' && ['S1', 'G7 x', '未跑 final'].every(w => halt.reason.includes(w))).toBe(true)
+})
+
+test('core-waits-reviews-before-halting', () => {
+  // Given: waves [[S1, S2]]；S1 记 blocked（gate，G7 x），S2 已合回、评审员 r2 已派发但既无 review 事件也无 ended
+  const state = reduce([
+    approve,
+    takeoff(1, ONE.waves),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G7 x' }),
+    ...landed(1, 'S2', 'a2'),
+    dispatch(1, 'S2', 'reviewer', 'r2'),
+  ])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 动作里没有停飞
+  expect(actions.some(a => a.kind === 'halt')).toBe(false)
+})
+
+test('core-review-blocked-still-finals', () => {
+  // Given: waves [[S1, S2]] 全部合回；S1 评审为空列表；S2 的评审员 r2 结束未返回，review:S2 记 blocked（infra，评审未返回：r2）
+  const state = reduce([
+    approve,
+    takeoff(1, ONE.waves),
+    ...landed(1, 'S1', 'a1'),
+    ...landed(1, 'S2', 'a2'),
+    dispatch(1, 'S1', 'reviewer', 'r1'),
+    ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [] }),
+    ended(1, 'r1'),
+    dispatch(1, 'S2', 'reviewer', 'r2'),
+    ended(1, 'r2'),
+    ev.blocked(B, { attempt: 1, slice: 'review:S2', kind: 'infra', reason: '评审未返回：r2' }),
+  ])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 恰为一条 final 动作
+  expect(actions).toEqual([{ kind: 'final' }])
+})
+
+test('core-resume-redispatches-blocked-slice', () => {
+  // Given: attempt 1 里 S1 的执行体 a1 记 blocked（gate，G7 x），S2 已合回且评审为空列表，之后停飞；随后有 attempt 2 的 takeoff
+  const state = reduce([
+    approve,
+    takeoff(1, ONE.waves),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G7 x' }),
+    ...landed(1, 'S2', 'a2'),
+    dispatch(1, 'S2', 'reviewer', 'r2'),
+    ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [] }),
+    ended(1, 'r2'),
+    ev.halt(B, { attempt: 1, reason: '切片 blocked：S1（G7 x）' }),
+    takeoff(2, ONE.waves),
+  ])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 恰为全新派发 S1 的执行体，没有任何 S2 的动作
+  expect(actions).toEqual([{ kind: 'dispatch', role: 'executor', slice: 'S1' }])
+})
