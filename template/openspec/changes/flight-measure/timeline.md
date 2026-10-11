@@ -25,3 +25,5 @@
 2026-10-11T01:09:49Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/46
 2026-10-11T01:51:16Z	final	ok
 2026-10-11T01:59:16Z	final	ok
+2026-10-11T02:02:35Z	ship	ready
+2026-10-11T02:02:38Z	pr-ready	https://github.com/akarizo/intent-driven-claude-code/pull/46

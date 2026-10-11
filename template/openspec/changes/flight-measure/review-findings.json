@@ -1,28 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/envelope.ts",
-      "line": 292,
-      "summary": "eval 内层的 cd / pushd / popd 不回传给外层：`eval cd /repo && git commit -m x` 判定为放行（定向抽查已确认返回 undefined）。eval 在当前 shell 执行，真实的作用目录已是 /repo，这样改动类 git 就逃出了自己的 worktree。本切片新加的 eval 递归与换目录跟踪合在一起留下了这个缺口",
-      "fix": "让 segmentsVerdict 同时返回结束时的 cwd（例如返回 { deny?, cwd }，或单独写一个内部函数）。prog 为 eval 时，用内层返回的 cwd 覆盖外层 cwd。bash/sh/zsh -c 跑在子进程里，外层 cwd 保持不变。最保守的做法是只要遇到 eval 段，就把 cwd 置为 null，与 popd 同样处理。补一个用例：`eval cd /repo && git commit -m x` 必须被拒，理由含「自己的 worktree」"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/envelope.ts",
-      "line": 290,
-      "summary": "段首的 GIT_* 赋值没有带进 -c / eval 的内层判定：`GIT_DIR=/repo/.git bash -c \"git commit -m x\"` 和 `env GIT_WORK_TREE=/repo eval git add a` 都判定为放行（抽查已确认）。外层段的 envKeys 在递归时被丢掉，内层的改动类 git 看不到 GIT_*，git-env-overrides-denied 要拦的作用对象改写因此能绕过去",
-      "fix": "在 `if (inner !== undefined)` 分支里，gitEnv 非空就直接 `return gitEnvDeny(gitEnv)`（最简单，宁可多拒）。也可以给 segmentsVerdict 加一个继承的 envKeys 参数，与内层各段自己的 envKeys 合并后再判定。git-env-overrides-denied 补上这两条命令作为拒绝用例"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/hooks/slice-gate.py",
-      "line": 388,
-      "summary": "判据 1 认定起点测量的条件是 `changed == []`，但真实飞行里按 D3 的顺序（先 `slice-gate start`、再起点测量）这个条件基本不可能成立。原因有两处：一是 start 在 toplevel 写的 `.openspec-slice` 标记是未跟踪文件，仓库没有 gitignore 它，`git status --porcelain` 会列出 `?? .openspec-slice`；二是 start 调 timeline_record 改了 change 目录下的 timeline.md。changed_files 把这两类都算进 uncommitted，所以 cmd_measure 输出的 changed 不会为空。cmd_gate 自己算 stray 时专门排除了 MARKER，说明标记确实出现在 uncommitted 里；S1 的 measure 测试也只用子集断言 `<= set(out[\"changed\"])`。结果是账本模式的 G5 在实际飞行中会一律判「缺少本片起点测量」，全部变红。本片测试直接往账本写 `changed=[]` 的事件，没有覆盖到这个集成路径。（基于代码推理，未实跑，需进一步确认）",
-      "fix": "统一起点测量的口径，两种改法任选其一。(a) 在 cmd_measure 里计算 changed 时排除簿记文件：`changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + \"/\"))`，与 source_files 的排除口径保持一致。(b) 在 g5_ledger_verdict 里认定起点测量时，先剔除 MARKER 和 change 目录下的路径，再判是否为空，change_rel 作为参数传入。另补一条集成用例：起跑 S1 后立即运行 `slice-gate measure S1`，断言 changed 为 `[]`，同时断言账本模式的 gate 能认出这次起点测量。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "LOW",
