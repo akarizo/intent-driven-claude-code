@@ -108,10 +108,9 @@ def test_core_resume_redispatches_blocked_slice():
     assert_ts_passed("core-resume-redispatches-blocked-slice")
 
 # ---------------------------------------------------------------- flight-measure-followups
-# 骨架：S2 实现后去掉 xfail 标记。
+# S2 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_plan_change_forces_fresh_dispatch():
     # Given: attempt 1（指纹 A）派过 S1 执行体（门禁已绿未合回），S2 中断（门禁红）
     # When: attempt 2 以指纹 B 求下一批动作，再以指纹 A 求一次
@@ -119,7 +118,6 @@ def test_plan_change_forces_fresh_dispatch():
     assert_ts_passed("plan-change-forces-fresh-dispatch")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_dispatch_records_branch():
     # Given: 一条带 branch 的 dispatch 与一条不带 branch、worktree 为 …/flight-demo-S3 的 dispatch
     # When: 分别 agentOf

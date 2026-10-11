@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-state-machine（core-*），事件形状对照 spec flight-ledger-events。核心是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
-import { closeoutLists, ev, next, reduce, stopVerdict } from '../hooks/core'
+import { agentOf, closeoutLists, ev, next, reduce, stopVerdict } from '../hooks/core'
 import type { FlightEvent, Plan, Role } from '../hooks/core'
 
 const AT = '2026-10-09T00:00:00Z'
@@ -351,4 +351,56 @@ test('core-resume-redispatches-blocked-slice', () => {
 
   // Then: 恰为全新派发 S1 的执行体，没有任何 S2 的动作
   expect(actions).toEqual([{ kind: 'dispatch', role: 'executor', slice: 'S1' }])
+})
+
+// scenario 来源：spec flight-fresh-worktrees（flight-measure-followups）
+
+test('plan-change-forces-fresh-dispatch', () => {
+  // Given: waves [[S1, S2]]；attempt 1（指纹 F）里 S1 的执行体 a1 门禁绿（base b1）未合回，
+  //   S2 的执行体 a2 门禁红（G3 test，base b2）后中断；两份账本分别追加 attempt 2 的 takeoff，指纹为 G 与 F
+  const a1 = [
+    approve,
+    ev.takeoff(B, { attempt: 1, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.gate(B, { attempt: 1, agent: 'a1', slice: 'S1', ok: true, commit: 'c-S1', failed: [], base: 'b1' }),
+    ended(1, 'a1'),
+    dispatch(1, 'S2', 'executor', 'a2'),
+    ev.gate(B, { attempt: 1, agent: 'a2', slice: 'S2', ok: false, commit: 'c-S2', failed: ['G3 test'], base: 'b2' }),
+  ]
+  const ledgers: [FlightEvent[], string][] = [
+    [[...a1, ev.takeoff(B, { attempt: 2, fp: G, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' })], G],
+    [[...a1, ev.takeoff(B, { attempt: 2, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' })], F],
+  ]
+
+  // When: 对两份账本各以其 attempt 2 的指纹求一次下一批动作
+  const got = ledgers.map(([evs, fp]) => next(reduce(evs), ONE, fp))
+
+  // Then: 指纹 G 时 S1、S2 都是不带续接与 base 的新派发；
+  //   指纹 F 时 S1 以 base b1 在 /wt/S1 补跑门禁，S2 带续接说明（上一次飞行中断，G3 test）与 base b2
+  expect(got[0]).toEqual([
+    { kind: 'dispatch', role: 'executor', slice: 'S1' },
+    { kind: 'dispatch', role: 'executor', slice: 'S2' },
+  ])
+  expect(got[1]).toEqual([
+    { kind: 'regate', slice: 'S1', base: 'b1', worktree: '/wt/S1' },
+    { kind: 'dispatch', role: 'executor', slice: 'S2', continuation: { reason: '上一次飞行中断', failed: ['G3 test'] }, base: 'b2' },
+  ])
+})
+
+test('dispatch-records-branch', () => {
+  // Given: change demo 的三条 dispatch：a1 带 branch flight/demo/S1-a2；
+  //   a3 不带 branch、worktree 为 /m/.claude/worktrees/flight-demo-S3；a4 不带 branch、worktree 为 /wt/S4（推不出）
+  const state = reduce([
+    approve,
+    takeoff(1),
+    ev.dispatch(B, { attempt: 1, slice: 'S1', role: 'executor', agent: 'a1', model: OPUS, worktree: '/m/.claude/worktrees/flight-demo-S1', branch: 'flight/demo/S1-a2' }),
+    ev.dispatch(B, { attempt: 1, slice: 'S3', role: 'executor', agent: 'a3', model: OPUS, worktree: '/m/.claude/worktrees/flight-demo-S3' }),
+    ev.dispatch(B, { attempt: 1, slice: 'S4', role: 'executor', agent: 'a4', model: OPUS, worktree: '/wt/S4' }),
+  ])
+
+  // When: 对 a1、a3、a4 分别调用 agentOf 取 branch
+  const branches = ['a1', 'a3', 'a4'].map(a => agentOf(state, a)?.branch)
+
+  // Then: 依次为 flight/demo/S1-a2、flight/demo/S3、空串
+  expect(branches).toEqual(['flight/demo/S1-a2', 'flight/demo/S3', ''])
 })
