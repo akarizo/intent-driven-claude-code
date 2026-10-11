@@ -75,6 +75,8 @@ def pytest_runtest_logreport(report):
     if report.when == "call":
         if hasattr(report, "wasxfail"):
             out = "XPASS" if report.passed else "XFAIL"
+        elif report.failed and isinstance(report.longrepr, str) and report.longrepr.startswith("[XPASS(strict)]"):
+            out = "XPASS"  # 严格 xfail 意外通过：pytest 记 failed、longrepr 带此前缀、不设 wasxfail
         else:
             out = report.outcome.upper()
     elif report.failed:
@@ -140,8 +142,8 @@ def run_cmd_full(cmd, cwd):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def _tail(out):
-    return "\n".join(out.strip().splitlines()[-6:])
+def _tail(out, n=6):
+    return "\n".join(out.strip().splitlines()[-n:])
 
 
 def run_cmd(cmd, cwd):
@@ -449,6 +451,39 @@ def evidence_state(change_dir, slice_id):
     return "red_first" if any(r == "FAIL" for r in rows[:last_pass]) else "no_red"
 
 
+MEASURE_RED = ("FAILED", "ERROR")
+
+
+def g5_ledger_verdict(events, slice_id, base, pairs):
+    """G5 账本判据（纯函数）。pairs = [(scenario id, 映射目标)]；返回 (failed, warnings)。"""
+    failed, warnings = [], []
+    targets = []
+    for sid, t in pairs:
+        if t.split("::", 1)[0].endswith(".py"):
+            targets.append((sid, t))
+        else:
+            warnings.append("G5 measure: 非 pytest 目标无法测量：%s" % t)
+    ms = [e for e in events if e.get("ev") == "measure" and e.get("slice") == slice_id and e.get("base") == base]
+    starts = [e for e in ms if e.get("changed") == []]
+    if not starts:
+        return failed + ["G5 measure: 缺少本片起点测量（base %s）" % base[:8]], warnings
+    passed_at_start = set(t for e in starts for t, o in e.get("outcomes") or [] if o == "PASSED")
+    required = []
+    for sid, t in targets:
+        if t in passed_at_start:
+            warnings.append("G5 measure: %s 在本片起点已通过，免于先红" % t)
+        else:
+            required.append((sid, t))
+    reds = [(e, set(t for t, o in e.get("outcomes") or [] if o in MEASURE_RED)) for e in ms]
+    for sid, t in required:
+        if not any(t in r for _, r in reds):
+            failed.append("G5 measure: %s → %s 从未在控制面测量中红过（写好测试后调用 measure 看它红，再写实现）" % (sid, t))
+    need = set(t for _, t in required)
+    if need and not any(e.get("source") == [] and r & need for e, r in reds):
+        failed.append("G5 measure: 每次见红时都已改动生产代码（RED 须先于实现）")
+    return failed, warnings
+
+
 def report_has_row(change_dir, slice_id, commit):
     path = os.path.join(change_dir, REPORT)
     if not os.path.isfile(path):
@@ -477,6 +512,17 @@ def is_doc_or_config(path):
     return ext.lower() in DOC_EXT or ext.lower() in CONFIG_EXT
 
 
+def source_files(files, change_rel):
+    """改动里的源码：非测试、非文档 / 配置、不在 change 目录内、不是切片标记。"""
+    return [f for f in files if not is_test_path(f) and not is_doc_or_config(f)
+            and not f.startswith(change_rel + "/") and f != MARKER]
+
+
+def is_bytecode(path):
+    """Python 字节码（__pycache__ 目录或 .pyc）：未提交时是跑测试的副产物，不算切片改动；已提交的照常受所有权检查。"""
+    return "__pycache__" in path.split("/") or path.endswith(".pyc")
+
+
 def changed_files(root, base):
     head = git(root, "rev-parse", "HEAD")
     committed = set()
@@ -488,7 +534,7 @@ def changed_files(root, base):
     for line in porcelain.splitlines():
         if len(line) > 3:
             uncommitted.add(line[3:].split(" -> ")[-1].strip())
-    return committed, uncommitted
+    return committed, set(f for f in uncommitted if not is_bytecode(f))
 
 
 def added_lines(root, base):
@@ -677,7 +723,8 @@ def _pytest_outcomes(root, targets, gate=None):
         with open(os.path.join(tmp, "flight_g7_outcomes.py"), "w", encoding="utf-8") as f:
             f.write(G7_PLUGIN)
         out = os.path.join(tmp, "outcomes.jsonl")
-        env = dict(os.environ, FLIGHT_G7_OUT=out,
+        # 不写字节码：__pycache__ 落进被测 worktree 会被当成改动（G5 起点测量、source 判定）
+        env = dict(os.environ, FLIGHT_G7_OUT=out, PYTHONDONTWRITEBYTECODE="1",
                    PYTHONPATH=os.pathsep.join(p for p in (tmp, os.environ.get("PYTHONPATH")) if p))
         argv = prefix + ["-p", "flight_g7_outcomes", "-p", "no:cacheprovider", "--rootdir", root, *targets]
         timed_out, rc, text = False, None, ""
@@ -996,7 +1043,11 @@ def cmd_start(args):
             sys.exit(3)
     existing = _read_marker(root)
     if existing and existing.get("slice") == args.slice:
-        # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动
+        # 重试同一切片：区间起点与 red_count 都要保住，标记原样不动（只补上缺的 evidence 字段）
+        if args.evidence == "ledger" and "evidence" not in existing:
+            existing["evidence"] = "ledger"
+            with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False)
         timeline_record(args.change_dir, "slice-start", "%s (resume)" % args.slice)
         print(json.dumps(existing, ensure_ascii=False))
         return
@@ -1013,6 +1064,8 @@ def cmd_start(args):
         _ckpt_delete(root, _gate_ref(args.change_dir, args.slice))
     marker = {"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
               "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
+    if args.evidence == "ledger":
+        marker["evidence"] = "ledger"
     with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
         json.dump(marker, f, ensure_ascii=False)
     timeline_record(args.change_dir, "slice-start", note)
@@ -1064,19 +1117,33 @@ def cmd_gate(args):
             if w2:
                 warnings.append(w2)
 
-    source = [f for f in files if not is_test_path(f) and not is_doc_or_config(f) and not f.startswith(change_rel + "/") and f != MARKER]
-    tests = [f for f in files if is_test_path(f)]
+    source = source_files(files, change_rel)
+    tests =[f for f in files if is_test_path(f)]
     if source and not tests:
         failed.append("G3 pairing: 改了源码 %s 但区间内没有测试文件改动" % ", ".join(sorted(source)[:6]))
     failed.extend(gwt_violations(root, tests))
-    ev = evidence_state(args.change_dir, args.slice)
-    hooks_missing = ev == "missing_file"
-    if ev == "missing_file":
-        warnings.append("G5 evidence: 无 evidence.log（test-evidence hook 未安装或未触发），本切片留痕无法核对")
-    elif ev == "no_rows":
-        failed.append("G5 evidence: evidence.log 无本切片 %s 的测试运行记录（hook 在工作却没跑过测试）" % args.slice)
-    elif ev == "no_red":
-        warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
+    if args.evidence == "ledger":
+        hooks_missing = False
+        try:
+            import ledger  # 与 takeoff-gate.py 同：脚本目录在 sys.path 上
+            events = ledger.read_events(args.change_dir)
+        except Exception as e:  # noqa: BLE001 — 账本读不出来一律判红，不放行
+            failed.append("G5 measure: 账本读取失败：%s" % e)
+        else:
+            mapping = data.get("scenario_tests") or {}
+            pairs = [(sid, mapping[sid]) for sid in sl.get("scenarios") or [] if mapping.get(sid)]
+            f5, w5 = g5_ledger_verdict(events, args.slice, args.measure_base or base, pairs)
+            failed.extend(f5)
+            warnings.extend(w5)
+    else:
+        ev = evidence_state(args.change_dir, args.slice)
+        hooks_missing = ev == "missing_file"
+        if ev == "missing_file":
+            warnings.append("G5 evidence: 无 evidence.log（test-evidence hook 未安装或未触发），本切片留痕无法核对")
+        elif ev == "no_rows":
+            failed.append("G5 evidence: evidence.log 无本切片 %s 的测试运行记录（hook 在工作却没跑过测试）" % args.slice)
+        elif ev == "no_red":
+            warnings.append("G5 evidence: 未见 RED 先于 GREEN 的测试运行记录")
     failed.extend(ownership_violations(files, sl.get("owns") or [], change_rel, committed))
     v7, _, _, w7 = scenario_status(root, data, {args.slice})
     failed.extend(v7)
@@ -1112,6 +1179,47 @@ def cmd_gate(args):
                 pass
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
+
+
+MEASURE_RANK = ("PASSED", "SKIPPED", "XFAIL", "XPASS", "FAILED", "ERROR")  # 越靠后越差
+
+
+def cmd_measure(args):
+    """只读测量：实跑本片 scenario 的 .py 目标，报告各目标结果与相对 base 的改动清单；不写任何记录。"""
+    root = toplevel()
+    data = load_plan(args.change_dir)
+    by_id = {s["id"]: s for s in data.get("slices") or []}
+    if args.slice not in by_id:
+        die("切片 %s 不在 slices.json 中" % args.slice)
+    base = args.base or (_read_marker(root) or {}).get("base")
+    if not base:
+        die("没有 base：先运行 `slice-gate.py start %s`，或传 --base" % args.slice)
+    change_rel = os.path.relpath(os.path.abspath(args.change_dir), root).replace(os.sep, "/")
+    tests = data.get("scenario_tests") or {}
+    targets, unmeasurable = [], []
+    for sid in by_id[args.slice].get("scenarios") or []:
+        t = tests.get(sid)
+        if t and t.split("::", 1)[0].endswith(".py"):
+            targets.append(t)
+        else:
+            unmeasurable.append(t or sid)
+    outcomes, text = [], ""
+    if targets:
+        gate = data.get("gate") or {}
+        raw, rc, text, timed_out = _pytest_outcomes(root, targets, gate)
+        if timed_out or rc is None:
+            why = "pytest 运行超时（%g 秒）" % _g7_timeout(gate) if timed_out else "pytest 无法启动：%s" % text
+            print(json.dumps({"slice": args.slice, "error": why}, ensure_ascii=False))
+            sys.exit(1)
+        for t in targets:
+            outs = [o for i, o in raw if i == t or i.startswith(t + "[")]
+            outcomes.append([t, max(outs, key=MEASURE_RANK.index) if outs else "MISSING"])
+    committed, uncommitted = changed_files(root, base)
+    # 簿记文件（start 写的切片标记、change 目录下的 timeline 等）不算本片改动，口径与 source_files 的排除一致
+    changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
+    print(json.dumps({"slice": args.slice, "base": base, "commit": git(root, "rev-parse", "HEAD"),
+                      "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed,
+                      "source": source_files(changed, change_rel), "tail": _tail(text, 40)}, ensure_ascii=False))
 
 
 def cmd_record(args):
@@ -1440,10 +1548,19 @@ def main():
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
     p.add_argument("--expect-branch", help="基点校验：HEAD 须是该分支最新 commit 的后代，否则 G0 拒绝起跑")
+    p.add_argument("--evidence", choices=["log", "ledger"], default="log",
+                   help="G5 留痕来源：log = evidence.log（缺省）；ledger = 控制面账本里的 measure 事件，标记里记 evidence=ledger")
     p.add_argument("--resume-checkpoint", action="store_true",
                    help="重派：无同片标记时把 refs/flight/<change>/<S> 快照恢复为未提交改动（基点须在快照祖先链上）")
     sub.add_parser("checkpoint", help="PostToolUse hook：stdin 载荷取 cwd，把本片 owns 内改动快照到 refs/flight/<change>/<S>；永远静默 exit 0")
     p = sub.add_parser("gate")
+    p.add_argument("slice")
+    p.add_argument("--change-dir", required=True)
+    p.add_argument("--base")
+    p.add_argument("--evidence", choices=["log", "ledger"], default="log",
+                   help="G5 判据：log = evidence.log（缺省）；ledger = 账本 measure 事件（不读 evidence.log）")
+    p.add_argument("--measure-base", help="账本模式下匹配 measure 事件的 base；缺省为门禁 base")
+    p = sub.add_parser("measure", help="只读测量：实跑本片 scenario 的 .py 目标，打印各目标结果与改动清单 JSON")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base")
@@ -1461,7 +1578,7 @@ def main():
     args = ap.parse_args()
     {"lint": cmd_lint, "waves": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
      "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship,
-     "checkpoint": cmd_checkpoint}[args.cmd](args)
+     "checkpoint": cmd_checkpoint, "measure": cmd_measure}[args.cmd](args)
 
 
 if __name__ == "__main__":

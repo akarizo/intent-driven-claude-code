@@ -5,10 +5,12 @@ import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, State } from './core'
 import { bashUpgradable, bashVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
-import { active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, owners, readLedger, trees } from './io'
+import { EVENT_TYPES, active, agentType, appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, owners, readLedger, trees } from './io'
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
+import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
 import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
+import { checkJudges, checkPluginCopy } from './versions'
 
 type Engine = EngineInterface
 type Ev = State['events'][number]
@@ -128,11 +130,12 @@ async function envelopeOf(io: Io, f: Flight): Promise<Envelope> {
 
 type Flying = { who: Who; commands: string[]; mainTree: string }
 
-/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）、可免询问的命令与主 worktree；已派发、dispatch 未写入的为登记中。 */
-async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: true } | undefined> {
+/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）、可免询问的命令与主 worktree；已派发、dispatch 未写入的为登记中；在飞飞行的账本读不出时为判不出。 */
+async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: true } | { unknown: true; error: string } | undefined> {
   // 没有在飞飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
   if (active.size === 0) return undefined
   const owner = await ownership(io, agentId)
+  if (owner !== undefined && 'unknown' in owner) return active.has(owner.change) ? { unknown: true, error: firstLine(owner.error) } : undefined
   if (owner !== undefined && 'pending' in owner) return active.has(owner.change) ? { pending: true } : undefined
   const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
   if (owner === undefined || f === undefined) return undefined
@@ -158,12 +161,26 @@ function inEnvelope({ who, commands, mainTree }: Flying, tool: string, input: un
   if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands, who.worktree, mainTree)
   const target = writeTarget(tool, input)
   if (target !== undefined) return writeVerdict(who, normalizePath(target)) === undefined
+  if (who.role === 'executor' && tool === `mcp__flight__${MEASURE_TOOL.name}`) return true
   return who.role === 'reviewer' && tool === `mcp__flight__${FINDINGS_TOOL.name}`
 }
 
-/** 跑切片门禁并解析 JSON；stdout 不是门禁 JSON 时按红记。 */
-async function runGate(io: Io, f: Flight, slice: string, worktree: string, base?: string): Promise<GateJson> {
-  const args = ['gate', slice, '--change-dir', f.changeDir, ...(base ? ['--base', base] : [])]
+type GateBases = { base?: string; measureBase?: string }
+
+/** 执行体 / 解冲突 agent 收口门禁的 base：取其 dispatch 的 base；解冲突另带本片最后一个执行体 dispatch 的 base 作测量 base。旧账本没有 base 时不带。 */
+function gateBases(state: State, agent: string): GateBases {
+  const who = agentOf(state, agent)
+  if (who === undefined) return {}
+  if (who.role !== 'resolver') return { base: who.base }
+  const exec = state.events.filter(e => e.ev === 'dispatch' && e.role === 'executor' && e.slice === who.slice).pop()
+  const measureBase = exec && typeof exec.base === 'string' && exec.base !== '' ? exec.base : undefined
+  return { base: who.base, measureBase }
+}
+
+/** 跑切片门禁（一律带 --evidence ledger）并解析 JSON；stdout 不是门禁 JSON 时按红记。 */
+async function runGate(io: Io, f: Flight, slice: string, worktree: string, bases: GateBases = {}): Promise<GateJson> {
+  const { base, measureBase } = bases
+  const args = ['gate', slice, '--change-dir', f.changeDir, '--evidence', 'ledger', ...(base ? ['--base', base] : []), ...(base && measureBase ? ['--measure-base', measureBase] : [])]
   const r = await judge(io, f, 'slice-gate', args, worktree, GATE_TIMEOUT_MS)
   try {
     const g = JSON.parse(r.stdout) as Partial<GateJson>
@@ -200,6 +217,29 @@ function showStatus($: Engine, f: Flight, state: State): void {
   $.ui.status(`✈ ${f.change} · W${at < 0 ? waves.length : at + 1}/${waves.length} · 运行 ${running} · 阻断 ${blocked.length}`)
 }
 
+/** slice-gate start（账本证据模式），从打印的标记 JSON 取 base；失败或取不到 base 返回原因。 */
+async function startSlice(io: Io, f: Flight, slice: string, extra: string[], cwd: string): Promise<{ base: string } | { error: string }> {
+  const st = await judge(io, f, 'slice-gate', ['start', slice, '--change-dir', f.changeDir, '--evidence', 'ledger', ...extra], cwd)
+  if (st.exitCode !== 0) return { error: `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}` }
+  try {
+    const base = (JSON.parse(st.stdout) as { base?: unknown } | null)?.base
+    if (typeof base === 'string' && base !== '') return { base }
+  } catch {
+    // 落到下方
+  }
+  return { error: `slice-gate start 没有打印 base：${firstLine(st.stdout) || '无输出'}` }
+}
+
+/** 起点测量：账本里没有本片、本 base、changed 为空的 measure 时先测一次（agent 记 dispatch）；失败返回原因。 */
+async function startMeasure(ctx: Ctx, f: Flight, attempt: number, slice: string, worktree: string, base: string): Promise<string | undefined> {
+  const ledger = await readLedger(ctx.io, f)
+  if ('error' in ledger) return `账本读取失败：${firstLine(ledger.error)}`
+  const taken = ledger.events.some(e => e.ev === 'measure' && e.slice === slice && e.base === base && Array.isArray(e.changed) && e.changed.length === 0)
+  if (taken) return undefined
+  const r = await measureSlice(ctx, f, { attempt, slice, agent: 'dispatch', worktree, base })
+  return 'error' in r ? r.error : undefined
+}
+
 /** 执行一个动作；账本写入失败返回 false（drive 随即停下，避免同一动作重复执行）。 */
 async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Record<string, SliceInfo>): Promise<boolean> {
   const A = state.attempt
@@ -214,7 +254,7 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
   if (a.kind === 'regate') {
     // 切片 worktree 已不在：无从补跑，按全新派发处理
     if (!(await io.exists(a.worktree))) return perform(ctx, f, state, { kind: 'dispatch', role: 'executor', slice: a.slice }, slices)
-    const gate = await runGate(io, f, a.slice, a.worktree, a.base)
+    const gate = await runGate(io, f, a.slice, a.worktree, { base: a.base })
     return record(ev.gate(b, { attempt: A, agent: 'regate', ...gate }))
   }
   if (a.kind === 'dispatch' && a.role === 'executor') {
@@ -225,28 +265,29 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     if ('error' in wt) return blocked(a.slice, `建切片 worktree 失败：${firstLine(wt.error)}`)
     // 续接（worktree 已存在）不带 --expect-branch：change 分支可能已前移
     // 续飞带原 base：worktree 里已有上一 attempt 的提交，以当前 HEAD 为起点会把它们判出区间
-    const args = ['start', a.slice, '--change-dir', f.changeDir, ...(wt.created ? ['--expect-branch', f.branch] : []), ...(a.base ? ['--base', a.base] : [])]
-    const st = await judge(io, f, 'slice-gate', args, wt.path)
-    if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
+    const st = await startSlice(io, f, a.slice, [...(wt.created ? ['--expect-branch', f.branch] : []), ...(a.base ? ['--base', a.base] : [])], wt.path)
+    if ('error' in st) return blocked(a.slice, st.error)
+    const m = await startMeasure(ctx, f, A, a.slice, wt.path, st.base)
+    if (m) return blocked(a.slice, `起点测量失败：${m}`)
     const prompt = executorPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, continuation: a.continuation })
     const r = await ctx.spawn({ f, role: 'executor', cwd: wt.path, prompt, description: `${f.change} ${a.slice}` })
     if (r.agentId === undefined) return blocked(a.slice, `派发执行体被拒：${r.deny ?? '没有 agentId'}`)
-    return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'executor', agent: r.agentId, model: f.model, worktree: wt.path }))
+    return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'executor', agent: r.agentId, model: f.model, worktree: wt.path, base: st.base }))
   }
   if (a.kind === 'dispatch' && a.role === 'resolver') {
     const p = await prepareResolve(io, f, a.slice)
     if ('error' in p) return blocked(a.slice, p.error)
-    const st = await judge(io, f, 'slice-gate', ['start', a.slice, '--change-dir', f.changeDir], p.path)
-    if (st.exitCode !== 0) return blocked(a.slice, `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}`)
+    const st = await startSlice(io, f, a.slice, [], p.path)
+    if ('error' in st) return blocked(a.slice, st.error)
     const conflicts = p.conflicts.length ? p.conflicts : a.conflicts
     const prompt = resolverPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, conflicts })
     const r = await ctx.spawn({ f, role: 'resolver', cwd: p.path, prompt, description: `${f.change} ${a.slice} 解冲突` })
     if (r.agentId === undefined) return blocked(a.slice, `派发解冲突 agent 被拒：${r.deny ?? '没有 agentId'}`)
-    return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'resolver', agent: r.agentId, model: f.model, worktree: p.path }))
+    return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'resolver', agent: r.agentId, model: f.model, worktree: p.path, base: st.base }))
   }
   if (a.kind === 'gate') {
     const who = agentOf(state, a.agent)
-    const gate = await runGate(io, f, a.slice, who?.worktree ?? '')
+    const gate = await runGate(io, f, a.slice, who?.worktree ?? '', gateBases(state, a.agent))
     return record(ev.gate(b, { attempt: A, agent: a.agent, ...gate }))
   }
   if (a.kind === 'merge' && a.via !== 'fix') {
@@ -389,6 +430,13 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   if (git.exitCode !== 0 || major < GIT_FLOOR[0] || (major === GIT_FLOOR[0] && minor < GIT_FLOOR[1])) {
     return `flight：需要 git ≥ 2.38（合回用 merge-tree --write-tree），当前 ${firstLine(git.stdout || git.stderr)}，不起飞`
   }
+  // 版本核对在写任何账本事件或 timeline 之前：插件副本是否为已安装版本、判定器是否认识全部事件
+  const home = await $.env.get('HOME')
+  const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : '')
+  const copy = await checkPluginCopy(io, { pluginRoot: $.plugin.root, configDir, mainTree: main.path })
+  if (!copy.ok) return copy.reason
+  const judges = await checkJudges(io, { hooksDir, required: EVENT_TYPES })
+  if (!judges.ok) return judges.reason
   const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
   if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
   // porcelain 的 XY 列可能以空格开头，不能先 trim
@@ -462,7 +510,7 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   if (!(await appendEvent(io, flight, ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model })))) return 'flight：写 takeoff 事件失败，不起飞'
   await drive($, flight)
   const committed = dirty.artifacts.length ? `\n已提交工件 ${dirty.artifacts.length} 个文件` : ''
-  return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · attempt ${attempt}${committed}`
+  return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`
 }
 
 export function registerOrchestrator(on: On): void {
@@ -486,6 +534,11 @@ export function registerOrchestrator(on: On): void {
     } catch {
       // 注册不了时评审员收口被提醒一次后放行，结束时状态机记 review:<S> 阻断，不拖住飞行
     }
+    try {
+      await $.tool.register({ ...MEASURE_TOOL, isDeferred: false })
+    } catch {
+      // 注册不了时执行体只是无从请求测量：G5 账本判据会判红，不静默放过
+    }
     return next(e)
   })
 
@@ -495,6 +548,12 @@ export function registerOrchestrator(on: On): void {
     return onFindings(ctx, agentId ? await flightOfAgent(ctx.io, agentId) : undefined, agentId, e)
   }).catch(() => ({ deny: 'flight：评审回收失败' }))
 
+  on('tool.call', { tool: `mcp__flight__${MEASURE_TOOL.name}` }, async ($, e) => {
+    const ctx = ctxOf($)
+    const agentId = (e as unknown as { agentId?: string }).agentId
+    return onMeasure(ctx, agentId ? await flightOfAgent(ctx.io, agentId) : undefined, agentId)
+  }).catch(() => ({ deny: 'flight：测量请求处理失败' }))
+
   // 能力包络（D5 / D6 / D8）：飞行 agent 按角色限写与限 git；主会话对在飞树只读
   on('tool.call', { tool: ['Write', 'Edit', 'NotebookEdit', 'Bash'] }, async ($, e, next) => {
     const tool = String(e.tool)
@@ -503,6 +562,7 @@ export function registerOrchestrator(on: On): void {
     const flying = await flyingWho(ctxOf($).io, agentId)
     if (flying === undefined) return next(e)
     if ('pending' in flying) return { deny: 'flight：派发登记中，稍后重试' }
+    if ('unknown' in flying) return { deny: `flight：归属判定失败（${flying.error}），稍后重试` }
     const deny = envelopeVerdict(flying, tool, e)
     if (deny) return deny
     // D1：飞行 agent 的 Bash 固定在自己的 worktree 里执行
@@ -520,7 +580,7 @@ export function registerOrchestrator(on: On): void {
     if (!x.agentId || v.decision !== 'ask' || x.ceiling === 'ask') return v
     try {
       const flying = await flyingWho(ctxOf($).io, x.agentId)
-      if (flying === undefined || 'pending' in flying || !inEnvelope(flying, x.tool, x.input)) return v
+      if (flying === undefined || !('who' in flying) || !inEnvelope(flying, x.tool, x.input)) return v
       return { decision: 'allow', reason: 'flight 包络内' }
     } catch {
       return v
@@ -551,7 +611,7 @@ export function registerOrchestrator(on: On): void {
       return r?.block ? { ...(await next(e)), block: r.block } : next(e)
     }
     const f = found.flight
-    const gate = await runGate(io, f, who.slice, who.worktree)
+    const gate = await runGate(io, f, who.slice, who.worktree, gateBases(reduce(found.events), e.agent_id))
     const event = ev.gate(await base(ctx, f), { attempt: who.attempt, agent: e.agent_id, ...gate })
     await appendEvent(io, f, event)
     const verdict = stopVerdict(reduce([...found.events, event]), e.agent_id, gate)

@@ -25,6 +25,18 @@ test('prompts-executor-and-continuation', async () => {
   expect(resumed).toContain('git status')
 })
 
+test('executor-prompt-states-measure-protocol', async () => {
+  // Given: change demo、切片 S2、切片包 template/openspec/changes/demo/slices/S2.md，首次派发（无续接）
+  const base = { change: 'demo', changeDir: CHANGE_DIR, slice: 'S2' }
+
+  // When: 生成执行体提示词
+  const prompt = executorPrompt(base)
+
+  // Then: 提示词含 measure 工具名与「不算证据」
+  expect(prompt).toContain('measure')
+  expect(prompt).toContain('不算证据')
+})
+
 test('prompts-reviewer-resolver-fixer', async () => {
   // Given: S1 合回后的 commit c1、合回 S2 时的冲突文件 a.py、一条 HIGH finding（summary「空 body 未校验」）
   const finding = { severity: 'HIGH', file: 'src/api.py', line: 42, summary: '空 body 未校验', fix: '先判空' }

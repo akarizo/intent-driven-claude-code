@@ -133,8 +133,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    两种都拉不到 → 报告"取 diff 失败"并停止，不得报告"无变更"。
 
    参考材料（不重跑测试套件，以此为准）：
-   - openspec/changes/<name>/gate-report.md（各切片门禁 G1–G7 结论）
-   - openspec/changes/<name>/evidence.log 摘要（RED→GREEN 留痕）
+   - 飞行模式：openspec/changes/<name>/gate-report.md（各切片门禁 G1–G7 结论）与 `python3 .claude/hooks/timeline.py report` 的门禁红次数和测量统计，均来自账本（G5 先红证据 = 控制面测量）
+   - Workflow 回退路径：openspec/changes/<name>/evidence.log 摘要（RED→GREEN 留痕）
 
    按你既定的分级标准、finding 格式与签名输出完整 markdown，准备直接贴成 PR/MR 评论。
    monorepo 跨多个 sub-repo 时按 sub-repo 分块组织 finding。
@@ -212,8 +212,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 - **不绕过预合并冲突检查**：发现冲突就停，让用户决定。
 - **commit 不用 `-A`**：只加与本任务相关的文件。
 - **commit 不带 attribution**：按用户 settings.json 全局禁用。
-- **subagent 必须干净**：不给它主会话的对话历史 / 设计意图，只给 diff + 门禁摘要（gate-report.md / evidence.log）。
-- **评审只 full 一种模式**：不重跑测试套件、不轮询，以门禁报告与 evidence.log 为准，至多 1 次定向抽查命令。
+- **subagent 必须干净**：不给它主会话的对话历史 / 设计意图，只给 diff + 门禁摘要（飞行模式：gate-report.md 与 timeline.py report 的测量统计；回退路径：evidence.log）。
+- **评审只 full 一种模式**：不重跑测试套件、不轮询，以门禁报告与账本测量统计为准（回退路径以 evidence.log 为准），至多 1 次定向抽查命令。
 - **CRITICAL/HIGH 自动修复至多 2 轮**：仍阻断则停下交人，不无限重试。
 - **全程至多问询 1 次**（仅 step 10 自动修复前，问自动修还是只贴评论交人）：其余环节（commit 文案、PR 正文、是否复审、收尾）一律直接执行，不问询。
 - **review 评论签名必带**：让 PR 阅读者知道这条评论来自 AI。

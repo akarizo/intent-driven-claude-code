@@ -2,12 +2,15 @@
 # timeline · 飞行记录
 #   record <event> --change-dir DIR [--note TEXT]   追加一行「ISO时间\t事件\t备注」到 <DIR>/timeline.md
 #   report --change-dir DIR                         打印事件表与 approve → pr-open 用时（分钟）
+#     账本有 takeoff 时门禁红次数与测量统计取自账本（同目录 ledger.py）；否则按 timeline 行统计
 # 事件约定：approve · slice-start · gate · review · fix · final · apply-done · pr-open · pause · baseline
 # 兼容 Python 3.8+，只用标准库。
 import argparse
 import os
 import sys
 from datetime import datetime, timezone
+
+import ledger  # 同目录：脚本目录在 sys.path 上
 
 TIMELINE = "timeline.md"
 HEADER = "<!-- timeline: ISO时间\\t事件\\t备注（由 hooks 自动追加） -->\n"
@@ -82,8 +85,21 @@ def report(change_dir):
             sid = note.split()[0]
             if sid in starts:
                 print("切片 %s：start → gate ok %s min" % (sid, minutes(starts[sid], ts)))
+    try:
+        events = ledger.read_events(change_dir)
+    except Exception:
+        events = None
+    if events and any(e.get("ev") == "takeoff" for e in events):
+        gate = sum(1 for e in events if e.get("ev") == "gate" and e.get("ok") is False)
+        final = sum(1 for e in events if e.get("ev") == "final" and e.get("ok") is False)
+        print("门禁红次数：%d（账本：切片门禁 %d · final %d）" % (gate + final, gate, final))
+        measures = [e for e in events if e.get("ev") == "measure"]
+        seen_red = sum(1 for e in measures
+                       if any(len(o) > 1 and o[1] in ("FAILED", "ERROR") for o in e.get("outcomes") or []))
+        print("测量：%d 次（见红 %d 次）" % (len(measures), seen_red))
+        return
     reds = sum(1 for _, ev, note in rows if ev in ("gate", "final") and note.endswith("red"))
-    print("门禁红次数：%d" % reds)
+    print("门禁红次数：%d%s" % (reds, "（账本读取失败，按 timeline 统计）" if events is None else ""))
 
 
 def main():

@@ -5,6 +5,7 @@
 #   ISO时间\t<切片id 或 ->\t<PASS|FAIL>\t<命令前 120 字符>
 # change 目录来源（三级，不猜）：① git toplevel 下 .openspec-slice 标记的 change_dir；
 #   ② 分支名 worktree-<name> 对应 openspec/changes/<name>；③ tasks.md 仍有未勾选项的 change 恰好 1 个；否则不写。
+#   标记含 evidence=ledger（账本模式切片）时不写。
 # 结果判定：事件为 PostToolUseFailure → FAIL；否则 stdout/stderr 命中 failed|error|FAIL → FAIL；其余 PASS。
 # fail-open：任何异常静默退出。兼容 Python 3.8+。
 import json
@@ -55,6 +56,8 @@ def find_change(root):
         try:
             with open(marker, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            if data.get("evidence") == "ledger":  # 账本模式切片：测试结果由 measure 事件记录，此处让位、不写
+                return None, None
             cd = data.get("change_dir") or ""
             if not os.path.isabs(cd):
                 cd = os.path.join(root, cd)

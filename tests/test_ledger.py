@@ -303,3 +303,30 @@ def test_approved_ignores_flight_events(git_repo):
     # Then: approved 只打印 F；takeoff-gate 以 0 退出
     assert (a.returncode, a.stdout.strip()) == (0, fp), a.stderr
     assert t.returncode == 0, t.stderr
+
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+def test_ledger_accepts_measure_events(git_repo):
+    # Given: 账本 A（demo）含 approve、takeoff 与一条字段齐全的 measure；账本 B（other）同上但 measure 缺 outcomes
+    measure = {"ev": "measure", "attempt": 1, "slice": "S1", "agent": "a1", "base": "f" * 40, "commit": "e" * 40,
+               "outcomes": [["tests/test_a.py::test_s", "FAILED"]], "changed": ["tests/test_a.py"], "source": []}
+    a = make_change(git_repo)
+    for ev in flight_events()[:2] + [dict(flight_events()[0], **measure)]:
+        ledger_append(git_repo, "demo", {k: v for k, v in ev.items() if not (ev.get("ev") == "measure" and k == "fp")})
+    b = make_change(git_repo, name="other")
+    bad = {k: v for k, v in measure.items() if k != "outcomes"}
+    for ev in flight_events("other")[:2] + [dict(flight_events("other")[0], **bad)]:
+        ledger_append(git_repo, "other", {k: v for k, v in ev.items() if not (ev.get("ev") == "measure" and k == "fp")})
+
+    # When: A 运行 show，B 运行 verify，再运行 events
+    show, verify = ledger("show", a), ledger("verify", b)
+    events = run_hook("ledger", "events")
+
+    # Then: A 打印三条、退出 0；B 退出 4 且 stderr 含「measure 的 outcomes」；events 列出 measure 与 gate
+    assert show.returncode == 0, show.stderr
+    assert [json.loads(line)["ev"] for line in show.stdout.splitlines()] == ["approve", "takeoff", "measure"]
+    assert verify.returncode == 4 and "measure 的 outcomes" in verify.stderr, verify.stderr
+    assert events.returncode == 0, events.stderr
+    assert {"measure", "gate"} <= set(events.stdout.split())

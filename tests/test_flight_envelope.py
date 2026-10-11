@@ -1,4 +1,5 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
+import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -98,3 +99,80 @@ def test_read_upgrade_limited_to_repo():
     # Then: 仓库内的 Read 与 Grep 可免询问；~/.ssh 与 /etc 不可
     assert_ts_passed("read-upgrade-limited-to-repo")
 
+# ---------------------------------------------------------------- flight-measure
+# S4 已实现：骨架标记已去。
+
+
+def test_interpreter_wrappers_checked():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 bash -c / sh -lc / eval 包住的 push、reset、cd /repo 后的 commit、-c 内含 ; 的命令，以及 bash -c 'python3 -m pytest -q'
+    # Then: 前五条被拒（理由含子命令 / 自己的 worktree / 无法判定），最后一条不拒
+    assert_ts_passed("interpreter-wrappers-checked")
+
+
+def test_cd_variants_tracked():
+    # Given: 执行体 worktree 为 W，主仓库 /repo
+    # When: 判定 pushd /repo、builtin cd /repo、command cd /repo 之后的改动类 git，pushd W/sub && popd 之后的 commit，以及 builtin cd W 之后的 commit
+    # Then: 前四条被拒（理由含自己的 worktree），最后一条不拒
+    assert_ts_passed("cd-variants-tracked")
+
+
+def test_git_env_overrides_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定带 GIT_DIR / GIT_CONFIG_* / env GIT_WORK_TREE / export GIT_DIR / 单独 GIT_INDEX_FILE= 赋值的改动类 git，以及 GIT_PAGER=cat git log -1
+    # Then: 前五条被拒（理由含 GIT_），最后一条不拒
+    assert_ts_passed("git-env-overrides-denied")
+
+
+def test_shared_config_writers_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 git fetch、remote add、remote set-url、branch -u、branch --set-upstream-to，以及 remote -v、remote get-url、branch --list
+    # Then: 前五条被拒，后三条不拒
+    assert_ts_passed("shared-config-writers-denied")
+
+
+def test_glob_pattern_cannot_escape():
+    # Given: 主仓库 /repo，执行体 worktree W 在其内
+    # When: 判定 Glob 的绝对 pattern、含 .. 的 pattern 与 path=W 的相对 pattern
+    # Then: 前两个不免询问，第三个免询问
+    assert_ts_passed("glob-pattern-cannot-escape")
+
+# ---------------------------------------------------------------- flight-measure S9
+# S9 已实现：骨架标记已去。
+
+
+def test_eval_cd_carries_to_outer():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 eval cd /repo && git commit、eval cd W && git commit、bash -c 'cd /repo' && git commit
+    # Then: 第一条被拒（理由含自己的 worktree），后两条不拒
+    assert_ts_passed("eval-cd-carries-to-outer")
+
+
+def test_outer_git_env_reaches_inner():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 GIT_DIR=… bash -c "git commit"、env GIT_WORK_TREE=… eval git add a、GIT_PAGER=cat bash -c 'git log -1'
+    # Then: 前两条被拒（理由含 GIT_），第三条不拒
+    assert_ts_passed("outer-git-env-reaches-inner")
+
+
+def test_prefix_options_with_arguments():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 env -u FOO git push、exec -a n git push、env -C /repo git commit、env --chdir=/repo git add、env -Z x git commit，以及 env -u FOO python3 -m pytest、env -C W git commit
+    # Then: 前五条被拒（git push / 自己的 worktree / 无法判定），后两条不拒
+    assert_ts_passed("prefix-options-with-arguments")
+
+# ---------------------------------------------------------------- PR #46 评审修复
+
+
+def test_dir_stack_rotation_denied():
+    # Given: 执行体 worktree 为 W；用 pushd +N / cd +N / pushd -N 旋转目录栈之后再做改动类 git
+    # When: 逐条判定
+    # Then: 旋转后的目录无法判定，都被拒且理由含「自己的 worktree」
+    assert_ts_passed("dir-stack-rotation-denied")
+
+
+def test_cd_two_args_denied():
+    # Given: 执行体 worktree 为 W；zsh 的双参数 cd / pushd 之后再做改动类 git，与一条带空格的引号路径
+    # When: 逐条判定
+    # Then: 前两条无法判定而被拒；引号内带空格的单个路径不被误拒
+    assert_ts_passed("cd-two-args-denied")

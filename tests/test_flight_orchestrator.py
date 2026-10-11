@@ -251,3 +251,54 @@ def test_takeoff_refuses_old_git():
     # Then: 回复含「git ≥ 2.38」，账本没有 takeoff
     assert_ts_passed("takeoff-refuses-old-git")
 
+# ---------------------------------------------------------------- flight-measure
+# 同名 TS 测试在 template/plugins/flight/tests/orchestrator.test.tsx。
+
+
+def test_measure_tool_records_event():
+    # Given: demo 在飞，agent-1 是 S1 的执行体，dispatch 记有 base B；测量应答为一个目标 FAILED、source 为空
+    # When: agent-1 调用 mcp__flight__measure
+    # Then: 执行端收到 slice-gate measure S1 --base B（cwd 为其 worktree）；账本新增 agent-1 的 measure；结果含 FAILED 与「见红」
+    assert_ts_passed("measure-tool-records-event")
+
+
+def test_measure_tool_only_for_flight_executors():
+    # Given: demo 在飞；agent-2 是 S1 的评审员；agent-x 不属于任何飞行
+    # When: 两者分别调用 mcp__flight__measure
+    # Then: 都被拒（理由含「只有本次飞行的执行体可以请求测量」），没有运行测量、没有新增 measure
+    assert_ts_passed("measure-tool-only-for-flight-executors")
+
+
+def test_measure_tool_upgraded_for_executor():
+    # Given: demo 在飞；引擎对 mcp__flight__measure 判 ask
+    # When: tool.check 处理执行体 agent-1 与评审员 agent-2 的调用
+    # Then: agent-1 为 allow，agent-2 仍为 ask
+    assert_ts_passed("measure-tool-upgraded-for-executor")
+
+
+def test_fresh_dispatch_takes_start_measure():
+    # Given: demo 起飞，S1 的切片 worktree 新建、start 打印 base B；S2 的测量应答为退出 1
+    # When: 控制面派发 S1 与 S2 的执行体
+    # Then: S1 的 dispatch 测量（agent=dispatch、base=B）先于带 base 的 dispatch 写入；S2 记 blocked 且含「起点测量失败」，未派发
+    assert_ts_passed("fresh-dispatch-takes-start-measure")
+
+
+def test_gate_runs_with_ledger_evidence():
+    # Given: S1 的 start 打印 base B；另一次飞行 S2 合回冲突，执行体 base B2、解冲突 start 打印 R
+    # When: S1 执行体收口；解冲突 agent 收口
+    # Then: start 带 --evidence ledger；S1 门禁带 --evidence ledger --base B；解冲突门禁带 --base R --measure-base B2
+    assert_ts_passed("gate-runs-with-ledger-evidence")
+
+
+def test_takeoff_checks_versions():
+    # Given: demo 已批准、其余起飞检查都过；CLAUDE_CONFIG_DIR 为 C，C 下没有 installed_plugins.json
+    # When: 两次起飞：ledger.py events 缺 measure；ledger.py events 列出全部类型
+    # Then: 第一次回复含「主检出」且账本无新事件；第二次回复含「✈ 起飞」「插件 」「已安装版本未核对」、读取过 C/plugins/installed_plugins.json、新增 takeoff
+    assert_ts_passed("takeoff-checks-versions")
+
+
+def test_unknown_owner_fails_closed():
+    # Given: demo 在飞；对 agent-7 的账本读取失败
+    # When: agent-7 调用 Write 与 Bash，引擎对 Bash 判 ask
+    # Then: Write 与 Bash 都被拒（理由含「归属判定失败」）；tool.check 仍为 ask
+    assert_ts_passed("unknown-owner-fails-closed")

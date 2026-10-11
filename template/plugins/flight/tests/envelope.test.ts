@@ -348,3 +348,190 @@ test('read-upgrade-limited-to-repo', () => {
   // Then: 前两个 Read 与 Grep 可免询问；~/.ssh 与 /etc 不可
   expect(results).toEqual([true, true, false, true, false])
 })
+
+// ---------------------------------------------------------------- spec flight-envelope-gaps（flight-measure S4）
+
+test('interpreter-wrappers-checked', () => {
+  // Given: 执行体 worktree 为 W；五条经 bash -c / sh -lc / eval 包住的危险命令与一条包住 pytest 的命令
+  const cmds = [
+    "bash -c 'git push origin HEAD:main'",
+    'sh -lc "git reset --hard"',
+    'eval git push',
+    "cd /repo && bash -c 'git commit -m x'",
+    "bash -c 'cd /repo; git commit -m x'",
+    "bash -c 'python3 -m pytest -q'",
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前三条理由依次含 git push、git reset、git push；第四条含「自己的 worktree」；第五条含「无法判定」与「-c / eval」；最后一条不被拒
+  expect(v[0]?.deny).toContain('git push')
+  expect(v[1]?.deny).toContain('git reset')
+  expect(v[2]?.deny).toContain('git push')
+  expect(v[3]?.deny).toContain('自己的 worktree')
+  expect(v[4]?.deny).toContain('无法判定')
+  expect(v[4]?.deny).toContain('-c / eval')
+  expect(v[5]).toBeUndefined()
+})
+
+test('cd-variants-tracked', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；四条换目录到 W 以外（或 popd 后无法判定）再做改动类 git 的命令，与一条 builtin cd W 后 commit
+  const cmds = [
+    'pushd /repo && git commit -m x',
+    'builtin cd /repo && git commit -m x',
+    'command cd /repo && git add a',
+    `pushd ${W}/sub && popd && git commit -m x`,
+    `builtin cd ${W} && git commit -m x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前四条被拒且理由含「自己的 worktree」；最后一条不被拒
+  expect(v.slice(0, 4).every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
+  expect(v[4]).toBeUndefined()
+})
+
+test('dir-stack-rotation-denied', () => {
+  // Given: 执行体 worktree 为 W；用 pushd +N / cd +N / pushd -N 旋转目录栈之后再做改动类 git
+  const cmds = [
+    `pushd /repo && pushd ${W} && pushd +1 && git commit -m x`,
+    'cd +1 && git add a',
+    'pushd -1 && git commit -m x',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 旋转后的目录无法判定，三条都被拒且理由含「自己的 worktree」
+  expect(v.every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
+})
+
+test('cd-two-args-denied', () => {
+  // Given: 执行体 worktree 为 W；zsh 的双参数 cd / pushd（替换当前路径里的片段，不是路径）之后再做改动类 git，与一条带空格的引号路径
+  const cmds = [
+    `cd ${W} && cd .claude/worktrees/flight-demo-S1 . && git commit -m x`,
+    `cd ${W} && pushd S1 S2 && git add a`,
+    `cd '${W}/a b' && git add x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条的目录无法判定而被拒（理由含「自己的 worktree」）；引号内带空格的单个路径不被误拒
+  expect(v.slice(0, 2).every(x => (x?.deny ?? '').includes('自己的 worktree'))).toBe(true)
+  expect(v[2]).toBeUndefined()
+})
+
+test('git-env-overrides-denied', () => {
+  // Given: 执行体 worktree 为 W；五条借 GIT_* 环境变量改变作用对象的改动类 git，与一条 GIT_PAGER=cat git log -1
+  const cmds = [
+    'GIT_DIR=/repo/.git git commit -m x',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x',
+    'env GIT_WORK_TREE=/repo git add a',
+    'export GIT_DIR=/repo/.git && git commit -m x',
+    'GIT_INDEX_FILE=/tmp/i; git add a',
+    'GIT_PAGER=cat git log -1',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前五条被拒且理由含「GIT_」；最后一条不被拒
+  expect(v.slice(0, 5).every(x => (x?.deny ?? '').includes('GIT_'))).toBe(true)
+  expect(v[5]).toBeUndefined()
+})
+
+test('shared-config-writers-denied', () => {
+  // Given: 执行体 worktree 为 W；五条写共享 config 或移动 ref 的命令与三条只读命令
+  const cmds = [
+    'git fetch . HEAD:refs/heads/main',
+    'git remote add x /tmp/x',
+    'git remote set-url origin /tmp/x',
+    'git branch -u origin/main',
+    'git branch --set-upstream-to=origin/main',
+    'git remote -v',
+    'git remote get-url origin',
+    'git branch --list',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前五条被拒，理由依次含 git fetch、git remote、git remote、git branch、git branch；后三条不被拒
+  expect(v.slice(0, 5).map(x => x?.deny ?? '').map((d, i) => d.includes(['git fetch', 'git remote', 'git remote', 'git branch', 'git branch'][i]))).toEqual([true, true, true, true, true])
+  expect(v.slice(5)).toEqual([undefined, undefined, undefined])
+})
+
+test('glob-pattern-cannot-escape', () => {
+  // Given: 主仓库 /repo，执行体 worktree W 在其内；Glob 的绝对 pattern、含 .. 的 pattern 与 path=W 的相对 pattern
+  const calls: unknown[] = [{ pattern: '/etc/**' }, { pattern: '../../**/*.pem' }, { path: W, pattern: '**/*.ts' }]
+
+  // When: 逐个判定 Glob 能否免询问
+  const results = calls.map(input => readUpgradable('Glob', input, W, M))
+
+  // Then: 前两个不免询问，第三个免询问
+  expect(results).toEqual([false, false, true])
+})
+
+// ---------------------------------------------------------------- spec flight-envelope-gaps（flight-measure S9）
+
+test('eval-cd-carries-to-outer', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；eval 在当前 shell 里 cd /repo 后 commit，eval cd W 后 commit，bash -c 在子进程里 cd /repo 后 commit
+  const cmds = [
+    'eval cd /repo && git commit -m x',
+    `eval cd ${W} && git commit -m x`,
+    "bash -c 'cd /repo' && git commit -m x",
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 第一条被拒且理由含「自己的 worktree」；后两条不被拒
+  expect(v[0]?.deny).toContain('自己的 worktree')
+  expect(v[1]).toBeUndefined()
+  expect(v[2]).toBeUndefined()
+})
+
+test('outer-git-env-reaches-inner', () => {
+  // Given: 执行体 worktree 为 W；段首 GIT_DIR 带进 bash -c 的 commit，经 env 给出的 GIT_WORK_TREE 带进 eval 的 add，GIT_PAGER=cat 带进 bash -c 的只读 log
+  const cmds = [
+    'GIT_DIR=/repo/.git bash -c "git commit -m x"',
+    'env GIT_WORK_TREE=/repo eval git add a',
+    "GIT_PAGER=cat bash -c 'git log -1'",
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条被拒且理由含「GIT_」；第三条不被拒
+  expect(v[0]?.deny).toContain('GIT_')
+  expect(v[1]?.deny).toContain('GIT_')
+  expect(v[2]).toBeUndefined()
+})
+
+test('prefix-options-with-arguments', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；五条带参数或不认识的前缀选项包住的危险 git，与 env -u FOO 包住的 pytest、env -C W 包住的 commit
+  const cmds = [
+    'env -u FOO git push origin HEAD:main',
+    'exec -a n git push',
+    'env -C /repo git commit -m x',
+    'env --chdir=/repo git add a',
+    'env -Z x git commit -m x',
+    'env -u FOO python3 -m pytest -q',
+    `env -C ${W} git commit -m x`,
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条理由含「git push」；第三、四条含「自己的 worktree」；第五条含「无法判定」；后两条不被拒
+  expect(v[0]?.deny).toContain('git push')
+  expect(v[1]?.deny).toContain('git push')
+  expect(v[2]?.deny).toContain('自己的 worktree')
+  expect(v[3]?.deny).toContain('自己的 worktree')
+  expect(v[4]?.deny).toContain('无法判定')
+  expect(v[5]).toBeUndefined()
+  expect(v[6]).toBeUndefined()
+})

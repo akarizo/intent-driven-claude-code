@@ -142,3 +142,41 @@ def test_readme_links_control_plane_doc():
     # Then: 文件存在，README 链接到它
     assert (ROOT / "docs" / "flight-control-plane.html").is_file()
     assert "docs/flight-control-plane.html" in read("README.md")
+
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S8 实现后去掉 xfail 标记。
+
+
+import pytest  # noqa: E402
+
+
+def test_iron_rule_3_trusted_runner():
+    # Given: 根 CLAUDE.md、template/CLAUDE.md.snippet、README.md、docs/WORKFLOW_zh.md
+    root, snippet = read("CLAUDE.md"), read("template/CLAUDE.md.snippet")
+    readme, workflow = read("README.md"), read("docs/WORKFLOW_zh.md")
+
+    # When: 取两处铁律 3 那一行
+    rules = [next(line for line in t.splitlines() if re.match(r"^\s*3\.\s*TDD", line)) for t in (root, snippet)]
+
+    # Then: 都含「可信方」「账本」「不接受自述」，不含「测试运行由 hook 留痕」；README 与 WORKFLOW 提到测量与账本
+    for rule in rules:
+        assert "可信方" in rule and "账本" in rule and "不接受自述" in rule, rule
+        assert "测试运行由 hook 留痕" not in rule, rule
+    for text in (readme, workflow):
+        assert ("measure" in text or "测量" in text) and "账本" in text
+
+
+def test_measure_adr_and_review_refs():
+    # Given: 新 ADR、pr-ship.md 与 code-reviewer.md
+    adr_path = ROOT / "template" / "openspec" / "adr" / "DRAFT-flight-measure-protocol.md"
+
+    # When: 读取 ADR 与两份文档
+    adr = adr_path.read_text(encoding="utf-8") if adr_path.exists() else ""
+    docs = [read("template/.claude/commands/pr-ship.md"), read("template/.claude/agents/code-reviewer.md")]
+
+    # Then: ADR 已采纳并点名两份关联 ADR；两份文档写明飞行模式看测量统计、evidence.log 属回退路径
+    assert "Status: accepted" in adr
+    assert "DRAFT-gate-evidence-not-self-reported" in adr and "DRAFT-apply-as-flight" in adr
+    for text in docs:
+        assert "timeline.py report" in text or "测量" in text
+        assert "evidence.log" in text and "回退" in text

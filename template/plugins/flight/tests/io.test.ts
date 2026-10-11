@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-io（io-*）。io 函数跑在记录调用的假 Io 上；git / python3 / 文件系统由假 Io 作答。
 // 不经 ioOf($)：测试侧 $ 只有事件面（无 fs / process），测试 hook 里的 $ 调 fs / process 会被宿主扫描规则拒绝（2.1.295 实测）。
 import { expect, test } from 'claude-code/testing'
-import { appendEvent, ensureWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
+import { EVENT_TYPES, active, appendEvent, ensureWorktree, eventProblem, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
 import type { Flight, FlightEvent, Io, RunResult } from '../hooks/core'
 
 const MAIN = '/repo'
@@ -348,4 +348,101 @@ test('owner-miss-cached-until-dispatch', async () => {
   expect(afterSecond).toBe(afterFirst)
   expect(calls.slice(afterAppend).some(c => c[0] === 'python3' && c[1] === `${HOOKS}/ledger.py`)).toBe(true)
   expect(third).toBeUndefined()
+})
+
+// ---------------------------------------------------------------- flight-measure S5（spec flight-ownership-fail-closed · flight-measure）
+
+test('ledger-read-failure-not-cached', async () => {
+  // Given: 归属表清空；demo 是本进程登记的在飞飞行（flights 与 active 都有）；ledger.py show 第一次退出 5（stderr "ledger: 损坏"）、之后返回 takeoff 与 agent-7 的 dispatch（S1、worktree W1）；refs/flight/ 下只有 demo 的账本；已查过一次 agent-7
+  resetOwnership()
+  flights.clear()
+  active.clear()
+  flights.set('demo', flight(HOOKS))
+  active.set('demo', { change: 'demo', changeTree: CHANGE_TREE, slicePrefix: '/repo/.claude/worktrees/flight-demo-' })
+  const dispatch: FlightEvent = { ...DISPATCH, agent: 'agent-7', slice: 'S1', worktree: 'W1' }
+  let shows = 0
+  const io: Io = {
+    async run(argv) {
+      if (argv[0] === 'python3' && argv[1] === `${HOOKS}/ledger.py`) {
+        shows += 1
+        return shows === 1 ? { exitCode: 5, stdout: '', stderr: 'ledger: 损坏' } : ok([TAKEOFF, dispatch].map(e => JSON.stringify(e)).join('\n') + '\n')
+      }
+      if (argv.join(' ') === 'git for-each-ref --format=%(refname) refs/flight/') return ok('refs/flight/demo/ledger\n')
+      throw new Error(`unexpected argv: ${argv.join(' ')}`)
+    },
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: async () => false,
+  }
+  const first = await ownership(io, 'agent-7')
+
+  // When: 再查一次 agent-7 的归属
+  const second = await ownership(io, 'agent-7')
+
+  // Then: 第一次为判不出（change demo、原因即 stderr）；第二次重新读账本，得到 demo / executor / S1 / W1 的正式归属
+  expect(first).toEqual({ unknown: true, change: 'demo', error: 'ledger: 损坏' })
+  expect(second).toEqual({ change: 'demo', role: 'executor', slice: 'S1', worktree: 'W1' })
+  flights.clear()
+  active.clear()
+})
+
+const MEASURE: FlightEvent = {
+  v: 1,
+  ev: 'measure',
+  change: 'demo',
+  at: '2026-10-10T00:00:00Z',
+  by: { plugin: 'flight', session: 'sess' },
+  attempt: 1,
+  slice: 'S1',
+  agent: 'a1',
+  base: 'a'.repeat(40),
+  commit: '',
+  outcomes: [['tests/test_x.py::test_a', 'FAILED'], ['tests/test_x.py::test_b', 'MISSING']],
+  changed: ['tests/test_x.py'],
+  source: [],
+}
+
+test('measure-event-checked-before-write', async () => {
+  // Given: 一条字段齐全的 measure 事件，与一条同样内容但缺 base 的 measure 事件
+  const { io, calls } = world({ files: [] })
+  const { base: _dropped, ...noBase } = MEASURE
+
+  // When: 分别追加这两条事件
+  const results = await Promise.all([MEASURE, noBase as FlightEvent].map(e => appendEvent(io, flight(HOOKS), e)))
+
+  // Then: 齐全的写入成功、缺 base 的返回 false；git hash-object 只调用一次，写入的正是齐全那条
+  expect(results).toEqual([true, false])
+  expect(calls.filter(c => c.argv[1] === 'hash-object').map(c => JSON.parse(c.stdin ?? ''))).toEqual([MEASURE])
+})
+
+test('measure-event-checked-before-write/reason', () => {
+  // Given: 一条缺 base 的 measure 事件
+  const { base: _dropped, ...noBase } = MEASURE
+
+  // When: 求它的不合规原因
+  const why = eventProblem(noBase as FlightEvent, 'demo')
+
+  // Then: 原因为「measure 的 base 不是非空字符串」
+  expect(why).toBe('measure 的 base 不是非空字符串')
+})
+
+test('measure-event-checked-before-write/bad-outcome', () => {
+  // Given: 一条 measure 事件的 outcomes 为 [['tests/test_x.py::test_a', 'PASS']]（PASS 不在状态集合里）
+  const bad: FlightEvent = { ...MEASURE, outcomes: [['tests/test_x.py::test_a', 'PASS']] }
+
+  // When: 求它的不合规原因
+  const why = eventProblem(bad, 'demo')
+
+  // Then: 原因以「measure 的 outcomes」开头
+  expect(why?.startsWith('measure 的 outcomes')).toBe(true)
+})
+
+test('event-types-exported', () => {
+  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure）
+
+  // When: 读取导出的 EVENT_TYPES 并排序
+  const types = [...EVENT_TYPES].sort()
+
+  // Then: 恰为这 12 种事件类型
+  expect(types).toEqual(['approve', 'blocked', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'takeoff'])
 })

@@ -13,8 +13,22 @@ const ROLE_NAME: Record<Role, string> = { executor: '执行体', fixer: '修复�
 /** D6 拒绝表：移动 ref、改写历史或改动共享状态的 git 子命令 */
 const DENY_SUBS = new Set([
   'push', 'merge', 'rebase', 'reset', 'checkout', 'switch', 'worktree', 'update-ref', 'symbolic-ref',
-  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes', 'pull',
+  'stash', 'tag', 'cherry-pick', 'revert', 'clean', 'filter-branch', 'replace', 'notes', 'pull', 'fetch',
 ])
+/** git remote 的只读用法（flight-envelope-gaps）：无参数，或第一个参数是其中之一；其余写共享 .git/config，拒绝 */
+const REMOTE_READ = new Set(['-v', '--verbose', 'show', 'get-url'])
+/**
+ * 段首可剥掉的前缀命令及其已知选项（flight-envelope-gaps）：flags 不带参数；withArg 连同一个参数剥掉，长名也接受 `--opt=val`。
+ * 不在表里的 `-` 选项一律判为无法判定。
+ */
+const PREFIX_OPTS: ReadonlyMap<string, { flags: readonly string[]; withArg: readonly string[] }> = new Map([
+  ['builtin', { flags: [], withArg: [] }],
+  ['command', { flags: ['-p', '-v', '-V'], withArg: [] }],
+  ['exec', { flags: [], withArg: ['-a'] }],
+  ['env', { flags: ['-i', '-0', '-v', '--ignore-environment', '--null', '--debug'], withArg: ['-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-P'] }],
+])
+/** 带 `-c` 时把其后文本当命令执行的 shell */
+const SHELL_PROGS = new Set(['bash', 'sh', 'zsh'])
 /** git config 的只读用法（flight-envelope-tightening D3）；其余用法一律拒绝 */
 const CONFIG_READ = new Set(['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'])
 /** 读标准输入会挂起的解释器（D3）：python、python3、python3.x、node、bash、sh、zsh、ruby、perl */
@@ -99,12 +113,68 @@ function denySegments(command: string): string[] {
   return command.replace(/\d*>&\d+/g, ' ').split(/&&|\|\||[;|&\n()`]/)
 }
 
-/** 段的词（按空白切）：去掉前导 `{`、`!` 与 `VAR=val`；hasEnv 标记是否带前导 `VAR=` */
-function words(segment: string): { toks: string[]; hasEnv: boolean } {
-  const toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+/**
+ * 段的词（按空白切）：去掉前导 `{`、`!`、`VAR=val`，以及 PREFIX_OPTS 里的前缀命令和其后的已知选项（带参数的连同参数）与 `VAR=val`。
+ * hasEnv 标记剥掉过任何前缀（bashUpgradable 据此不免询问，故剥前缀只会更严）；envKeys 为剥掉的赋值键名；
+ * chdir 为 `env -C` / `--chdir` 的参数（未去引号）；unknownOpt 为剥前缀时遇到的不认识选项（此时 toks 为空，调用方须拒绝）。
+ * `env -S` / `--split-string` 的参数就是命令文本：去引号后接回词序列继续剥，而不是丢掉（丢掉会漏判其中的 git）。
+ * ceiling: 选项按前缀命令查表，短选项簇（如 `env -iv`）与短选项粘参数（如 `-uFOO`）一律判为无法判定；`-S` 只去引号不做真正分词 -> 误拒或漏拒出现时补表或换 shell 词法分析。
+ */
+function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[]; chdir?: string; unknownOpt?: string } {
+  let toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+  const envKeys: string[] = []
+  let chdir: string | undefined
+  let prefix: { flags: readonly string[]; withArg: readonly string[] } | undefined
   let i = 0
-  while (i < toks.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(toks[i])) i++
-  return { toks: toks.slice(i), hasEnv: i > 0 }
+  for (; i < toks.length; i++) {
+    const t = toks[i]
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(t)
+    if (m) {
+      envKeys.push(m[1])
+      continue
+    }
+    const p = PREFIX_OPTS.get(t)
+    if (p) {
+      prefix = p
+      continue
+    }
+    if (!prefix || !t.startsWith('-')) break
+    const eq = t.startsWith('--') ? t.indexOf('=') : -1
+    const opt = eq < 0 ? t : t.slice(0, eq)
+    const val = eq < 0 ? undefined : t.slice(eq + 1)
+    if (val === undefined && prefix.flags.includes(opt)) continue
+    if (!prefix.withArg.includes(opt)) return { toks: [], hasEnv: true, envKeys, unknownOpt: t }
+    if (opt === '-S' || opt === '--split-string') {
+      const rest = val === undefined ? toks.slice(i + 1) : [val, ...toks.slice(i + 1)]
+      toks = [...toks.slice(0, i + 1), ...rest.map(x => x.replace(/^["']|["']$/g, ''))]
+      continue
+    }
+    const arg = val ?? toks[++i] ?? ''
+    if (opt === '-C' || opt === '--chdir') chdir = arg
+  }
+  return { toks: toks.slice(i), hasEnv: i > 0, envKeys, chdir }
+}
+
+/** 程序名（去引号后的 basename） */
+function progName(toks: readonly string[]): string {
+  return (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
+}
+
+/**
+ * `bash` / `sh` / `zsh` 带 `-c`（含 `-lc` 这类短选项簇）或 `eval` 段：返回其后的命令文本（去一层引号）；
+ * 取不出（引号不配对，含被分段切开的情形）返回 null；不是这类段返回 undefined。
+ * ceiling: 只认整段一层引号，不解析反斜杠转义与 `-c` 文本后的位置参数（多出的词让引号不配对而拒） -> 误拒或漏拒出现时换成 shell 词法分析。
+ */
+function innerCommand(toks: readonly string[]): string | null | undefined {
+  const prog = progName(toks)
+  let k = -1
+  if (prog === 'eval') k = 0
+  else if (SHELL_PROGS.has(prog)) k = toks.findIndex((t, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(t))
+  if (k < 0) return undefined
+  const text = toks.slice(k + 1).join(' ')
+  const q = text[0]
+  if (q === "'" || q === '"') return text.length >= 2 && text.endsWith(q) ? unquote(text) : null
+  return (text.split("'").length - 1) % 2 === 0 && (text.split('"').length - 1) % 2 === 0 ? text : null
 }
 
 /** 去掉一层单引号（`'\''` 还原为 `'`）或双引号 */
@@ -115,17 +185,26 @@ function unquote(s: string): string {
 
 /**
  * 目录：string = 已知绝对路径；undefined = 未设定（视为自己的 worktree）；null = 无法判定。
- * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-` 开头一律无法判定。
+ * 相对路径只在已有绝对基准时拼接，否则无法判定（D2）；`~`、`$`、`-`、`+` 开头一律无法判定（`+N` / `-N` 是目录栈旋转，不是路径）。
  */
 function resolveDir(base: string | null | undefined, p: string): string | null {
   if (p.startsWith('/')) return normalizePath(p)
-  if (p === '' || /^[~$-]/.test(p) || typeof base !== 'string') return null
+  if (p === '' || /^[~$+-]/.test(p) || typeof base !== 'string') return null
   return normalizePath(base + '/' + p)
 }
 
 /** `cd <路径>` 段返回其参数（未去引号）；不是 cd 段返回 undefined */
 function cdArg(toks: readonly string[]): string | undefined {
   return toks[0] === 'cd' ? toks.slice(1).join(' ') : undefined
+}
+
+/**
+ * cd / pushd 段的目录参数：至多一个参数（引号内的空格不算分隔）→ 该参数；多于一个 → null（无法判定）。
+ * zsh 的 `cd old new` 是把 $PWD 里的 old 替换成 new，不是路径；带选项的写法（`cd -P x`）也按多参数宁可多拒。
+ */
+function dirArg(args: readonly string[]): string | null {
+  const text = args.join(' ')
+  return args.length <= 1 || /^'[^']*'$/.test(text) || /^"[^"]*"$/.test(text) ? text : null
 }
 
 /** D2：git 调用的全部作用目录（-C 逐级拼接后的目录，以及 --git-dir、--work-tree 指向的目录）；cwd 为前面 cd 设定的目录 */
@@ -147,8 +226,7 @@ function gitTargets(g: GitCall, cwd: string | null | undefined, worktree: string
  * ceiling: 不识别带参数的解释器选项（如 `python3 -W x -`）-> 出现漏拒时按解释器补选项表。
  */
 function readsStdin(toks: readonly string[]): boolean {
-  const prog = (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
-  if (!STDIN_INTERPRETER.test(prog)) return false
+  if (!STDIN_INTERPRETER.test(progName(toks))) return false
   for (const a of toks.slice(1)) {
     if (a === '-' || a === '-s') return true
     if (!a.startsWith('-') || ['-c', '-m', '-e', '-p', '--eval', '--print'].includes(a)) return false
@@ -199,7 +277,10 @@ function dangerOf(g: GitCall, extra: readonly string[]): string | undefined {
   if (configKeys(g.globals).includes('core.hookspath')) return 'git -c / --config-env core.hooksPath'
   // ceiling: 只要带一个只读选项就放行（`--list --add` 之类的混用不细分） -> 出现混用绕过时改为逐项校验
   if (g.sub === 'config' && !g.args.some(a => CONFIG_READ.has(a))) return 'git config 的写入用法'
-  if (g.sub === 'branch' && hasOpt(g.args, 'dDmMfcC', ['--delete', '--move', '--copy', '--force'])) return 'git branch 的删改选项'
+  if (g.sub === 'remote' && g.args.length > 0 && !REMOTE_READ.has(g.args[0])) return 'git remote 的写入用法'
+  if (g.sub === 'branch' && hasOpt(g.args, 'dDmMfcCu', ['--delete', '--move', '--copy', '--force', '--set-upstream-to', '--unset-upstream', '--edit-description'])) {
+    return 'git branch 的删改 / 上游 / 描述选项'
+  }
   if (g.sub === 'commit' && hasOpt(g.args, 'n', ['--amend', '--no-verify'])) return 'git commit --amend / --no-verify'
   return undefined
 }
@@ -219,21 +300,59 @@ export function bashVerdict(role: Role, command: string, worktree?: string, _mai
   if (command.includes('refs/flight/')) return { deny: `${name}不得触及 refs/flight/（账本与门禁结论只由 flight 插件写入）` }
   if (command.includes('<<')) return { deny: `${name}不得使用 heredoc（<<，会绕过写入包络）：改用 Write 工具写文件` }
   if (command.includes('/dev/stdin')) return { deny: `${name}不得让程序读标准输入（/dev/stdin 会挂起）：写成脚本文件再运行` }
+  return segmentsVerdict(role, command, worktree, { cwd: undefined })
+}
+
+/**
+ * bashVerdict 的逐段判定；state.cwd 为当前目录，逐段更新。`eval` 在当前 shell 执行，内层共用 state（其 cd 回传外层）；
+ * `bash -c` 等跑在子进程，内层拿 state 的副本（其 cd 不影响外层）。inheritedEnv 为外层段首带进内层的 GIT_* 键名，
+ * 与内层各段自己的键名合并后判定。`env -C <p>` 只对本段生效（按 `cd <p>` 解析，不回传后续各段）。
+ */
+function segmentsVerdict(
+  role: Role,
+  command: string,
+  worktree: string | undefined,
+  state: { cwd: string | null | undefined },
+  inheritedEnv: readonly string[] = [],
+): Deny | undefined {
+  const name = ROLE_NAME[role]
   const extra = role === 'reviewer' ? REVIEWER_EXTRA : []
-  let cwd: string | null | undefined
+  const gitEnvDeny = (keys: readonly string[]) => ({ deny: `${name}不得用 GIT_* 环境变量（${keys.join('、')}）改变改动类 git 的作用对象` })
   for (const seg of denySegments(command)) {
-    const { toks } = words(seg)
-    const cd = cdArg(toks)
-    if (cd !== undefined) {
-      cwd = resolveDir(cwd, unquote(cd))
+    const { toks, envKeys, chdir, unknownOpt } = words(seg)
+    if (unknownOpt !== undefined) return { deny: `${name}的前缀选项 ${unknownOpt} 无法判定（不在 env / exec / command 的已知选项表里）：去掉该选项或写成脚本文件再运行` }
+    const ownGitEnv = envKeys.filter(k => k.startsWith('GIT_'))
+    const gitEnv = [...inheritedEnv, ...ownGitEnv]
+    if (toks[0] === 'cd' || toks[0] === 'pushd') {
+      const p = dirArg(toks.slice(1))
+      state.cwd = p === null ? null : resolveDir(state.cwd, unquote(p))
       continue
     }
+    if (toks[0] === 'popd') {
+      state.cwd = null
+      continue
+    }
+    if (toks.length === 0 && ownGitEnv.length > 0) return gitEnvDeny(ownGitEnv)
+    const cwd = chdir === undefined ? state.cwd : resolveDir(state.cwd, unquote(chdir))
+    // ceiling: 只认 export（不认 declare -x / typeset -x / set -a） -> 出现漏拒时补进来
+    const exported = toks[0] === 'export' ? toks.slice(1).filter(t => t.startsWith('GIT_')).map(t => t.split('=')[0]) : []
+    if (exported.length > 0) return gitEnvDeny(exported)
     if (readsStdin(toks)) return { deny: `${name}不得让解释器读标准输入（单独的 - 或 -s 会挂起）：写成脚本文件再运行` }
+    const inner = innerCommand(toks)
+    if (inner === null) return { deny: `${name}的 -c / eval 命令文本无法判定（引号不配对或被 ;、|、& 等切开）：写成脚本文件再运行` }
+    if (inner !== undefined) {
+      const sub = progName(toks) === 'eval' && chdir === undefined ? state : { cwd }
+      const d = segmentsVerdict(role, inner, worktree, sub, gitEnv)
+      if (d) return d
+      continue
+    }
     const g = parseGit(seg)
     if (!g) continue
     const d = dangerOf(g, extra)
     if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员只读）` }
-    if (worktree === undefined || READONLY_SUBS.has(g.sub)) continue
+    if (READONLY_SUBS.has(g.sub)) continue
+    if (gitEnv.length > 0) return gitEnvDeny(gitEnv)
+    if (worktree === undefined) continue
     const wt = normalizePath(worktree)
     const out = gitTargets(g, cwd, worktree).find(t => t === null || !within(wt, t))
     if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；作用目录：${out ?? '无法判定（相对路径且无绝对基准）'}` }
@@ -280,6 +399,8 @@ export function readUpgradable(tool: string, input: unknown, worktree: string, m
   const v = (input as Record<string, unknown>)[key]
   const target = typeof v === 'string' && v !== '' ? v : worktree
   if (target.startsWith('~')) return false
+  const pattern = tool === 'Glob' ? (input as Record<string, unknown>).pattern : undefined
+  if (typeof pattern === 'string' && (pattern.startsWith('/') || pattern.split('/').includes('..'))) return false
   return within(normalizePath(mainTree), normalizePath(target.startsWith('/') ? target : worktree + '/' + target))
 }
 

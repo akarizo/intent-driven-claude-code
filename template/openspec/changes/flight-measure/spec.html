@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-measure · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-measure
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-envelope-gaps</span><span class="chip" data-state="done">specs/flight-gate-evidence</span><span class="chip" data-state="done">specs/flight-measure</span><span class="chip" data-state="done">specs/flight-measure-docs</span><span class="chip" data-state="done">specs/flight-ownership-fail-closed</span><span class="chip" data-state="done">specs/flight-version-check</span><span class="chip" data-state="done">计划指纹 22cda931</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">铁律 3 要求「生产代码前必有先失败的测试；测试运行由 hook 留痕，不接受自述」。插件接管飞行之后，这一条实际上没有被强制：
+- <strong>留痕回不到判定处</strong>：<code>test-evidence.py</code> 是 classic hook，它把记录写进执行体自己 worktree 里的 <code>evidence.log</code>。#39–#43 的每一次飞行，G5 都只给出警告「无 evidence.log」，从未判红过。
+- <strong>记录在执行体可写的地方</strong>：<code>evidence.log</code> 和切片标记 <code>.openspec-slice</code> 都在执行体的 worktree 里，Bash 能直接改。门禁的 base 也是从这个标记里读出来的。
+- <strong>门禁红次数报错了</strong>：飞行记录里的「门禁红次数」只数 timeline.md 里的行。收口门禁红的结论写在账本里，没有写进 timeline。#40 报的是 0，账本里实际有 7 次。</p><p class="why-body">评审页 <code>docs/flight-orchestrator.html</code> 的 D3 已经选定 A：「测量工具：执行体请求，控制面执行」。路线页把它排在 3b-3。</p><p class="why-body">另外有三项从 #42、#43 带过来：
+1. <strong>#42 评审的包络缺口（MEDIUM）</strong>：
+   - <code>bash -c</code> / <code>eval</code> 包住的 git 绕过拒绝表；
+   - <code>pushd</code>、<code>builtin cd</code> 不被当作换目录；
+   - <code>GIT_CONFIG_*</code>、<code>GIT_DIR</code> 等前导环境变量绕过作用目标判定；
+   - <code>git remote</code>、<code>branch -u</code> 会写共享 config；
+   - 拒绝表漏了 <code>git fetch</code>（<code>git fetch . HEAD:refs/heads/main</code> 能移动分支）；
+   - 归属查询把「读账本失败」也缓存成「不是飞行 agent」，这是 fail-open。
+2. <strong>插件版本没有机械核对</strong>：#41、#42 两次飞行都因为插件更新后没有 <code>/reload-plugins</code>，实际跑在旧版上，直到复盘转录才发现。
+3. <strong>判定器与插件版本错位</strong>：账本里一旦出现判定器不认识的事件类型，<code>ledger.py</code> 会把整条账本判为损坏。新增 <code>measure</code> 事件之后，主检出的判定器如果没更新，起飞会被永久拒绝。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>测量工具 <code>measure</code></strong>（插件注册，只给本次飞行的执行体用）：执行体写好测试后调用它，由控制面在执行体的 worktree 里运行本片 scenario 测试，结果写进账本，成为 <code>measure</code> 事件。执行体自己跑测试照常可以，但那不算证据。</li><li><strong>起点测量</strong>：控制面在新建的切片 worktree 上派发执行体之前，先自动测量一次。起点就已经通过的测试，比如映射到已有测试的 scenario，免于「先红」。</li><li><strong>G5 改为读账本</strong>（门禁带 <code>--evidence ledger</code> 时）。以下情况直接判红：</li><li>本片某个需要先红的测试，从未在测量里红过；</li><li>每次红都发生在已经改动生产代码之后；</li><li>缺少起点测量。</li><li><strong>门禁的 base 由控制面给出</strong>：dispatch 事件记下 base，门禁一律带 <code>--base</code>，不再读执行体可写的标记。</li><li><strong>test-evidence 卸下飞行职责</strong>：切片标记写明 <code>evidence: ledger</code> 时不写 evidence.log。</li><li><strong>门禁红次数从账本统计</strong>，飞行记录加一行测量统计。</li><li><strong>起飞核对版本</strong>：</li><li>起飞回复带上插件版本；</li><li>已安装的副本与会话加载的副本不一致时拒飞，并提示 <code>/reload-plugins</code>；</li><li>读不到已安装记录时照常起飞，并注明未核对；</li><li>判定器不认识插件要写的事件类型时拒飞，并提示更新主检出。</li><li><strong>包络补漏</strong>：</li><li>解释器 <code>-c</code> 与 <code>eval</code> 内层命令按同一规则递归判定；</li><li><code>pushd</code> / <code>builtin cd</code> / <code>command cd</code> 计入换目录；</li><li>改动类 git 不得带 <code>GIT_*</code> 环境变量；</li><li>拒绝 <code>git fetch</code>、<code>remote</code> 写入、<code>branch -u</code>；</li><li>Glob 的 pattern 不得越界免询问。</li><li><strong>归属判定 fail-closed</strong>：读账本失败不缓存为未命中。在飞期间，归属判不出的 agent 的写入与 Bash 一律拒绝。「登记中」刻意不加撤销入口：撤销会让该 agent 脱离包络。</li><li><strong>铁律 3 改写</strong>为「测试由可信方运行并留痕」，并新增 ADR。执行体定义与提示词写明测量协议。插件版本升到 0.4.0。</li></ul><div class="impact"><span class="tag"><strong>判定器</strong>：<code>template/.claude/hooks/</code> 下的 <code>slice-gate.py</code>（新增 measure 子命令、G5 账本模式、start 与 gate 的新参数、严格 XPASS）、<code>ledger.py</code>（新增 measure 事件与 <code>events</code> 子命令）、<code>timeline.py</code>、<code>test-evidence.py</code>。</span><span class="tag"><strong>插件</strong>：<code>template/plugins/flight/hooks/</code> 下的 <code>io.ts</code>、<code>envelope.ts</code>、<code>orchestrator.tsx</code>、<code>core.ts</code>、<code>prompts.ts</code>，以及新增的 <code>versions.ts</code>、<code>measure.ts</code>；<code>agents/executor.md</code>；插件版本 0.4.0。</span><span class="tag"><strong>文档</strong>：根 <code>CLAUDE.md</code> 与 <code>template/CLAUDE.md.snippet</code> 的铁律 3、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>、<code>pr-ship.md</code> 与 <code>code-reviewer.md</code> 的评审参考材料，以及新 ADR <code>DRAFT-flight-measure-protocol</code>。</span><span class="tag"><strong>attempt 1（2026-10-10）停飞后修订计划续飞</strong>：S7 因规划失误被阻断（漏了工具不变量测试的 owns，起飞 scenario 在测试里构造不出）。修订内容：S7 补 owns 与 scenario；新增 S9，把评审的 3 条 HIGH 与 1 条 MEDIUM 写成 scenario。详见 design 的「修订」一节。</span><span class="tag"><strong>本 change 跑在已安装的 0.3.x 上</strong>：测量协议在合入之前不生效，本次飞行的 G5 仍是旧的警告语义。合入后，下一次飞行才是测量协议的首飞。</span><span class="tag"><strong>合入后必须同时做两件事</strong>：主检出快进（判定器在主检出），以及更新插件并 <code>/reload-plugins</code>。只做一件时，新的版本核对会拒飞并说明缺了哪一步。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-measure</code>：测量工具、<code>measure</code> 事件、起点测量、门禁的证据模式与 base 由控制面给出。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-gate-evidence</code>：G5 账本判据、门禁红次数与测量统计、test-evidence 卸下飞行职责。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-envelope-gaps</code>：#42 评审留下的 Bash 包络缺口。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ownership-fail-closed</code>：归属判定读失败不放行，登记中可撤销。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-version-check</code>：起飞时核对插件版本，以及判定器的事件表。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-measure-docs</code>：铁律 3、新 ADR、执行体定义与提示词、评审参考材料。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-envelope-gaps <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 解释器 -c 与 eval 内的命令按同一规则判定</p><p>一段的程序名为 <code>bash</code>、<code>sh</code> 或 <code>zsh</code> 且带 <code>-c</code>（含 <code>-lc</code> 这类组合），或程序名为 <code>eval</code> 时，<code>bashVerdict</code> SHALL 取其后的命令文本、去掉一层引号，以这一段的当前目录为起点递归判定；命令文本取不出来（引号不配对等）SHALL 拒绝，理由含「无法判定」。
+Feature: #42 评审 MEDIUM：<code>bash -c &#x27;git push …&#x27;</code> 绕过拒绝表</p><div class="scenario"><p class="scenario-name">Scenario: interpreter-wrappers-checked</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>bash -c &#x27;git push origin HEAD:main&#x27;</code>、<code>sh -lc &quot;git reset --hard&quot;</code>、<code>eval git push</code>、<code>cd /repo &amp;&amp; bash -c &#x27;git commit -m x&#x27;</code>、<code>bash -c &#x27;cd /repo; git commit -m x&#x27;</code>，以及 <code>bash -c &#x27;python3 -m pytest -q&#x27;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前五条都被拒绝：前三条理由含相应的 git 子命令，第四条理由含「自己的 worktree」，第五条理由含「无法判定」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>最后一条不被拒绝</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 换目录的各种写法都计入作用目录</p><p>判定程序名前，<code>words</code> SHALL 剥掉段首的 <code>builtin</code>、<code>command</code>、<code>exec</code>，以及 <code>env</code> 及其选项与 <code>VAR=</code>；<code>pushd &lt;p&gt;</code> SHALL 与 <code>cd &lt;p&gt;</code> 一样设定目录；<code>popd</code> 之后目录 SHALL 记为无法判定。
+Feature: #42 评审 MEDIUM：<code>pushd /repo &amp;&amp; git commit</code> 被当成自己的 worktree</p><div class="scenario"><p class="scenario-name">Scenario: cd-variants-tracked</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W，主仓库为 /repo</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>pushd /repo &amp;&amp; git commit -m x</code>、<code>builtin cd /repo &amp;&amp; git commit -m x</code>、<code>command cd /repo &amp;&amp; git add a</code>、<code>pushd W/sub &amp;&amp; popd &amp;&amp; git commit -m x</code>，以及 <code>builtin cd W &amp;&amp; git commit -m x</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前四条被拒绝，理由含「自己的 worktree」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>最后一条不被拒绝</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 改动类 git 不得借 GIT_* 环境变量改变作用对象</p><p>改动类 git 段的前导赋值（含经 <code>env</code> 给出的）里有以 <code>GIT_</code> 开头的键时 SHALL 拒绝；<code>export</code> 段出现 <code>GIT_</code> 开头的名字、或只含赋值且赋值键以 <code>GIT_</code> 开头的段 SHALL 拒绝。只读子命令带 <code>GIT_*</code> 的不拒绝（仍不免询问）。
+Feature: #42 评审 MEDIUM：<code>GIT_DIR=… git commit</code>、<code>GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath …</code></p><div class="scenario"><p class="scenario-name">Scenario: git-env-overrides-denied</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>GIT_DIR=/repo/.git git commit -m x</code>、<code>GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x</code>、<code>env GIT_WORK_TREE=/repo git add a</code>、<code>export GIT_DIR=/repo/.git &amp;&amp; git commit -m x</code>、<code>GIT_INDEX_FILE=/tmp/i; git add a</code>，以及 <code>GIT_PAGER=cat git log -1</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前五条被拒绝，理由含「GIT_」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>最后一条不被拒绝</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 写共享 config 或移动 ref 的子命令进拒绝表</p><p><code>git fetch</code> SHALL 被拒绝；<code>git remote</code> 只放行无参数、<code>-v</code> / <code>--verbose</code>、<code>show</code>、<code>get-url</code>，其余 SHALL 拒绝；<code>git branch</code> 的 <code>-u</code>、<code>--set-upstream-to</code>、<code>--unset-upstream</code>、<code>--edit-description</code> SHALL 拒绝。
+Feature: #42 评审 MEDIUM：worktree 与主仓库共用 <code>.git/config</code> 与 ref 库</p><div class="scenario"><p class="scenario-name">Scenario: shared-config-writers-denied</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>git fetch . HEAD:refs/heads/main</code>、<code>git remote add x /tmp/x</code>、<code>git remote set-url origin /tmp/x</code>、<code>git branch -u origin/main</code>、<code>git branch --set-upstream-to=origin/main</code>，以及 <code>git remote -v</code>、<code>git remote get-url origin</code>、<code>git branch --list</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前五条被拒绝，理由含相应的子命令或选项</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后三条不被拒绝</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: eval 内层的换目录回传外层</p><p><code>eval</code> 在当前 shell 执行：其内层 <code>cd</code>、<code>pushd</code>、<code>popd</code> 设定的目录 SHALL 回传给外层后续各段；<code>bash</code>、<code>sh</code>、<code>zsh -c</code> 在子进程执行，外层目录 SHALL 不受影响。
+Feature: flight-measure attempt 1 · S4 评审 HIGH：<code>eval cd /repo &amp;&amp; git commit</code> 被放行</p><div class="scenario"><p class="scenario-name">Scenario: eval-cd-carries-to-outer</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W，主仓库为 /repo</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>eval cd /repo &amp;&amp; git commit -m x</code>、<code>eval cd W &amp;&amp; git commit -m x</code>、<code>bash -c &#x27;cd /repo&#x27; &amp;&amp; git commit -m x</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一条被拒，理由含「自己的 worktree」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后两条不被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 外层的 GIT_* 赋值带进 -c 与 eval 的内层</p><p>段首（含经 <code>env</code> 给出）的 <code>GIT_*</code> 赋值 SHALL 与内层各段自己的赋值合并后判定：内层改动类 git 见到合并后的 <code>GIT_*</code> SHALL 拒绝，只读 git 不拒。
+Feature: flight-measure attempt 1 · S4 评审 HIGH：<code>GIT_DIR=… bash -c &quot;git commit&quot;</code> 被放行</p><div class="scenario"><p class="scenario-name">Scenario: outer-git-env-reaches-inner</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>GIT_DIR=/repo/.git bash -c &quot;git commit -m x&quot;</code>、<code>env GIT_WORK_TREE=/repo eval git add a</code>、<code>GIT_PAGER=cat bash -c &#x27;git log -1&#x27;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前两条被拒，理由含「GIT_」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三条不被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 前缀命令带参数的选项不得让判定失守</p><p>剥 <code>env</code>、<code>exec</code> 前缀时：不带参数的已知选项（env 的 <code>-i</code>、<code>-0</code>、<code>-v</code> 及其长名）SHALL 剥掉；带参数的选项 SHALL 连同参数一起剥掉，包括 env 的 <code>-u</code> / <code>--unset</code>、<code>-C</code> / <code>--chdir</code>、<code>-S</code> / <code>--split-string</code>、<code>-P</code>，以及 exec 的 <code>-a</code>；<code>env -C &lt;p&gt;</code> 与 <code>--chdir=&lt;p&gt;</code> SHALL 按 <code>cd &lt;p&gt;</code> 设定目录；剥前缀时遇到不认识的 <code>-</code> 选项 SHALL 拒绝，理由含「无法判定」。
+Feature: flight-measure attempt 1 · S4 评审 MEDIUM：<code>env -u FOO git push</code> 让整段判定失守（fail-open）</p><div class="scenario"><p class="scenario-name">Scenario: prefix-options-with-arguments</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 worktree 为 W，主仓库为 /repo</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 <code>env -u FOO git push origin HEAD:main</code>、<code>exec -a n git push</code>、<code>env -C /repo git commit -m x</code>、<code>env --chdir=/repo git add a</code>、<code>env -Z x git commit -m x</code>，以及 <code>env -u FOO python3 -m pytest -q</code>、<code>env -C W git commit -m x</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前五条被拒：前两条理由含「git push」，第三、四条含「自己的 worktree」，第五条含「无法判定」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后两条不被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: Glob 的 pattern 不得越界免询问</p><p><code>readUpgradable</code> 对 Glob SHALL 在 <code>pattern</code> 为绝对路径或含 <code>..</code> 段时返回 false。
+Feature: #42 评审 LOW：只看 <code>path</code> 时 <code>pattern</code> 可越出仓库</p><div class="scenario"><p class="scenario-name">Scenario: glob-pattern-cannot-escape</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>主仓库 /repo，执行体 worktree W 在其内</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>判定 Glob <code>{ pattern: &#x27;/etc/<strong>&#x27; }</code>、<code>{ pattern: &#x27;../../</strong>/*.pem&#x27; }</code>、<code>{ path: W, pattern: &#x27;**/*.ts&#x27; }</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前两个不免询问</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三个免询问</span></li></ul></div></div></div><div class="spec-card"><h3>flight-gate-evidence <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 账本模式下 G5 只认控制面的测量</p><p><code>slice-gate.py gate &lt;S&gt; --evidence ledger</code> SHALL 按以下规则判定 G5。记 M 为账本中本片、指定 base 的全部 measure 事件（不分 attempt；指定 base 默认取门禁的 base，<code>--measure-base</code> 可覆盖），T 为本片 scenario 映射中以 <code>.py</code> 结尾的目标：
+1. M 中没有 <code>changed</code> 为空的起点测量 → SHALL 判红，失败项含「缺少本片起点测量」。
+2. 起点测量里 PASSED 的目标免于先红 → SHALL 记警告，警告含该目标与「起点已通过」。
+3. 其余每个目标都必须在 M 的某次测量里为 FAILED 或 ERROR，否则 SHALL 判红，失败项含该目标与「从未在控制面测量中红过」。
+4. 需要先红的目标不为空时，M 中 SHALL 至少有一次「某个需要先红的目标为 FAILED 或 ERROR，且 <code>source</code> 为空」，否则 SHALL 判红，失败项含「每次见红时都已改动生产代码」。</p><p>账本读取失败 SHALL 判红。非 <code>.py</code> 目标 SHALL 记警告「无法测量」。账本模式下 SHALL NOT 读取 evidence.log。
+Feature: 铁律 3 · 用户定：不满足即判红</p><div class="scenario"><p class="scenario-name">Scenario: g5-ledger-requires-red-per-target</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 映射两个目标 t1、t2；账本里有本片 base B 的起点测量（t1、t2 均为 XFAIL、<code>changed</code> 为空），以及一次 t1 为 FAILED、t2 为 XFAIL、<code>source</code> 为空的测量；t1、t2 都已实现并通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py gate S1 --change-dir D --base B --evidence ledger</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁红，失败项含 t2 与「从未在控制面测量中红过」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>失败项不含 t1</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: g5-ledger-requires-red-before-source</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 映射一个目标 t1；账本里有起点测量（t1 为 XFAIL），之后只有一次 t1 为 FAILED 的测量，但那次的 <code>source</code> 为 <code>[&quot;src/a.py&quot;]</code>；t1 已通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以 <code>--evidence ledger --base B</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁红，失败项含「每次见红时都已改动生产代码」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: g5-ledger-exempts-targets-passing-at-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 映射两个目标：t0 在起点测量里已为 PASSED，t1 在起点测量里为 XFAIL、后来在一次 <code>source</code> 为空的测量里为 FAILED；两者现在都通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以 <code>--evidence ledger --base B</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>G5 不出失败项，门禁绿</span></li><li><span class="step-key" data-kw="AND">AND</span><span>警告含 t0 与「起点已通过」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: g5-ledger-needs-start-measure</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 的账本里只有 <code>changed</code> 非空的测量（t1 为 FAILED、<code>source</code> 为空），没有起点测量</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以 <code>--evidence ledger --base B</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁红，失败项含「缺少本片起点测量」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: g5-ledger-uses-measure-base</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本里本片的起点测量与见红测量都记在 base B0 上；解冲突 worktree 的门禁 base 为 B1</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别以 <code>--evidence ledger --base B1</code> 与 <code>--evidence ledger --base B1 --measure-base B0</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前者门禁红，失败项含「缺少本片起点测量」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后者 G5 不出失败项</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 不带账本模式时 G5 行为不变</p><p>不带 <code>--evidence ledger</code> 的 gate SHALL 沿用 evidence.log 判据：无文件记警告，有文件但无本片记录判红，未见 RED 先于 GREEN 记警告。
+Feature: 铁律 10：Workflow 回退路径语义一致，3c 删除前不改</p><div class="scenario"><p class="scenario-name">Scenario: g5-legacy-path-unchanged</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>evidence.log 存在但没有本切片的记录</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>不带 <code>--evidence</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>门禁红，失败项含「evidence.log 无本切片」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: start 记下证据模式</p><p><code>slice-gate.py start &lt;S&gt; --evidence ledger</code> SHALL 在切片标记中写入 <code>&quot;evidence&quot;: &quot;ledger&quot;</code>，打印的 JSON SHALL 含 <code>base</code>。账本模式的 gate SHALL NOT 产生 evidence.log 相关的警告，<code>hooks_missing</code> SHALL 为 false。
+Feature: test-evidence 据此让位；门禁 base 由控制面取得</p><div class="scenario"><p class="scenario-name">Scenario: start-tags-ledger-evidence</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个没有 evidence.log 的切片 worktree</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py start S1 --change-dir D --evidence ledger</code>，再写一次满足 G5 的测量记录后以 <code>--evidence ledger</code> 运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>切片标记含 <code>&quot;evidence&quot;: &quot;ledger&quot;</code>，start 打印的 JSON 含 <code>base</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>gate 的警告里没有「evidence.log」，<code>hooks_missing</code> 为 false</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 控制面给出门禁的证据模式与 base</p><p>插件派发执行体时 SHALL 以 <code>start &lt;S&gt; --evidence ledger</code> 起跑，并把 start 打印的 base 记进 dispatch 事件。执行体的门禁（收口、结束后补跑、续飞 regate）SHALL 带 <code>--evidence ledger --base &lt;该执行体 dispatch 的 base&gt;</code>。解冲突 agent 的门禁 SHALL 另带 <code>--measure-base &lt;本片最后一个执行体 dispatch 的 base&gt;</code>。dispatch 事件没有 base 时（旧账本），门禁 SHALL 不带 <code>--base</code>。
+Feature: 门禁区间不读执行体可写的标记</p><div class="scenario"><p class="scenario-name">Scenario: gate-runs-with-ledger-evidence</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 起飞，S1 的 start 打印 base B</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>S1 的执行体收口；另一次飞行中 S2 合回冲突、解冲突 agent 收口（S2 执行体的 base 为 B2，解冲突 start 打印 base R）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>S1 的 start 参数含 <code>--evidence ledger</code>，S1 收口门禁的参数含 <code>--evidence ledger --base B</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>解冲突收口门禁的参数含 <code>--evidence ledger --base R --measure-base B2</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 门禁红次数与测量统计取自账本</p><p><code>timeline.py report</code> SHALL 在能读到本 change 的账本且其中有 takeoff 时按账本统计：
+- 「门禁红次数」SHALL 为全部 attempt 中 <code>ok</code> 为 false 的 gate 事件数加 final 事件数，并注明两者各几次；
+- SHALL 另打印「测量：n 次（见红 m 次）」，其中「见红」指 outcomes 里有 FAILED 或 ERROR。</p><p>没有账本时 SHALL 按 timeline 行统计（与现状一致）；账本读取失败时 SHALL 按 timeline 统计并注明「账本读取失败」。
+Feature: #40 实测：timeline 报 0，账本实为 7</p><div class="scenario"><p class="scenario-name">Scenario: red-count-from-ledger</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>timeline.md 没有任何 red 行；账本含 takeoff、2 条 ok=false 的 gate、1 条 ok=true 的 gate、1 条 ok=false 的 final、3 条 measure（其中 2 条有 FAILED 目标）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>timeline.py report</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>输出含「门禁红次数：3」以及「切片门禁 2」「final 1」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>输出含「测量：3 次（见红 2 次）」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 账本模式的切片不再写 evidence.log</p><p>切片标记的 <code>evidence</code> 为 <code>ledger</code> 时，<code>test-evidence.py</code> SHALL NOT 写 evidence.log；标记没有该字段时行为不变。
+Feature: 删除 test-evidence 的飞行职责（路线页 3b-3）</p><div class="scenario"><p class="scenario-name">Scenario: test-evidence-skips-ledger-slices</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库根有切片标记 <code>{&quot;slice&quot;: &quot;S1&quot;, &quot;change_dir&quot;: &lt;D&gt;, &quot;evidence&quot;: &quot;ledger&quot;}</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以 PostToolUse 事件喂给 test-evidence.py 一条 <code>pytest -q</code> 的 Bash 调用</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>&lt;D&gt;/evidence.log</code> 不存在</span></li><li><span class="step-key" data-kw="AND">AND</span><span>把标记里的 <code>evidence</code> 字段去掉再喂一次，evidence.log 新增一行 S1 的记录</span></li></ul></div></div></div><div class="spec-card"><h3>flight-measure <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: slice-gate 提供 measure 子命令，只跑本片 scenario 的 pytest 目标</p><p><code>slice-gate.py measure &lt;S&gt; --change-dir D [--base B]</code> SHALL 只运行本片 scenario 映射中以 <code>.py</code> 结尾的目标，复用 G7 的 pytest 运行方式与超时；SHALL 打印 JSON <code>{slice, base, commit, outcomes, unmeasurable, changed, source, tail}</code>。其中：
+- <code>outcomes</code> 为 <code>[目标, 状态]</code>。一个目标对应多个节点时，按 ERROR &gt; FAILED &gt; XPASS &gt; XFAIL &gt; SKIPPED &gt; PASSED 取最差者；没有结果记 MISSING。
+- <code>unmeasurable</code> 为非 <code>.py</code> 目标。
+- <code>changed</code> 为相对 base 的改动文件，含未提交的，但不计切片标记 <code>.openspec-slice</code> 与本 change 目录下的文件（这些是控制面的簿记，start 一跑就会出现）。
+- <code>source</code> 为其中按 G3 分类属于生产代码的文件。</p><p>跑完 SHALL 退出 0，不论红绿；跑不起来或超时 SHALL 退出 1，并在 JSON 中带 <code>error</code>。
+Feature: 评审页 D3-A：测试由控制面执行</p><div class="scenario"><p class="scenario-name">Scenario: measure-command-reports-outcomes</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片 S1 的 scenario 映射到三个目标：<code>tests/test_a.py::test_red</code>（断言失败）、<code>tests/test_a.py::test_marked</code>（仍带 <code>xfail(strict=True)</code>、断言失败）、<code>web/a.test.ts::case</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>相对 base B，工作树改了 <code>src/a.py</code>（未提交）与 <code>tests/test_a.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py measure S1 --change-dir D --base B</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出码为 0，JSON 的 <code>slice</code> 为 S1、<code>base</code> 为 B、<code>commit</code> 为当前 HEAD</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>outcomes</code> 为 <code>[[&quot;tests/test_a.py::test_red&quot;,&quot;FAILED&quot;],[&quot;tests/test_a.py::test_marked&quot;,&quot;XFAIL&quot;]]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>unmeasurable</code> 为 <code>[&quot;web/a.test.ts::case&quot;]</code>，<code>changed</code> 含 <code>src/a.py</code> 与 <code>tests/test_a.py</code>，<code>source</code> 为 <code>[&quot;src/a.py&quot;]</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: measure-reports-strict-xpass</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片 S1 的唯一目标带 <code>xfail(strict=True)</code>，但测试体已能通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 measure，再运行该切片的 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>measure 的 <code>outcomes</code> 里该目标为 XPASS，不是 FAILED</span></li><li><span class="step-key" data-kw="AND">AND</span><span>gate 的 G7 仍判该 scenario 未通过（实际结果不是 PASSED）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: start 之后立即测量即为起点测量</p><p>切片以 <code>start --evidence ledger</code> 起跑、工作树没有其他改动时，紧接着运行的 measure SHALL 输出空的 <code>changed</code>，账本模式的 gate SHALL 认出这次测量是起点测量。
+Feature: flight-measure attempt 1 · S2 评审 HIGH：start 写的标记与 timeline 让起点测量永远不成立</p><div class="scenario"><p class="scenario-name">Scenario: start-measure-right-after-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片 S1 的工件已提交，以 <code>start S1 --evidence ledger</code> 起跑，工作树没有其他改动</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>立即运行 <code>slice-gate.py measure S1 --base &lt;start 的 base&gt;</code>，把输出写成一条 measure 事件，再以账本模式运行 gate</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>measure 的 <code>changed</code> 为 <code>[]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>gate 的 G5 失败项不含「缺少本片起点测量」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 账本接受 measure 事件，判定器能列出已知事件类型</p><p><code>ledger.py</code> SHALL 把 <code>measure</code> 列为合法事件：<code>attempt</code> 为正整数；<code>slice</code>、<code>agent</code>、<code>base</code> 为非空字符串；<code>commit</code> 为字符串；<code>outcomes</code> 为「两项字符串数组」的数组，且第二项属于 PASSED / FAILED / ERROR / SKIPPED / XFAIL / XPASS / MISSING；<code>changed</code>、<code>source</code> 为字符串数组。缺字段或类型不符 SHALL 让账本判为损坏。<code>ledger.py events</code> SHALL 每行打印一个已知事件类型并退出 0。
+Feature: 新事件类型须读写两侧同表</p><div class="scenario"><p class="scenario-name">Scenario: ledger-accepts-measure-events</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本 A 依次含 approve、takeoff 与一条字段齐全的 measure；账本 B 同上，但 measure 缺 <code>outcomes</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 <code>ledger.py show</code> 与 <code>ledger.py verify</code>，再运行 <code>ledger.py events</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>A 的 show 打印三条事件、退出 0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>B 的 verify 退出 4，stderr 含「measure 的 outcomes」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>events 的输出含 <code>measure</code> 与 <code>gate</code>，退出 0</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 插件写入前按同一张表校验 measure 事件</p><p><code>io.ts</code> 的 <code>eventProblem</code> SHALL 对 measure 事件按与 <code>ledger.py</code> 相同的字段表校验；不合规的 measure 事件 SHALL NOT 写入账本。
+Feature: 链上一条坏事件会让整条账本判损坏（PR #39 评审 HIGH）</p><div class="scenario"><p class="scenario-name">Scenario: measure-event-checked-before-write</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一条字段齐全的 measure 事件，以及一条缺 <code>base</code> 的 measure 事件</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别调用 <code>eventProblem</code> 与 <code>appendEvent</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前者 <code>eventProblem</code> 为 undefined，<code>appendEvent</code> 返回 true</span></li><li><span class="step-key" data-kw="AND">AND</span><span>后者 <code>eventProblem</code> 含「measure 的 base」，<code>appendEvent</code> 返回 false 且没有调用 <code>git hash-object</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 执行体通过测量工具请求测量，控制面执行并记账</p><p>插件 SHALL 在会话启动时注册工具 <code>measure</code>。本次飞行当前 attempt 的执行体调用它时，控制面 SHALL：
+1. 在该执行体的 worktree 里运行 <code>slice-gate.py measure &lt;S&gt; --change-dir &lt;D&gt; --base &lt;B&gt;</code>，B 取该执行体 dispatch 事件里的 base；
+2. 把结果追加为 measure 事件，<code>agent</code> 为调用者；
+3. 返回字符串摘要，含每个目标的状态、是否见红；见红但 <code>source</code> 非空时，SHALL 写明这次红不能作为先红证据。</p><p>测量没有完成或账本写入失败时，SHALL 返回「测量没有完成」及原因，不记事件。其他调用者 SHALL 被拒绝。在飞执行体调用测量工具时，<code>tool.check</code> SHALL 把 ask 改答 allow。
+Feature: 评审页 D3-A</p><div class="scenario"><p class="scenario-name">Scenario: measure-tool-records-event</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞，agent-1 是 S1 的执行体，dispatch 事件记有 base B；测量命令的应答为 S1 的一个目标 FAILED、<code>source</code> 为空</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>agent-1 调用 <code>mcp__flight__measure</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>执行端收到的命令是 <code>python3 &lt;判定器&gt;/slice-gate.py measure S1 --change-dir &lt;D&gt; --base B</code>，工作目录是 agent-1 的 worktree</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本新增一条 measure 事件，<code>agent</code> 为 agent-1、<code>slice</code> 为 S1、<code>base</code> 为 B</span></li><li><span class="step-key" data-kw="AND">AND</span><span>工具结果含该目标、FAILED 与「见红」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: measure-tool-only-for-flight-executors</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞；agent-2 是 S1 的评审员；agent-x 不属于任何飞行</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>agent-2、agent-x 分别调用 <code>mcp__flight__measure</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都被拒绝，理由含「只有本次飞行的执行体可以请求测量」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有运行测量命令，账本没有新增 measure 事件</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: measure-tool-upgraded-for-executor</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞，agent-1 是 S1 的执行体；引擎对 <code>mcp__flight__measure</code> 的判定为 ask</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>插件的 <code>tool.check</code> 处理 agent-1 的这次调用，以及评审员 agent-2 的同一调用</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>agent-1 的判定为 allow</span></li><li><span class="step-key" data-kw="AND">AND</span><span>agent-2 的判定仍为 ask</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 模型可调用的插件工具不构成批准路径</p><p>插件注册的模型可调用工具 SHALL 恰为 <code>submit_findings</code> 与 <code>measure</code>，两者在任何输入下都 SHALL NOT 追加 approve 事件；插件 SHALL NOT 注册斜杠命令。
+Feature: 铁律 7 · 加了测量工具后，批准带之外仍然没有模型能走的批准路径</p><div class="scenario"><p class="scenario-name">Scenario: model-tools-cannot-approve</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件已加载、会话已启动</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>列出插件注册的工具与斜杠命令，并以各种输入调用这两个工具</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>工具恰为 <code>submit_findings</code> 与 <code>measure</code>，没有斜杠命令</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本没有新增 approve 事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 派发执行体前，控制面先做起点测量</p><p>派发执行体之前（<code>slice-gate start</code> 成功之后），若账本里没有本片、本 base 的起点测量（<code>changed</code> 为空的 measure 事件），控制面 SHALL 先运行一次测量，并以 <code>agent</code> 为 <code>dispatch</code> 记账。测量失败或写入失败 SHALL 记本片 blocked（infra），理由含「起点测量失败」，SHALL NOT 派发。
+Feature: 免于先红的依据须由控制面测出</p><div class="scenario"><p class="scenario-name">Scenario: fresh-dispatch-takes-start-measure</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 起飞，S1 的切片 worktree 是新建的，start 打印的 base 为 B</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>控制面派发 S1 的执行体；再把测量命令的应答改为退出 1，对同一计划的 S2 派发</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>S1 的 measure（agent 为 dispatch、base 为 B）先于 S1 的 dispatch 事件写入，S1 的 dispatch 事件带 <code>base</code> 为 B</span></li><li><span class="step-key" data-kw="AND">AND</span><span>S2 记 blocked（infra），理由含「起点测量失败」，没有派发 S2 的执行体</span></li></ul></div></div></div><div class="spec-card"><h3>flight-measure-docs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 铁律 3 写明测试由可信方运行</p><p>根 <code>CLAUDE.md</code> 与 <code>template/CLAUDE.md.snippet</code> 的铁律 3 SHALL 含「可信方」，并写明飞行中由控制面测量写入账本、回退路径由 hook 写 evidence.log，仍含「不接受自述」；SHALL NOT 再写「测试运行由 hook 留痕」。<code>README.md</code> 与 <code>docs/WORKFLOW_zh.md</code> 描述留痕时 SHALL 提到控制面测量与账本。
+Feature: 评审页 D3-A：铁律 3 从「hook 留痕」升级为「可信方执行」</p><div class="scenario"><p class="scenario-name">Scenario: iron-rule-3-trusted-runner</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本 change 合入后的根 CLAUDE.md、template/CLAUDE.md.snippet、README.md、docs/WORKFLOW_zh.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取铁律 3 与 README、WORKFLOW 中关于测试留痕的段落</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两处铁律 3 都含「可信方」「账本」「不接受自述」，都不含「测试运行由 hook 留痕」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>README 与 WORKFLOW 都含「measure」或「测量」，且都含「账本」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 执行体知道测量协议</p><p><code>template/plugins/flight/agents/executor.md</code> 的 tools SHALL 含 <code>mcp__flight__measure</code>，正文 SHALL 写明「去掉骨架标记、把断言写实 → 调用 measure 看它红 → 再写实现」，SHALL NOT 含「不加 <code>cd &amp;&amp; </code> 前缀」与「由 hook 自动留痕」。<code>prompts.ts</code> 的执行体提示词 SHALL 写明同一协议，并说明执行体自己跑的测试不算证据。
+Feature: 协议靠提示与工具白名单落到执行体（X3：工具须在白名单里）</p><div class="scenario"><p class="scenario-name">Scenario: executor-follows-measure-protocol</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本 change 合入后的 executor.md 与 <code>executorPrompt</code> 的输出</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取 executor.md 的 frontmatter 与正文，并生成一份执行体提示词</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>tools 含 <code>mcp__flight__measure</code>，正文含「measure」与「看它红」，不含「不加 <code>cd &amp;&amp; </code> 前缀」与「自动留痕」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>提示词含「measure」与「不算证据」（TS 测试 <code>executor-prompt-states-measure-protocol</code> 通过）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 新 ADR 与评审参考材料</p><p>SHALL 新增 <code>template/openspec/adr/DRAFT-flight-measure-protocol.md</code>：<code>Status: accepted</code>，写明细化 <code>DRAFT-gate-evidence-not-self-reported</code>、在飞行路径取代 <code>DRAFT-apply-as-flight</code> 第 4 条「测试运行由 hook 留痕」（两份旧 ADR 原文不动）。<code>template/.claude/commands/pr-ship.md</code> 与 <code>template/.claude/agents/code-reviewer.md</code> 的评审参考材料 SHALL 写明飞行模式看账本的测量统计（<code>timeline.py report</code>），evidence.log 只属于回退路径。
+Feature: ADR 不可改只 supersede（铁律 6）</p><div class="scenario"><p class="scenario-name">Scenario: measure-adr-and-review-refs</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本 change 合入后的 ADR 目录、pr-ship.md 与 code-reviewer.md</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取 <code>DRAFT-flight-measure-protocol.md</code> 与两份文档的评审参考段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>ADR 含「Status: accepted」「DRAFT-gate-evidence-not-self-reported」「DRAFT-apply-as-flight」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>pr-ship.md 与 code-reviewer.md 都含「timeline.py report」或「测量」，且仍提到 evidence.log 属于回退路径</span></li></ul></div></div></div><div class="spec-card"><h3>flight-ownership-fail-closed <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 读账本失败不当作「不是飞行 agent」</p><p>归属查询扫描本进程登记的在飞飞行（<code>flights</code> 中、且在 <code>active</code> 里）的账本时，若读取失败且没有在别处找到该 agent，查询 SHALL 返回「判不出」并带原因，SHALL NOT 写入未命中缓存；之后对同一 agentId 的查询 SHALL 重新读账本。其他 change 的账本读取失败照旧跳过（一条损坏的旧账本不得让所有非飞行 agent 判不出）。<code>flightOfAgent</code> 的对外返回不变。
+Feature: #42 评审 MEDIUM：misses 把读失败也缓存成未命中，包络对飞行 agent 放行（fail-open）</p><div class="scenario"><p class="scenario-name">Scenario: ledger-read-failure-not-cached</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 是本进程登记的在飞飞行；<code>ledger.py show</code> 第一次退出 5，之后正常返回含 agent-7 dispatch（S1、worktree W1）的账本</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>连续两次查询 agent-7 的归属</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次结果为「判不出」，原因非空</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次结果为 <code>{ change: &#x27;demo&#x27;, role: &#x27;executor&#x27;, slice: &#x27;S1&#x27;, worktree: W1 }</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 在飞期间归属判不出的 agent 不得写入或运行 Bash</p><p>有在飞飞行时，归属查询结果为「判不出」的 agent 的 Write / Edit / NotebookEdit / Bash SHALL 被拒绝，理由含「归属判定失败」；<code>tool.check</code> SHALL NOT 升级其判定。
+Feature: fail-closed（DRAFT-gate-evidence-not-self-reported 第 3 条）</p><div class="scenario"><p class="scenario-name">Scenario: unknown-owner-fails-closed</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞；对 agent-7 的账本读取失败（<code>ledger.py show</code> 退出 5）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>agent-7 调用 Write 与 Bash，引擎对它的 Bash 判定为 ask</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>Write 与 Bash 都被拒绝，理由含「归属判定失败」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>tool.check</code> 对它的判定仍为 ask</span></li></ul></div></div></div><div class="spec-card"><h3>flight-version-check <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 起飞核对会话加载的插件副本与已安装记录</p><p>新文件 <code>versions.ts</code> SHALL 提供纯函数（经 Io 读文件），输入会话加载的插件目录 <code>pluginRoot</code>、配置目录与主 worktree，给出：
+- 加载版本：读 <code>&lt;pluginRoot&gt;/.claude-plugin/plugin.json</code> 的 <code>version</code>；读不到时 SHALL 写「未知」。
+- 已安装记录：读 <code>&lt;配置目录&gt;/plugins/installed_plugins.json</code>，在键以 <code>flight@</code> 开头的条目中，先取 <code>scope</code> 为 project 且 <code>projectPath</code> 等于主 worktree 的，再取 <code>scope</code> 为 user 的。
+- 判定：
+  - 加载目录与该条目的 <code>installPath</code> 都在 <code>&lt;配置目录&gt;/plugins/cache/</code> 下且两者不同 → SHALL 判拒飞，理由含两边的版本与「/reload-plugins」；
+  - 两者相同 → SHALL 判通过，给出「插件 &lt;版本&gt;」；
+  - 文件不存在、JSON 损坏、找不到条目，或加载目录不在缓存下 → SHALL 判通过，并附「已安装版本未核对：&lt;原因&gt;」。
+Feature: #41、#42 两次飞行因未 /reload-plugins 跑在旧版 · 用户定：读不到照常起飞并注明</p><div class="scenario"><p class="scenario-name">Scenario: loaded-matches-installed</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>加载目录为 <code>&lt;cfg&gt;/plugins/cache/intent-driven/flight/0.4.0</code>（其 plugin.json 版本 0.4.0）；installed_plugins.json 的 <code>flight@intent-driven</code> 有一条 project 条目，<code>projectPath</code> 为主 worktree、<code>installPath</code> 为同一目录</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>核对版本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>结果为通过，文本为「插件 0.4.0」，不含「未核对」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: loaded-differs-from-installed</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>加载目录为 <code>&lt;cfg&gt;/plugins/cache/intent-driven/flight/0.3.2</code>（版本 0.3.2）；project 条目的 <code>installPath</code> 为 <code>&lt;cfg&gt;/plugins/cache/intent-driven/flight/0.4.0</code>、<code>version</code> 为 0.4.0</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>核对版本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>结果为拒飞，理由含「0.4.0」「0.3.2」与「/reload-plugins」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: installed-unverifiable-noted</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>四种情形：installed_plugins.json 不存在；内容不是 JSON；没有 <code>flight@</code> 条目；加载目录是 <code>/dev/flight</code>（不在缓存下）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别核对版本</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>四次结果都是通过，文本都含「已安装版本未核对」与各自的原因</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞核对判定器认识插件要写的全部事件</p><p><code>versions.ts</code> SHALL 提供判定器核对：运行 <code>python3 &lt;判定器目录&gt;/ledger.py events</code>。插件会写的事件类型中有它不认识的，SHALL 判拒飞，理由列出缺的类型并含「主检出」；命令退出码非 0 SHALL 判拒飞，理由含「判定器过旧」。
+Feature: 判定器不认识的事件会让整条账本判损坏</p><div class="scenario"><p class="scenario-name">Scenario: judges-must-know-events</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三种 <code>ledger.py events</code> 的应答：列出全部类型；缺 <code>measure</code>；退出 2（旧判定器没有该子命令）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别核对判定器</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一种通过</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二种拒飞，理由含「measure」与「主检出」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三种拒飞，理由含「判定器过旧」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞接入版本核对并在回复中给出插件版本</p><p>起飞 SHALL 在 git 版本检查之后、写入任何账本事件或 timeline 记录之前，依次做插件副本核对与判定器核对；任一判拒飞 SHALL 直接回复理由并停止。起飞回复 SHALL 含「插件 &lt;版本&gt;」，未核对时 SHALL 附原因。配置目录 SHALL 取 <code>CLAUDE_CONFIG_DIR</code>，未设时取 <code>$HOME/.claude</code>。
+Feature: 版本错位当场可见</p><div class="scenario"><p class="scenario-name">Scenario: takeoff-checks-versions</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准、其余起飞检查都过；<code>CLAUDE_CONFIG_DIR</code> 为 C，C 下没有 installed_plugins.json</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>两次起飞：<code>ledger.py events</code> 缺 <code>measure</code>；<code>ledger.py events</code> 列出全部类型</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次回复含「主检出」，账本没有新增事件</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次回复含「✈ 起飞」「插件 」与「已安装版本未核对」，插件读取过 <code>C/plugins/installed_plugins.json</code>，账本新增 takeoff 事件</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p><strong>现状</strong>：插件接管飞行以后，RED / GREEN 留痕仍然靠 classic hook <code>test-evidence.py</code>。它写进执行体自己 worktree 里的 <code>evidence.log</code>，G5 读到的永远是「无 evidence.log」，只给警告。门禁的 base 读自切片标记 <code>.openspec-slice</code>，而这个标记同样在执行体可写的 worktree 里。</p><p><strong>已定的方向</strong>：评审页 <code>docs/flight-orchestrator.html</code> 的 D3 选 A，「执行体请求、控制面执行」；路线页把它排在 3b-3。</p><p><strong>用户在本 change 规划时定的两点</strong>（2026-10-10）： - G5 账本判据不满足时<strong>直接判红</strong>，不设只警告的过渡版本； - 起飞核对插件版本时，<strong>读不到已安装记录就照常起飞并注明</strong>，只有读到且确实不一致才拒飞。</p><p><strong>相关引擎事实</strong>（类型定义 2.1.295）： - <code>$.plugin.root</code> 是会话实际加载的插件目录。 - <code>$.env.get</code> 只接受字符串字面量。 - 插件注册的工具必须写进 agent 类型的工具白名单，被派发的 agent 才能调用（实测 X3），返回值必须是字符串。 - pytest 8.4.2 的严格 xfail 意外通过时，report 的 <code>outcome</code> 是 <code>failed</code>，<code>longrepr</code> 以 <code>[XPASS(strict)]</code> 开头，且没有 <code>wasxfail</code>。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong>： - 插件飞行中，「先红后绿」由控制面执行测试并写入账本，G5 只认账本。 - 门禁的 base 与证据模式由控制面给出，不读执行体可写的文件。 - 飞行记录的门禁红次数与账本一致。 - 插件与判定器的版本错位在起飞时被机械发现。 - #42 评审留下的包络缺口闭合。</p><p><strong>Non-Goals</strong>： - <strong>删除 Workflow 引擎</strong>：留给 3c。在那之前，<code>--engine=workflow</code> 回退路径的 G5 仍读 evidence.log，行为不变（铁律 10）。 - <strong>非 pytest 目标</strong>（比如下游直接映射到 <code>*.test.ts::name</code>）：无法测量，G5 只给警告。见天花板。 - <strong>修复体（fixer）的先红证据</strong>：修复体收口跑的是全量 final，不按 scenario 测量。 - <strong>默认权限模式下对 <code>cd</code> 前缀判 ask 还是 deny</strong>：仍待实测（#43 未覆盖）。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><strong>注册</strong></summary><p>插件在 <code>session.start</code> 注册工具 <code>measure</code>（与 <code>submit_findings</code> 同一处）。执行体类型的工具白名单加上 <code>mcp__flight__measure</code>。</p></details><details><summary><strong>调用方校验</strong></summary><p>调用方必须是在飞飞行、当前 attempt、role 为 executor 的 agent，否则拒绝，理由「只有本次飞行的执行体可以请求测量」。</p></details><details><summary><strong>执行</strong></summary><p>控制面在该执行体的 worktree 里运行</p></details><details><summary><strong>记账</strong></summary><p>结果写成 <code>measure</code> 事件（D2），再把摘要作为工具结果返回给执行体。摘要包括：</p></details><details><summary>每个目标的状态；</summary></details><details><summary>本次是否见红；</summary></details><details><summary>如果见红时已经改了生产代码，明确说明这次红不能作为先红证据；</summary></details><details><summary>pytest 输出尾部。</summary></details><details><summary><strong>失败处理</strong></summary><p>测量没有完成（超时、输出不是 JSON），或者账本写不进去时，返回「测量没有完成：原因」，不记事件。</p></details><details><summary><strong>GREEN 不另设测量</strong></summary><p>收口门禁的 G7 本来就由控制面实跑本片 scenario 测试，结论写在账本的 gate 事件里，这就是可信的 GREEN。路线页原文写的是「收口前再请求一次」，这里省掉，执行体少一轮，证据也不缺。</p></details><details><summary><strong>否决</strong></summary><p>B 保留 test-evidence hook。它的问题是测试结果仍出自执行体的环境与时机，而且记录在执行体可写的地方。</p></details><details><summary><strong>字段</strong></summary><p>在公共字段之外，带 <code>attempt</code>、<code>slice</code>、<code>agent</code>（起点测量写 <code>dispatch</code>）、<code>base</code>、<code>commit</code>、<code>outcomes</code>、<code>changed</code>、<code>source</code>。</p></details><details><summary><code>outcomes</code> 是 <code>[目标, 状态]</code> 的数组，状态取 PASSED、FAILED、ERROR、SKIPPED、XFAIL、XPASS、MISSING 之一。</summary></details><details><summary><code>changed</code> 是相对 base 的改动文件，含未提交的，但不计切片标记与本 change 目录下的簿记文件（attempt 1 评审 HIGH</summary><p>start 一跑就会写出这两类文件，不排除的话起点测量永远不成立）。</p></details><details><summary><code>source</code> 是其中的生产代码，分类与 G3 相同</summary><p>非测试、非文档 / 配置、不在 change 目录内。</p></details><details><summary><strong>写入方与读取方同表校验</strong></summary><p>插件 <code>io.ts</code> 的 <code>EVENTS</code> 与 <code>ledger.py</code> 的 <code>EVENTS</code> 用同一张字段表。</p></details><details><summary><strong><code>ledger.py events</code></strong></summary><p>新子命令，每行打印一个已知事件类型，供起飞核对（D8）。</p></details><details><summary><strong><code>slice-gate.py measure &lt;S&gt; --change-dir D [--base B]</code></strong></summary></details><details><summary><strong>运行范围</strong></summary><p>只跑本片 scenario 映射里以 <code>.py</code> 结尾的目标，复用 G7 的 pytest 运行方式与超时。</p></details><details><summary><strong>输出</strong></summary><p>打印 JSON <code>{slice, base, commit, outcomes, unmeasurable, changed, source, tail}</code>。</p></details><details><summary><strong>状态合并</strong></summary><p>一个目标对应多个参数化节点时，按 ERROR &gt; FAILED &gt; XPASS &gt; XFAIL &gt; SKIPPED &gt; PASSED 取最差的一个；没有任何结果记为 MISSING。</p></details><details><summary><strong>退出码</strong></summary><p>跑完退出 0，不论红绿。跑不起来或超时退出 1，JSON 里带 <code>error</code>。</p></details><details><summary><strong>严格 XPASS</strong></summary><p>G7 用的 pytest 插件把 <code>outcome == failed</code> 且 <code>longrepr</code> 以 <code>[XPASS(strict)]</code> 开头的 report 记为 XPASS。G7 照旧只认 PASSED，所以 G7 的行为不变。测量里的 XPASS 不算红。</p></details><details><summary><strong>何时测</strong></summary><p>派发执行体之前，在 <code>slice-gate start</code> 成功之后，如果账本里还没有本片、本 base 的「起点测量」，控制面先测一次（agent 记为 <code>dispatch</code>）。起点测量指 <code>changed</code> 为空的测量。</p></details><details><summary><strong>测失败</strong></summary><p>测量跑不起来或写不进账本 → 本片记 <code>blocked</code>（infra），理由「起点测量失败：原因」，不派发。</p></details><details><summary><strong>用途</strong></summary><p>起点测量里已经 PASSED 的目标，免于先红。典型情况是 scenario 映射到已有测试。豁免依据是控制面亲自测出来的，规划者的声明不算数。</p></details><details><summary><strong>续接的情形</strong></summary><p>续接时 worktree 里已有改动，测出来的 <code>changed</code> 不为空，不算起点测量。如果此前没有起点测量，G5 会判「缺少起点测量」。只有跨插件版本续飞时才会碰到，见风险。</p></details><details><summary><strong>读不到账本</strong> → 红，理由「账本读取失败」（fail-closed）。</summary></details><details><summary><strong>非 <code>.py</code> 目标</strong> → 警告「无法测量」。</summary></details><details><summary><strong>账本模式下不读 evidence.log</strong></summary><p>不出现 evidence.log 相关的警告，<code>hooks_missing</code> 为 false。</p></details><details><summary><strong>不带 <code>--evidence ledger</code></strong>（Workflow 回退路径、手工运行）</summary><p>沿用 evidence.log 判据，一字不改。</p></details><details><summary><strong>start</strong></summary><p><code>slice-gate start &lt;S&gt; --evidence ledger</code> 在切片标记里写 <code>&quot;evidence&quot;: &quot;ledger&quot;</code>。控制面从 start 打印的 JSON 取 base，记进 dispatch 事件的 <code>base</code> 字段（表外字段，读取方允许）。</p></details><details><summary><strong>执行体的门禁</strong>（收口、结束后补跑、续飞 regate）</summary><p>一律带 <code>--evidence ledger --base &lt;该执行体 dispatch 事件的 base&gt;</code>。</p></details><details><summary><strong>解冲突 agent 的门禁</strong></summary><p>带 <code>--evidence ledger --base &lt;解冲突 dispatch 的 base&gt; --measure-base &lt;本片最后一个执行体 dispatch 的 base&gt;</code>，沿用执行体那次的测量证据。</p></details><details><summary><strong>兼容旧账本</strong></summary><p>dispatch 事件没有 <code>base</code>（账本由旧插件写入）时，门禁不带 <code>--base</code>，退回读标记。这只在跨版本续飞时出现，记作天花板。</p></details><details><summary><strong>执行体改标记的后果</strong></summary><p>改了也不影响门禁区间与 G5。</p></details><details><summary>`门禁红次数</summary><p>N（账本：切片门禁 x · final y）<code>：x 是 </code>ok<code> 为 false 的 gate 事件数，y 是 </code>ok` 为 false 的 final 事件数，统计全部 attempt。</p></details><details><summary>另起一行 `测量</summary><p>n 次（见红 m 次）`。</p></details><details><summary><strong>选条目</strong></summary><p>在键以 <code>flight@</code> 开头的条目里，先找 <code>scope</code> 为 project 且 <code>projectPath</code> 等于主 worktree 的，再找 <code>scope</code> 为 user 的。</p></details><details><summary><strong>解释器 <code>-c</code> 与 <code>eval</code></strong></summary><p>一段的程序名是 <code>bash</code>、<code>sh</code>、<code>zsh</code> 且带 <code>-c</code>（含 <code>-lc</code> 这类组合），或者程序名是 <code>eval</code> 时，取其后的命令文本，去掉一层引号，按同一套规则递归判定。递归时以这一段的当前目录作为起点。命令文本取不出来（例如引号不配对，这包括被分段切开的情形）→ 拒绝，理由「无法判定解释器 -c / eval 内的命令」。</p></details><details><summary><strong>换目录的写法</strong></summary></details><details><summary>判程序名之前，先剥掉段首的 <code>builtin</code>、<code>command</code>、<code>exec</code>，以及 <code>env</code> 和它的选项与 <code>VAR=</code>；</summary></details><details><summary><code>pushd &lt;p&gt;</code> 与 <code>cd &lt;p&gt;</code> 一样设定目录；</summary></details><details><summary><code>popd</code> 之后目录记为无法判定。</summary></details><details><summary><strong><code>GIT_*</code> 环境变量</strong></summary></details><details><summary>改动类 git 段的前导赋值（含经 <code>env</code> 给出的）里有以 <code>GIT_</code> 开头的键 → 拒绝；</summary></details><details><summary><code>export</code> 段出现 <code>GIT_</code> 开头的名字 → 拒绝；</summary></details><details><summary>只含赋值、且赋值键以 <code>GIT_</code> 开头的段 → 拒绝。</summary></details><details><summary><strong>写共享 config 的子命令</strong></summary></details><details><summary><code>git remote</code> 只放行无参数、<code>-v</code> / <code>--verbose</code>、<code>show</code>、<code>get-url</code>，其余拒绝；</summary></details><details><summary><code>git branch</code> 的拒绝选项加上 <code>-u</code>、<code>--set-upstream-to</code>、<code>--unset-upstream</code>、<code>--edit-description</code>；</summary></details><details><summary><code>fetch</code> 进拒绝表。</summary></details><details><summary><strong>Glob 不越界免询问</strong></summary><p>Glob 的 <code>pattern</code> 是绝对路径或含 <code>..</code> 段时不升级。</p></details><details><summary><strong>attempt 1 评审补出的三处</strong>（S9）</summary></details><details><summary><code>eval</code> 在当前 shell 执行，内层的 <code>cd</code> / <code>pushd</code> / <code>popd</code> 要回传外层；<code>bash -c</code> 在子进程，不回传。</summary></details><details><summary>外层段首的 <code>GIT_*</code> 赋值要与内层各段合并后再判。</summary></details><details><summary><code>env</code>、<code>exec</code> 前缀</summary></details><details><summary>带参数的选项（env 的 <code>-u</code>、<code>-C</code>、<code>-S</code>、<code>-P</code> 及长名，exec 的 <code>-a</code>）连参数一起剥掉；</summary></details><details><summary><code>env -C</code> 计入换目录；</summary></details><details><summary>不认识的选项一律拒绝，宁可多拒。</summary></details><details><summary><strong>区分读失败</strong></summary><p>扫描本进程登记的在飞飞行的账本时读取失败（<code>ledger.py</code> 退出码非 0），并且别处也没找到该 agent，归属查询返回「判不出」并带上原因，不写进未命中缓存。</p></details><details><summary><strong>为什么只看在飞飞行</strong></summary><p>其他 change 的账本读失败照旧跳过，一条损坏的旧账本不能让所有非飞行 agent 都判不出。</p></details><details><summary><strong><code>flightOfAgent</code> 对外不变</strong>。</summary></details><details><summary><strong>在飞期间判不出</strong></summary><p>写入与 Bash 一律拒绝，理由「归属判定失败，稍后重试」；<code>tool.check</code> 不升级。与「登记中」同样处理。</p></details><details><summary><strong>登记中刻意不撤销</strong>（否决 #42 评审 LOW 的「加撤销入口」）</summary><p>dispatch 写入失败时，撤销登记会让该 agent 被当成非飞行 agent，不再受包络约束，这是 fail-open。让它一直停在登记中、写入被拒，才是安全的一侧。飞行停下后已派出的 agent 仍在跑，这个问题留给 3c 的 abort。</p></details><details><summary><strong>铁律 3</strong>（根 <code>CLAUDE.md</code> 与 <code>template/CLAUDE.md.snippet</code>）改为</summary></details><details><summary><strong>新 ADR</strong> <code>DRAFT-flight-measure-protocol</code></summary></details><details><summary><code>Status: accepted</code>；</summary></details><details><summary>写明细化 <code>DRAFT-gate-evidence-not-self-reported</code> 第 1 条，真值源加入账本的 measure 事件；</summary></details><details><summary>飞行路径取代 <code>DRAFT-apply-as-flight</code> 第 4 条中「测试运行由 hook 留痕」一句。两份旧 ADR 原文不动。</summary></details><details><summary><strong>执行体</strong></summary></details><details><summary>定义加上工具 <code>mcp__flight__measure</code>，并写明协议</summary><p>先去掉骨架标记、把断言写实 → 调 measure 看它红 → 再写实现；</p></details><details><summary>删掉「不加 <code>cd &amp;&amp; </code> 前缀」与「测试运行由 hook 自动留痕」两句；</summary></details><details><summary>派发提示词同样写明协议。</summary></details><details><summary><strong>评审参考材料</strong>（<code>pr-ship.md</code>、<code>code-reviewer.md</code>、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>）</summary><p>飞行模式看账本（<code>timeline.py report</code> 的测量统计与 gate-report），evidence.log 只属于回退路径。</p></details><details><summary>原有的 TS 测试 <code>no-model-callable-approval-path</code>、<code>only-findings-tool-registered</code> 随之更新。</summary></details><details><summary>铁律 7 的含义不变</summary><p>批准带之外，仍然没有模型能走的批准路径。</p></details></div><div class="design-block"><h3>修订（attempt 1 停飞之后，2026-10-11）</h3><p><strong>attempt 1 的结果</strong>：S1–S6、S8 一次门禁全绿并合回。S7 两个执行体都止步于两处规划失误： - <strong>S7 的 owns 漏了 <code>flight.test.tsx</code></strong>：那里有工具不变量测试，加了测量工具就必然变红； - <strong><code>takeoff-checks-versions</code> 在测试里构造不出「已装 ≠ 已加载」</strong>：测试里插件从仓库目录加载，不在缓存下。</p><p>控制面在 S7 阻断后仍派出修复体，修复体的全量 final 必然红，于是停飞。</p><p><strong>用户定（2026-10-11）</strong>：修计划后续飞。 - <strong>R1</strong>：S7 的 owns 加上 <code>flight.test.tsx</code> 与 <code>tests/test_flight_plugin.py</code>，新增 scenario <code>model-tools-cannot-approve</code>（D13）。 - <strong>R2</strong>：<code>takeoff-checks-versions</code> 改为验证接线，拒飞路径由 S6 的纯函数测试覆盖。 - <strong>R3</strong>：新增 S9，把评审的 3 条 HIGH 与 1 条 MEDIUM 写成 scenario，有规格可依，不只靠修复体。attempt 1 修复体的提交（<code>7c8eb4e</code>、<code>a9e7330</code>、<code>cdcc5eb</code>）与 S7 的提交（<code>74d32c1</code>）可供执行体 <code>git show</code> 参考，不得 cherry-pick 或 merge。 - <strong>R4</strong>：<code>measure</code> 的 <code>changed</code> 口径修正（D2）。 - <strong>续飞前</strong>：S7 与修复体的旧 worktree 由用户清掉，分支改名保留。原因是旧 worktree 里的切片包与 <code>slices.json</code> 是旧版本，门禁会按旧的 owns 判；修复体的旧 worktree 切自不含 S7 的旧尖端，它的 final 也必然红。</p><p><strong>记下的控制面缺陷</strong>（留给后续 change，本 change 不修）： - 有切片阻断时仍派修复体，而修复体的全量 final 必然红。 - 修复体 worktree 跨 attempt 复用，没有基于新尖端。 - 续飞复用切片 worktree 时，切片包和 owns 不随计划修订更新。</p><p>### 一个切片的时序（测量协议上线后）</p><p>### 切片与 wave</p></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>G5 判红的摩擦</strong></summary><p>执行体如果先写了实现才去测量，就再也拿不到合格的先红证据，3 次收口红后本片记阻断，交给人处理。</p></details><details><summary><strong>缓解</strong></summary><p>提示词、agent 定义和测量结果三处都写明协议，测量结果当场指出「这次红不算先红」。</p></details><details><summary><strong>为什么接受</strong></summary><p>这正是铁律 3 要拦的情形，用户已定直接判红。</p></details><details><summary><strong>跨版本续飞</strong></summary><p>旧插件写的账本里没有 dispatch base，也没有起点测量。在 0.4.0 上续飞这类飞行，G5 会判「缺少起点测量」。处理办法是作废重飞。合入时没有在飞的飞行，影响面为零。</p></details><details><summary><strong>测量增加耗时</strong></summary><p>每片多一次起点测量，执行体每测一次要等一次 pytest，等待时间与本片 scenario 测试的规模相当，通常是秒级。</p></details><details><summary><strong><code>installed_plugins.json</code> 没有文档</strong></summary><p>格式一变就只能注明未核对，不会误拒（D8 第 4 条）。</p></details><details><summary><strong>本 change 自身的飞行</strong></summary><p>跑在 0.3.2 上，测量协议尚未生效。G5 仍是旧的警告语义，这是自举的必然。</p></details><details><summary><strong>天花板</strong></summary></details><details><summary>非 pytest 目标无法测量；</summary></details><details><summary>包络递归判定不做真正的 shell 词法分析，宁可多拒；</summary></details><details><summary>dispatch 没有 base 时退回读标记。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><p>合入后必须做两件事，缺一件起飞就会被拒，并提示缺哪一步： 1. 主检出快进到合入提交。判定器读的是主检出里的副本。 2. 更新插件并 <code>/reload-plugins</code>：<code>claude plugin marketplace update intent-driven &amp;&amp; claude plugin update flight@intent-driven</code>，确认起飞回复显示插件 0.4.0。</p><p>合入后的下一次飞行，就是测量协议的首飞。</p></div><div class="design-block"><h3>Open Questions</h3><p>无。两处取舍已由用户定（见 Context）。</p></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart TD
+  A[&quot;M：本片、base B 的 measure 事件&quot;] --&gt; P{&quot;M 里有 changed 为空的起点测量？&quot;}
+  P -- 否 --&gt; R1[&quot;红：缺少本片起点测量&quot;]
+  P -- 是 --&gt; X[&quot;起点测量里 PASSED 的目标：免于先红（记警告）&quot;]
+  X --&gt; Q{&quot;其余每个目标都在 M 的某次测量里 FAILED 或 ERROR？&quot;}
+  Q -- 否 --&gt; R2[&quot;红：目标 t 从未在控制面测量中红过&quot;]
+  Q -- 是 --&gt; S{&quot;至少有一次见红时 source 为空？&quot;}
+  S -- 否 --&gt; R3[&quot;红：每次见红时都已改动生产代码&quot;]
+  S -- 是 --&gt; OK[&quot;G5 通过&quot;]</div><pre class="diagram-fallback">flowchart TD
+  A[&quot;M：本片、base B 的 measure 事件&quot;] --&gt; P{&quot;M 里有 changed 为空的起点测量？&quot;}
+  P -- 否 --&gt; R1[&quot;红：缺少本片起点测量&quot;]
+  P -- 是 --&gt; X[&quot;起点测量里 PASSED 的目标：免于先红（记警告）&quot;]
+  X --&gt; Q{&quot;其余每个目标都在 M 的某次测量里 FAILED 或 ERROR？&quot;}
+  Q -- 否 --&gt; R2[&quot;红：目标 t 从未在控制面测量中红过&quot;]
+  Q -- 是 --&gt; S{&quot;至少有一次见红时 source 为空？&quot;}
+  S -- 否 --&gt; R3[&quot;红：每次见红时都已改动生产代码&quot;]
+  S -- 是 --&gt; OK[&quot;G5 通过&quot;]</pre><div class="caption">记 M 为账本里本片、指定 base 的全部 <code>measure</code> 事件，不分 attempt；指定 base 默认是门禁的 base，<code>--measure-base</code> 可以覆盖。T 为本片 scenario 映射里以 <code>.py</code> 结尾的目标。</div></div><div class="diagram-frame"><div class="mermaid">sequenceDiagram
+  participant SM as 控制面（插件）
+  participant J as slice-gate
+  participant L as 账本
+  participant E as 执行体
+  SM-&gt;&gt;J: start S --evidence ledger（新建的切片 worktree）
+  J--&gt;&gt;SM: base B
+  SM-&gt;&gt;J: measure S --base B（起点测量）
+  SM-&gt;&gt;L: measure(agent=dispatch, changed=[])
+  SM-&gt;&gt;L: dispatch(S, base=B)
+  SM-&gt;&gt;E: 派发（提示词写明测量协议）
+  Note over E: 去掉骨架 xfail，把断言写实
+  E-&gt;&gt;SM: 调用 measure
+  SM-&gt;&gt;J: measure S --base B
+  SM-&gt;&gt;L: measure(agent=E, outcomes 含 FAILED, source=[])
+  SM--&gt;&gt;E: 「见红，可作为先红证据」
+  Note over E: 写实现、commit
+  E-&gt;&gt;SM: 收口（SubagentStop）
+  SM-&gt;&gt;J: gate S --evidence ledger --base B
+  J-&gt;&gt;L: 读 measure 事件（G5）
+  SM-&gt;&gt;L: gate(S, ok)</div><pre class="diagram-fallback">sequenceDiagram
+  participant SM as 控制面（插件）
+  participant J as slice-gate
+  participant L as 账本
+  participant E as 执行体
+  SM-&gt;&gt;J: start S --evidence ledger（新建的切片 worktree）
+  J--&gt;&gt;SM: base B
+  SM-&gt;&gt;J: measure S --base B（起点测量）
+  SM-&gt;&gt;L: measure(agent=dispatch, changed=[])
+  SM-&gt;&gt;L: dispatch(S, base=B)
+  SM-&gt;&gt;E: 派发（提示词写明测量协议）
+  Note over E: 去掉骨架 xfail，把断言写实
+  E-&gt;&gt;SM: 调用 measure
+  SM-&gt;&gt;J: measure S --base B
+  SM-&gt;&gt;L: measure(agent=E, outcomes 含 FAILED, source=[])
+  SM--&gt;&gt;E: 「见红，可作为先红证据」
+  Note over E: 写实现、commit
+  E-&gt;&gt;SM: 收口（SubagentStop）
+  SM-&gt;&gt;J: gate S --evidence ledger --base B
+  J-&gt;&gt;L: 读 measure 事件（G5）
+  SM-&gt;&gt;L: gate(S, ok)</pre><div class="caption">### 一个切片的时序（测量协议上线后）</div></div><div class="diagram-frame"><div class="mermaid">flowchart LR
+  subgraph W1[&quot;wave 1（并行，owns 不相交）&quot;]
+    S1[&quot;S1 判定器：measure 子命令 · measure 事件 · events · 严格 XPASS&quot;]
+    S4[&quot;S4 包络补漏（envelope.ts）&quot;]
+    S5[&quot;S5 归属 fail-closed · measure 事件写入校验（io.ts）&quot;]
+    S6[&quot;S6 版本核对纯函数（versions.ts）&quot;]
+    S8[&quot;S8 铁律 3 · ADR · 执行体定义与提示词 · 评审参考&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S2[&quot;S2 G5 账本判据 · start/gate 新参数&quot;]
+    S3[&quot;S3 红次数与测量统计 · test-evidence 让位&quot;]
+    S7[&quot;S7 接线：测量工具 · 起点测量 · 门禁参数 · 起飞核对 · 工具不变量 · 0.4.0&quot;]
+  end
+  subgraph W3[&quot;wave 3（attempt 2 新增）&quot;]
+    S9[&quot;S9 评审补修：eval 换目录 · 外层 GIT_* · 前缀选项 · 起点测量口径&quot;]
+  end
+  S1 --&gt; S2
+  S1 --&gt; S3
+  S5 --&gt; S7
+  S6 --&gt; S7
+  S2 --&gt; S9
+  S4 --&gt; S9</div><pre class="diagram-fallback">flowchart LR
+  subgraph W1[&quot;wave 1（并行，owns 不相交）&quot;]
+    S1[&quot;S1 判定器：measure 子命令 · measure 事件 · events · 严格 XPASS&quot;]
+    S4[&quot;S4 包络补漏（envelope.ts）&quot;]
+    S5[&quot;S5 归属 fail-closed · measure 事件写入校验（io.ts）&quot;]
+    S6[&quot;S6 版本核对纯函数（versions.ts）&quot;]
+    S8[&quot;S8 铁律 3 · ADR · 执行体定义与提示词 · 评审参考&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S2[&quot;S2 G5 账本判据 · start/gate 新参数&quot;]
+    S3[&quot;S3 红次数与测量统计 · test-evidence 让位&quot;]
+    S7[&quot;S7 接线：测量工具 · 起点测量 · 门禁参数 · 起飞核对 · 工具不变量 · 0.4.0&quot;]
+  end
+  subgraph W3[&quot;wave 3（attempt 2 新增）&quot;]
+    S9[&quot;S9 评审补修：eval 换目录 · 外层 GIT_* · 前缀选项 · 起点测量口径&quot;]
+  end
+  S1 --&gt; S2
+  S1 --&gt; S3
+  S5 --&gt; S7
+  S6 --&gt; S7
+  S2 --&gt; S9
+  S4 --&gt; S9</pre><div class="caption">### 切片与 wave</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>判定器：measure 子命令、measure 事件与 events 子命令、严格 XPASS</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>template/.claude/hooks/ledger.py<br>tests/test_slice_gate.py<br>tests/test_ledger.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py tests/test_ledger.py</code></td></tr><tr><td class="mono">S2</td><td>G5 账本判据；start 与 gate 的 --evidence ledger、--measure-base</td><td>wave 2</td><td>S1</td><td>template/.claude/hooks/slice-gate.py<br>tests/test_slice_gate.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py</code></td></tr><tr><td class="mono">S3</td><td>门禁红次数与测量统计取自账本；test-evidence 对账本模式切片让位</td><td>wave 2</td><td>S1</td><td>template/.claude/hooks/timeline.py<br>template/.claude/hooks/test-evidence.py<br>tests/test_evidence_timeline.py</td><td><code>python3 -m pytest -q tests/test_evidence_timeline.py</code></td></tr><tr><td class="mono">S4</td><td>包络补漏：解释器 -c 与 eval、换目录写法、GIT_* 环境变量、共享 config 与 fetch、Glob pattern</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/envelope.ts<br>template/plugins/flight/tests/envelope.test.ts<br>tests/test_flight_envelope.py</td><td><code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S5</td><td>io.ts：在飞账本读失败判不出、measure 事件写入校验、导出事件类型表</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/tests/io.test.ts<br>tests/test_flight_io.py</td><td><code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S6</td><td>versions.ts：插件副本核对与判定器事件表核对（纯函数）</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/versions.ts<br>template/plugins/flight/tests/versions.test.ts<br>tests/test_flight_versions.py</td><td><code>python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S7</td><td>接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0</td><td>wave 2</td><td>S5, S6</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/hooks/measure.ts<br>template/plugins/flight/tests/orchestrator.test.tsx<br>tests/test_flight_orchestrator.py<br>template/plugins/flight/.claude-plugin/plugin.json<br>template/plugins/flight/tests/flight.test.tsx<br>tests/test_flight_plugin.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S8</td><td>铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议</td><td>wave 1</td><td>-</td><td>CLAUDE.md<br>template/CLAUDE.md.snippet<br>README.md<br>docs/WORKFLOW_zh.md<br>template/openspec/adr/DRAFT-flight-measure-protocol.md<br>template/plugins/flight/agents/executor.md<br>template/plugins/flight/hooks/prompts.ts<br>template/plugins/flight/tests/prompts.test.ts<br>template/.claude/commands/pr-ship.md<br>template/.claude/agents/code-reviewer.md<br>tests/test_docs_iron_rules.py<br>tests/test_flight_agents.py</td><td><code>python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py</code></td></tr><tr><td class="mono">S9</td><td>评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径</td><td>wave 3</td><td>S2, S4</td><td>template/plugins/flight/hooks/envelope.ts<br>template/plugins/flight/tests/envelope.test.ts<br>tests/test_flight_envelope.py<br>template/.claude/hooks/slice-gate.py<br>tests/test_slice_gate.py</td><td><code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-measure#measure-command-reports-outcomes</td><td><code>tests/test_slice_gate.py::test_measure_reports_slice_outcomes</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure#measure-reports-strict-xpass</td><td><code>tests/test_slice_gate.py::test_measure_reports_strict_xpass</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure#ledger-accepts-measure-events</td><td><code>tests/test_ledger.py::test_ledger_accepts_measure_events</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-ledger-requires-red-per-target</td><td><code>tests/test_slice_gate.py::test_g5_ledger_requires_red_per_target</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-ledger-requires-red-before-source</td><td><code>tests/test_slice_gate.py::test_g5_ledger_requires_red_before_source</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-ledger-exempts-targets-passing-at-start</td><td><code>tests/test_slice_gate.py::test_g5_ledger_exempts_targets_passing_at_start</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-ledger-needs-start-measure</td><td><code>tests/test_slice_gate.py::test_g5_ledger_needs_start_measure</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-ledger-uses-measure-base</td><td><code>tests/test_slice_gate.py::test_g5_ledger_uses_measure_base</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#start-tags-ledger-evidence</td><td><code>tests/test_slice_gate.py::test_start_tags_ledger_evidence</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#g5-legacy-path-unchanged</td><td><code>tests/test_slice_gate.py::test_gate_g5_fails_when_evidence_has_no_rows_for_slice</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#red-count-from-ledger</td><td><code>tests/test_evidence_timeline.py::test_red_count_from_ledger</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-gate-evidence#test-evidence-skips-ledger-slices</td><td><code>tests/test_evidence_timeline.py::test_evidence_skips_ledger_marked_slice</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#interpreter-wrappers-checked</td><td><code>tests/test_flight_envelope.py::test_interpreter_wrappers_checked</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#cd-variants-tracked</td><td><code>tests/test_flight_envelope.py::test_cd_variants_tracked</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#git-env-overrides-denied</td><td><code>tests/test_flight_envelope.py::test_git_env_overrides_denied</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#shared-config-writers-denied</td><td><code>tests/test_flight_envelope.py::test_shared_config_writers_denied</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#glob-pattern-cannot-escape</td><td><code>tests/test_flight_envelope.py::test_glob_pattern_cannot_escape</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-ownership-fail-closed#ledger-read-failure-not-cached</td><td><code>tests/test_flight_io.py::test_ledger_read_failure_not_cached</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure#measure-event-checked-before-write</td><td><code>tests/test_flight_io.py::test_measure_event_checked_before_write</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-version-check#loaded-matches-installed</td><td><code>tests/test_flight_versions.py::test_loaded_matches_installed</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-version-check#loaded-differs-from-installed</td><td><code>tests/test_flight_versions.py::test_loaded_differs_from_installed</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-version-check#installed-unverifiable-noted</td><td><code>tests/test_flight_versions.py::test_installed_unverifiable_noted</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-version-check#judges-must-know-events</td><td><code>tests/test_flight_versions.py::test_judges_must_know_events</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure#measure-tool-records-event</td><td><code>tests/test_flight_orchestrator.py::test_measure_tool_records_event</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure#measure-tool-only-for-flight-executors</td><td><code>tests/test_flight_orchestrator.py::test_measure_tool_only_for_flight_executors</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure#measure-tool-upgraded-for-executor</td><td><code>tests/test_flight_orchestrator.py::test_measure_tool_upgraded_for_executor</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure#fresh-dispatch-takes-start-measure</td><td><code>tests/test_flight_orchestrator.py::test_fresh_dispatch_takes_start_measure</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-gate-evidence#gate-runs-with-ledger-evidence</td><td><code>tests/test_flight_orchestrator.py::test_gate_runs_with_ledger_evidence</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-version-check#takeoff-checks-versions</td><td><code>tests/test_flight_orchestrator.py::test_takeoff_checks_versions</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ownership-fail-closed#unknown-owner-fails-closed</td><td><code>tests/test_flight_orchestrator.py::test_unknown_owner_fails_closed</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure#model-tools-cannot-approve</td><td><code>tests/test_flight_plugin.py::test_no_model_callable_approval_path</code></td><td><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-measure-docs#iron-rule-3-trusted-runner</td><td><code>tests/test_docs_iron_rules.py::test_iron_rule_3_trusted_runner</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure-docs#executor-follows-measure-protocol</td><td><code>tests/test_flight_agents.py::test_executor_follows_measure_protocol</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-measure-docs#measure-adr-and-review-refs</td><td><code>tests/test_docs_iron_rules.py::test_measure_adr_and_review_refs</code></td><td><span class="chip" data-state="passed">passed</span></td></tr><tr><td>flight-envelope-gaps#eval-cd-carries-to-outer</td><td><code>tests/test_flight_envelope.py::test_eval_cd_carries_to_outer</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-envelope-gaps#outer-git-env-reaches-inner</td><td><code>tests/test_flight_envelope.py::test_outer_git_env_reaches_inner</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-envelope-gaps#prefix-options-with-arguments</td><td><code>tests/test_flight_envelope.py::test_prefix_options_with_arguments</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-measure#start-measure-right-after-start</td><td><code>tests/test_slice_gate.py::test_measure_right_after_start_is_start_measure</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-10-10T15:45:00Z</td><td>baseline</td><td>exit 0, 104.2s ok</td></tr><tr><td class="mono">2026-10-10T15:55:49Z</td><td>approve</td><td>2026-10-10T15:55:40.245Z · fp 5f9da12e · ledger a6c9e283</td></tr><tr><td class="mono">2026-10-10T15:57:45Z</td><td>gate</td><td>S6 ok</td></tr><tr><td class="mono">2026-10-10T15:58:52Z</td><td>gate</td><td>S5 ok</td></tr><tr><td class="mono">2026-10-10T16:00:18Z</td><td>gate</td><td>S8 ok</td></tr><tr><td class="mono">2026-10-10T16:00:57Z</td><td>gate</td><td>S1 ok</td></tr><tr><td class="mono">2026-10-10T16:01:25Z</td><td>gate</td><td>S4 ok</td></tr><tr><td class="mono">2026-10-10T16:02:54Z</td><td>gate</td><td>S3 ok</td></tr><tr><td class="mono">2026-10-10T16:07:02Z</td><td>gate</td><td>S2 ok</td></tr><tr><td class="mono">2026-10-10T16:27:35Z</td><td>final</td><td>red</td></tr><tr><td class="mono">2026-10-10T23:06:32Z</td><td>baseline</td><td>exit 2, 0.2s red</td></tr><tr><td class="mono">2026-10-10T23:10:22Z</td><td>baseline</td><td>exit 0, 81.8s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 判定器：measure 子命令、measure 事件与 events 子命令、严格 XPASS （deps: - · verify: <code>python3 -m pytest -q tests/test_slice_gate.py tests/test_ledger.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 G5 账本判据；start 与 gate 的 --evidence ledger、--measure-base （deps: S1 · verify: <code>python3 -m pytest -q tests/test_slice_gate.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 门禁红次数与测量统计取自账本；test-evidence 对账本模式切片让位 （deps: S1 · verify: <code>python3 -m pytest -q tests/test_evidence_timeline.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 包络补漏：解释器 -c 与 eval、换目录写法、GIT_* 环境变量、共享 config 与 fetch、Glob pattern （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S5 io.ts：在飞账本读失败判不出、measure 事件写入校验、导出事件类型表 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_io.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S6 versions.ts：插件副本核对与判定器事件表核对（纯函数） （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_versions.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S7 接线：测量工具、起点测量、门禁的证据模式与 base、起飞核对版本、归属判不出拒写；版本 0.4.0 （deps: S5, S6 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S8 铁律 3、新 ADR、执行体定义与提示词、评审参考材料写明测量协议 （deps: - · verify: <code>python3 -m pytest -q tests/test_docs_iron_rules.py tests/test_flight_agents.py tests/test_template_docs.py tests/test_opsx_apply_engine.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S9 评审补修：eval 换目录回传、外层 GIT_* 进内层、前缀选项带参数、起点测量口径 （deps: S2, S4 · verify: <code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_slice_gate.py tests/test_flight_plugin.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-10 23:10 · 章节 9 · 图示 3 · 任务 9
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

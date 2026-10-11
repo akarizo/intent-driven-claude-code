@@ -168,7 +168,11 @@ slice-gate.py lint（校验 slices.json：片数 1–9 / DAG 深度 ≤ 3 / 同 
     Workflow 不可用（未开通 / disableWorkflows）→ 回退：主会话按同一 waves 用 Agent 工具并行派发，语义一致
   同 wave 内每个切片派 slice-executor（model: inherit，maxTurns 40，acceptEdits）：
     走 test-driven-development（RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释），只写 owns 内文件
+    插件飞行（测量协议）：派发前控制面先做起点测量；执行体写好测试、改生产代码前调用 measure 工具，
+      由控制面运行 slice-gate.py measure 并写入账本 measure 事件；执行体自己跑的测试不算证据
     → 收尾跑 slice-gate.py gate（G1 verify / G2 lint·typecheck / G3 源码配对测试 / G4 GWT / G5 RED 先于 GREEN 留痕 / G6 所有权 / G7 scenario 已转 pass）
+      插件飞行的门禁带 --evidence ledger --base <dispatch 的 base>：G5 读账本（缺起点测量 / 目标从未测红 / 每次见红都已改生产代码 → 判红）；
+      Workflow 回退路径不带该参数，G5 仍读 hook 写的 evidence.log
     → 门禁红重试一次，仍红则该切片 blocked、其余切片继续；门禁绿立即离路径起 code-reviewer（不阻塞下一 wave）
   全部 wave 完成 → integrator 合回并跑一次批量修复（汇总 CRITICAL/HIGH）→ slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）
   → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录 → 转 /pr-ship
@@ -185,7 +189,7 @@ slice-gate.py lint（校验 slices.json：片数 1–9 / DAG 深度 ≤ 3 / 同 
 **关键约束**：
 
 - **所有权即隔离**：同一 wave 内各切片 `owns` 不相交（lint 校验），并行零冲突；门禁 G6 对 `owns` 之外的写入 DENY，执行体撞上不绕过，记入 `failed` 继续做能做的部分。
-- **评审离关键路径**：门禁绿的切片立即起 `code-reviewer`（不 await），不拖慢下一 wave；不重跑测试套件，只读 `gate-report.md` + `evidence.log`。
+- **评审离关键路径**：门禁绿的切片立即起 `code-reviewer`（不 await），不拖慢下一 wave；不重跑测试套件，只读 `gate-report.md` + `timeline.py report` 的门禁红次数与测量统计（来自账本）；Workflow 回退路径读 `evidence.log`。
 - **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行（`openspec-apply-change`）。
 - **回退路径语义一致**：Workflow 不可用时主会话用 `Agent` 工具按同一 wave 并行派发，收到的仍是同样的门禁 JSON；不因回退而降低纪律。
 

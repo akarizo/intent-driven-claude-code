@@ -1318,3 +1318,329 @@ def test_gate_pairing_ignores_marker(git_repo):
     # Then: 输出 JSON 的 failed 里没有以「G3」开头的项
     out = json.loads(p.stdout)
     assert not any(f.startswith("G3") for f in out["failed"]), out["failed"]
+
+# ---------------------------------------------------------------- flight-measure
+# 骨架：S1（measure）、S2（G5 账本判据） 实现后去掉 xfail 标记。
+
+
+from conftest import ledger_append  # noqa: E402
+
+KEEP_SRC = "KEEP = 1\n"
+TWO_TESTS = '''
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from src.mod import add
+
+
+def test_one():
+    # Given: 两个整数 1 与 2
+    a, b = 1, 2
+    # When: 调用 add
+    result = add(a, b)
+    # Then: 返回 3
+    assert result == 3
+
+
+def test_two():
+    # Given: 两个整数 2 与 2
+    a, b = 2, 2
+    # When: 调用 add
+    result = add(a, b)
+    # Then: 返回 4
+    assert result == 4
+'''
+T1, T2 = "tests/test_mod.py::test_one", "tests/test_mod.py::test_two"
+
+
+def _measure_ev(base, outcomes, changed=(), source=(), agent="a1"):
+    return {"v": 1, "ev": "measure", "change": "c", "at": "2026-10-10T10:00:00Z", "by": {"plugin": "flight", "session": "test"},
+            "attempt": 1, "slice": "S1", "agent": agent, "base": base, "commit": "e" * 40,
+            "outcomes": [list(o) for o in outcomes], "changed": list(changed), "source": list(source)}
+
+
+def _g5_repo(git_repo):
+    # 切片 S1 映射两个目标 T1、T2；已 start；src/mod.py 与两个测试都已实现并提交。返回 (change, base)。
+    change = git_repo / "openspec" / "changes" / "c"
+    data = plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="python3 -m pytest -q tests/test_mod.py",
+                        scenarios=["cap#one", "cap#two"])],
+                scenario_tests={"cap#one": T1, "cap#two": T2})
+    write_plan(change, data)
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    commit_all(git_repo, "artifacts")
+    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
+    assert p.returncode == 0, p.stderr
+    base = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
+    write(git_repo / "tests" / "test_mod.py", TWO_TESTS)
+    git(git_repo, "add", "src", "tests")
+    git(git_repo, "commit", "-q", "-m", "S1")
+    return change, base
+
+
+def _ledger_gate(change, repo, *extra):
+    return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--evidence", "ledger", *extra, cwd=repo).stdout)
+
+
+def _g5(out):
+    return [f for f in out["failed"] if f.startswith("G5")]
+
+
+def test_measure_reports_slice_outcomes(git_repo):
+    # Given: S1 映射 test_red（断言失败）、test_marked（仍带 strict xfail）、web/a.test.ts::case；相对 base 改了 tests/test_a.py（已提交）与 src/a.py（未提交）
+    change = git_repo / "openspec" / "changes" / "c"
+    red, marked, ts = "tests/test_a.py::test_red", "tests/test_a.py::test_marked", "web/a.test.ts::case"
+    write_plan(change, plan([slice_("S1", ["src/a.py", "tests/test_a.py"], scenarios=["cap#red", "cap#marked", "cap#ts"])],
+                            scenario_tests={"cap#red": red, "cap#marked": marked, "cap#ts": ts}))
+    write(git_repo / "src" / "keep.py", KEEP_SRC)
+    base = commit_all(git_repo, "artifacts")
+    write(git_repo / "tests" / "test_a.py", '''
+import pytest
+
+
+def test_red():
+    # Given: 尚未实现的行为
+    value = 1
+    # When: 检查是否等于 2
+    ok = value == 2
+    # Then: 断言失败
+    assert ok
+
+
+@pytest.mark.xfail(strict=True, reason="骨架")
+def test_marked():
+    # Given: 仍带骨架标记
+    value = 1
+    # When: 检查是否等于 2
+    ok = value == 2
+    # Then: 断言失败
+    assert ok
+''')
+    commit_all(git_repo, "tests")
+    write(git_repo / "src" / "a.py", "def f():\n    return 1\n")
+
+    # When: 运行 measure S1
+    p = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
+
+    # Then: 退出 0；outcomes 按 scenario 顺序为 FAILED、XFAIL；TS 目标不可测；changed 含两个文件，source 只有 src/a.py
+    assert p.returncode == 0, p.stdout + p.stderr
+    out = json.loads(p.stdout)
+    assert (out["slice"], out["base"], out["commit"]) == ("S1", base, git(git_repo, "rev-parse", "HEAD"))
+    assert out["outcomes"] == [[red, "FAILED"], [marked, "XFAIL"]], out["outcomes"]
+    assert out["unmeasurable"] == [ts]
+    assert {"src/a.py", "tests/test_a.py"} <= set(out["changed"]), out["changed"]
+    assert out["source"] == ["src/a.py"], out["source"]
+
+
+def test_measure_reports_strict_xpass(git_repo):
+    # Given: S1 唯一的目标用别名装饰器带 strict xfail，但测试体已能通过；切片已 start
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_a.py::test_x"
+    write_plan(change, plan([slice_("S1", ["tests/test_a.py"], scenarios=["cap#x"])], scenario_tests={"cap#x": target}))
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    commit_all(git_repo, "artifacts")
+    assert run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo).returncode == 0
+    write(git_repo / "tests" / "test_a.py", '''
+import pytest
+
+XF = pytest.mark.xfail(strict=True, reason="骨架")
+
+
+@XF
+def test_x():
+    # Given: 已能成立的断言
+    value = 2
+    # When: 检查是否等于 2
+    ok = value == 2
+    # Then: 断言成立
+    assert ok
+''')
+    git(git_repo, "add", "tests")
+    git(git_repo, "commit", "-q", "-m", "S1")
+
+    # When: 运行 measure，再运行 gate
+    m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), cwd=git_repo)
+    g = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: measure 记 XPASS；gate 的 G7 仍判它未通过
+    assert m.returncode == 0, m.stdout + m.stderr
+    assert json.loads(m.stdout)["outcomes"] == [[target, "XPASS"]]
+    assert any(f.startswith("G7") and "test_x" in f for f in g["failed"]), g["failed"]
+
+
+def test_g5_ledger_requires_red_per_target(git_repo):
+    # Given: 起点测量里 T1、T2 都是 XFAIL；之后一次测量 T1 为 FAILED、T2 仍 XFAIL、source 为空；两者现已实现并通过
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "XFAIL")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项点名 T2「从未在控制面测量中红过」，不点名 T1
+    assert out["ok"] is False
+    g5 = _g5(out)
+    assert any(T2 in f and "从未在控制面测量中红过" in f for f in g5), out["failed"]
+    assert not any(T1 in f for f in g5), g5
+
+
+def test_g5_ledger_requires_red_before_source(git_repo):
+    # Given: 起点测量里 T1、T2 都是 XFAIL；唯一一次见红时 source 已含 src/mod.py
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "FAILED")],
+                                             changed=["src/mod.py", "tests/test_mod.py"], source=["src/mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项含「每次见红时都已改动生产代码」
+    assert out["ok"] is False
+    assert any("每次见红时都已改动生产代码" in f for f in _g5(out)), out["failed"]
+
+
+def test_g5_ledger_exempts_targets_passing_at_start(git_repo):
+    # Given: 起点测量里 T1 已 PASSED、T2 为 XFAIL；之后一次测量 T2 为 FAILED、source 为空；两者现已通过
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: G5 无失败项、门禁绿；警告点名 T1「起点已通过」
+    assert _g5(out) == [], out["failed"]
+    assert out["ok"] is True, out["failed"]
+    assert any(T1 in w and "起点已通过" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_g5_ledger_needs_start_measure(git_repo):
+    # Given: 账本里只有 changed 非空的测量（T1、T2 为 FAILED、source 为空），没有起点测量
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项含「缺少本片起点测量」
+    assert out["ok"] is False
+    assert any("缺少本片起点测量" in f for f in _g5(out)), out["failed"]
+
+
+def test_g5_ledger_uses_measure_base(git_repo):
+    # Given: 起点测量与见红测量都记在 base B0；门禁 base 取另一个提交 B1（当前 HEAD）
+    change, b0 = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(b0, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(b0, [(T1, "FAILED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+    b1 = git(git_repo, "rev-parse", "HEAD")
+
+    # When: 分别只带 --base B1、带 --base B1 --measure-base B0 运行 gate
+    without = _ledger_gate(change, git_repo, "--base", b1)
+    with_mb = _ledger_gate(change, git_repo, "--base", b1, "--measure-base", b0)
+
+    # Then: 前者 G5 含「缺少本片起点测量」；后者 G5 无失败项
+    assert any("缺少本片起点测量" in f for f in _g5(without)), without["failed"]
+    assert _g5(with_mb) == [], with_mb["failed"]
+
+
+def test_start_tags_ledger_evidence(git_repo):
+    # Given: 一个没有 evidence.log 的切片 S1（scenario cap#adds → test_mod_adds）
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_mod.py::test_mod_adds"
+    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="python3 -m pytest -q tests/test_mod.py",
+                                    scenarios=["cap#adds"])], scenario_tests={"cap#adds": target}))
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    commit_all(git_repo, "artifacts")
+
+    # When: 以 --evidence ledger 起跑；实现并提交；写入满足 G5 的测量后以账本模式运行 gate
+    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
+    marker = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
+    base = json.loads(s.stdout)["base"]
+    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
+    write(git_repo / "tests" / "test_mod.py", GOOD_TEST)
+    git(git_repo, "add", "src", "tests")
+    git(git_repo, "commit", "-q", "-m", "S1")
+    ledger_append(git_repo, "c", _measure_ev(base, [(target, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(target, "FAILED")], changed=["tests/test_mod.py"]))
+    out = _ledger_gate(change, git_repo)
+
+    # Then: 标记含 evidence=ledger；gate 无 evidence.log 相关警告，hooks_missing 为 false
+    assert s.returncode == 0, s.stderr
+    assert marker.get("evidence") == "ledger", marker
+    assert not any("evidence.log" in w for w in out["warnings"]), out["warnings"]
+    assert out["hooks_missing"] is False
+
+# ---------------------------------------------------------------- flight-measure S9
+# S9 已实现：骨架标记已去。
+
+
+def test_measure_right_after_start_is_start_measure(git_repo):
+    # Given: 切片 S1 的工件已提交，以 --evidence ledger 起跑后工作树没有其他改动
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_mod.py::test_mod_adds"
+    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], scenarios=["cap#adds"])],
+                            scenario_tests={"cap#adds": target}))
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    commit_all(git_repo, "artifacts")
+    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
+    assert s.returncode == 0, s.stderr
+    base = json.loads(s.stdout)["base"]
+
+    # When: 立即 measure，把输出写成一条 measure 事件，再以账本模式运行 gate
+    m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
+    out = json.loads(m.stdout)
+    ledger_append(git_repo, "c", _measure_ev(base, out["outcomes"], changed=out["changed"], source=out["source"], agent="dispatch"))
+    g = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: changed 为空；G5 不报「缺少本片起点测量」
+    assert out["changed"] == [], out["changed"]
+    assert not any("缺少本片起点测量" in f for f in _g5(g)), g["failed"]
+
+# ---------------------------------------------------------------- PR #46 评审修复
+
+
+def test_measure_ignores_bytecode_and_disables_it(git_repo):
+    # Given: S1 的目标测试在 base 就存在、断言 pytest 进程关了字节码写入；起跑后工作树里有 Python 写出的未跟踪 __pycache__
+    change = git_repo / "openspec" / "changes" / "c"
+    target = "tests/test_env.py::test_no_bytecode"
+    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_env.py"], scenarios=["cap#env"])],
+                            scenario_tests={"cap#env": target}))
+    write(git_repo / "tests" / "test_env.py", '''
+import os
+
+
+def test_no_bytecode():
+    # Given: 测量启动的 pytest 进程
+    flag = os.environ.get("PYTHONDONTWRITEBYTECODE")
+    # When: 读取字节码开关
+    value = flag
+    # Then: 已关掉字节码写入
+    assert value == "1"
+''')
+    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
+    commit_all(git_repo, "artifacts")
+    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
+    base = json.loads(s.stdout)["base"]
+    write(git_repo / "src" / "__pycache__" / "mod.cpython-39.pyc", "x")
+    write(git_repo / "tests" / "__pycache__" / "test_env.cpython-39-pytest-8.4.2.pyc", "x")
+
+    # When: 运行 measure
+    out = json.loads(run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo,
+                              env={"PYTHONDONTWRITEBYTECODE": ""}).stdout)  # 外层先清空，测的是 hook 自己设的值
+
+    # Then: 目标通过（pytest 进程关了字节码写入）；changed 与 source 都不含字节码，为空
+    assert out["outcomes"] == [[target, "PASSED"]], out
+    assert out["changed"] == [] and out["source"] == [], out
+
+
+def test_gate_flags_committed_bytecode(git_repo):
+    # Given: 切片 S1 的提交里夹带了 src/__pycache__/mod.cpython-39.pyc（git add -f），owns 不含它
+    change = gate_repo(git_repo)
+    write(git_repo / "src" / "__pycache__" / "mod.cpython-39.pyc", "x")
+    git(git_repo, "add", "-f", "src/__pycache__/mod.cpython-39.pyc")
+    git(git_repo, "commit", "-q", "-m", "pyc")
+
+    # When: 运行 gate S1
+    out = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+
+    # Then: G6 点名这个已提交的字节码（只有未提交的副产物才被忽略）
+    assert any(f.startswith("G6") and "__pycache__" in f for f in out["failed"]), out["failed"]

@@ -3,6 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { ev } from '../hooks/core'
+import { EVENT_TYPES } from '../hooks/io'
 
 const MAIN = '/repo'
 const TREE = '/repo/.worktrees/demo'
@@ -52,6 +53,18 @@ type World = {
   dispatchFails?: boolean
   /** `git --version` 的输出（缺省 git version 2.43.0） */
   gitVersion?: string
+  /** slice-gate start 打印的 base：按切片 worktree 路径（缺省为 --base 参数，否则 base-<目录名>） */
+  bases?: Record<string, string>
+  /** slice-gate measure 的应答：按切片（缺省一个目标 XFAIL、changed 为空） */
+  measures?: Record<string, Run>
+  /** ledger.py events 的输出（缺省全部 EVENT_TYPES） */
+  eventTypes?: readonly string[]
+  /** ledger.py show 以 5 退出（账本读取失败） */
+  ledgerFails?: boolean
+  /** 环境变量（mock.env） */
+  env?: Record<string, string>
+  /** 预置的文件内容（绝对路径） */
+  files?: Record<string, string>
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -68,8 +81,16 @@ const SLICES = {
 /** 本 change 的工件（相对 change worktree 根）：change 目录下的 proposal、同一 openspec 根下的 ADR 草稿、scenario 测试文件 */
 const ARTIFACTS = [`${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'tests/test_s1.py']
 
+// 测试里 $.plugin.root 是插件真实目录（本测试文件的上一级）
+const PLUGIN_ROOT = String(import.meta.dir).replace(/\/tests$/, '')
+
 function res(exitCode: number, stdout: string, stderr = ''): Run {
   return { exitCode, stdout, stderr }
+}
+
+/** slice-gate measure 退出 0 时打印的 JSON */
+function measureJson(slice: string, base: string, outcomes: [string, string][], source: string[]): string {
+  return JSON.stringify({ slice, base, commit: 'c'.repeat(40), outcomes, unmeasurable: [], changed: source, source, tail: '1 passed' })
 }
 
 function wrap(r: Run) {
@@ -81,7 +102,11 @@ function demoWorld(extra: Partial<World> = {}): World {
 }
 
 function useWorld(on: On, w: World) {
-  const files: Record<string, string> = { [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES) }
+  const files: Record<string, string> = {
+    [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES),
+    [`${PLUGIN_ROOT}/.claude-plugin/plugin.json`]: JSON.stringify({ name: 'flight', version: '0.4.0' }),
+    ...(w.files ?? {}),
+  }
   const log = {
     events: [...(w.ledger ?? [])] as Record<string, unknown>[],
     spawns: [] as Spawn[],
@@ -95,14 +120,17 @@ function useWorld(on: On, w: World) {
     adds: [] as string[][],
     /** 到达插件之下工具执行端的调用：`<工具> <目标路径或命令>` */
     reached: [] as string[],
+    /** fs.exists / fs.read 问过的路径（Io.read 先问 exists，不存在就不再读） */
+    asked: [] as string[],
     files,
   }
-  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, `${TREE}/${CD}/slices.json`, ...(w.paths ?? [])])
+  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
   let agents = 0
   let conflicted = ''
   let pending: Record<string, unknown> | undefined
   mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) })
+  mock.env(on, w.env ?? {})
   on('session.version', () => ({ value: { version: '2.1.295' } }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.cwd', () => ({ value: TREE }))
@@ -142,9 +170,13 @@ function useWorld(on: On, w: World) {
       result: { status: 'async_launched', agentId, description: 'd', prompt: x.prompt, outputFile: '/dev/null' },
     } as never
   })
-  on('fs.exists', ($, e) => ({ value: exists.has(e.path) }))
+  on('fs.exists', ($, e) => {
+    log.asked.push(e.path)
+    return { value: exists.has(e.path) }
+  })
   // 与真实引擎一致：读不存在的文件抛错，原文 `$.fs.read(<path>) failed: ENOENT`
   on('fs.read', ($, e) => {
+    log.asked.push(e.path)
     if (!(e.path in files)) throw new Error(`$.fs.read(${e.path}) failed: ENOENT`)
     return { value: files[e.path] }
   })
@@ -165,6 +197,8 @@ function useWorld(on: On, w: World) {
       if (script === 'plan_fp.py') return wrap(w.fpRun ?? res(0, (w.fp ?? F) + '\n'))
       if (script === 'session-model.py') return wrap(res(0, 'opus\n'))
       if (script === 'timeline.py') return wrap(res(0, ''))
+      if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
+      if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, '[["S1", "S2"], ["S3"]]\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
@@ -172,6 +206,14 @@ function useWorld(on: On, w: World) {
         const queue = w.gates[s] ?? []
         const g = (queue.length > 1 ? queue.shift() : queue[0]) ?? { ok: true, failed: [] }
         return wrap(res(g.ok ? 0 : 1, JSON.stringify({ slice: s, ok: g.ok, commit: 'c'.repeat(40), failed: g.failed })))
+      }
+      if (script === 'slice-gate.py' && sub === 'start') {
+        const b = baseOf(argv) ?? w.bases?.[String(cwd)] ?? `base-${String(cwd).split('/').pop()}`
+        return wrap(res(0, JSON.stringify({ slice: argv[3], base: b, evidence: 'ledger' })))
+      }
+      if (script === 'slice-gate.py' && sub === 'measure') {
+        const s = String(argv[3])
+        return wrap(w.measures?.[s] ?? res(0, measureJson(s, baseOf(argv) ?? '', [[`tests/test_demo.py::test_${s.toLowerCase()}`, 'XFAIL']], [])))
       }
       if (script === 'slice-gate.py') return wrap(res(0, ''))
       throw new Error(`unexpected argv: ${argv.join(' ')}`)
@@ -243,6 +285,9 @@ function useWorld(on: On, w: World) {
       case 'add':
         log.adds.push(args.slice(args.indexOf('--') + 1))
         return wrap(res(0, ''))
+      case 'for-each-ref':
+        // 只有本次飞行的账本：demo 已在插件进程登记，扫描不会再读别的 change
+        return wrap(res(0, `refs/flight/demo/${'ledger'}\n`))
     }
     throw new Error(`unexpected git: ${args.join(' ')}`)
   })
@@ -276,7 +321,8 @@ test('opsx-apply-taken-over', async ($, on) => {
   // Then: 插件作答（含「起飞 demo」）、命令没到达模型；账本依次为 takeoff 与 S1、S2 的 dispatch；两次派发都是 flight:executor、opus、各自切片 worktree
   expect(r.text).toContain('起飞 demo')
   expect(log.commands).toEqual([])
-  expect(log.events.map(x => [x.ev, x.slice ?? null])).toEqual([['takeoff', null], ['dispatch', 'S1'], ['dispatch', 'S2']])
+  // 起点测量（flight-measure）另有用例覆盖，这里只看 takeoff 与 dispatch
+  expect(log.events.filter(x => x.ev !== 'measure').map(x => [x.ev, x.slice ?? null])).toEqual([['takeoff', null], ['dispatch', 'S1'], ['dispatch', 'S2']])
   expect(log.spawns.map(s => [s.subagent_type, s.model, s.cwd])).toEqual([
     ['flight:executor', 'opus', SLICE1],
     ['flight:executor', 'opus', SLICE2],
@@ -349,7 +395,7 @@ test('silent-end-runs-gate-and-respawns', async ($, on) => {
   await $.turn.complete(ended('agent-1') as never)
 
   // Then: 起飞后的账本依次追加 ended、gate（ok false）、S1 的 dispatch；新执行体在 S1 原 worktree 派发，提示词含「未正常收口」
-  expect(log.events.slice(3).map(x => [x.ev, x.ok ?? null])).toEqual([['ended', null], ['gate', false], ['dispatch', null]])
+  expect(log.events.filter(x => x.ev !== 'measure').slice(3).map(x => [x.ev, x.ok ?? null])).toEqual([['ended', null], ['gate', false], ['dispatch', null]])
   expect(log.spawns.at(-1)?.cwd).toBe(SLICE1)
   expect(log.spawns.at(-1)?.prompt).toContain('未正常收口')
 })
@@ -886,4 +932,154 @@ test('takeoff-refuses-old-git', async ($, on) => {
   expect(r.text).toContain('git ≥ 2.38')
   expect(r.text).toContain('2.37.1')
   expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-measure（S7）
+
+const B1 = '1'.repeat(40)
+const B2 = '2'.repeat(40)
+const R = '9'.repeat(40)
+const isMeasure = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'measure'
+const isGate = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'gate'
+const measureCall = (agentId: string) => ({ tool: 'mcp__flight__measure', agentId }) as never
+
+test('measure-tool-records-event', async ($, on) => {
+  // Given: demo 已起飞，S1 的 start 打印 base B1，agent-1 是 S1 的执行体（dispatch 带 base B1）；之后测量应答为目标 tests/test_demo.py::test_s1 FAILED、source 为空
+  const w = demoWorld({ bases: { [SLICE1]: B1 } })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.measures = { S1: res(0, measureJson('S1', B1, [['tests/test_demo.py::test_s1', 'FAILED']], [])) }
+  const runsBefore = log.runs.length
+  const eventsBefore = log.events.length
+
+  // When: agent-1 调用 mcp__flight__measure
+  const r = (await $.tool.call(measureCall('agent-1'))) as { result?: unknown }
+
+  // Then: 执行端收到 slice-gate measure S1 --change-dir <D> --base B1、cwd 为 S1 worktree；账本新增一条 agent-1、S1、base B1 的 measure；结果含该目标、FAILED 与「本次见红」
+  expect(log.runs.slice(runsBefore).filter(isMeasure).map(x => [x.argv.slice(2), x.cwd])).toEqual([[['measure', 'S1', '--change-dir', CD, '--base', B1], SLICE1]])
+  expect(log.events.slice(eventsBefore)).toEqual([expect.objectContaining({ ev: 'measure', agent: 'agent-1', slice: 'S1', base: B1 })])
+  expect(String(r.result)).toContain('tests/test_demo.py::test_s1')
+  expect(String(r.result)).toContain('FAILED')
+  expect(String(r.result)).toContain('本次见红')
+})
+
+test('measure-tool-only-for-flight-executors', async ($, on) => {
+  // Given: demo 已起飞；agent-1 收口门禁绿并结束，S1 合回后派发了 S1 的评审员；agent-x 不属于任何飞行
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+  await $.turn.complete(ended('agent-1') as never)
+  const reviewer = log.spawns.find(s => s.subagent_type === 'flight:reviewer')?.agentId ?? '没有评审员'
+  const runsBefore = log.runs.length
+  const eventsBefore = log.events.length
+
+  // When: 评审员与 agent-x 依次调用 mcp__flight__measure
+  const answers: unknown[] = []
+  for (const id of [reviewer, 'agent-x']) answers.push(await $.tool.call(measureCall(id)))
+
+  // Then: 两次都答 deny、理由含「只有本次飞行的执行体可以请求测量」；没有运行测量命令；账本没有新增 measure
+  const denied = { deny: expect.stringContaining('只有本次飞行的执行体可以请求测量') }
+  expect(answers).toEqual([denied, denied])
+  expect(log.runs.slice(runsBefore).filter(isMeasure)).toEqual([])
+  expect(log.events.slice(eventsBefore).filter(x => x.ev === 'measure')).toEqual([])
+})
+
+test('measure-tool-upgraded-for-executor', async ($, on) => {
+  // Given: demo 已起飞，agent-1 是 S1 的执行体；agent-1 收口门禁绿并结束后派发了 S1 的评审员；插件之下的引擎对 mcp__flight__measure 一律判 ask
+  const log = useWorld(on, demoWorld())
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+  await $.turn.complete(ended('agent-1') as never)
+  const reviewer = log.spawns.find(s => s.subagent_type === 'flight:reviewer')?.agentId ?? '没有评审员'
+
+  // When: 依次对 agent-1 与评审员的 mcp__flight__measure 调用做权限判定
+  const answers: { decision?: string }[] = []
+  for (const id of ['agent-1', reviewer]) answers.push((await $.tool.check({ tool: 'mcp__flight__measure', input: {}, agentId: id } as never)) as { decision?: string })
+
+  // Then: agent-1 改答 allow，评审员仍为 ask
+  expect(answers.map(a => a.decision)).toEqual(['allow', 'ask'])
+})
+
+test('fresh-dispatch-takes-start-measure', async ($, on) => {
+  // Given: demo 已批准；S1 的切片 worktree 新建、start 打印 base B1；S2 的测量应答为退出 1（error 为 pytest 运行超时）
+  const measures = { S2: res(1, JSON.stringify({ slice: 'S2', error: 'pytest 运行超时' })) }
+  const log = useWorld(on, demoWorld({ bases: { [SLICE1]: B1 }, measures }))
+
+  // When: 人发出 /opsx-apply demo，控制面派发 wave 1 的 S1 与 S2
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // Then: S1 的事件依次为 measure（agent dispatch、base B1）与 dispatch（agent-1、base B1）；S2 记 blocked（infra），理由含「起点测量失败」；没有在 S2 worktree 派发
+  expect(log.events.filter(x => x.slice === 'S1').map(x => [x.ev, x.agent, x.base])).toEqual([
+    ['measure', 'dispatch', B1],
+    ['dispatch', 'agent-1', B1],
+  ])
+  expect(log.events.find(x => x.ev === 'blocked' && x.slice === 'S2')).toMatchObject({ kind: 'infra', reason: expect.stringContaining('起点测量失败') })
+  expect(log.spawns.filter(s => s.cwd === SLICE2)).toEqual([])
+})
+
+test('gate-runs-with-ledger-evidence', async ($, on) => {
+  // Given: demo 已起飞，start 打印的 base：S1 worktree 为 B1、S2 worktree 为 B2、S2 解冲突 worktree 为 R；S2 合回时 a.py 冲突，S2 执行体收口并结束后派发了解冲突 agent
+  const log = useWorld(on, demoWorld({ bases: { [SLICE1]: B1, [SLICE2]: B2, [RESOLVE2]: R }, conflicts: { S2: ['a.py'] } }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.classic.SubagentStop(subagentStop('agent-2') as never)
+  await $.turn.complete(ended('agent-2') as never)
+  const resolver = log.spawns.at(-1)?.agentId ?? '没有解冲突 agent'
+
+  // When: S1 的执行体 agent-1 与解冲突 agent 依次收口
+  for (const id of ['agent-1', resolver]) await $.classic.SubagentStop(subagentStop(id) as never)
+
+  // Then: S1 的 start 参数含 --evidence ledger；S1 收口门禁参数含 --evidence ledger --base B1；解冲突收口门禁参数含 --evidence ledger --base R --measure-base B2
+  const gateAt = (cwd: string) => log.runs.find(x => isGate(x) && x.cwd === cwd)?.argv.join(' ') ?? ''
+  expect(log.runs.find(isStartS1)?.argv.join(' ')).toContain('--evidence ledger')
+  expect(gateAt(SLICE1)).toContain(`--evidence ledger --base ${B1}`)
+  expect(gateAt(RESOLVE2)).toContain(`--evidence ledger --base ${R} --measure-base ${B2}`)
+})
+
+// 测试里插件从仓库目录加载、不在缓存目录下，「已装 ≠ 已加载」的拒飞路径由 versions.test.ts 覆盖；这里只验证接线
+test('takeoff-checks-versions', async ($, on) => {
+  // Given: demo 已批准、其余起飞检查都过；CLAUDE_CONFIG_DIR 为 /cfg，/cfg 下没有 installed_plugins.json；两种 ledger.py events 输出：缺 measure、列出全部 EVENT_TYPES
+  const w = demoWorld({ env: { CLAUDE_CONFIG_DIR: '/cfg' } })
+  const log = useWorld(on, w)
+  const listings = [EVENT_TYPES.filter(x => x !== 'measure'), EVENT_TYPES]
+  const replies: string[] = []
+  const counts: number[] = []
+
+  // When: 依次以这两种输出各发一次 /opsx-apply demo
+  for (const types of listings) {
+    w.eventTypes = types
+    replies.push(String((await $.command.run({ command: 'opsx-apply', args: 'demo' })).text))
+    counts.push(log.events.length)
+  }
+
+  // Then: 第一次回复含「主检出」且账本无事件；第二次回复含「✈ 起飞」「插件 」「已安装版本未核对」；插件读取过 /cfg/plugins/installed_plugins.json；账本首条为 takeoff
+  expect(replies[0]).toContain('主检出')
+  expect(counts[0]).toBe(0)
+  expect(replies[1]).toContain('✈ 起飞')
+  expect(replies[1]).toContain('插件 ')
+  expect(replies[1]).toContain('已安装版本未核对')
+  expect(log.asked).toContain('/cfg/plugins/installed_plugins.json')
+  expect(log.events[0]?.ev).toBe('takeoff')
+})
+
+test('unknown-owner-fails-closed', async ($, on) => {
+  // Given: demo 已起飞（在飞）；之后 ledger.py show 以 5 退出（对 agent-7 的账本读取失败）；插件之下的引擎对 Bash 判 ask
+  const w = demoWorld({ checks: ['ask'] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  w.ledgerFails = true
+  const calls = [
+    { tool: 'Write', file_path: `${SLICE1}/src/s1.py`, content: 'x\n', agentId: 'agent-7' },
+    { tool: 'Bash', command: 'git status', agentId: 'agent-7' },
+  ]
+
+  // When: agent-7 依次调用 Write 与 Bash，再对它的 Bash 做权限判定
+  const answers: unknown[] = []
+  for (const c of calls) answers.push(await $.tool.call(c as never))
+  const check = (await $.tool.check({ tool: 'Bash', input: { command: 'git status' }, agentId: 'agent-7' } as never)) as { decision?: string }
+
+  // Then: Write 与 Bash 都答 deny、理由含「归属判定失败」，都没有到达执行端；tool.check 仍为 ask
+  const denied = { deny: expect.stringContaining('归属判定失败') }
+  expect(answers).toEqual([denied, denied])
+  expect(log.reached).toEqual([])
+  expect(check.decision).toBe('ask')
 })
