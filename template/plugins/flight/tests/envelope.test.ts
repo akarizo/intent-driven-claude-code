@@ -590,3 +590,40 @@ test('undeterminable-reason-neutral', () => {
   expect(v.map(d => d.includes('目录栈旋转'))).toEqual([true, true])
   expect(v.map(d => d.includes('相对路径且无绝对基准'))).toEqual([false, false])
 })
+
+// ---------------------------------------------------------------- spec flight-envelope-shell-words（flight-measure-strict S2）
+
+test('quoted-command-words-recognized', () => {
+  // Given: 执行体 worktree 为 W，主仓库为 /repo；九条用反斜杠 / 引号改写命令名或 git 词的危险命令，与 W 内（无 cd）参数含命令替换的 git commit -m "$(cat msg)"
+  const cmds = [
+    '\\git push',
+    "g''it push origin x",
+    'git "push"',
+    'git p\\ush',
+    '"git" -C /repo commit -m x',
+    'git commit "--amend"',
+    '\\env git push',
+    '\\cd /repo && git commit -m x',
+    "\\bash -c 'git push'",
+    'git commit -m "$(cat msg)"',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前九条都被拒；最后一条不被拒
+  expect(v.slice(0, 9).map(x => x !== undefined)).toEqual([true, true, true, true, true, true, true, true, true])
+  expect(v[9]).toBeUndefined()
+})
+
+test('expanded-command-word-undeterminable', () => {
+  // Given: 执行体 worktree 为 W；命令名为 $G、${GIT:-git}、$(which git)、`which git` 的四条 git push，子命令为 $SUB 的 git 调用，与 echo $HOME、git status
+  const cmds = ['$G push', '${GIT:-git} push', '$(which git) push', '`which git` push', 'git $SUB origin', 'echo $HOME', 'git status']
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前五条被拒且理由含「无法判定」；后两条不被拒
+  expect(v.slice(0, 5).map(x => (x?.deny ?? '').includes('无法判定'))).toEqual([true, true, true, true, true])
+  expect(v.slice(5)).toEqual([undefined, undefined])
+})

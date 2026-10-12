@@ -103,7 +103,7 @@ export function writeVerdict(who: Who, absPath: string): Deny | undefined {
   return { deny: `${name}只能写匹配 owns 的路径；越界：${rel}（owns：${who.owns.join('、')}）` }
 }
 
-type GitCall = { sub: string; args: string[]; globals: string[] }
+type GitCall = { sub: string; args: string[]; globals: string[]; opaque: boolean }
 
 /**
  * 按 `&&`、`||`、`;`、`|`、`&`、换行与 `(`、`)`、反引号切段（宁可多切：多出的段只会多拒，不会漏拒）。
@@ -156,9 +156,44 @@ function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: str
   return { toks: toks.slice(i), hasEnv: i > 0, envKeys, chdir }
 }
 
-/** 程序名（去引号后的 basename） */
+/**
+ * 单个词的 shell 去引号（D7）：单引号内原样；双引号内 `\` 只转义 `$`、反引号、`"`、`\`；引号外 `\x` → `x`；
+ * 不配对的引号按字面去掉（被分段切开的 `"$(cat msg)"` 会留下单独一个 `"`）。单引号外出现 `$` 或反引号 → null（无法判定）。
+ */
+function shellWord(t: string): string | null {
+  let out = ''
+  let q = ''
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]
+    if (q === "'") {
+      if (c === "'") q = ''
+      else out += c
+    } else if (c === '\\' && i + 1 < t.length && (q === '' || '$`"\\'.includes(t[i + 1]))) out += t[++i]
+    else if (c === '$' || c === '`') return null
+    else if (c === "'" && q === '') q = c
+    else if (c === '"') q = q === '"' ? '' : '"'
+    else out += c
+  }
+  return out
+}
+
+/** 程序名（shellWord 后的 basename；无法判定为空串） */
 function progName(toks: readonly string[]): string {
-  return (toks[0] ?? '').replace(/^["']|["']$/g, '').split('/').pop() ?? ''
+  return (shellWord(toks[0] ?? '') ?? '').split('/').pop() ?? ''
+}
+
+/**
+ * 反引号命令替换出现在命令名位置：某个起始反引号往前到上一个分隔符之间，剥掉 VAR=val 与前缀命令（含其选项）后没有别的词。
+ * 在 bashVerdict 切段之前判（切段后反引号已丢失）。
+ * ceiling: 不区分引号，双引号里的反引号（如 `"`x`"`）前面留下的 `"` 算作一个词而不判 -> 漏拒出现时换成 shell 词法分析。
+ */
+function backtickAsCommandName(command: string): boolean {
+  let open = true
+  for (let i = command.indexOf('`'); i >= 0; i = command.indexOf('`', i + 1)) {
+    if (open && words(command.slice(0, i).split(/&&|\|\||[;|&\n(]/).pop() ?? '').toks.length === 0) return true
+    open = !open
+  }
+  return false
 }
 
 /**
@@ -199,7 +234,7 @@ function resolveDir(base: string | null | undefined, p: string): string | null {
 
 /** `cd <路径>` 段返回其参数（未去引号）；不是 cd 段返回 undefined */
 function cdArg(toks: readonly string[]): string | undefined {
-  return toks[0] === 'cd' ? toks.slice(1).join(' ') : undefined
+  return shellWord(toks[0] ?? '') === 'cd' ? toks.slice(1).join(' ') : undefined
 }
 
 /**
@@ -249,21 +284,26 @@ function configKeys(globals: readonly string[]): string[] {
   return keys
 }
 
-/** 段内跳过前导 `VAR=val` 与 git 全局选项，取出子命令；不是 git 调用返回 undefined */
+/**
+ * 段内跳过前导 `VAR=val` 与 git 全局选项，取出子命令；不是 git 调用返回 undefined。
+ * 程序名、全局选项、子命令与 args 都先 shellWord（D7）；选项的参数保持原样交给 resolveDir / configKeys。
+ * 子命令或某个全局选项无法判定（含 `$` 或反引号）时 opaque 为真，sub 保留原词。
+ * ceiling: 参数里的展开不判（`git commit -m "$(cat msg)"` 放行）；引号内的分隔符照旧切段 -> 出现绕过时换成 shell 词法分析。
+ */
 function parseGit(segment: string): GitCall | undefined {
   const toks = words(segment).toks
-  let i = 0
-  const head = (toks[i] ?? '').replace(/^["']|["']$/g, '')
-  if (head !== 'git' && !head.endsWith('/git')) return undefined
-  i++
+  if (progName(toks) !== 'git') return undefined
+  let i = 1
   const globals: string[] = []
-  while (i < toks.length && toks[i].startsWith('-')) {
-    const t = toks[i++]
+  for (; i < toks.length; i++) {
+    const t = shellWord(toks[i])
+    if (t === null || !t.startsWith('-')) break
     globals.push(t)
-    if (GIT_OPTS_WITH_ARG.has(t) && i < toks.length) globals.push(toks[i++])
+    if (GIT_OPTS_WITH_ARG.has(t) && i + 1 < toks.length) globals.push(toks[++i])
   }
   if (i >= toks.length) return undefined
-  return { sub: toks[i], args: toks.slice(i + 1), globals }
+  const sub = shellWord(toks[i])
+  return { sub: sub ?? toks[i], args: toks.slice(i + 1).map(a => shellWord(a) ?? a), globals, opaque: sub === null }
 }
 
 /** 短选项簇（如 `-Df`）是否含某字母，或长选项（可缩写，`--` 之后至少 1 个字符）命中 */
@@ -289,6 +329,11 @@ function dangerOf(g: GitCall, extra: readonly string[]): string | undefined {
   return undefined
 }
 
+/** 命令名无法判定（D7）的拒绝理由 */
+function cmdNameDeny(name: string): string {
+  return `${name}的命令名无法判定（含 $ 或反引号等 shell 展开）：写成脚本文件再运行`
+}
+
 /** D1：把命令固定在 worktree 里运行；已有同一前缀时原样返回 */
 export function inWorktree(command: string, worktree: string): string {
   const prefix = `cd '${worktree.replace(/'/g, "'\\''")}' && `
@@ -304,6 +349,7 @@ export function bashVerdict(role: Role, command: string, worktree?: string, _mai
   if (command.includes('refs/flight/')) return { deny: `${name}不得触及 refs/flight/（账本与门禁结论只由 flight 插件写入）` }
   if (command.includes('<<')) return { deny: `${name}不得使用 heredoc（<<，会绕过写入包络）：改用 Write 工具写文件` }
   if (command.includes('/dev/stdin')) return { deny: `${name}不得让程序读标准输入（/dev/stdin 会挂起）：写成脚本文件再运行` }
+  if (backtickAsCommandName(command)) return { deny: cmdNameDeny(name) }
   return segmentsVerdict(role, command, worktree, { cwd: undefined })
 }
 
@@ -327,19 +373,21 @@ function segmentsVerdict(
     if (unknownOpt !== undefined) return { deny: `${name}的前缀选项 ${unknownOpt} 无法判定（不在 env / exec / command 的已知选项表里）：去掉该选项或写成脚本文件再运行` }
     const ownGitEnv = envKeys.filter(k => k.startsWith('GIT_'))
     const gitEnv = [...inheritedEnv, ...ownGitEnv]
-    if (toks[0] === 'cd' || toks[0] === 'pushd') {
+    const cmd = shellWord(toks[0] ?? '')
+    if (cmd === null) return { deny: cmdNameDeny(name) }
+    if (cmd === 'cd' || cmd === 'pushd') {
       const p = dirArg(toks.slice(1))
       state.cwd = p === null ? null : resolveDir(state.cwd, unquote(p))
       continue
     }
-    if (toks[0] === 'popd') {
+    if (cmd === 'popd') {
       state.cwd = null
       continue
     }
     if (toks.length === 0 && ownGitEnv.length > 0) return gitEnvDeny(ownGitEnv)
     const cwd = chdir === undefined ? state.cwd : resolveDir(state.cwd, unquote(chdir))
     // ceiling: 只认 export（不认 declare -x / typeset -x / set -a） -> 出现漏拒时补进来
-    const exported = toks[0] === 'export' ? toks.slice(1).filter(t => t.startsWith('GIT_')).map(t => t.split('=')[0]) : []
+    const exported = cmd === 'export' ? toks.slice(1).filter(t => t.startsWith('GIT_')).map(t => t.split('=')[0]) : []
     if (exported.length > 0) return gitEnvDeny(exported)
     if (readsStdin(toks)) return { deny: `${name}不得让解释器读标准输入（单独的 - 或 -s 会挂起）：写成脚本文件再运行` }
     const inner = innerCommand(toks)
@@ -352,6 +400,7 @@ function segmentsVerdict(
     }
     const g = parseGit(seg)
     if (!g) continue
+    if (g.opaque) return { deny: `${name}的 git 子命令或全局选项无法判定（含 $ 或反引号等 shell 展开）：写成脚本文件再运行` }
     const d = dangerOf(g, extra)
     if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员只读）` }
     if (READONLY_SUBS.has(g.sub)) continue
