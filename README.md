@@ -150,8 +150,7 @@ your-project/
 ├── .claude/
 │   ├── commands/       # 15 个 slash 命令（见下方）
 │   ├── skills/         # 16 个 skill + 1 个 legacy（见下方）
-│   ├── agents/         # 3 个 agent：slice-executor / integrator / code-reviewer（见下方）
-│   ├── workflows/      # opsx-apply.js：飞行流程的命名 Workflow 调度器
+│   ├── agents/         # 1 个 agent：code-reviewer（见下方；飞行角色由 flight 插件提供）
 │   ├── hooks/          # 分级门禁 intent-gate.py + 飞行门禁 slice-gate.py 等 + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
 │   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
@@ -208,18 +207,18 @@ your-project/
 
 ### 阶段 2 · 实现（飞行模式）
 
-`/opsx-apply <name>` 默认走**飞行模式**，零执行模式问询——tasks 阶段已把实现拆成 `slices.json` 里的切片（`owns` / `deps` / `verify` / `scenarios`），apply 只是把这份计划跑起来：
+`/opsx-apply <name>` 默认走**飞行模式**，零执行模式问询——tasks 阶段已把实现拆成 `slices.json` 里的切片（`owns` / `deps` / `verify` / `scenarios`），apply 只是把这份计划跑起来。飞行由 `flight@intent-driven` 插件的控制面执行，这是唯一实现：**插件缺席、未加载或版本不符即停飞**，没有第二条路径。
 
 ```
-slice-gate.py lint（校验 slices.json）→ 算 wave
-  → 起命名 Workflow（.claude/workflows/opsx-apply.js，useAgentTypes 按 wave 并行派 slice-executor）
-    Workflow 不可用（未开通 / disableWorkflows）→ 回退：主会话按同一 waves 用 Agent 工具并行派发，语义一致
-  同 wave 内每个切片：slice-executor 走 TDD 实现（只写 owns 内文件）→ 收尾跑 slice-gate.py gate
-    → 门禁红重试一次，仍红则该切片 blocked、其余切片照常推进
-    → 门禁绿的切片立即离路径起 code-reviewer（不阻塞下一 wave 开工）
-  全部 wave 完成 → 汇总 CRITICAL/HIGH 一次批量修复 → slice-gate.py final（全量测试 + 全部 scenario 转 pass）
-  → session-decompose.py 收口分解（各 agent 实际模型）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
-  → 转 /pr-ship
+人审 spec.html → 在批准带按「批准起飞」（插件把计划指纹写入账本）→ 人发 /opsx-apply <name>
+  → 插件起飞检查：takeoff-gate.py 比对账本批准指纹 / slice-gate.py lint · preflight / 版本核对 / 主模型判定
+  → 按 wave 派发 flight:executor（每片在自己的 worktree 里，只写 owns 内文件）
+    执行体写好测试、改生产代码前调用 measure 工具 → 控制面测量先红并写入账本
+    → 执行体收口时控制面跑切片门禁（slice-gate.py gate，G5 读账本）；红了把失败项交回执行体接着修，仍红则该切片 blocked
+    → 门禁绿的切片由控制面合回 change 分支
+  → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
+  → slice-gate.py final（全量测试 + 全部 scenario 转 pass）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
+  → 落地交 /pr-ship
 ```
 
 **机械门禁**（`slice-gate.py`，零 token 判定）：
@@ -239,32 +238,24 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 - **铁律**：没有先失败过的测试，就没有生产代码
 - **GWT 注释先于代码**：测试函数体首行是 `// Given:`（Python 用 `#`）、`When:`、`Then:` 三段中文注释，之后才是 setup / mock / 被测调用 / 断言
 - 一个测试只触发一个被测动作（When 块单一）
-- 测试由可信方运行并留痕，**不接受自述**：飞行中执行体调用 `measure` 工具，由控制面测量写入账本（G5 只认账本）；Workflow 回退路径由 hook 写 `evidence.log`；反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
-
-#### Workflow 前置条件
-
-飞行流程默认由 Claude Code 的**命名 Workflow**调度：
-
-- 需要**付费计划**；**Pro 计划要在 `/config` 里手动打开 Workflow**
-- 把 `slice-gate.py` 与项目测试命令加进 `.claude/settings.json` 的 allow 规则，否则每个切片起步都会被权限提示打断并行
-- Workflow 不可用（未开通 / `disableWorkflows`）时自动回退为主会话 `Agent` 并行派发，语义一致
+- 测试由可信方运行并留痕，**不接受自述**：飞行中执行体调用 `measure` 工具，由控制面测量写入账本（G5 只认账本）；`evidence.log` 是飞行外（主会话修复等）由 hook 写的留痕；反模式（mock 滥用、生产类塞测试方法、不懂依赖就 mock、不完整 mock、测试事后补救）在 `testing-anti-patterns.md` 列出
 
 #### 模型路由（按角色显式声明，铁律）
 
 | 角色 | 模型 | effort | 为什么 |
 | --- | --- | --- | --- |
-| slice-executor（实现 / 批量修复） | 会话主模型（`session-model.py` 判定） | high | 必须一次做对；实测 Sonnet 执行体 fix 子 agent 数 ≥ impl 数 |
-| code-reviewer（评审 / 复核） | 会话主模型（`session-model.py` 判定） | high | 门禁判完机械项，剩下全是难判断；离关键路径 |
-| integrator / final-gate | sonnet | low | 纯机械 |
-| 渲染 / 分解 / 时间线 | 零 token 脚本 | — | 不用模型 |
+| `flight:executor`（实现切片） | 会话主模型（`session-model.py` 判定） | high | 必须一次做对；实测 Sonnet 执行体 fix 子 agent 数 ≥ impl 数 |
+| `flight:reviewer`（切片评审） | 会话主模型（`session-model.py` 判定） | high | 门禁判完机械项，剩下全是难判断 |
+| `flight:fixer`（批量修复 / 解冲突） | 会话主模型（`session-model.py` 判定） | high | 修复同样必须一次做对 |
+| 起飞检查 · 门禁 · 合回 · final · 记账 | 不用模型 | — | 机械动作由插件代码执行，零 token |
 
-解析顺序自 Claude Code v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，env 只是默认值。`/opsx-apply` 把路由表以 `args.models` 显式传给工作流，脚本缺参即拒绝起飞；收口飞行记录打印各 agent 实际模型与路由表对账——2026-09-10 的自举 wave 3 就是因为回退路径没显式传 `model`，九个 agent 全落到了 Sonnet。
+解析顺序自 Claude Code v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，env 只是默认值。插件派发时显式带 `model`；收口从账本对账各角色实际模型并打印在飞行记录里，不符即阻断——2026-09-10 的自举 wave 3 就是因为派发时没显式传 `model`，九个 agent 全落到了 Sonnet。
 
-`<main>` 不靠模型自述：`/opsx-apply` 与 `/pr-ship` 跑 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出）。**判定不出不起飞**（需 `/opsx-apply <change> --model=<alias>` 显式指定）；收口 `session-decompose.py --expect-models` 机械对账各 agent 实际模型，不符即非 0，按 draft PR 处置。同日两次实测补充：起飞时模型自己宣告 `fable` 而主模型其实是 Opus；`/opsx-propose` 产出工件后未经人类批准就直冲 `/opsx-apply` 没有停——两处都是"自述式判定"的必然结果，故改为脚本判定。
+`<main>` 不靠模型自述：起飞检查与 `/pr-ship` 跑 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出）。**判定不出不起飞**（需 `/opsx-apply <change> --model=<alias>` 显式指定）。同日两次实测补充：起飞时模型自己宣告 `fable` 而主模型其实是 Opus；`/opsx-propose` 产出工件后未经人类批准就直冲 `/opsx-apply` 没有停——两处都是"自述式判定"的必然结果，故改为脚本判定。
 
-**两处人类审批不可省**：第一处是**起飞批准**——人审完 `spec.html` 后在 Claude Code 输入框上方的**批准带**按「批准起飞」，`flight@intent-driven` 插件把计划指纹写入账本 `refs/flight/<change>/ledger`；`.claude/hooks/takeoff-gate.py` 比对账本最新批准的指纹与当前计划指纹（PreToolUse hook 注册在 `Workflow|Agent|Task` 上拦未获批准的飞行派发——**它对 `Workflow` 工具是否触发尚未实测**，未触发时由 `/opsx-apply` step 0 的显式自检兜底，exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏），模型自证无效；第二处是 PR review。批准带依赖 `flight@intent-driven` 插件，`install.sh` 会项目级安装；手动安装：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
+**两处人类审批不可省**：第一处是**起飞批准**——人审完 `spec.html` 后在 Claude Code 输入框上方的**批准带**按「批准起飞」，`flight@intent-driven` 插件把计划指纹写入账本 `refs/flight/<change>/ledger`；插件起飞检查时以 `.claude/hooks/takeoff-gate.py` 比对账本最新批准的指纹与当前计划指纹（exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏，均不起飞），模型自证无效；第二处是 PR review。批准带依赖 `flight@intent-driven` 插件，`install.sh` 会项目级安装；手动安装：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
 
-**BREAKING（升级说明）**：起飞批准不再核验会话转录，改为账本指纹；已有项目升级后须装 flight 插件并在批准带重新批准一次，否则 `/opsx-apply` step 0 报「未批准」。
+**BREAKING（升级说明）**：起飞批准不再核验会话转录，改为账本指纹；已有项目升级后须装 flight 插件并在批准带重新批准一次，否则 `/opsx-apply` 起飞检查报「未批准」。
 
 迁移总图：[docs/flight-control-plane.html](docs/flight-control-plane.html)。
 
@@ -298,7 +289,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
-  → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；回退路径读 evidence.log）作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
+  → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；飞行外改动读 evidence.log）作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
   → 报告作为评论入库（签名必带）
   → 与用户逐条讨论修复 → 落地补丁到同 PR → 自动修复至多 2 轮增量复核（mode=follow-up，只审修复补丁）
 ```
@@ -316,7 +307,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | --- | --- |
 | Completeness | tasks checkbox 全勾 / 每个 requirement 都有实现 |
 | Correctness | requirement → 代码映射 / scenario 覆盖 |
-| **Test Discipline (TDD/BDD)** | 飞行模式：读 `gate-report.md` + `timeline.py report` 的测量统计（账本；Workflow 回退路径读 `evidence.log`），确认全部切片门禁绿、scenario 已从 xfail 转 pass，不重复抽查（门禁已按 G4/G5 挡过）；legacy `--gate=per-task` 走逐 task 守门分流（见「Legacy 模式」） |
+| **Test Discipline (TDD/BDD)** | 飞行模式：读 `gate-report.md` + `timeline.py report` 的测量统计（账本；飞行外改动读 `evidence.log`），确认全部切片门禁绿、scenario 已从 xfail 转 pass，不重复抽查（门禁已按 G4/G5 挡过）；legacy `--gate=per-task` 走逐 task 守门分流（见「Legacy 模式」） |
 | Coherence | design 决策被遵循 / 代码风格一致 |
 
 违反 TDD 纪律记 **CRITICAL**，阻止归档。
@@ -447,13 +438,14 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
-## 3 个 agent（`.claude/agents/`）
+## agent（`.claude/agents/` 与 flight 插件）
 
 | Agent | 职责 |
 | --- | --- |
-| `slice-executor` | 飞行模式的切片执行体：按切片包做 TDD 实现，只写 `owns` 内文件，收尾跑 `slice-gate.py gate` 并原样回传门禁 JSON。`model: inherit` · `maxTurns: 40` · `permissionMode: acceptEdits`。 |
-| `integrator` | 飞行模式的集成员：把并行切片的 commit 合回 change 分支、抽公开接口摘要、跑全量门禁、记 timeline 事件。低推理机械活，`model: sonnet`。 |
-| `code-reviewer` | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与 `evidence.log` 为准，**不重跑测试套件**，至多 1 次定向抽查。**多处共用**：飞行模式每切片门禁绿后的离路径评审、`/pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `code-reviewer`（`.claude/agents/`） | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与留痕摘要为准（飞行模式看账本测量统计，飞行外看 `evidence.log`），**不重跑测试套件**，至多 1 次定向抽查。用于 `/pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `flight:executor`（插件） | 飞行中的切片执行体：在自己的 worktree 里按切片包做 TDD，只写 `owns` 内文件，改生产代码前调用 `measure`；收口门禁由控制面运行。 |
+| `flight:reviewer`（插件） | 飞行中的切片评审员，只读。 |
+| `flight:fixer`（插件） | 飞行中的批量修复 / 解冲突，只能写全部 `owns` 的并集。 |
 
 ---
 
@@ -470,7 +462,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 7. **HTML 审批面板**：propose / continue 后自动出 `spec.html`（Mermaid + 按需原型 + 飞行计划区）；手动 `/spec-html`
 8. **落点收敛**：ADR 入 `openspec/adr/`，探索 / 头脑风暴设计稿入 `openspec/superpower/`，项目根仅 `.claude/` + `openspec/` + `CLAUDE.md`
 9. **CLAUDE.md 层级规范**：准入四问（静默失败才是不可替代辖区）/ 分流去向（CLAUDE.md·rules·skill·测试）/ 放置铁律（LCA）/ 头部三件套 / 字节预算（根 8KB·子 16KB·叶 6KB·单行 200B）—— 全文见 `.claude/claudemd-standard.md`（`/claudemd-commit`·`/claudemd-distill`·`claudemd-lint` 的硬约束基线）
-10. **仓库铁律**：10 条零容忍项（先意图后代码 / 规格即验收 / TDD 与留痕 / 独立评审 / 门禁红不收口 / Git 边界 / 两处审批 / 度量必打印 / 零 token 优先 / 回退必存在）
+10. **仓库铁律**：11 条零容忍项（先意图后代码 / 规格即验收 / TDD 与留痕 / 独立评审 / 门禁红不收口 / Git 边界 / 两处审批 / 度量必打印 / 零 token 优先 / 失效即停飞 / 模型显式路由）
 
 每行都是 load-bearing；不写解释、不展开——展开内容沉到对应 skill 或 `.claude/claudemd-standard.md`。
 
@@ -508,7 +500,7 @@ openspec schema validate intent-driven
 | 技能位置 | `.opencode/skills/` + `.agents/skills/` | `.claude/skills/`（合并后） |
 | 插件机制 | `opencode.json` 声明 superpowers | 不需要：Claude Code 用户自行装 [Superpowers](https://github.com/obra/superpowers) |
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
-| 飞行式 apply | 无 | 默认模式：`slices.json` 切片 + wave 并行 `slice-executor` + `slice-gate.py` 机械门禁 + 评审离路径；`--gate=per-task` 保留旧的逐 task 守门（`legacy/openspec-subagent-apply-change`）。**中文化自研，不依赖 obra/superpowers 插件** |
+| 飞行式 apply | 无 | 默认模式：`slices.json` 切片 + flight 插件按 wave 并行派 `flight:executor` + `slice-gate.py` 机械门禁 + `flight:reviewer` 评审；`--gate=per-task` 保留旧的逐 task 守门（`legacy/openspec-subagent-apply-change`）。**中文化自研，不依赖 obra/superpowers 插件** |
 | PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审（复用 `code-reviewer` agent） |
 | 知识维护 | 无 | `/claudemd-commit`（预算中性，加一减一）+ `/claudemd-distill`（定期重排）+ `claudemd-lint`（机械门禁：字节预算 / 悬空指针） |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
