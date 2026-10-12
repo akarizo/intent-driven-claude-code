@@ -1,5 +1,7 @@
 """flight 合回与收口过程（scenario: flight-integration#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -108,3 +110,14 @@ def test_resolve_branch_left():
     # When: 以 attempt 2 准备 S1 的解冲突现场
     # Then: 另建 flight-demo-S1-resolve-a2
     assert_ts_passed("merges-use-recorded-branch/resolve-branch-left")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_closeout_writes_ship_output():
+    # Given: ship 输出 ready false、blocking 1 条 HIGH、deferred 1 条 LOW、fix {ok, m1}，退出 1；另一世界输出 oops
+    # When: 执行落地收口；再以 slice fix-r1 调用 mergeFix
+    # Then: review-findings.json 四字段取自 JSON、apply-done note 为 blocked=0 blocking=1、verdict draft；另一世界 draft 且含「ship 输出无法解析」、未写文件；mergeFix 合并 flight/demo/fix-r1、信息 integrate: fix-r1
+    assert_ts_passed("closeout-writes-ship-output")

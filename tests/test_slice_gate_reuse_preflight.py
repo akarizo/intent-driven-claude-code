@@ -241,3 +241,14 @@ def test_preflight_reports_interrupted_baseline(git_repo):
     # Then: 退出码非 0，stderr 含「中断」与 baseline
     assert p.returncode != 0
     assert "中断" in p.stderr and "baseline" in p.stderr, p.stderr
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_final_reuses_fix_round_gate(git_repo):
+    # Given: 账本最后一条修复门禁是 slice fix-r1 的 gate，ok、commit F，F 之后只有记账改动
+    # When: 运行 slice-gate.py final --reuse-fix
+    # Then: 退出 0，warnings 含「复用修复门禁」与 F 的前 10 位，没有跑全量测试
+    pytest.fail("骨架：S1 写实断言")

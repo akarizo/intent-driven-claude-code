@@ -442,3 +442,30 @@ def test_ledger_entries_accept_host_origins():
     # When: 依次以 scheduled-trigger、不带来源、sdk 发出 /opsx-apply demo，再以 sdk 发出 /flight abort demo
     # Then: 前两次回复含「只接受人或宿主程序发出」与 scheduled-trigger / 未标明且无新事件；第三次含「✈ 起飞 demo」；第四次后账本有原因含「人工中止」的 halt
     assert_ts_passed("ledger-entries-accept-host-origins")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_ship_tool_main_session_only():
+    # Given: demo 已落地、PR 7 头与 HEAD 相符、ship 裁决 ready；另有在飞 change 的执行体 X
+    # When: X 与主会话各以 {change: demo, pr: 7} 调用 mcp__flight__ship
+    # Then: X 被拒（只接受主会话）；主会话 result 含 ready，demo 账本末条为 ship 事件
+    assert_ts_passed("ship-tool-main-session-only")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_fix_round_merges_by_slice():
+    # Given: demo 在飞，fix-r1 修复体收口门禁绿且已结束，分支 flight/demo/fix-r1
+    # When: drive 执行合回
+    # Then: 运行了 merge --no-ff flight/demo/fix-r1 -m integrate: fix-r1，账本末条 merge 的 slice 为 fix-r1、ok 为 true
+    assert_ts_passed("fix-round-merges-by-slice")
+
+
+@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
+def test_per_task_guidance_when_plugin_registers():
+    # Given: 两个世界：甲的 command.register 照常应答；乙对 opsx-apply 抛 refused
+    # When: 各自开始会话，再由人在终端发出 /opsx-apply demo --gate=per-task
+    # Then: 甲回复含「本项目没有 /opsx-apply 命令文件」与 legacy skill 路径、无账本事件、未透传；乙照旧透传
+    assert_ts_passed("per-task-guidance-when-plugin-registers")

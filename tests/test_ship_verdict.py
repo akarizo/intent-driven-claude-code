@@ -338,3 +338,38 @@ def test_final_fresh_ignores_interfaces_summary(git_repo):
 
     # Then: reasons 没有「过期」
     assert not any("过期" in r for r in reasons), reasons
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_ship_ignores_record_files(git_repo):
+    # Given: 两个仓库账本都有 takeoff、S1 ok merge、final ok 在 HEAD、whole 派发；甲 whole 无 finding 但文件写红，乙 whole 有 1 条 HIGH 但文件全绿
+    # When: 分别运行 slice-gate.py ship
+    # Then: 甲 ready、乙 draft 且 reasons 含「1 条 CRITICAL/HIGH 评审未闭环」；timeline.md 都未改动
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_ship_follows_latest_whole_round(git_repo):
+    # Given: 四份账本：fix-r1 后复核无 HIGH / 复核仍有 HIGH / fix-r1 后没有复核 / 只有 blocked review:whole
+    # When: 分别运行 ship
+    # Then: 依次 ready / draft（1 条 CRITICAL/HIGH）/ draft（第 1 轮修复未经复核）/ draft（全量评审未返回）
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_ship_checks_routing_and_review_freshness(git_repo):
+    # Given: 甲：ended 模型 claude-sonnet-5-5 而起飞主模型 opus；乙：whole 审过 X 之后有改源码的提交
+    # When: 分别运行 ship
+    # Then: 甲 draft 且 blocking 恰有 routing 的 HIGH（路由不符）；乙 draft 且含「全量评审过期」
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_judges_know_ship_event(git_repo):
+    # Given: timeline 有 10:00 的 approve、无 pr-open；账本有 takeoff 与 10:30 的 ship 事件
+    # When: 运行 ledger.py events / show、slice-gate.py features、timeline.py report
+    # Then: events 含 ship、show 打印 ship 事件；features 含 ship-ledger；report 含「批准 → PR 打开：30.0 min」
+    pytest.fail("骨架：S1 写实断言")

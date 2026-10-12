@@ -152,3 +152,30 @@ def test_summary_from_ledger():
     # When: 求 summaryLines(summarize(state))
     # Then: 首行含 demo、attempt 1、W1/2；S1 已合回、S2 门禁红 1、S3 待派；末行含修复与 final
     assert_ts_passed("summary-from-ledger")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_whole_review_before_landing():
+    # Given: waves [[S1]]；S1 已合回，切片评审 1 条 HIGH H1，fix 已合回；本 attempt final ok（c9）
+    # When: 求下一批动作；追加 whole 派发与无 finding 的 review 后再求；另取只追加 blocked review:whole 的账本求
+    # Then: 第一次恰为派发评审员（slice whole、mode whole、commit c9、prior [H1]）；后两次都恰为 land
+    assert_ts_passed("whole-review-before-landing")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_fix_rounds_capped_at_two():
+    # Given: 同上账本，whole 的 review 有 1 条 HIGH W1
+    # When: 依次追加 fix-r1 派发 / 绿门禁 / 结束、merge、final ok（c10）、whole-r1 派发与 HIGH W2、再补齐第 2 轮直到 whole-r2 的 HIGH W3
+    # Then: 依次为派发 fix-r1、合回 fix-r1、final、派发 whole-r1（followup、base c9、commit c10、prior [W1]）、派发 fix-r2；最后恰为 land；全程没有派发 slice fix 的修复体
+    assert_ts_passed("fix-rounds-capped-at-two")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_summary_shows_whole_review():
+    # Given: 三份账本：final 绿未派全量评审；whole 已派未提交；whole-r1 已提交 2 条（1 条 HIGH）
+    # When: 分别求 summaryLines(summarize(...)) 的末行
+    # Then: 依次含「全量评审 未开始」「全量评审 进行中」「全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）」
+    assert_ts_passed("summary-shows-whole-review")

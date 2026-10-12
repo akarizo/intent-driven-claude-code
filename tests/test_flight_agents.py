@@ -137,3 +137,14 @@ def test_prompt_forbids_fabricated_red():
     # When: 生成执行体提示词
     # Then: 含「护栏」「不得改坏生产代码」「照实收口」
     assert_ts_passed("prompt-forbids-fabricated-red")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
+def test_whole_and_followup_prompts():
+    # Given: change demo、判定器目录 /repo/hooks、prior 一条 HIGH a.ts:3；agents/reviewer.md
+    # When: 生成全量评审（b0..c9）与第 1 轮复核（c9..c10）提示词；读 reviewer.md 正文
+    # Then: 全量含 git diff b0 c9、a.ts:3、submit_findings、取 diff 失败、timeline.py report；复核含 git diff c9 c10、第 1 轮、照原级别；reviewer.md 含全量、复核、^1、取 diff 失败、HIGH；同名 TS 测试通过
+    pytest.fail("骨架：S3 写实断言")
