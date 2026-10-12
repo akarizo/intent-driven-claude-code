@@ -369,16 +369,17 @@ test('takeoff-refused-without-approval', async ($, on) => {
   expect(log.spawns).toEqual([])
 })
 
-test('engine-workflow-passes-through', async ($, on) => {
+test('engine-workflow-refused', async ($, on) => {
   // Given: 插件已加载，世界里 demo 已批准
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo --engine=workflow
   const r = await $.command.run({ command: 'opsx-apply', args: 'demo --engine=workflow' })
 
-  // Then: 命令原样到达模型并由它作答；账本没有事件
-  expect(log.commands).toEqual(['opsx-apply demo --engine=workflow'])
-  expect(r.text).toBe('from-model')
+  // Then: 插件作答含「旧 Workflow 引擎已删除」与 DRAFT-flight-single-implementation；命令没到达模型；账本没有事件
+  expect(r.text).toContain('旧 Workflow 引擎已删除')
+  expect(r.text).toContain('DRAFT-flight-single-implementation')
+  expect(log.commands).toEqual([])
   expect(log.events).toEqual([])
 })
 

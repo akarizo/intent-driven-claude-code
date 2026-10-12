@@ -18,7 +18,10 @@ type Ev = State['events'][number]
 // 与批准带（register.tsx）同一下限；register.tsx 未导出该常量，这里同值另立
 const VERSION_FLOOR = '2.1.295'
 const HIDDEN = ['flight:executor', 'flight:reviewer', 'flight:fixer']
-const PASS_THROUGH = ['--engine=workflow', '--gate=per-task']
+const PASS_THROUGH = ['--gate=per-task']
+/** 旧 Workflow 引擎已删除（design D8）：带这个参数直接作答，不交给模型、不写事件、不派发 */
+const RETIRED_ENGINE = '--engine=workflow'
+const RETIRED_ENGINE_TEXT = 'flight：旧 Workflow 引擎已删除（DRAFT-flight-single-implementation），飞行只由 flight 插件执行；去掉 --engine=workflow 再发 /opsx-apply <change>'
 const LIVE = ['pending', 'running', 'waiting']
 const GATE_TIMEOUT_MS = 600000
 /** 合回用 git merge-tree --write-tree，需要 git 2.38+ */
@@ -563,6 +566,7 @@ export function registerOrchestrator(on: On): void {
   // 起飞异常一律留在地面作答，不把命令交给模型；只有 PASS_THROUGH 参数才 next(e)
   on('command.run', { command: 'opsx-apply' }, async ($, e, next) => {
     const args = argsOf(e.args)
+    if (args.includes(RETIRED_ENGINE)) return { text: RETIRED_ENGINE_TEXT }
     if (args.some(a => PASS_THROUGH.includes(a))) return next(e)
     try {
       return { text: await takeoff($, args) }
