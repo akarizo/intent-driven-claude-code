@@ -68,6 +68,7 @@ EVENTS = {
                 "outcomes": (lambda x: isinstance(x, list) and all(_outcome(o) for o in x),
                              "不是 [目标, 结果] 数组（结果在 %s 之内）" % " / ".join(OUTCOMES)),
                 "changed": STRS, "source": STRS},
+    "ship": {"attempt": ATTEMPT, "pr": NONEMPTY, "verdict": _one_of("ready", "draft"), "commit": STR},
 }
 
 

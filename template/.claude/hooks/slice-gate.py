@@ -53,7 +53,7 @@ TIMELINE = "timeline.md"
 BASELINE = "gate-baseline.json"
 # 判定器声明的能力（features 子命令逐行打印）。
 # 以后判定器新增插件依赖的能力时在这里追加；插件 versions.ts 的 REQUIRED_FEATURES 与之对应。
-FEATURES = ("evidence-ledger-only", "g5-per-target", "guards")
+FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger")
 # verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
 VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -1087,13 +1087,13 @@ def cmd_record(args):
 
 def _reusable_fix_gate(root, change_dir):
     """返回 (可复用的 fix gate commit | None, 读账本失败原因 | None)。
-    取证只认账本：最后一条 ev=gate 且 slice=fix 的事件，ok 为 true、commit 非空，且其后只有记账改动。"""
+    取证只认账本：slice 为 fix 或 fix-r<k>（修复轮）的 ev=gate 事件里的最后一条，ok 为 true、commit 非空，且其后只有记账改动。"""
     import ledger  # 同目录模块（与 takeoff-gate.py 同法）；惰性导入，不带 --reuse-fix 时不依赖它
     try:
         events = ledger.read_events(change_dir)
     except (ledger.LedgerInvalid, ledger.LedgerUnreadable, OSError) as e:
         return None, "final --reuse-fix：读账本失败（%s），照常跑全量" % e
-    fixes = [e for e in events if e.get("ev") == "gate" and e.get("slice") == "fix"]
+    fixes = [e for e in events if e.get("ev") == "gate" and _is_fix_slice(e.get("slice"))]
     if not fixes:
         return None, None
     last = fixes[-1]
@@ -1283,20 +1283,6 @@ def cmd_preflight(args):
     print(json.dumps(waves, ensure_ascii=False))
 
 
-def report_latest(change_dir):
-    """gate-report.md 按切片取最后一行：{slice: {"ok": bool, "commit": 10位, "failed": str}}。"""
-    path = os.path.join(change_dir, REPORT)
-    latest = {}
-    if not os.path.isfile(path):
-        return latest
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            cols = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cols) >= 5 and cols[2] in ("ok", "red"):
-                latest[cols[1]] = {"ok": cols[2] == "ok", "commit": cols[3], "failed": cols[4]}
-    return latest
-
-
 BOOKKEEPING = ("timeline.md", "gate-report.md", "evidence.log", "review-findings.json", "tasks.md",
                "slices/_interfaces.md")
 
@@ -1321,40 +1307,134 @@ def _final_fresh(root, change_dir, final_commit):
     return all(bookkeeping(n) for n in names if n)
 
 
-def cmd_ship(args):
-    """draft / ready 裁决：只读 gate-report.md、HEAD、review-findings.json；工作流的 blocked 只作说明。"""
-    root = toplevel()
-    head = git(root, "rev-parse", "HEAD")
+FIX_ROUND_RE = re.compile(r"^fix-r\d+$")
+WHOLE_ROUND_RE = re.compile(r"^whole(?:-r(\d+))?$")
+BLOCKING_SEVERITIES = ("CRITICAL", "HIGH")
+
+
+def _is_fix_slice(s):
+    """修复门禁 / 合回的 slice：切片级修复 fix，或修复轮 fix-r<k>。"""
+    return s == "fix" or (isinstance(s, str) and FIX_ROUND_RE.match(s) is not None)
+
+
+def _whole_round(s):
+    """全量评审轮序号：whole → 0，whole-r<k> → k；不是全量评审轮 → None。"""
+    m = WHOLE_ROUND_RE.match(s) if isinstance(s, str) else None
+    return None if m is None else int(m.group(1) or 0)
+
+
+def _findings(reviews):
+    return [f for r in reviews for f in (r.get("findings") or [])]
+
+
+def routing_findings(events):
+    """路由对账，与 core.ts 的 routingFindings 一致：每条 ended 的实际模型须包含该 attempt 起飞时的主模型（不区分大小写）。"""
+    takeoffs = [e for e in events if e.get("ev") == "takeoff"]
+    out = []
+    for e in events:
+        if e.get("ev") != "ended":
+            continue
+        same = [t for t in takeoffs if t.get("attempt") == e.get("attempt")]
+        src = same[-1] if same else (takeoffs[-1] if takeoffs else e)
+        expected = src.get("model") if isinstance(src.get("model"), str) else ""
+        actual = e.get("model") if isinstance(e.get("model"), str) else None
+        if actual and expected and expected.lower() in actual.lower():
+            continue
+        agent = e.get("agent") if isinstance(e.get("agent"), str) else ""
+        ds = [d for d in events if d.get("ev") == "dispatch" and d.get("agent") == agent]
+        role = ds[-1].get("role") if ds else "unknown"
+        out.append({"severity": "HIGH", "file": "routing", "line": 0,
+                    "summary": "路由不符：%s（agent %s）期望 %s，实际 %s" % (role, agent, expected, actual or "缺失"),
+                    "fix": "按角色路由用 %s 重跑该角色，或人工核对该 agent 的实际模型" % expected})
+    return out
+
+
+def ship_verdict(root, change_dir, data, events, head):
+    """ship 判据（design D3），只看账本事件、计划与 git。返回 (reasons, 其余输出字段 dict)。"""
     reasons = []
-    findings = {}
-    fpath = os.path.join(args.change_dir, "review-findings.json")
-    if os.path.isfile(fpath):
-        with open(fpath, "r", encoding="utf-8") as f:
-            findings = json.load(f) or {}
-    plan_path = os.path.join(args.change_dir, "slices.json")
-    if os.path.isfile(plan_path):
-        data = load_plan(args.change_dir)
-        latest = report_latest(args.change_dir)
-        for s in data.get("slices") or []:
-            row = latest.get(s["id"])
-            if row is None:
-                reasons.append("切片 %s 无门禁记录" % s["id"])
-            elif not row["ok"]:
-                reasons.append("切片 %s 门禁红：%s" % (s["id"], row["failed"]))
-        final = latest.get("final")
-        if final is None:
-            reasons.append("final 未运行")
-        elif not final["ok"]:
-            reasons.append("final 红：%s" % final["failed"])
-        elif final["commit"] != head[:10] and not _final_fresh(root, args.change_dir, final["commit"]):
-            reasons.append("final 过期：记录 %s，HEAD %s" % (final["commit"], head[:10]))
-    # 铁律 4：CRITICAL/HIGH 未闭环不得非 draft —— 与是否飞行模式无关，无条件检查
-    blocking = findings.get("blocking") or []
+    of = lambda ev: [e for e in events if e.get("ev") == ev]  # noqa: E731
+    takeoffs = of("takeoff")
+    if not takeoffs:
+        reasons.append("账本没有起飞记录")
+    a = takeoffs[-1].get("attempt") if takeoffs else None
+    pos = [(i, e) for i, e in enumerate(events) if a is not None and e.get("attempt") == a]  # 本 attempt，带写入序
+    of_a = lambda ev: [e for _, e in pos if e.get("ev") == ev]  # noqa: E731
+
+    def fresh(c):
+        return isinstance(c, str) and c != "" and (c == head or _final_fresh(root, change_dir, c))
+
+    merged = {e.get("slice") for e in of("merge") if e.get("ok") is True}
+    for s in data.get("slices") or []:
+        if s["id"] not in merged:
+            reasons.append("切片 %s 未合回" % s["id"])
+    finals = of_a("final")
+    if not finals:
+        reasons.append("final 未运行")
+    elif finals[-1].get("ok") is not True:
+        reasons.append("final 红：%s" % "; ".join(finals[-1].get("failed") or []))
+    elif not fresh(finals[-1].get("commit")):
+        reasons.append("final 过期：记录 %s，HEAD %s" % ((finals[-1].get("commit") or "")[:10], head[:10]))
+    for i, b in pos:
+        sl = b.get("slice")
+        if b.get("ev") != "blocked" or not str(sl).startswith("review:") or _whole_round(sl[7:]) is None:
+            continue
+        returned = any(e.get("ev") == "review" and e.get("slice") == sl[7:] for j, e in pos if j > i)
+        why = "全量评审未返回：%s" % sl[7:]
+        if not returned and why not in reasons:
+            reasons.append(why)
+    wholes = [e for e in of_a("review") if _whole_round(e.get("slice")) is not None]
+    rounds = {_whole_round(e.get("slice")) for e in wholes}
+    for m in of_a("merge"):
+        sl = m.get("slice")
+        if m.get("ok") is True and isinstance(sl, str) and FIX_ROUND_RE.match(sl):
+            j = int(sl[len("fix-r"):])
+            why = "第 %d 轮修复未经复核" % j
+            if j not in rounds and why not in reasons:
+                reasons.append(why)
+    review = None
+    if wholes:
+        k = max(rounds)
+        latest = [e for e in wholes if _whole_round(e.get("slice")) == k][-1]
+        ds = [d for d in of("dispatch") if d.get("agent") == latest.get("agent")]
+        commit = ds[-1].get("commit") if ds else None
+        if not fresh(commit):
+            reasons.append("全量评审过期：评审之后有代码提交")
+        review = {"slice": latest.get("slice"), "agent": latest.get("agent"),
+                  "commit": commit if isinstance(commit, str) else ""}
+        picked = _findings([latest])
+    else:  # 旧账本：没有全量评审，取全部切片评审
+        picked = _findings([e for e in of("review") if _whole_round(e.get("slice")) is None])
+    blocking = [f for f in picked if f.get("severity") in BLOCKING_SEVERITIES] + routing_findings(events)
     if blocking:
         reasons.append("%d 条 CRITICAL/HIGH 评审未闭环" % len(blocking))
-    blocked = findings.get("blocked") or []
-    result = {"ready": not reasons, "commit": head, "reasons": reasons, "blocked": blocked}
-    timeline_record(args.change_dir, "ship", "ready" if result["ready"] else "draft: " + "; ".join(reasons))
+    fixes = [e for e in of("merge") if _is_fix_slice(e.get("slice"))]
+    return reasons, {
+        "blocked": [{"slice": b.get("slice"), "kind": b.get("kind"), "reason": b.get("reason")} for b in of_a("blocked")],
+        "blocking": blocking,
+        "deferred": [f for f in _findings(of("review")) if f.get("severity") not in BLOCKING_SEVERITIES],
+        "fix": {"ok": fixes[-1].get("ok") is True, "commit": fixes[-1].get("commit")} if fixes else None,
+        "review": review,
+    }
+
+
+def cmd_ship(args):
+    """draft / ready 裁决：只读账本、slices.json 与 git（design D3）；纯判定，不写任何文件。"""
+    root = toplevel()
+    head = git(root, "rev-parse", "HEAD")
+    rest = {"blocked": [], "blocking": [], "deferred": [], "fix": None, "review": None}
+    if not os.path.isfile(os.path.join(args.change_dir, "slices.json")):
+        reasons = ["没有 slices.json：不是飞行 change"]
+    else:
+        data = load_plan(args.change_dir)
+        import ledger  # 同目录模块（与 cmd_gate 同法）
+        try:
+            events = ledger.read_events(args.change_dir)
+        except (ledger.LedgerInvalid, ledger.LedgerUnreadable, OSError) as e:
+            reasons = ["账本读取失败：%s" % e]
+        else:
+            reasons, rest = ship_verdict(root, args.change_dir, data, events, head)
+    result = dict({"ready": not reasons, "commit": head, "reasons": reasons}, **rest)
+    blocked = result["blocked"]
     if args.markdown:
         parts = []
         if reasons:
@@ -1405,7 +1485,7 @@ def main():
     p.add_argument("--red", action="store_true")
     p.add_argument("--failed")
     p.add_argument("--warnings")
-    p = sub.add_parser("ship", help="draft / ready 裁决：读 gate-report.md + HEAD + review-findings.json；退出码 0 ready / 1 draft")
+    p = sub.add_parser("ship", help="draft / ready 裁决：只读账本、slices.json 与 git，打印 JSON；退出码 0 ready / 1 draft")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--markdown", action="store_true", help="打印可贴入 PR 正文的段落而不是 JSON")
     args = ap.parse_args()

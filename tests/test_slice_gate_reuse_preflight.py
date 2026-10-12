@@ -246,9 +246,18 @@ def test_preflight_reports_interrupted_baseline(git_repo):
 # 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
 def test_final_reuses_fix_round_gate(git_repo):
-    # Given: 账本最后一条修复门禁是 slice fix-r1 的 gate，ok、commit F，F 之后只有记账改动
+    # Given: 账本最后一条修复门禁是 slice fix-r1 的 gate，ok、commit F，F 之后只有记账改动；gate.test 运行时写 ran-g2
+    change = _repo(git_repo)
+    f = git(git_repo, "rev-parse", "HEAD")
+    _fix_gate(git_repo, f, extra={"slice": "fix-r1"})
+    _bookkeeping(git_repo, change)
+
     # When: 运行 slice-gate.py final --reuse-fix
-    # Then: 退出 0，warnings 含「复用修复门禁」与 F 的前 10 位，没有跑全量测试
-    pytest.fail("骨架：S1 写实断言")
+    p = _final_reuse(git_repo, change)
+
+    # Then: 退出 0，warnings 含「复用修复门禁」与 F 的前 10 位，没有跑全量测试（ran-g2 不存在）
+    out = json.loads(p.stdout)
+    assert p.returncode == 0, out
+    assert any("复用修复门禁" in w and f[:10] in w for w in out["warnings"]), out["warnings"]
+    assert not (git_repo / "ran-g2").exists()
