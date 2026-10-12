@@ -62,3 +62,42 @@ export function readUpgradable(tool: string, input: unknown, worktree: string, m
 export function mainSessionVerdict(active: readonly ActiveTree[], tool: string, input: unknown): Deny | undefined {
 export function spawnVerdict(x: { subagentType: string; originPlugin: string | undefined; model: string | undefined; parentInFlight: boolean }): Deny | undefined {
 ```
+
+## S4
+
+### template/.claude/hooks/spec_html.py
+```
+def now_iso(now_arg):
+def read_text(path):
+def esc(s):
+def inline_md(text):
+def split_sections(text, level="##"):
+def paragraphs(text):
+def list_items(text):
+def substitute_block(html_text, name, content):
+def render_why(proposal_text):
+def render_what(proposal_text):
+def render_capabilities(proposal_text):
+def render_scenario(name, body):
+def render_requirement(heading, body):
+def render_specs(change_dir):
+def extract_diagrams(design_text):
+def render_diagrams(design_text):
+def strip_mermaid(text):
+def render_generic_md(text):
+def render_design(design_text):
+def project_root(change_dir):
+def scan_adrs(change_dir):
+def render_tasks(tasks_text):
+def compute_waves(slices):
+def find_def_line(lines, func):
+def decorator_source(source, func):
+def scenario_flight_status(root, rel, func):
+def gate_report_passed_slices(change_dir):
+def load_timeline_rows(change_dir):
+def render_flight(change_dir):
+def compute_meta_chips(change_dir, change_name):
+def render_footer(now, section_count, diagram_count, task_count):
+def render(change_dir, template_path, out_path, now_arg):
+def main():
+```
