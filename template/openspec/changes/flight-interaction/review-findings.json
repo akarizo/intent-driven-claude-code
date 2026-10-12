@@ -1,0 +1,91 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/versions.test.ts",
+      "line": 131,
+      "summary": "新用例 takeoff-refuses-stale-judges 只靠 argv[2]==='features' 和目录前缀分派应答，没有断言实际调用的是 python3 <hooksDir>/slice-gate.py features，也没有断言它排在 ledger.py events 之后。judges-must-know-events 又把 features 调用从 calls 里过滤掉了，所以 spec 要求的「在 ledger.py events 之后运行 slice-gate.py features」这一调用顺序和脚本名，现在没有任何测试锁住；实现里如果误写成别的脚本名，例如 ledger.py features，测试仍然全绿。",
+      "fix": "在新用例里记录全部 argv，并断言 /j3 的调用序列为 [['python3','/j3/ledger.py','events'],['python3','/j3/slice-gate.py','features']]；或者在 judges-must-know-events 里把 features 调用也记入 calls，并断言第一种应答的调用序列包含这两条，且顺序正确。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 1540,
+      "summary": "切片包要求 FEATURES 按 evidence-ledger-only / g5-per-target / guards 顺序、每行一项；测试只用 split() 后逐项检查是否存在，既没测顺序，也没测「每行一项」（不能区分按空格分隔还是按行分隔），也没测有没有多出的项。实现本身符合要求，只是断言比规格宽。",
+      "fix": "可选：改成 assert p.stdout.splitlines() == [\"evidence-ledger-only\", \"g5-per-target\", \"guards\"]；如果有意只查是否包含，以便以后追加能力，就保持现状，在最后一行申报说明。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/abort.test.ts",
+      "line": 16,
+      "summary": "fakes() 的 haltOk 参数从未被传 false，规格 Requirement 里明确要求的「停飞写入失败时不停任何 agent 并如实回复」分支（abort.ts:18）以及「没有在飞的 agent」分支（abort.ts:27）都没有测试覆盖；haltOk 成了用不到的参数。两个 scenario 本身没有点名这两条，所以不阻断。",
+      "fix": "在 abort-halts-then-stops-live-agents 里追加断言（或另加一个非 scenario 的辅助用例）：fakes(['a2'], {}, false) 时回复含「记停飞失败，未停任何 agent」，且 calls 只等于 ['halt:人工中止（/flight abort）']；fakes([]) 时回复含「没有在飞的 agent」。如果不打算覆盖，就把 haltOk 参数删掉。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 325,
+      "summary": "fix 字段先判本 attempt 有没有修复体 dispatch，再判合回，导致和 next() 口径不一致：attempt 1 已合回 fix、之后 final 红停飞，续飞到 attempt 2 时本 attempt 没有 fixer dispatch，又有 CRITICAL/HIGH，就会一直显示「修复 未派」。可 next() 用跨 attempt 的 fixed 判定，永远不会再派修复体，面板因此长期给出错误的待办信号。这样写贴合切片包字面（「本 attempt 有修复体 dispatch 且 merge」），但违反 design D2「合回与评审跨 attempt 计入（与 next 口径一致）」。",
+      "fix": "把合回判定提到最前：`const fix = mergedOk(FIX) ? '已合回' : fixers.length ? '进行中' : reviewFindings(state).some(f => BLOCKING.includes(f.severity)) ? '未派' : '无需'`。再补一条 TS 用例：attempt 1 合回 fix、attempt 2 起飞，断言末行是「修复 已合回」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 314,
+      "summary": "两种阻断态没有体现在归约里：(1) 评审员未返回时，next() 记 blocked slice=`review:<S>`，并把这一片当作已评审继续往下走，summarize 却因为本 attempt 有 reviewer dispatch、没有 review 事件，一直显示「评审 进行中」，不会报出评审失败；(2) 修复体被阻断（blocked slice=`fix`）时也显示「修复 进行中」。结果是 /flight status 与面板在评审、修复已失败时仍说进行中，掩盖了需要人工介入的状态。",
+      "fix": "review：在判「进行中」之前先查 `ofA('blocked').some(e => e.slice === `review:${id}`)`，命中就写「阻断（未返回）」之类的文案。fix：在判「进行中」之前先查 `blockedNow(FIX)`，命中就写「阻断（<kind>）」。如果要求严格贴合切片包文案，先在 design D2 补上这两种状态，再改代码与 SliceRow / FlightSummary 的注释。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 456,
+      "summary": "summarize 分支很多（measured 的先红 / 未先红、fix 的已合回 / 进行中 / 无需、final 的绿 / 红、end 的已落地 / 已停飞、phase 的阻断 / 执行中、wave 全部完成时等于 waves 数），唯一的用例 summary-from-ledger 只走了其中一条路径，其余文案与口径都没有回归保护。",
+      "fix": "在 core.test.ts 补 1 到 2 个用例：一个覆盖 measure（source 为空且含 FAILED 写「先红」，source 非空写「未先红」）、blocked、fix 合回、final 红、halt；另一个覆盖全部合回后 land（W2/2、已落地（ready））。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_interaction_docs.py",
+      "line": 47,
+      "summary": "test_apply_skill_natural_language_trigger 的断言偏弱：「/opsx-apply <name>」在改动前就已出现在停飞段的安装指引行，所以真正被验证的只有「自然语言」这一个词。即使没写「本轮未发 /opsx-apply 时不按插件缺席处理」这层区分，测试也能通过。",
+      "fix": "补一条断言，要求停飞段同时出现「本轮没有 `/opsx-apply`」与「不按插件缺席处理」，并且这条位于安装指引（「/reload-plugins」）之前，这样才能真正锁住 D6 要求的区分措辞。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 622,
+      "summary": "abortCommand 停飞后又调用了 showStatus。halt 分支（landing.tsx:174 `ctx.status(undefined)`）刚把状态行清掉，showStatus 又写回「✈ demo · W1/2 · 运行 2 · 阻断 0」。driveNow 遇到已停飞的 attempt 会直接返回、不再刷新（orchestrator.tsx 约 :379），所以这行「仍在运行」的状态会一直留着。被 TaskStop 停掉的 agent 在 ended 事件到来之前也照样计入「运行」。用户在 /flight abort 之后看到的状态是错的。",
+      "fix": "abort 之后只刷新面板 atom，不要再设状态行：把 showStatus 拆成 setStatusLine 与 refreshPanel，abortCommand 只调用 refreshPanel（`void update($, panel, () => ({ change: f.change, lines: summaryLines(summarize(reduce(after.events))) }))`）。另一种改法：showStatus 发现本 attempt 已有 land / halt 时调用 `$.ui.status(undefined)`，不写进度。再在 flight-abort-stops-agents 里补一条断言：abort 之后最后一次状态行为空，或不含「运行」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 592,
+      "summary": "（需进一步确认）/flight abort 没有走 drive 的串行队列（`queue`，约 :410）。driveNow 可能已经读到停飞前的账本、正在执行 dispatch（spawn 之后再追加 dispatch），这时 abort 写入 halt，live() 又按 abort 开始时的 state 计算，于是这个新派出的 agent 不在停止列表里，停飞后的 attempt 还会多出一条 dispatch。这与 spec「停飞后没有新的 dispatch」相违。现有测试是顺序调用，覆盖不到这种交错。",
+      "fix": "把 abortFlight 的调用放进同一个串行队列，例如 `const run = queue.then(() => abortFlightBody(), () => abortFlightBody()); queue = run.catch(() => undefined); return run`。这样 halt、live、stop 都在当前的 drive 轮次结束之后执行，live() 也应改为在 halt 之后重读账本来取 dispatch。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 632,
+      "summary": "省略 change 名时按 `flights.size === 1` 判断。flights 只增不删（起飞时 set，落地或停飞时不 delete），同一进程先后飞过两个 change 之后，即使只有一个还在 active 中，省略写法也永远失效。这样写与切片包的字面要求一致，但与「取唯一在飞者」的用意不符。",
+      "fix": "改为 `active.size === 1 ? [...active.keys()][0] : undefined`（active 在 land / halt 时已经 delete），并同步改 S4 切片包 / design 里的这句描述。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 438,
+      "summary": "locate 抽出后由 status、panel、abort 共用，但错误文案仍以「不起飞」结尾（如「读不到 git worktree 列表，不起飞」）。用户只是发 /flight status 或 abort 时，回复说「不起飞」会让人误解。",
+      "fix": "locate 的错误只描述原因、不带「不起飞」，由 takeoff 在返回时追加「，不起飞」；或者给 locate 传一个动作名参数来拼接结尾。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 1370,
+      "summary": "flight-resume-only-unfinished 只断言回复含「续飞」，没有断言「已合回 <k> 片跳过」里的 k，也没有断言续飞时不会重派已合回的切片。/flight panel 子命令（刷新 atom、调用 ui.open、回复「已打开飞行面板」）没有任何用例覆盖。",
+      "fix": "第三份账本加一条 S1 的 `merge ok=true`，断言回复含「已合回 1 片跳过」，且新增事件里没有 slice 为 S1 的 dispatch。另补一个 `/flight panel demo` 的用例：断言 log.opens 含 flight、回复为「已打开飞行面板」，并且 Pane 绘制出的文本含 demo。"
+    }
+  ],
+  "fix": null
+}
