@@ -20,13 +20,6 @@ def test_takeoff_refused_without_approval():
     assert_ts_passed("takeoff-refused-without-approval")
 
 
-def test_engine_workflow_passes_through():
-    # Given: 插件已加载
-    # When: 人发出 /opsx-apply demo --engine=workflow
-    # Then: 插件不作答，命令交给模型；不写账本
-    assert_ts_passed("engine-workflow-passes-through")
-
-
 def test_stop_gate_blocks_red_executor():
     # Given: S1 的执行体 A 收口，门禁 ok false、failed [G7 demo#s1]
     # When: 处理 A 的收口
@@ -373,7 +366,6 @@ def test_measure_hints_unguarded_pass():
 # 骨架：S6（per-task-passes-through 为护栏，已预写、不带 xfail） 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_engine_workflow_refused():
     # Given: demo 已批准、工作区干净
     # When: 人发出 /opsx-apply demo --engine=workflow
