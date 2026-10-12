@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -383,7 +381,6 @@ def test_per_task_passes_through():
 # 骨架：S4 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_flight_status_prints_progress():
     # Given: 插件已加载，demo 已起飞（attempt 1）
     # When: 发出 /flight status demo 与不带 change 的 /flight status
@@ -391,7 +388,6 @@ def test_flight_status_prints_progress():
     assert_ts_passed("flight-status-prints-progress")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_flight_abort_stops_agents():
     # Given: demo 已起飞并派出 agent-1、agent-2，agent.list 里都是 running
     # When: 发出 /flight abort demo，随后 agent-1 结束（aborted）
@@ -399,7 +395,6 @@ def test_flight_abort_stops_agents():
     assert_ts_passed("flight-abort-stops-agents")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_flight_resume_only_unfinished():
     # Given: 三份账本：没有 takeoff / attempt 1 已落地 / attempt 1 已停飞
     # When: 分别发出 /flight resume demo
@@ -407,7 +402,6 @@ def test_flight_resume_only_unfinished():
     assert_ts_passed("flight-resume-only-unfinished")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_panel_opens_at_takeoff():
     # Given: demo 已批准、工作区干净
     # When: 发出 /opsx-apply demo，再请求绘制 Pane flight
@@ -415,7 +409,6 @@ def test_panel_opens_at_takeoff():
     assert_ts_passed("panel-opens-at-takeoff")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_flight_command_human_only():
     # Given: 两份账本：demo attempt 1 在飞（agent-1 running）/ demo attempt 1 已停飞
     # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）
