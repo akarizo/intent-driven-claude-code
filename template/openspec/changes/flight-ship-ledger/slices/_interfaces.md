@@ -124,3 +124,38 @@ export function summarize(state: State): FlightSummary {
 export function summaryLines(s: FlightSummary): string[] {
 export const ev: {
 ```
+
+## S3
+
+### template/plugins/flight/hooks/landing.tsx
+```
+export const FINDINGS_TOOL: { name: 'submit_findings'; description: string; inputSchema: Record<string, unknown> } = {
+export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
+export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
+export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
+```
+
+### template/plugins/flight/hooks/land.ts
+```
+export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
+export async function commitRecords(io: Io, f: Flight, message: string, extra: readonly string[] = []): Promise<string | undefined> {
+export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
+export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
+export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], branch = `flight/${f.change}/${slice}`):
+export async function prepareResolve(io: Io, f: Flight, slice: string, x: { branch?: string; attempt?: number } = {}):
+export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], resolve = { path: resolvePath(f, slice), branch: resolveBranch(f, slice) }):
+export async function mergeFix(io: Io, f: Flight, note: string, branch?: string, slice = 'fix'): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+export function validateFindings(input: unknown): { ok: true; findings: Finding[] } | { ok: false; error: string } {
+export async function closeout(io: Io, f: Flight, merged: readonly string[]): Promise<{ verdict: 'ready' | 'draft'; reasons: string }> {
+```
+
+### template/plugins/flight/hooks/prompts.ts
+```
+export function worktreeNote(worktree: string): string {
+export function executorPrompt(x: {
+export function reviewerPrompt(x: { change: string; changeDir: string; slice: string; commit: string }): string {
+export function wholeReviewPrompt(x: { change: string; changeDir: string; hooksDir: string; base: string; commit: string; prior: Finding[] }): string {
+export function followupReviewPrompt(x: { change: string; changeDir: string; round: number; base: string; commit: string; prior: Finding[] }): string {
+export function resolverPrompt(x: { change: string; changeDir: string; slice: string; conflicts: string[] }): string {
+export function fixerPrompt(x: { change: string; changeDir: string; findings: Finding[] }): string {
+```
