@@ -15,6 +15,8 @@ const SLICE1 = `${MAIN}/.claude/worktrees/flight-demo-S1`
 const SLICE2 = `${MAIN}/.claude/worktrees/flight-demo-S2`
 const SLICE3 = `${MAIN}/.claude/worktrees/flight-demo-S3`
 const RESOLVE2 = `${MAIN}/.claude/worktrees/flight-demo-S2-resolve`
+/** 人在终端发出的命令来源 */
+const HUMAN = { origin: { kind: 'composer' } }
 
 type Run = { exitCode: number; stdout: string; stderr: string }
 type Gate = { ok: boolean; failed: string[] }
@@ -69,6 +71,8 @@ type World = {
   files?: Record<string, string>
   /** slice-gate final 的结论（缺省无输出，按红记） */
   final?: Gate
+  /** command.register 拒绝的命令名（模拟引擎拒绝与项目命令文件同名的注册） */
+  registerRefuses?: string[]
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -165,6 +169,7 @@ function useWorld(on: On, w: World) {
   on('agent.offer', () => ({ isOffered: true }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
+    if (w.registerRefuses?.includes(e.name)) throw new Error(`$.command.register: "/${e.name}" refused: it is the user's /${e.name}`)
     log.registered.push(e.name)
     return { value: { command: e.name } }
   })
@@ -358,7 +363,7 @@ test('opsx-apply-taken-over', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 插件作答（含「起飞 demo」）、命令没到达模型；账本依次为 takeoff 与 S1、S2 的 dispatch；两次派发都是 flight:executor、opus、各自切片 worktree
   expect(r.text).toContain('起飞 demo')
@@ -376,7 +381,7 @@ test('spawn-prompt-names-worktree', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo，派发 S1、S2 的执行体
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 每份提示词都写明自己的切片 worktree 绝对路径、git 一律 git -C 该路径，且不得在别的 worktree 写入或提交
   expect(log.spawns.length).toBe(2)
@@ -392,7 +397,7 @@ test('takeoff-refused-without-approval', async ($, on) => {
   const log = useWorld(on, demoWorld({ takeoff: res(3, '', '未批准') }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「未批准」与 spec.html 绝对路径；账本没有事件、没有派发
   expect(r.text).toContain('未批准')
@@ -406,7 +411,7 @@ test('engine-workflow-refused', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo --engine=workflow
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo --engine=workflow' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo --engine=workflow', ...HUMAN } as never)
 
   // Then: 插件作答含「旧 Workflow 引擎已删除」与 DRAFT-flight-single-implementation；命令没到达模型；账本没有事件
   expect(r.text).toContain('旧 Workflow 引擎已删除')
@@ -420,7 +425,7 @@ test('per-task-passes-through', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo --gate=per-task
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo --gate=per-task' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo --gate=per-task', ...HUMAN } as never)
 
   // Then: 命令原样到达模型并由它作答（legacy 路径）；账本没有事件
   expect(log.commands).toEqual(['opsx-apply demo --gate=per-task'])
@@ -431,7 +436,7 @@ test('per-task-passes-through', async ($, on) => {
 test('stop-gate-blocks-red-executor', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 的执行体 A 是 agent-1；它收口时 S1 门禁 ok false、failed [G7 demo#s1]
   const log = useWorld(on, demoWorld({ gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: 处理 A 的收口（SubagentStop）
   const r = (await $.classic.SubagentStop(subagentStop('agent-1') as never)) as { block?: string }
@@ -445,7 +450,7 @@ test('stop-gate-blocks-red-executor', async ($, on) => {
 test('silent-end-runs-gate-and-respawns', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；A 未经收口就结束（answer 为空），补跑的 S1 门禁为红 [G3 RED 缺失]
   const log = useWorld(on, demoWorld({ gates: { S1: [{ ok: false, failed: ['G3 RED 缺失'] }] } }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: 处理 A 的结束（turn.complete）
   await $.turn.complete(ended('agent-1') as never)
@@ -460,7 +465,7 @@ test('conflict-spawns-resolver', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S2 的执行体 B = agent-2）；S2 门禁绿，在 change worktree 合回时 a.py 冲突
   const w = demoWorld({ conflicts: { S2: ['a.py'] } })
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-2') as never)
   await $.turn.complete(ended('agent-2') as never)
   const resolver = log.spawns.at(-1)
@@ -483,7 +488,7 @@ test('flight-status-line', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: /opsx-apply demo 起飞并派发完第一个 wave
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 最后一次状态行含 demo、W1/2 与「运行 2」
   expect(log.statuses.at(-1)).toContain('demo')
@@ -508,7 +513,7 @@ test('takeoff-exception-stays-grounded', async ($, on) => {
   const log = useWorld(on, demoWorld({ spawnThrows: true }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 插件作答且回复含「起飞异常」；命令没有交给模型
   expect(r.text).toContain('起飞异常')
@@ -518,7 +523,7 @@ test('takeoff-exception-stays-grounded', async ($, on) => {
 test('drive-hands-landing-actions', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；A 收口时 S1 门禁绿，在 change worktree 合回 S1 无冲突
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
 
   // When: 处理 A 的结束（turn.complete）
@@ -534,7 +539,7 @@ test('drive-stops-without-progress', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；之后 plan_fp 输出变为 G（drive 会得出停飞动作），且 update-ref 一直返回非 0（账本写入总失败）
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.fp = G
   w.updateRefFails = true
   const before = log.runs.length
@@ -550,7 +555,7 @@ test('drive-halts-on-action-exception', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；A 收口时 S1 门禁绿、合回无冲突；之后派发 agent 时 agent.spawn 抛出「spawn 炸了」
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
   w.spawnThrows = true
 
@@ -571,7 +576,7 @@ test('takeoff-refuses-bad-fingerprint', async ($, on) => {
   const log = useWorld(on, demoWorld({ fpRun: res(1, '', '读取 slices.json 失败') }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「计算计划指纹失败」与 stderr；账本没有事件、没有派发、没有记 approve
   expect(r.text).toContain('计算计划指纹失败')
@@ -586,7 +591,7 @@ test('takeoff-refuses-bad-fingerprint/not-hex', async ($, on) => {
   const log = useWorld(on, demoWorld({ fpRun: res(0, 'not-a-fingerprint\n') }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「计算计划指纹失败」；账本没有事件、没有派发
   expect(r.text).toContain('计算计划指纹失败')
@@ -600,7 +605,7 @@ test('drive-reports-fp-failure-distinctly', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.fpRun = res(1, '', 'plan_fp 超时')
 
   // When: 处理 A 的结束（turn.complete）
@@ -617,7 +622,7 @@ test('drive-reports-fp-failure-distinctly', async ($, on) => {
 test('executor-dispatch-commits-records-first', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，waves [[S1, S2], [S3]]；世界跟踪飞行记录的提交状态；S1（agent-1）已收口结束并合回，S2（agent-2）已收口——合回 S2 后刷新的 slices/_interfaces.md 尚未提交
   const log = useWorld(on, demoWorld({ tracksRecords: true }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
   await $.turn.complete(ended('agent-1') as never)
   await $.classic.SubagentStop(subagentStop('agent-2') as never)
@@ -645,7 +650,7 @@ test('takeoff-waits-for-live-agents-after-halt', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, agents: [{ id: 'agent-1', status: 'running' }] }))
 
   // When: 人再次发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「仍在运行」；账本仍只有预置的 3 条事件（没有新的 takeoff）
   expect(r.text).toContain('仍在运行')
@@ -655,7 +660,7 @@ test('takeoff-waits-for-live-agents-after-halt', async ($, on) => {
 test('merge-survives-missing-interfaces-summary', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S1 的执行体 A = agent-1）；世界的 fs.read 对不存在的文件抛 ENOENT，change 目录还没有 slices/_interfaces.md；A 收口时 S1 门禁绿
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
 
   // When: 处理 A 的结束（turn.complete），drive 合回 S1
@@ -687,7 +692,7 @@ test('resume-regates-green-slice', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1] }))
 
   // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 在 S1 worktree 跑了带 --base B 的 slice-gate gate S1；S1 没有新的执行体派发；attempt 2 里 S1 的事件依次为 gate(regate, ok) 与 merge(ok)
   expect(log.runs.some(x => isGateS1(x) && x.cwd === SLICE1 && baseOf(x.argv) === BASE_B)).toBe(true)
@@ -703,7 +708,7 @@ test('resume-regate-merges-already-integrated-slice', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1], integrated: ['S1'] }))
 
   // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 没有对 S1 运行 merge --no-ff；attempt 2 里 S1 的事件依次为 gate(regate, ok) 与 merge(ok)，没有 blocked
   expect(log.runs.some(x => x.argv.includes('merge') && x.argv.includes('--no-ff') && x.argv.includes('flight/demo/S1'))).toBe(false)
@@ -718,7 +723,7 @@ test('resume-red-regate-dispatches-with-original-base', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger: haltedWithGreenS1(), paths: [SLICE1], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
 
   // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: slice-gate start S1 带 --base B；在 S1 worktree 派发了一次执行体
   expect(log.runs.filter(isStartS1).map(x => baseOf(x.argv))).toEqual([BASE_B])
@@ -731,7 +736,7 @@ test('takeoff-commits-leftover-records', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, dirty: [`${CD}/timeline.md`, `${CD}/gate-report.md`] }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 「chore(flight): 记录」的提交发生在 takeoff 事件写入之前；回复含「✈ 起飞」
   expect(log.commits.find(c => c.message === 'chore(flight): 记录')?.events).toBe(ledger.length)
@@ -744,7 +749,7 @@ test('takeoff-commits-leftover-records/foreign-dirty', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, dirty: [`${CD}/timeline.md`, `${CD}/gate-report.md`, 'src/x.py'] }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「工作区不干净」；账本没有新的 takeoff
   expect(r.text).toContain('工作区不干净')
@@ -758,7 +763,7 @@ test('takeoff-commits-artifacts-when-authorized', async ($, on) => {
   const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
 
   // When: 人发出 /opsx-apply demo 授权提交
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
 
   // Then: 有一次说明含「工件」的提交、发生在 takeoff 事件写入之前（当时账本 0 条）；加入 proposal.md 的那次 git add 路径恰为这三个的绝对路径；回复含「✈ 起飞」
   expect(artifactCommit(log)?.events).toBe(0)
@@ -771,7 +776,7 @@ test('takeoff-accepts-glued-authorization', async ($, on) => {
   const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
 
   // When: 人发出 /opsx-apply demo授权提交（授权词粘在 change 名后面）
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo授权提交' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo授权提交', ...HUMAN } as never)
 
   // Then: 按 change demo 起飞：有一次说明含「工件」的提交，回复含「✈ 起飞 demo」
   expect(artifactCommit(log)).toBeDefined()
@@ -783,7 +788,7 @@ test('takeoff-never-commits-before-approval', async ($, on) => {
   const log = useWorld(on, demoWorld({ takeoff: res(1, '', '未批准'), dirty: ARTIFACTS }))
 
   // When: 人发出 /opsx-apply demo 授权提交
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
 
   // Then: 回复含「起飞守卫未通过」；没有任何提交；账本没有 takeoff
   expect(r.text).toContain('起飞守卫未通过')
@@ -796,7 +801,7 @@ test('takeoff-hints-authorization-for-artifacts', async ($, on) => {
   const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
 
   // When: 人发出 /opsx-apply demo（不带授权词）
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「工作区不干净」与 `/opsx-apply demo 授权提交`；没有提交；账本没有 takeoff
   expect(r.text).toContain('工作区不干净')
@@ -810,7 +815,7 @@ test('takeoff-refuses-foreign-dirt-even-authorized', async ($, on) => {
   const log = useWorld(on, demoWorld({ dirty: [...ARTIFACTS, 'src/x.py'] }))
 
   // When: 人发出 /opsx-apply demo 授权提交
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
 
   // Then: 回复含「工作区不干净」与 src/x.py、不含任何工件路径；没有提交；账本没有 takeoff
   expect(r.text).toContain('工作区不干净')
@@ -824,7 +829,7 @@ test('drive-stops-after-terminal-without-fp', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（agent-1 派 S1、agent-2 派 S2）；plan_fp.py 改为以 1 退出，agent-1 结束后 attempt 1 已因「计算计划指纹失败」halt
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.fpRun = res(1, '', 'plan_fp 超时')
   await $.turn.complete(ended('agent-1') as never)
   const before = log.runs.length
@@ -842,7 +847,7 @@ test('drive-stops-after-terminal-without-fp', async ($, on) => {
 test('agent-spawn-guard-denies-child-of-flight-agent', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的派发端记录派发
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const before = log.spawns.length
 
   // When: 以非 flight 来源、父 agent 为 agent-1 派发 general-purpose
@@ -856,7 +861,7 @@ test('agent-spawn-guard-denies-child-of-flight-agent', async ($, on) => {
 test('tool-call-denies-out-of-envelope-write', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（owns 为 src/s1.py，worktree 为 S1 切片路径）；插件之下的执行端记录到达的调用
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const paths = [`${SLICE1}/src/b.py`, `${SLICE1}/src/s1.py`]
 
   // When: agent-1 分别 Write <S1 worktree>/src/b.py 与 <S1 worktree>/src/s1.py
@@ -870,7 +875,7 @@ test('tool-call-denies-out-of-envelope-write', async ($, on) => {
 test('tool-check-upgrades-ask-only-in-envelope', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的引擎依次判 ask、deny、ask、ask、ask
   useWorld(on, demoWorld({ checks: ['ask', 'deny', 'ask', 'ask', 'ask'] }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const write = { tool: 'Write', input: { file_path: `${SLICE1}/src/s1.py`, content: 'x\n' } }
   const calls = [
     { ...write, agentId: 'agent-1' },
@@ -893,7 +898,7 @@ test('main-session-read-only-during-flight', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（在飞，S1 执行体 agent-1）；plan_fp.py 改为以 1 退出，agent-1 结束时 drive 会停飞
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.fpRun = res(1, '', 'plan_fp 超时')
   const edit = { tool: 'Edit', file_path: `${TREE}/src/a.py`, old_string: 'a', new_string: 'b' }
 
@@ -925,7 +930,7 @@ test('agent-spawn-guard-wired', async ($, on) => {
 test('bash-runs-in-own-worktree', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（worktree 为 S1 切片路径）；插件之下的执行端记录到达的完整命令
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: agent-1 调用 Bash git status
   await $.tool.call({ tool: 'Bash', command: 'git status', agentId: 'agent-1' } as never)
@@ -937,7 +942,7 @@ test('bash-runs-in-own-worktree', async ($, on) => {
 test('commit-outside-own-worktree-denied', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发（worktree 为 S1 切片路径）；插件之下的执行端记录到达的调用
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: agent-1 调用 Bash git -C <change worktree> commit -m x
   const r = await $.tool.call({ tool: 'Bash', command: `git -C ${TREE} commit -m x`, agentId: 'agent-1' } as never)
@@ -950,7 +955,7 @@ test('commit-outside-own-worktree-denied', async ($, on) => {
 test('read-outside-repo-not-upgraded', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 执行体 agent-1 已派发；插件之下的引擎依次判 ask、ask
   useWorld(on, demoWorld({ checks: ['ask', 'ask'] }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const calls = [
     { tool: 'Read', input: { file_path: '~/.ssh/id_rsa' }, agentId: 'agent-1' },
     { tool: 'Read', input: { file_path: `${SLICE1}/a.py` }, agentId: 'agent-1' },
@@ -967,7 +972,7 @@ test('read-outside-repo-not-upgraded', async ($, on) => {
 test('pending-agent-writes-denied', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，agent-1 已派发，但 dispatch 事件写入账本总失败（agent-1 停在登记中）；插件之下的执行端记录到达的调用
   const log = useWorld(on, demoWorld({ dispatchFails: true }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: agent-1 调用 Write <S1 worktree>/src/s1.py
   const r = await $.tool.call({ tool: 'Write', file_path: `${SLICE1}/src/s1.py`, content: 'x\n', agentId: 'agent-1' } as never)
@@ -982,7 +987,7 @@ test('takeoff-refuses-old-git', async ($, on) => {
   const log = useWorld(on, demoWorld({ gitVersion: 'git version 2.37.1' }))
 
   // When: 人发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「git ≥ 2.38」与当前版本 2.37.1；账本没有 takeoff
   expect(r.text).toContain('git ≥ 2.38')
@@ -1003,7 +1008,7 @@ test('measure-tool-records-event', async ($, on) => {
   // Given: demo 已起飞，S1 的 start 打印 base B1，agent-1 是 S1 的执行体（dispatch 带 base B1）；之后测量应答为目标 tests/test_demo.py::test_s1 FAILED、source 为空
   const w = demoWorld({ bases: { [SLICE1]: B1 } })
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.measures = { S1: res(0, measureJson('S1', B1, [['tests/test_demo.py::test_s1', 'FAILED']], [])) }
   const runsBefore = log.runs.length
   const eventsBefore = log.events.length
@@ -1022,7 +1027,7 @@ test('measure-tool-records-event', async ($, on) => {
 test('measure-tool-only-for-flight-executors', async ($, on) => {
   // Given: demo 已起飞；agent-1 收口门禁绿并结束，S1 合回后派发了 S1 的评审员；agent-x 不属于任何飞行
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
   await $.turn.complete(ended('agent-1') as never)
   const reviewer = log.spawns.find(s => s.subagent_type === 'flight:reviewer')?.agentId ?? '没有评审员'
@@ -1043,7 +1048,7 @@ test('measure-tool-only-for-flight-executors', async ($, on) => {
 test('measure-tool-upgraded-for-executor', async ($, on) => {
   // Given: demo 已起飞，agent-1 是 S1 的执行体；agent-1 收口门禁绿并结束后派发了 S1 的评审员；插件之下的引擎对 mcp__flight__measure 一律判 ask
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-1') as never)
   await $.turn.complete(ended('agent-1') as never)
   const reviewer = log.spawns.find(s => s.subagent_type === 'flight:reviewer')?.agentId ?? '没有评审员'
@@ -1062,7 +1067,7 @@ test('fresh-dispatch-takes-start-measure', async ($, on) => {
   const log = useWorld(on, demoWorld({ bases: { [SLICE1]: B1 }, measures }))
 
   // When: 人发出 /opsx-apply demo，控制面派发 wave 1 的 S1 与 S2
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: S1 的事件依次为 measure（agent dispatch、base B1）与 dispatch（agent-1、base B1）；S2 记 blocked（infra），理由含「起点测量失败」；没有在 S2 worktree 派发
   expect(log.events.filter(x => x.slice === 'S1').map(x => [x.ev, x.agent, x.base])).toEqual([
@@ -1076,7 +1081,7 @@ test('fresh-dispatch-takes-start-measure', async ($, on) => {
 test('gate-runs-with-ledger-evidence', async ($, on) => {
   // Given: demo 已起飞，start 打印的 base：S1 worktree 为 B1、S2 worktree 为 B2、S2 解冲突 worktree 为 R；S2 合回时 a.py 冲突，S2 执行体收口并结束后派发了解冲突 agent
   const log = useWorld(on, demoWorld({ bases: { [SLICE1]: B1, [SLICE2]: B2, [RESOLVE2]: R }, conflicts: { S2: ['a.py'] } }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await $.classic.SubagentStop(subagentStop('agent-2') as never)
   await $.turn.complete(ended('agent-2') as never)
   const resolver = log.spawns.at(-1)?.agentId ?? '没有解冲突 agent'
@@ -1103,7 +1108,7 @@ test('takeoff-checks-versions', async ($, on) => {
   // When: 依次以这两种输出各发一次 /opsx-apply demo
   for (const types of listings) {
     w.eventTypes = types
-    replies.push(String((await $.command.run({ command: 'opsx-apply', args: 'demo' })).text))
+    replies.push(String((await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)).text))
     counts.push(log.events.length)
   }
 
@@ -1121,7 +1126,7 @@ test('unknown-owner-fails-closed', async ($, on) => {
   // Given: demo 已起飞（在飞）；之后 ledger.py show 以 5 退出（对 agent-7 的账本读取失败）；插件之下的引擎对 Bash 判 ask
   const w = demoWorld({ checks: ['ask'] })
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.ledgerFails = true
   const calls = [
     { tool: 'Write', file_path: `${SLICE1}/src/s1.py`, content: 'x\n', agentId: 'agent-7' },
@@ -1159,7 +1164,7 @@ test('fresh-dispatch-gets-new-worktree', async ($, on) => {
     ev.halt(B0, { attempt: 1, reason: '切片 blocked' }),
   ]
   const log = useWorld(on, demoWorld({ ledger, paths: [SLICE1] }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const s1 = log.spawns.find(s => s.cwd === SLICE1_A2)
   await $.classic.SubagentStop(subagentStop(s1?.agentId ?? '没有 S1 执行体') as never)
 
@@ -1186,7 +1191,7 @@ test('continuation-reuses-same-plan-worktree', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, paths: [SLICE1] }))
 
   // When: 人发出 /opsx-apply demo，控制面派发 S1 的执行体
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 没有建 S1 的 worktree；S1 的执行体在 flight-demo-S1 派发；attempt 2 的 S1 dispatch 的 branch 为 flight/demo/S1；提示词含「这是续接」
   expect(runOf(log, 'worktree add -b flight/demo/S1')).toBe(false)
@@ -1208,7 +1213,7 @@ test('fixer-gets-new-worktree', async ($, on) => {
     ev.halt(B0, { attempt: 1, reason: '会话中断' }),
   ]
   const log = useWorld(on, demoWorld({ ledger, paths: [FIX_TREE], final: { ok: true, failed: [] } }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const fixer = log.spawns.find(s => s.cwd === FIX_A2)
   await $.classic.SubagentStop({ ...subagentStop(fixer?.agentId ?? '没有修复体'), agent_type: 'flight:fixer' } as never)
 
@@ -1230,7 +1235,7 @@ test('cross-session-takeoff-refused', async ($, on) => {
 
   // When: 本会话依次发出 /opsx-apply demo 与 /opsx-apply demo --takeover
   for (const args of ['demo', 'demo --takeover']) {
-    replies.push(String((await $.command.run({ command: 'opsx-apply', args })).text))
+    replies.push(String((await $.command.run({ command: 'opsx-apply', args, ...HUMAN } as never)).text))
     counts.push(log.events.length)
   }
 
@@ -1247,7 +1252,7 @@ test('cross-session-takeoff-refused/old-session-stops-driving', async ($, on) =>
   // Given: 本会话（sess-1）起飞 demo（attempt 1）并派出执行体；之后另一个会话 other-session-1234 以 --takeover 接管，
   //   账本追加 attempt 2 的 takeoff（takeover 为 sess-1）
   const log = useWorld(on, demoWorld())
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const s1 = log.spawns[0]
   log.events.push({ ...ev.takeoff(OTHER, { attempt: 2, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }), takeover: 'sess-1' })
   const spawns = log.spawns.length
@@ -1270,7 +1275,7 @@ test('halted-attempt-from-other-session-resumes', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger }))
 
   // When: 本会话发出 /opsx-apply demo
-  const r = await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // Then: 回复含「✈ 起飞」；账本有 attempt 2 的 takeoff，且它没有 takeover 字段
   expect(r.text).toContain('✈ 起飞')
@@ -1281,7 +1286,7 @@ test('measure-unknown-owner-says-retry', async ($, on) => {
   // Given: demo 已起飞（在飞），agent-1 是 S1 的执行体；之后 ledger.py show 以 5 退出（账本读取失败）
   const w = demoWorld()
   const log = useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   w.ledgerFails = true
   const runsBefore = log.runs.length
 
@@ -1300,7 +1305,7 @@ test('measure-hints-unguarded-pass', async ($, on) => {
   //   tests/test_demo.py::test_a PASSED、tests/test_demo.py::test_b FAILED、source 为空，guards 依次为 [] 与 [test_a]
   const w = demoWorld({ bases: { [SLICE1]: B1 } })
   useWorld(on, w)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const outcomes: [string, string][] = [['tests/test_demo.py::test_a', 'PASSED'], ['tests/test_demo.py::test_b', 'FAILED']]
   const answers = [[], ['tests/test_demo.py::test_a']].map(guards => res(0, measureJson('S1', B1, outcomes, [], guards)))
 
@@ -1323,14 +1328,12 @@ test('measure-hints-unguarded-pass', async ($, on) => {
 
 const START = { cwd: TREE, surface: 'terminal', isInteractive: true } as const
 const PANE = { component: 'Pane', requestId: 'flight', props: {}, viewport: { columns: 120, rows: 30 } } as const
-/** 人在终端发出的命令来源 */
-const HUMAN = { origin: { kind: 'composer' } }
 
 test('flight-status-prints-progress', async ($, on) => {
   // Given: 插件已加载、会话已启动；demo 已由 /opsx-apply 起飞（attempt 1，waves [[S1, S2], [S3]]）
   const log = useWorld(on, demoWorld())
   await $.session.start(START as never)
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
   // When: 依次发出 /flight status demo 与不带 change 的 /flight status
   const replies: string[] = []
@@ -1348,7 +1351,7 @@ test('flight-status-prints-progress', async ($, on) => {
 test('flight-abort-stops-agents', async ($, on) => {
   // Given: demo 已起飞并派出 agent-1（S1）、agent-2（S2），agent.list 里两者都是 running
   const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const before = log.events.length
 
   // When: 人在终端发出 /flight abort demo，随后 agent-1 以 aborted 结束
@@ -1378,7 +1381,7 @@ test('abort-during-drive-stops-late-dispatch', async ($, on) => {
     },
   })
   const log = useWorld(on, w)
-  const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await entered
 
   // When: 人在终端发出 /flight abort demo；账本写入 halt 之后才放行挂起的 spawn
@@ -1424,7 +1427,7 @@ test('panel-opens-at-takeoff', async ($, on) => {
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo，再在 terminal 上请求绘制 Pane flight
-  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
 
   // Then: 插件以 id flight 调用过 ui.open；面板文本含 demo 与 W1/2
@@ -1457,13 +1460,76 @@ test('flight-command-human-only', async ($, on) => {
     added.push(log.events.length - s.ledger.length)
   }
 
-  // Then: 四次 abort / resume 回复都含「只接受人在终端发出」与所见来源（scheduled-trigger / 未标明）；五次都没有新事件；没有 TaskStop；status 回复含 demo 与 attempt 1
+  // Then: 四次 abort / resume 回复都含「只接受人或宿主程序发出」与所见来源（scheduled-trigger / 未标明）；五次都没有新事件；没有 TaskStop；status 回复含 demo 与 attempt 1
   for (const [i, r] of replies.slice(0, 4).entries()) {
-    expect(r).toContain('只接受人在终端发出')
+    expect(r).toContain('只接受人或宿主程序发出')
     expect(r).toContain(i % 2 === 0 ? 'scheduled-trigger' : '未标明')
   }
   expect(added).toEqual([0, 0, 0, 0, 0])
   expect(log.stops).toEqual([])
   expect(replies[4]).toContain('demo')
   expect(replies[4]).toContain('attempt 1')
+})
+
+// ---------------------------------------------------------------- flight-entry-handoff（S1）
+// 同一用例里建不了两个世界（世界 hook 挂在同一个 on 上），按切片包拆成同名前缀的两个用例：甲照常登记、乙拒绝 opsx-apply
+
+test('opsx-apply-registered-or-intercepted-registers', async ($, on) => {
+  // Given: 世界甲：demo 已批准、工作区干净，command.register 照常应答；会话已开始（插件在 session.start 里登记命令）
+  const log = useWorld(on, demoWorld())
+  await $.session.start(START as never)
+
+  // When: 人在终端（composer）发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // Then: 登记的命令排序后恰为 flight、opsx-apply；回复含「✈ 起飞 demo」
+  expect([...log.registered].sort()).toEqual(['flight', 'opsx-apply'])
+  expect(String(r.text)).toContain('✈ 起飞 demo')
+})
+
+test('opsx-apply-registered-or-intercepted-refused', async ($, on) => {
+  // Given: 世界乙：demo 已批准、工作区干净，command.register 对 opsx-apply 抛「refused: it is the user's /opsx-apply」；会话已开始，记下开始是否抛错
+  const log = useWorld(on, demoWorld({ registerRefuses: ['opsx-apply'] }))
+  const started = await $.session.start(START as never).then(
+    () => 'ok',
+    (err: unknown) => `抛错：${String(err)}`,
+  )
+
+  // When: 人在终端（composer）发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // Then: 会话开始不抛错；只登记了 flight；/opsx-apply 仍被拦截接管，回复含「✈ 起飞 demo」
+  expect(started).toBe('ok')
+  expect(log.registered).toEqual(['flight'])
+  expect(String(r.text)).toContain('✈ 起飞 demo')
+})
+
+test('ledger-entries-accept-host-origins', async ($, on) => {
+  // Given: demo 已批准、工作区干净；四次发送：scheduled-trigger 与不带来源的 /opsx-apply demo、sdk 的 /opsx-apply demo、sdk 的 /flight abort demo
+  const log = useWorld(on, demoWorld())
+  const sdk = { origin: { kind: 'sdk' } }
+  const sends = [
+    { command: 'opsx-apply', args: 'demo', origin: { kind: 'scheduled-trigger' } },
+    { command: 'opsx-apply', args: 'demo' },
+    { command: 'opsx-apply', args: 'demo', ...sdk },
+    { command: 'flight', args: 'abort demo', ...sdk },
+  ]
+
+  // When: 依次发出这四条命令，记下每次的回复与发出前后账本事件数
+  const replies: string[] = []
+  const added: number[] = []
+  for (const s of sends) {
+    const before = log.events.length
+    replies.push(String((await $.command.run(s as never)).text))
+    added.push(log.events.length - before)
+  }
+
+  // Then: 前两次回复含「只接受人或宿主程序发出」与所见来源（scheduled-trigger / 未标明），且都没有新事件；第三次回复含「✈ 起飞 demo」；第四次之后账本有原因含「人工中止」的 halt
+  for (const [i, r] of replies.slice(0, 2).entries()) {
+    expect(r).toContain('只接受人或宿主程序发出')
+    expect(r).toContain(i === 0 ? 'scheduled-trigger' : '未标明')
+  }
+  expect(added.slice(0, 2)).toEqual([0, 0])
+  expect(replies[2]).toContain('✈ 起飞 demo')
+  expect(String(log.events.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
 })

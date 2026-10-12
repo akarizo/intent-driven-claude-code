@@ -421,22 +421,22 @@ def test_abort_during_drive_stops_late_dispatch():
 def test_flight_command_human_only():
     # Given: 两份账本：demo attempt 1 在飞（agent-1 running）/ demo attempt 1 已停飞
     # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）
-    # Then: 四次 abort / resume 都回复「只接受人在终端发出」与所见来源，账本无新事件、没有 TaskStop；status 回复含 demo 与 attempt 1
+    # Then: 四次 abort / resume 都回复「只接受人或宿主程序发出」与所见来源，账本无新事件、没有 TaskStop；status 回复含 demo 与 attempt 1
     assert_ts_passed("flight-command-human-only")
 
 # ---------------------------------------------------------------- flight-entry-handoff
 # 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_opsx_apply_registered_or_intercepted():
     # Given: 两个世界，demo 都已批准、工作区干净：甲的 command.register 照常应答；乙对 opsx-apply 抛「refused: it is the user's /opsx-apply」
     # When: 各自开始会话，再由人在终端发出 /opsx-apply demo
     # Then: 甲登记的命令排序后恰为 flight、opsx-apply；乙只登记 flight 且会话开始不抛错；两个世界的回复都含「✈ 起飞 demo」
-    assert_ts_passed("opsx-apply-registered-or-intercepted")
+    # 同一 TS 用例里建不了两个世界，拆成同名前缀的两个用例：甲 -registers、乙 -refused
+    assert_ts_passed("opsx-apply-registered-or-intercepted-registers")
+    assert_ts_passed("opsx-apply-registered-or-intercepted-refused")
 
 
-@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
 def test_ledger_entries_accept_host_origins():
     # Given: demo 已批准、工作区干净
     # When: 依次以 scheduled-trigger、不带来源、sdk 发出 /opsx-apply demo，再以 sdk 发出 /flight abort demo
