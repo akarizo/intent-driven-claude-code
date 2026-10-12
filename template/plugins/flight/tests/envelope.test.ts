@@ -699,3 +699,24 @@ test('shell-reserved-words-stripped', () => {
   expect(v.slice(0, 5).map(x => (x?.deny ?? '').includes('git push'))).toEqual([true, true, true, true, true])
   expect(v[5]).toBeUndefined()
 })
+
+// ---------------------------------------------------------------- spec flight-ship-handoff（S3）
+
+test('main-session-spawns-code-reviewer', () => {
+  // Given: 四种派发：主会话带 opus 派 flight:code-reviewer；主会话不带 model 派 flight:code-reviewer；在飞 agent 带 opus 派 flight:code-reviewer；主会话带 opus 派 flight:reviewer
+  const xs = [
+    { subagentType: 'flight:code-reviewer', originPlugin: undefined, model: 'opus', parentInFlight: false },
+    { subagentType: 'flight:code-reviewer', originPlugin: undefined, model: undefined, parentInFlight: false },
+    { subagentType: 'flight:code-reviewer', originPlugin: undefined, model: 'opus', parentInFlight: true },
+    { subagentType: 'flight:reviewer', originPlugin: undefined, model: 'opus', parentInFlight: false },
+  ]
+
+  // When: 逐个判定
+  const [a, b, c, d] = xs.map(x => spawnVerdict(x))
+
+  // Then: 第一种放行；其余拒绝理由依次含「铁律 11」「飞行中的 agent 不得再派发子 agent」「只能由 flight 控制面派发」
+  expect(a).toBeUndefined()
+  expect(b?.deny).toContain('铁律 11')
+  expect(c?.deny).toContain('飞行中的 agent 不得再派发子 agent')
+  expect(d?.deny).toContain('只能由 flight 控制面派发')
+})
