@@ -1,7 +1,10 @@
 // 飞行编排（spec flight-orchestrator · design D3 / D4 / D6）：接管 /opsx-apply、收口现跑门禁、结束兜底、合回与解冲突、状态行、类型隐藏。
 // 状态只来自账本：每轮 drive 重读账本，经 core.next 得出动作再执行。
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
-import { agentOf, ev, next as nextActions, reduce, stopVerdict } from './core'
+import type { FlightPanel } from '../types'
+import { abortFlight } from './abort'
+import { agentOf, ev, next as nextActions, reduce, stopVerdict, summarize, summaryLines } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
@@ -32,6 +35,12 @@ const AUTHORIZE = '授权提交'
 /** 起飞时接管另一个会话未落地 / 停飞的飞行（design D5）；不是 change 名、不透传 */
 const TAKEOVER = '--takeover'
 const MEASURE_RETRY = 'flight：暂时无法判定你的归属（账本读取失败），稍后重试测量'
+const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover]'
+/** 写账本的 /flight 子命令只认人在终端发出的来源（design D8） */
+const HUMAN_ORIGINS = ['composer', 'bridge']
+
+// 飞行面板（Pane flight）的内容：showStatus 与 /flight panel 刷新，ui.render 绘制
+const panel = atom({ plugin: 'flight', key: 'panel' } as const, { change: '', lines: [] } as FlightPanel)
 
 function isOlder(a: string, b: string): boolean {
   const pa = a.split('.').map(s => parseInt(s, 10) || 0)
@@ -237,6 +246,7 @@ function showStatus($: Engine, f: Flight, state: State): void {
   const ended = new Set(state.events.filter(e => e.ev === 'ended').map(e => String(e.agent)))
   const running = state.events.filter(e => e.ev === 'dispatch' && inA(e) && !ended.has(String(e.agent))).length
   $.ui.status(`✈ ${f.change} · W${at < 0 ? waves.length : at + 1}/${waves.length} · 运行 ${running} · 阻断 ${blocked.length}`)
+  void update($, panel, () => ({ change: f.change, lines: summaryLines(summarize(state)) }))
 }
 
 /** slice-gate start（账本证据模式），从打印的标记 JSON 取 base；失败或取不到 base 返回原因。 */
@@ -417,8 +427,39 @@ async function scenarioFiles(io: Io, path: string): Promise<string[]> {
   }
 }
 
-/** 起飞：版本 → 参数 → 定位 → 起飞检查 → 正在飞 → 写账本并 drive。返回回复文本。 */
-async function takeoff($: Engine, args: string[]): Promise<string> {
+type Tree = Awaited<ReturnType<typeof trees>>[number]
+
+/** 解析 change 名（省略时取会话所在 worktree 的分支 worktree-<name>）→ 找 worktree → 找 change 目录 → 找判定器目录 → 构造 Flight（model 为空）。 */
+async function locate($: Engine, given: string | undefined): Promise<{ f: Flight; tree: Tree; main: Tree } | { error: string }> {
+  const io = ioHere($)
+  const cwd = await $.session.cwd()
+  const all = await trees(io, cwd)
+  const main = all[0]
+  if (main === undefined) return { error: `flight：在 ${cwd} 读不到 git worktree 列表，不起飞` }
+  let name = given
+  if (name === undefined) {
+    const here = all.filter(t => cwd === t.path || cwd.startsWith(`${t.path}/`)).sort((x, y) => y.path.length - x.path.length)[0]
+    if (here?.branch.startsWith('worktree-')) name = here.branch.slice('worktree-'.length)
+  }
+  if (name === undefined) return { error: 'flight：没有给出 change 名，会话所在 worktree 的分支也不是 worktree-<name>' }
+  const tree = all.find(t => t.branch === `worktree-${name}`)
+  if (tree === undefined) return { error: `flight：找不到分支为 worktree-${name} 的 worktree` }
+  let changeDir = ''
+  for (const rel of [`template/openspec/changes/${name}`, `openspec/changes/${name}`]) {
+    if (await io.exists(`${tree.path}/${rel}`)) {
+      changeDir = rel
+      break
+    }
+  }
+  if (changeDir === '') return { error: `flight：${tree.path} 下找不到 change 目录 ${name}` }
+  const hooksDir = await judgesDir(io, main.path)
+  if (hooksDir === '') return { error: `flight：主 worktree ${main.path} 下找不到判定器（slice-gate.py）` }
+  const session = await $.session.id()
+  return { f: { change: name, mainTree: main.path, changeTree: tree.path, changeDir, branch: tree.branch, hooksDir, model: '', session }, tree, main }
+}
+
+/** 起飞：版本 → 参数 → 定位 → 起飞检查 → 正在飞 → 写账本并 drive。返回回复文本。resume = /flight resume：只续飞已起飞、未落地的 change。 */
+async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
   let version: string
   try {
     version = (await $.session.version()).version
@@ -429,36 +470,17 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
 
   const ctx = ctxOf($)
   const io = ctx.io
-  const cwd = await $.session.cwd()
-  const all = await trees(io, cwd)
-  const main = all[0]
-  if (main === undefined) return `flight：在 ${cwd} 读不到 git worktree 列表，不起飞`
   // 授权词「授权提交」：单独一个词，或粘在 change 名后面（design D1）；它本身不当 change 名
   let authorized = args.includes(AUTHORIZE)
-  let name = args.find(a => !a.startsWith('--') && a !== AUTHORIZE)
-  if (name !== undefined && name.endsWith(AUTHORIZE)) {
-    name = name.slice(0, -AUTHORIZE.length)
+  let given = args.find(a => !a.startsWith('--') && a !== AUTHORIZE)
+  if (given !== undefined && given.endsWith(AUTHORIZE)) {
+    given = given.slice(0, -AUTHORIZE.length)
     authorized = true
   }
-  if (name === undefined) {
-    const here = all.filter(t => cwd === t.path || cwd.startsWith(`${t.path}/`)).sort((x, y) => y.path.length - x.path.length)[0]
-    if (here?.branch.startsWith('worktree-')) name = here.branch.slice('worktree-'.length)
-  }
-  if (name === undefined) return 'flight：没有给出 change 名，会话所在 worktree 的分支也不是 worktree-<name>'
-  const tree = all.find(t => t.branch === `worktree-${name}`)
-  if (tree === undefined) return `flight：找不到分支为 worktree-${name} 的 worktree`
-  let changeDir = ''
-  for (const rel of [`template/openspec/changes/${name}`, `openspec/changes/${name}`]) {
-    if (await io.exists(`${tree.path}/${rel}`)) {
-      changeDir = rel
-      break
-    }
-  }
-  if (changeDir === '') return `flight：${tree.path} 下找不到 change 目录 ${name}`
-  const hooksDir = await judgesDir(io, main.path)
-  if (hooksDir === '') return `flight：主 worktree ${main.path} 下找不到判定器（slice-gate.py）`
-  const session = await $.session.id()
-  const f: Flight = { change: name, mainTree: main.path, changeTree: tree.path, changeDir, branch: tree.branch, hooksDir, model: '', session }
+  const at = await locate($, given)
+  if ('error' in at) return at.error
+  const { f, tree, main } = at
+  const { change: name, changeDir, hooksDir, session } = f
   const abs = absChangeDir(f)
 
   const gate = await judge(io, f, 'takeoff-gate', ['--change-dir', abs], tree.path)
@@ -481,6 +503,8 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   if ('error' in ledger) return `flight：账本读取失败：${firstLine(ledger.error)}`
   const state = reduce(ledger.events)
   const ofA = (e: FlightEvent) => Number(e.attempt) === state.attempt
+  if (opts.resume && state.takeoff === undefined) return `flight：${name} 从未起飞：用 /opsx-apply ${name}`
+  if (opts.resume && state.events.some(e => e.ev === 'land' && ofA(e))) return `flight：${name} 已落地（attempt ${state.attempt}），没有可续飞的`
   const settled = state.events.some(e => (e.ev === 'land' || e.ev === 'halt') && ofA(e))
   const owner = String(state.takeoff?.by?.session ?? '')
   const foreign = state.takeoff !== undefined && !settled && owner !== session ? owner : undefined
@@ -556,8 +580,72 @@ async function takeoff($: Engine, args: string[]): Promise<string> {
   const event = { ...ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model }), ...(foreign !== undefined ? { takeover: foreign } : {}) }
   if (!(await appendEvent(io, flight, event))) return 'flight：写 takeoff 事件失败，不起飞'
   await drive($, flight)
+  // 面板打不开不影响起飞
+  void $.ui.open({ id: 'flight', title: `✈ ${name}` }).catch(() => undefined)
   const committed = dirty.artifacts.length ? `\n已提交工件 ${dirty.artifacts.length} 个文件` : ''
-  return `✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`
+  const merged = waves.flat().filter(s => state.events.some(e => e.ev === 'merge' && e.slice === s && e.ok === true)).length
+  const resumed = opts.resume ? `续飞 attempt ${attempt}：已合回 ${merged} 片跳过\n` : ''
+  return `${resumed}✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`
+}
+
+/** /flight abort：先在账本记停飞，再停本 attempt 仍在跑的 agent（策略在 abort.ts）；之后刷新状态行与面板。 */
+async function abortCommand($: Engine, f: Flight, state: State): Promise<string> {
+  const ctx = ctxOf($)
+  const ofA = (e: Ev) => Number(e.attempt) === state.attempt
+  const text = await abortFlight({
+    state,
+    session: await $.session.id(),
+    async halt(reason) {
+      await runLandingAction(ctx, f, { kind: 'halt', reason })
+      const after = await readLedger(ctx.io, f)
+      return 'events' in after && after.events.some(e => e.ev === 'halt' && ofA(e))
+    },
+    async live() {
+      const ended = new Set(state.events.filter(e => e.ev === 'ended').map(e => String(e.agent)))
+      const mine = [...new Set(state.events.filter(e => e.ev === 'dispatch' && ofA(e)).map(e => String(e.agent)))].filter(id => !ended.has(id))
+      const running = new Set((await $.agent.list()).filter(x => LIVE.includes(String(x.status))).map(x => x.id))
+      return mine.filter(id => running.has(id))
+    },
+    async stop(id) {
+      try {
+        await $.tool.call({ tool: 'TaskStop', task_id: id } as never)
+        return undefined
+      } catch (err) {
+        return firstLine(err instanceof Error ? err.message : String(err))
+      }
+    },
+  })
+  const after = await readLedger(ctx.io, f)
+  if ('events' in after) showStatus($, f, reduce(after.events))
+  return text
+}
+
+/** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
+async function flightCommand($: Engine, args: string[], origin: string | undefined): Promise<string> {
+  const [sub, ...rest] = args
+  if ((sub === 'abort' || sub === 'resume') && !HUMAN_ORIGINS.includes(origin ?? '')) {
+    return `flight：/flight ${sub} 会写账本，只接受人在终端发出（本次来源：${origin ?? '未标明'}）`
+  }
+  if (sub === 'resume') return takeoff($, rest, { resume: true })
+  if (sub !== 'status' && sub !== 'panel' && sub !== 'abort') return FLIGHT_USAGE
+  // 省略 change：本进程只登记了一个 change 且它在飞时取它
+  const only = flights.size === 1 ? [...flights.keys()][0] : undefined
+  const given = rest[0] ?? (only !== undefined && active.has(only) ? only : undefined)
+  if (given === undefined) return `${FLIGHT_USAGE}\n没有唯一在飞的 change，请给出 change 名`
+  const at = await locate($, given)
+  if ('error' in at) return at.error
+  const { f } = at
+  const ledger = await readLedger(ioHere($), f)
+  if ('error' in ledger) return `flight：账本读取失败：${firstLine(ledger.error)}`
+  const state = reduce(ledger.events)
+  if (sub === 'abort') return abortCommand($, f, state)
+  const lines = state.takeoff === undefined ? [] : summaryLines(summarize(state))
+  if (sub === 'panel') {
+    await update($, panel, () => ({ change: f.change, lines }))
+    await $.ui.open({ id: 'flight', title: `✈ ${f.change}` })
+    return '已打开飞行面板'
+  }
+  return lines.length ? lines.join('\n') : `${f.change} 尚未起飞`
 }
 
 export function registerOrchestrator(on: On): void {
@@ -587,7 +675,31 @@ export function registerOrchestrator(on: On): void {
     } catch {
       // 注册不了时执行体只是无从请求测量：G5 账本判据会判红，不静默放过
     }
+    try {
+      await $.command.register({ name: 'flight', description: '飞行：status | panel | abort | resume' })
+    } catch {
+      // 登记不了时 /flight 不出现在补全里；起飞与驱动不受影响
+    }
     return next(e)
+  })
+
+  on('command.run', { command: 'flight' }, async ($, e) => {
+    const origin = (e as unknown as { origin?: { kind?: string } }).origin?.kind
+    try {
+      return { text: await flightCommand($, argsOf(e.args), origin) }
+    } catch (err) {
+      return { text: `flight：/flight 出错（${firstLine(err instanceof Error ? err.message : String(err))}）` }
+    }
+  }).catch(() => ({ text: 'flight：/flight 出错' }))
+
+  on('ui.render', { component: 'Pane', requestId: 'flight' }, async ($, e) => {
+    const p = await read($, panel)
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        {p.lines.length ? p.lines.map((line, i) => <Text key={`l${i}`}>{line}</Text>) : <Text>尚无飞行</Text>}
+      </Box>
+    )
   })
 
   on('tool.call', { tool: `mcp__flight__${FINDINGS_TOOL.name}` }, async ($, e) => {
