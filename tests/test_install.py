@@ -486,9 +486,25 @@ def test_install_warns_retired_files_unprotected(tmp_path):
 # 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：尚未实现")
+MOVED = (".claude/commands/pr-ship.md", ".claude/agents/code-reviewer.md")
+
+
 def test_install_lists_files_moved_into_plugin(tmp_path):
     # Given: 已装旧版模板、.claude/commands/pr-ship.md 与 .claude/agents/code-reviewer.md 仍在的目标项目；另一个空目录
+    target, fresh = tmp_path / "proj", tmp_path / "fresh"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    for rel in MOVED:
+        (target / rel).parent.mkdir(parents=True, exist_ok=True)
+        (target / rel).write_text("# old copy\n", encoding="utf-8")
+
     # When: 以升级方式运行 install.sh；另在空目录做一次全新安装
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+    q, _ = run_install_stubbed(tmp_path, fresh, claude=False)
+
     # Then: 升级输出列出两个路径并含「已迁入 flight 插件」与 /flight:pr-ship，两个文件仍在；全新安装后没有这两个文件
-    pytest.fail("骨架：S5 写实断言")
+    assert p.returncode == 0 and q.returncode == 0, (p.stderr, q.stderr)
+    assert all(rel in p.stdout for rel in MOVED), p.stdout
+    assert "已迁入 flight 插件" in p.stdout and "/flight:pr-ship" in p.stdout, p.stdout
+    assert all((target / rel).exists() for rel in MOVED)
+    assert not any((fresh / rel).exists() for rel in MOVED)

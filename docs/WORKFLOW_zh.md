@@ -175,7 +175,7 @@ Rule: Users can export their own data
       G5 只读账本（缺起点测量 / 目标从未测红 / 每次见红都已改生产代码 → 判红）
     → 红了把失败项交回执行体接着修，仍红则该切片 blocked；门禁绿的切片由控制面合回 change 分支
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
-  → slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）→ timeline.py report 打印飞行记录 → 落地交 /pr-ship
+  → slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）→ timeline.py report 打印飞行记录 → 落地交 /flight:pr-ship
 ```
 
 `evidence.log` 是飞行外（主会话修复等）由 hook 写的留痕，飞行中的 G5 不读它。
@@ -193,7 +193,7 @@ Rule: Users can export their own data
 - **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行（`openspec-apply-change`）。
 - **失效即停飞**：插件或判定器缺席、失效时不起飞，在飞即停飞并如实记录；不改用手工派发 agent 等第二套实现。
 
-详见 `template/plugins/flight/agents/`（executor / reviewer / fixer）、`.claude/agents/code-reviewer.md`、`.claude/hooks/slice-gate.py`。想用旧的逐 task 阻断式守门见下文「Legacy 模式」。
+详见 `template/plugins/flight/agents/`（executor / reviewer / fixer / code-reviewer，后者即 `flight:code-reviewer`）、`.claude/hooks/slice-gate.py`。`/opsx-apply` 由插件注册，项目里有同名命令文件时由插件拦截；`/flight:pr-ship` 也由插件提供。想用旧的逐 task 阻断式守门见下文「Legacy 模式」。
 
 ---
 
@@ -232,7 +232,7 @@ git commit -m "propose: add-user-export"
 git checkout -b feat/add-user-export
 /opsx-apply add-user-export
 #   （先在批准带按「批准起飞」）插件起飞检查 → 按 wave 并行派 flight:executor → 控制面跑切片门禁并合回
-#   → flight:reviewer 评审 → flight:fixer 批量修复 → final gate → 打印飞行记录 → /pr-ship
+#   → flight:reviewer 评审 → flight:fixer 批量修复 → final gate → 打印飞行记录 → /flight:pr-ship
 #   （想要旧的逐 task 阻断式守门：/opsx-apply add-user-export --gate=per-task）
 
 # 4. 实现合回 main 后归档
@@ -250,11 +250,11 @@ git checkout main && git pull
 ```
 对每个 task：
   派 fresh 实现 subagent（走 test-driven-development：RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）
-    → 派 code-reviewer subagent 审本 task 净 diff（mode=full，CRITICAL/HIGH 阻断）
+    → 派 flight:code-reviewer subagent 审本 task 净 diff（mode=full，CRITICAL/HIGH 阻断）
     → 有阻断项 → 回灌修（独立 fix: commit）→ 聚焦复核（mode=follow-up，只审那个 commit）→ 循环到清零
     → 勾选 checkbox - [ ] → - [x] + 写 review-log.md（推进 REVIEWED_UPTO、登记未阻断的 MEDIUM/LOW）
     → 下一个 task
-全部 task 完成 → AskUserQuestion 定整合审位置（立即 ship → 交给 /pr-ship；暂不 ship → 本地跑 mode=integration；
+全部 task 完成 → AskUserQuestion 定整合审位置（立即 ship → 交给 /flight:pr-ship；暂不 ship → 本地跑 mode=integration；
                 单 task 的 change 恒跳过）→ /opsx-verify → 收口（不 merge 不 archive）
 ```
 
@@ -263,9 +263,9 @@ git checkout main && git pull
 - **不开 worktree**：逐 task 是串行累积（task2 依赖 task1 产出），在当前工作区。原生 `isolation: worktree` 每次派发开独立 worktree、看不到前序 task，不适用；这也让分级门禁 `intent-gate.py` 零改动生效。
 - **subagent 不能嵌套**：`--no-confirm`（`/opsx-bulk-apply` 子 agent）一律走串行。
 - **守门靠 review 水位线分层**：这些守门点的 diff 范围是**包含关系**（单 task ⊂ 累计 ≈ PR），光靠"范围不同"避免不了重复。`review-log.md` 记下已审区间与 deferred 清单，后续守门点读它决定审什么、不报什么：逐 task = `full`、回灌复核 = `follow-up`（只审 fix commit）、整合审 = `integration`（只报跨 task/整体/端到端/工件一致性，一次变更只跑一次）、PR 复审 = `follow-up`（只审修复补丁）。**读不到水位线一律回退全量审**——它只能缩小已覆盖部分的范围，不能放过未审代码。
-- **`code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
+- **`flight:code-reviewer` 物理只读**：工具集仅 Read/Grep/Glob/Bash，从工具层面保证只 review 不改码；prompt 自包含、不带主会话上下文。
 
-**为什么不再是默认**：2026-09-10 对 5 个跑该模式的会话做归因，每 task 链路 22–106 min，子 agent 时间里 review + fix 占 64–80%。详见 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 与 `.claude/agents/code-reviewer.md`。
+**为什么不再是默认**：2026-09-10 对 5 个跑该模式的会话做归因，每 task 链路 22–106 min，子 agent 时间里 review + fix 占 64–80%。详见 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 与 `template/plugins/flight/agents/code-reviewer.md`（`flight:code-reviewer`）。
 
 ---
 
