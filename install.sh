@@ -326,7 +326,42 @@ hooks = data.setdefault("hooks", {})
 def key(entry):
     return tuple(h.get("command") for h in entry.get("hooks", []))
 
-changed = False
+# 历代模板 hooks.json 下发过的退役注册（原样命令串）；写法不同的用户命令一律不动
+RETIRED = {
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/takeoff-gate.py"',
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py" checkpoint',
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py"',
+}
+
+def strip_retired(hook_map):
+    """就地去掉命中 RETIRED 的命令；entry 的 hooks 空了去 entry，事件空了去事件键；返回移除条数。"""
+    removed = 0
+    for event in list(hook_map):
+        entries = hook_map[event]
+        if not isinstance(entries, list):
+            continue
+        kept_entries = []
+        for e in entries:
+            hs = e.get("hooks") if isinstance(e, dict) else None
+            if not isinstance(hs, list):
+                kept_entries.append(e)
+                continue
+            kept = [h for h in hs if not (isinstance(h, dict) and h.get("command") in RETIRED)]
+            removed += len(hs) - len(kept)
+            if kept:
+                e["hooks"] = kept
+                kept_entries.append(e)
+            elif not hs:
+                kept_entries.append(e)
+        if kept_entries:
+            hook_map[event] = kept_entries
+        else:
+            del hook_map[event]
+    return removed
+
+removed = strip_retired(hooks) if isinstance(hooks, dict) else 0
+strip_retired(frag.get("hooks", {}))   # 旧 fragment 里的退役注册也不再注入
+changed = removed > 0
 for event, entries in frag.get("hooks", {}).items():
     bucket = hooks.setdefault(event, [])
     seen = {key(e) for e in bucket}
@@ -350,16 +385,21 @@ if not existed:
     with open(settings_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    print("created")
+    print("created", removed)
 elif changed:
     with open(settings_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    print("merged")
+    print("merged", removed)
 else:
-    print("unchanged")
+    print("unchanged", removed)
 PY
 ) || { log_err ".claude/settings.json 合并失败（hooks 未注入）"; return 0; }
+  local removed=0
+  read -r status removed <<<"$status"
+  if [[ "${removed:-0}" =~ ^[1-9][0-9]*$ ]]; then
+    log_upd ".claude/settings.json (已移除 $removed 条退役 hook 注册)"
+  fi
   case "$status" in
     created)   log_add ".claude/settings.json (注入 intent-driven hooks)"; ADD_COUNT=$((ADD_COUNT+1)) ;;
     merged)    log_upd ".claude/settings.json (合并 intent-driven hooks)"; UPD_COUNT=$((UPD_COUNT+1)) ;;
@@ -421,8 +461,8 @@ install_flight_plugin() {
 # 复制：库自有文件 vs 用户数据
 # ---------------------------------------------------------------------------
 # .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md 与用户数据 settings.json）
-# 递归复制已覆盖 commands/ · skills/（含 legacy/）· agents/（slice-executor / integrator / code-reviewer）
-# · workflows/（opsx-apply.js 飞行调度器）· hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新
+# 递归复制已覆盖 commands/ · skills/（含 legacy/）· agents/（code-reviewer）
+# · hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新；飞行调度由 flight 插件控制面负责
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md settings.json"
 # openspec/：用户数据 + 种子目录，绝不覆盖
 copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec" 0
@@ -528,16 +568,30 @@ cat <<EOF
     · 预算中性  python3 .claude/hooks/claudemd-lint.py --diff-gate --base HEAD --msg-file <f>
     · pre-commit / commit-msg 片段见 .claude/claudemd-standard.md §13b
   - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render；legacy/ 下 1 个旧的逐 task 守门 skill）
-  - 3 个 agent 见 .claude/agents/（slice-executor / integrator / code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定），integrator = sonnet）
-  - apply 默认飞行模式（slices.json 切片 + wave 并行 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
+  - agent 见 .claude/agents/（code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定））
+  - apply 默认飞行模式（slices.json 切片 + flight 插件控制面派发 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
-  - PreToolUse takeoff-gate 拦未获人类批准的飞行派发（以账本指纹为判据：人在批准带按下「批准起飞」才写入账本，模型自证无效；需 flight@intent-driven 插件）
+  - 插件起飞时用 takeoff-gate 比对账本批准指纹（人在批准带按下「批准起飞」才写入账本，模型自证无效；需 flight@intent-driven 插件）
   - CLAUDE.md 层级规范见 .claude/claudemd-standard.md（/claudemd-commit·/claudemd-distill·claudemd-lint 的硬约束基线）
   - schema 副本见 openspec/schemas/intent-driven/
   - Worktree 隔离：每个 change 从 propose 起在自己的 .worktrees/<change>/ (branch worktree-<change>) 里进行，工件+实现全落其中，项目根保持干净；权威见 .claude/skills/openspec-git-discipline/
   - HTML 审批面板：propose/continue 后自动出 (worktree 内) openspec/changes/<change>/spec.html
   - 落点收敛：每 change 产物落其 worktree；ADR → openspec/adr/；探索设计稿 → openspec/superpower/；项目根仅 .claude/ + openspec/ + CLAUDE.md (+ 已忽略的 .worktrees/)
   - 已装项目升级：./install.sh --upgrade（刷新库文件 + 自动迁移 adr，用户数据不动）
-  - apply 默认走飞行模式（.claude/workflows/opsx-apply.js + slice-gate.py 门禁）：把测试命令（如 pytest/npm test）
-    加进 .claude/settings.json 的 allow 规则，避免 Workflow 并行跑切片时被权限提示逐个暂停
+  - apply 默认走飞行模式（flight 插件 + slice-gate.py 门禁）：把测试命令（如 pytest/npm test）
+    加进 .claude/settings.json 的 allow 规则，避免切片执行时被权限提示逐个暂停
 EOF
+
+# 退役文件：只列出、提示可手动删除，不替用户删
+retired_found=()
+for rel in .claude/workflows/opsx-apply.js .claude/agents/integrator.md \
+           .claude/agents/slice-executor.md .claude/hooks/session-decompose.py; do
+  if [[ -e "$TARGET/$rel" ]]; then retired_found+=("$rel"); fi
+done
+if [[ ${#retired_found[@]} -gt 0 ]]; then
+  echo
+  log_info "以下文件已退役，可手动删除（安装器不代删）："
+  for rel in "${retired_found[@]}"; do
+    log_info "  $rel"
+  done
+fi

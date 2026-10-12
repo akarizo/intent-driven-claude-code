@@ -415,3 +415,48 @@ def test_readme_documents_pinned_install():
     assert "--branch stable-v2.0" in section, section
     assert "降级" in section, section
     assert "分支或 tag" in help_out, help_out
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# S3 已实现：xfail 标记已去。
+RETIRED_HOOKS = [
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/takeoff-gate.py"',
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py" checkpoint',
+    'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py"',
+]
+USER_STOP_HOOK = 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py" --mine'
+
+
+def _hook(cmd):
+    return {"type": "command", "command": cmd}
+
+
+def _all_commands(settings):
+    return [h.get("command") for entries in settings.get("hooks", {}).values()
+            for e in entries for h in e.get("hooks", [])]
+
+
+def test_install_removes_retired_hooks(tmp_path):
+    # Given: 已装旧版模板的目标：settings 注册三条退役 hook 与一条用户自写的 stop-gate.py --mine；.claude/workflows/opsx-apply.js 存在
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    settings = target / ".claude" / "settings.json"
+    settings.write_text(json.dumps({"hooks": {
+        "PreToolUse": [{"matcher": "Workflow|Agent|Task", "hooks": [_hook(RETIRED_HOOKS[0])]}],
+        "PostToolUse": [{"matcher": "Write|Edit|Bash", "hooks": [_hook(RETIRED_HOOKS[1])]}],
+        "Stop": [{"hooks": [_hook(RETIRED_HOOKS[2])]}, {"hooks": [_hook(USER_STOP_HOOK)]}],
+    }}), encoding="utf-8")
+    workflow = target / ".claude" / "workflows" / "opsx-apply.js"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text("// old engine\n", encoding="utf-8")
+
+    # When: 以升级方式运行 install.sh
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+
+    # Then: 三条退役注册不在、用户那条仍在；输出含「退役」与 .claude/workflows/opsx-apply.js，该文件仍存在
+    assert p.returncode == 0, p.stderr
+    commands = _all_commands(json.loads(settings.read_text(encoding="utf-8")))
+    assert not [c for c in commands if c in RETIRED_HOOKS], commands
+    assert USER_STOP_HOOK in commands, commands
+    assert "退役" in p.stdout and ".claude/workflows/opsx-apply.js" in p.stdout, p.stdout
+    assert workflow.is_file()

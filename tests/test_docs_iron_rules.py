@@ -81,9 +81,9 @@ def rule7(text):
     return next(line for line in text.splitlines() if line.startswith("7. "))
 
 
-def step0(text):
-    start = text.index("0. **批准自检")
-    return text[start:text.index("1. **选 change**", start)]
+def takeoff_check(text):
+    start = text.index("**起飞检查")
+    return text[start:text.index("**派发与收口门禁", start)]
 
 
 def test_iron_rule_7_states_ledger_approval():
@@ -112,16 +112,18 @@ def test_propose_handoff_points_to_band():
 
 
 def test_apply_step0_explains_ledger_gate():
-    # Given: opsx-apply.md 的 step 0 与 openspec-apply-change/SKILL.md
-    cmd = step0(read("template/.claude/commands/opsx-apply.md"))
+    # Given: opsx-apply.md 的「起飞检查」段、opsx-apply.md 全文与 openspec-apply-change/SKILL.md
+    full = read("template/.claude/commands/opsx-apply.md")
+    cmd = takeoff_check(full)
     skill = read("template/.claude/skills/openspec-apply-change/SKILL.md")
 
-    # When: 读取起飞自检
-    # Then: 都含 takeoff-gate.py --change-dir、账本、指纹、claude plugin install，都不含「人类消息」
+    # When: 读取插件起飞检查
+    # Then: 起飞检查段与 skill 都写明插件起飞时以 takeoff-gate.py --change-dir 比对账本批准指纹；命令文档与 skill 都含 claude plugin install；都不含「人类消息」
     for t in (cmd, skill):
-        for word in ("takeoff-gate.py --change-dir", "账本", "指纹", "claude plugin install"):
+        for word in ("插件以 `takeoff-gate.py --change-dir` 比对账本", "指纹"):
             assert word in t, word
         assert "人类消息" not in t
+    assert "claude plugin install" in full and "claude plugin install" in skill
 
 
 def test_docs_drop_transcript_approval():
@@ -147,7 +149,6 @@ def test_readme_links_control_plane_doc():
 # 骨架：S8 实现后去掉 xfail 标记。
 
 
-import pytest  # noqa: E402
 
 
 def test_iron_rule_3_trusted_runner():
@@ -174,9 +175,65 @@ def test_measure_adr_and_review_refs():
     adr = adr_path.read_text(encoding="utf-8") if adr_path.exists() else ""
     docs = [read("template/.claude/commands/pr-ship.md"), read("template/.claude/agents/code-reviewer.md")]
 
-    # Then: ADR 已采纳并点名两份关联 ADR；两份文档写明飞行模式看测量统计、evidence.log 属回退路径
+    # Then: ADR 已采纳并点名两份关联 ADR；两份文档写明飞行模式看测量统计、evidence.log 属飞行外
     assert "Status: accepted" in adr
     assert "DRAFT-gate-evidence-not-self-reported" in adr and "DRAFT-apply-as-flight" in adr
     for text in docs:
         assert "timeline.py report" in text or "测量" in text
-        assert "evidence.log" in text and "回退" in text
+        assert "evidence.log" in text and "飞行外" in text
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+def _rule(text, n):
+    return next(line for line in text.splitlines() if line.lstrip().startswith("%d. " % n))
+
+
+def test_iron_rule_10_no_second_implementation():
+    # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
+    texts = [read("CLAUDE.md"), read("template/CLAUDE.md.snippet")]
+
+    # When: 各取第 10 条
+    rules = [_rule(t, 10) for t in texts]
+
+    # Then: 都含「停飞」与「不回退」，都不含「Workflow → Agent」
+    assert all("停飞" in r and "不回退" in r for r in rules), rules
+    assert not any("Workflow → Agent" in r for r in rules), rules
+
+
+def test_iron_rules_3_and_11_updated():
+    # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
+    claude, snippet = read("CLAUDE.md"), read("template/CLAUDE.md.snippet")
+
+    # When: 取两份的第 3 条与 CLAUDE.md 的第 11 条
+    r3 = [_rule(claude, 3), _rule(snippet, 3)]
+    r11 = _rule(claude, 11)
+
+    # Then: 第 3 条都含「飞行外」与 evidence.log、不含「回退路径」；CLAUDE.md 第 11 条含「账本」、不含 --expect-models
+    assert all("飞行外" in r and "evidence.log" in r and "回退路径" not in r for r in r3), r3
+    assert "账本" in r11 and "--expect-models" not in r11, r11
+
+
+def test_adr_records_retirement():
+    # Given: template/openspec/adr/DRAFT-flight-single-implementation.md
+    path = ROOT / "template" / "openspec" / "adr" / "DRAFT-flight-single-implementation.md"
+
+    # When: 读取全文
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    # Then: 已接受，写明取代的两份 ADR 与铁律 10，并说明 --engine=workflow 与停飞
+    for key in ("Status: accepted", "DRAFT-flight-orchestrator-state-machine", "DRAFT-flight-measure-protocol", "铁律 10", "--engine=workflow", "停飞"):
+        assert key in text, key
+
+
+def test_readme_and_workflow_doc_plugin_only():
+    # Given: README.md 与 docs/WORKFLOW_zh.md
+    docs = {rel: read(rel) for rel in ("README.md", "docs/WORKFLOW_zh.md")}
+
+    # When: 逐份找旧引擎的字样
+    stale = {rel: [k for k in ("opsx-apply.js", "integrator", "slice-executor", "session-decompose", "Workflow 前置条件") if k in d] for rel, d in docs.items()}
+
+    # Then: 都不含旧引擎字样；都含 flight@intent-driven 与「停飞」
+    assert stale == {"README.md": [], "docs/WORKFLOW_zh.md": []}, stale
+    assert all("flight@intent-driven" in d and "停飞" in d for d in docs.values())

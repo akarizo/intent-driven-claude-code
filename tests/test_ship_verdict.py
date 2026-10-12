@@ -7,8 +7,6 @@ import pytest
 from conftest import ROOT, commit_all, git, run_hook, write
 
 CMD = ROOT / "template" / ".claude" / "commands"
-SKILL = ROOT / "template" / ".claude" / "skills" / "openspec-apply-change" / "SKILL.md"
-WORKFLOW = ROOT / "template" / ".claude" / "workflows" / "opsx-apply.js"
 
 
 def ship_repo(git_repo, slice_verdict="ok", final_verdict="ok", final_at_head=True, findings=None, plan=True):
@@ -204,7 +202,7 @@ def test_ship_markdown_empty_when_ready(git_repo):
     assert p.returncode == 0
 
 
-# ---------------------------------------------------------------- 命令 / skill / 工作流文本契约
+# ---------------------------------------------------------------- 命令文本契约
 
 def test_pr_ship_bidirectional_transition():
     """scenario: ship-verdict#命令文本包含双向转换"""
@@ -224,34 +222,18 @@ def test_pr_ship_bidirectional_transition():
     assert "门禁未全绿 → 加 `--draft`" not in text
 
 
-def test_apply_writes_full_findings_and_calls_ship():
-    """scenario: ship-verdict#opsx-apply 收口写全量 review-findings 并调用 ship"""
-    # Given: opsx-apply.md 与同名 skill
-    for path in (CMD / "opsx-apply.md", SKILL):
-        text = path.read_text(encoding="utf-8")
+def test_pr_ship_reads_full_findings_and_calls_ship():
+    """scenario: ship-verdict#飞行收口写全量 review-findings 并调用 ship（文字落在 pr-ship.md）"""
+    # Given: template/.claude/commands/pr-ship.md
+    text = (CMD / "pr-ship.md").read_text(encoding="utf-8")
 
-        # When: 取收口到 pr-ship 之间的文本
-        tail = text[text.index("apply-done"):]
+    # When: 取第一次提到 review-findings.json 之后的文本
+    tail = text[text.index("review-findings.json"):]
 
-        # Then: 写入的 JSON 含 blocked；引用 slice-gate.py ship；不再有「final 未绿或有 blocked 切片」自判散文
-        assert re.search(r"\{blocked, blocking, deferred, fix\}", tail), path
-        assert "slice-gate.py ship" in tail, path
-        assert "final 未绿或有 blocked 切片" not in text, path
-
-
-def test_workflow_blocked_entries_carry_kind():
-    """scenario: ship-verdict#工作流 blocked 条目带 kind"""
-    # Given: opsx-apply.js
-    text = WORKFLOW.read_text(encoding="utf-8")
-
-    # When: 找出每处 blocked.push({...})
-    pushes = [l for l in text.splitlines() if "blocked.push({" in l]
-
-    # Then: 至少四处，每处都带 kind 且取值只有 'gate' / 'infra'
-    assert len(pushes) >= 4, pushes
-    for p in pushes:
-        m = re.search(r"kind:\s*'(\w+)'", p)
-        assert m and m.group(1) in ("gate", "infra"), p
+    # Then: 写明 review-findings.json 的四个字段 {blocked, blocking, deferred, fix}；引用 slice-gate.py ship；不再有「final 未绿或有 blocked 切片」自判散文
+    assert re.search(r"\{blocked, blocking, deferred, fix\}", tail)
+    assert "slice-gate.py ship" in text
+    assert "final 未绿或有 blocked 切片" not in text
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: ship-final-freshness#*）

@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from conftest import commit_all, git, run_hook, write
+from conftest import commit_all, git, ledger_append, run_hook, write
 
 
 def plan(slices, gate=None, scenario_tests=None):
@@ -160,9 +160,17 @@ def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None, src_body=DEFAULT_S
     return change
 
 
+def _measured(repo, target="tests/test_mod.py::test_mod_adds"):
+    """给已 start 的切片 S1 在账本补起点测量（XFAIL）与 source 为空的见红测量（FAILED），让 G5 绿。"""
+    base = json.loads((repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+    ledger_append(repo, "c", _measure_ev(base, [(target, "XFAIL")], agent="dispatch"))
+    ledger_append(repo, "c", _measure_ev(base, [(target, "FAILED")], changed=["tests/test_mod.py"]))
+
+
 def test_gate_pass_json(git_repo):
-    # Given: 已 start 的切片 S1；区间内改了 src/mod.py 与配对测试（含按序 GWT 注释），改动全在 owns 内，scenario 骨架无 xfail
+    # Given: 已 start 的切片 S1；区间内改了 src/mod.py 与配对测试（含按序 GWT 注释），改动全在 owns 内，scenario 骨架无 xfail；账本有起点测量与先红测量
     change = gate_repo(git_repo)
+    _measured(git_repo)
 
     # When: 运行 slice-gate.py gate S1
     p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
@@ -203,8 +211,9 @@ def test_gate_missing_gwt(git_repo):
 
 
 def test_gate_warns_uncommitted_with_full_path(git_repo):
-    # Given: 已 start 的切片 S1，commit 之后 src/mod.py 又被改动但未提交（git status 首行带前导空格）
+    # Given: 已 start 的切片 S1，账本有起点测量与先红测量；commit 之后 src/mod.py 又被改动但未提交（git status 首行带前导空格）
     change = gate_repo(git_repo)
+    _measured(git_repo)
     (git_repo / "src" / "mod.py").write_text("def add(a, b):\n    return a + b  # touched\n", encoding="utf-8")
 
     # When: 运行 gate S1
@@ -279,34 +288,6 @@ def test_final_detects_multiline_xfail(git_repo):
     out = json.loads(p.stdout)
     assert out["ok"] is False
     assert any(f.startswith("G7") and "xfail" in f for f in out["failed"]), out["failed"]
-
-
-def test_gate_g5_fails_when_evidence_has_no_rows_for_slice(git_repo):
-    # Given: change 目录已有 evidence.log（hooks 在工作），但里面没有本切片 S1 的任何测试运行行
-    change = gate_repo(git_repo)
-    write(change / "evidence.log", "2026-09-10T00:00:00Z\tS9\tPASS\tpytest -q\n")
-
-    # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: ok 为 false，failed 含 G5
-    out = json.loads(p.stdout)
-    assert out["ok"] is False
-    assert any(f.startswith("G5") for f in out["failed"]), out["failed"]
-
-
-def test_gate_g5_warns_when_hooks_missing(git_repo):
-    # Given: change 目录没有 evidence.log（hooks 未安装）
-    change = gate_repo(git_repo)
-
-    # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 仍通过，但 JSON 标 hooks_missing 为 true 且 warnings 含 G5
-    out = json.loads(p.stdout)
-    assert out["ok"] is True, out
-    assert out.get("hooks_missing") is True
-    assert any(w.startswith("G5") for w in out["warnings"])
 
 
 def test_final_gate_reports_scenarios(git_repo):
@@ -429,7 +410,7 @@ def test_record_survives_bad_ceiling_lineno(git_repo):
 
 
 def test_record_survives_non_iterable_ceilings(git_repo):
-    # Given: ceilings 被转写成真值非可迭代标量（回退路径由 integrator 手写 record --json，没有 JS schema 拦这层）
+    # Given: ceilings 被转写成真值非可迭代标量（由控制面（flight 插件）经 record --json 转写，没有 JS schema 拦这层）
     change = gate_repo(git_repo)
     gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
                             "ceilings": 5, "summary": "通过"}, ensure_ascii=False)
@@ -444,8 +425,9 @@ def test_record_survives_non_iterable_ceilings(git_repo):
 
 
 def test_gate_g8_silent_without_marker(git_repo):
-    # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明
+    # Given: 区间内不含任何 ceiling 标记，但含一条带 ceiling: 字样的非注释代码行与一份 Markdown 里的示例说明；账本有起点测量与先红测量
     change = gate_repo(git_repo, src_body=NO_MARKER_SRC, extra_owned={"docs/note.md": "# %s 示例说明\n" % CEILING})
+    _measured(git_repo)
 
     # When: 运行 slice-gate.py gate S1
     p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
@@ -809,262 +791,11 @@ def test_start_expect_branch_refuses_stale_base(git_repo):
     assert run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).returncode != 0
 
 
-# ---------------------------------------------------------------- slice-noreturn-resume（scenario: slice-checkpoint#*）
-# S1：checkpoint 子命令、start --resume-checkpoint、快照生命周期。
-
-CKPT_REF = "refs/flight/c/S1"
-
-
-def _started(git_repo):
-    """change c 的切片 S1（owns src/** 与 tests/test_mod.py）已 start；src/mod.py 已在基点里。返回 (change 目录, 基点 sha)。"""
-    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**", "tests/test_mod.py"])]))
-    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return 0\n")
-    base = commit_all(git_repo, "artifacts")
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-    assert p.returncode == 0, p.stderr
-    return change, base
-
-
-def _ref(repo, ref=CKPT_REF):
-    import subprocess
-    return subprocess.run(["git", "rev-parse", "-q", "--verify", ref], cwd=repo, capture_output=True, text=True).stdout.strip()
-
-
-def _checkpoint(repo):
-    return run_hook("slice-gate", "checkpoint", stdin=json.dumps({"hook_event_name": "PostToolUse", "cwd": str(repo)}), cwd=repo)
-
-
-def test_checkpoint_snapshots_owned_changes(git_repo):
-    # Given: 已 start 的切片 S1；工作区改了已跟踪的 src/mod.py、新建未跟踪的 src/pkg/new.py，另在 owns 外新建 notes.txt，都未提交
-    change, base = _started(git_repo)
-    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
-    write(git_repo / "src" / "pkg" / "new.py", "X = 1\n")
-    write(git_repo / "notes.txt", "scratch\n")
-    status_before = git(git_repo, "status", "--porcelain")
-
-    # When: 以 PostToolUse 载荷（cwd 为仓库根）运行 checkpoint
-    p = _checkpoint(git_repo)
-
-    # Then: 退出 0、stdout 为空；refs/flight/c/S1 的树里 src/mod.py 与 src/pkg/new.py 是新内容、没有 notes.txt；HEAD 与工作区状态不变
-    assert p.returncode == 0 and p.stdout == "", (p.returncode, p.stdout, p.stderr)
-    snap = _ref(git_repo)
-    assert snap
-    assert "return a + b" in git(git_repo, "show", f"{snap}:src/mod.py")
-    assert git(git_repo, "show", f"{snap}:src/pkg/new.py") == "X = 1"
-    assert "notes.txt" not in git(git_repo, "ls-tree", "-r", "--name-only", snap).splitlines()
-    assert git(git_repo, "rev-parse", "HEAD") == base
-    assert git(git_repo, "status", "--porcelain") == status_before
-
-
-def test_checkpoint_silent_without_marker(git_repo):
-    # Given: 有 change 计划、工作区有未提交改动，但没有 .openspec-slice 标记；另备一段非法 JSON 载荷
-    write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
-    commit_all(git_repo, "plan")
-    write(git_repo / "src" / "mod.py", "x = 1\n")
-
-    # When: 分别以合法载荷与非法载荷运行 checkpoint
-    runs = [run_hook("slice-gate", "checkpoint", stdin=s, cwd=git_repo) for s in (json.dumps({"cwd": str(git_repo)}), "{not json")]
-
-    # Then: 两次都退出 0、stdout 为空；仓库里没有任何 refs/flight/ 引用
-    assert all(p.returncode == 0 and p.stdout == "" for p in runs), [(p.returncode, p.stdout, p.stderr) for p in runs]
-    assert git(git_repo, "for-each-ref", "refs/flight/") == ""
-
-
-def test_start_resume_restores_checkpoint(git_repo, tmp_path):
-    # Given: S1 在基点 X 上已 commit 了 src/a.py、另有未提交的 src/mod.py 改动，checkpoint 已拍快照；随后从 X 新开一个干净 worktree（模拟隔离模式重派）
-    change, base = _started(git_repo)
-    write(git_repo / "src" / "a.py", "A = 1\n")
-    git(git_repo, "add", "src/a.py")
-    git(git_repo, "commit", "-q", "-m", "S1 wip")
-    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
-    _checkpoint(git_repo)
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
-    wt_change = wt / "openspec" / "changes" / "c"
-
-    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt_change), "--resume-checkpoint", cwd=wt)
-
-    # Then: 退出 0；src/a.py 与 src/mod.py 以快照内容出现在工作区、HEAD 仍是 X；stdout 的 base 为 X、checkpoint.restored 恰为这两个文件；timeline 最后一行是 slice-start 且备注含 checkpoint
-    assert p.returncode == 0, p.stderr
-    assert (wt / "src" / "a.py").read_text(encoding="utf-8") == "A = 1\n"
-    assert "return a + b" in (wt / "src" / "mod.py").read_text(encoding="utf-8")
-    assert git(wt, "rev-parse", "HEAD") == base
-    out = json.loads(p.stdout)
-    assert out["base"] == base and sorted(out["checkpoint"]["restored"]) == ["src/a.py", "src/mod.py"], out
-    last = (wt_change / "timeline.md").read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert "\tslice-start\t" in last and "checkpoint" in last
-
-
-def test_start_resume_skips_foreign_base(git_repo, tmp_path):
-    # Given: S1 在基点 X 上的快照已存在；X 之后另有一个不在快照祖先链上的 commit Y，在 Y 上新开 worktree
-    change, base = _started(git_repo)
-    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
-    _checkpoint(git_repo)
-    (git_repo / ".openspec-slice").unlink()
-    git(git_repo, "checkout", "-q", "--", "src/mod.py")
-    write(git_repo / "src" / "other.py", "Z = 1\n")
-    other = commit_all(git_repo, "integrate elsewhere")
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), other)
-
-    # When: 在 Y 上运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 退出 0；src/mod.py 保持 Y 上的内容；checkpoint.restored 为空且 note 非空；base 为 Y
-    assert p.returncode == 0, p.stderr
-    out = json.loads(p.stdout)
-    assert out["checkpoint"]["restored"] == [] and out["checkpoint"].get("note"), out
-    assert "return 0" in (wt / "src" / "mod.py").read_text(encoding="utf-8")
-    assert out["base"] == other
-
-
-def test_start_fresh_clears_stale_checkpoint(git_repo):
-    # Given: 切片 S1 留有旧快照引用 refs/flight/c/S1，工作区没有标记
-    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
-    commit_all(git_repo, "plan")
-    git(git_repo, "update-ref", CKPT_REF, "HEAD")
-
-    # When: 不带 --resume-checkpoint 运行 start S1
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0；refs/flight/c/S1 已不存在
-    assert p.returncode == 0, p.stderr
-    assert _ref(git_repo) == ""
-
-
-def test_gate_ok_deletes_checkpoint(git_repo):
-    # Given: 已 start 且实现完整的切片 S1（门禁会绿），存在快照引用 refs/flight/c/S1
-    change = gate_repo(git_repo)
-    git(git_repo, "update-ref", CKPT_REF, "HEAD")
-
-    # When: 运行切片门禁
-    res = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
-
-    # Then: 门禁绿；refs/flight/c/S1 已删除
-    assert res["ok"], res
-    assert _ref(git_repo) == ""
-
-
-def test_start_resume_restores_non_ascii_path(git_repo, tmp_path):
-    # Given: S1 已 start，工作区新建未提交的 src/中文.py（内容 "Z = 1"，路径含非 ASCII，core.quotePath 默认开启），checkpoint 已拍快照；随后从基点 X 新开一个干净 worktree
-    change, base = _started(git_repo)
-    write(git_repo / "src" / "中文.py", "Z = 1\n")
-    _checkpoint(git_repo)
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
-
-    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 退出 0；src/中文.py 以快照内容出现在工作区；checkpoint.restored 恰为 ["src/中文.py"]
-    assert p.returncode == 0, p.stderr
-    assert (wt / "src" / "中文.py").read_text(encoding="utf-8") == "Z = 1\n"
-    assert json.loads(p.stdout)["checkpoint"]["restored"] == ["src/中文.py"], p.stdout
-
-
-def test_start_resume_drops_renamed_source(git_repo, tmp_path):
-    # Given: 基点 X 含 src/old.py（内容 "OLD = 1"）；S1 已 start 并 commit 了 git mv src/old.py src/new.py，checkpoint 已拍快照；随后从 X 新开一个干净 worktree
-    write(git_repo / "src" / "old.py", "OLD = 1\n")
-    change, base = _started(git_repo)
-    git(git_repo, "mv", "src/old.py", "src/new.py")
-    git(git_repo, "commit", "-q", "-m", "S1 rename")
-    _checkpoint(git_repo)
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
-
-    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 退出 0；src/old.py 不存在；src/new.py 为 "OLD = 1"；checkpoint.restored 恰为 src/new.py 与 src/old.py
-    assert p.returncode == 0, p.stderr
-    assert not (wt / "src" / "old.py").exists()
-    assert (wt / "src" / "new.py").read_text(encoding="utf-8") == "OLD = 1\n"
-    assert sorted(json.loads(p.stdout)["checkpoint"]["restored"]) == ["src/new.py", "src/old.py"], p.stdout
-
-
 # ---------------------------------------------------------------- flight-integrity-fixes（scenario: executor-noreturn-recovery#gate-* / resume-* / record-* · scenario-outcome-gate#*）
-# 骨架：S1（门禁结论留存与找回）、S2（G7 看实际运行结果）实现后逐条去掉 xfail 标记。
-
-GATE_REF = "refs/flight/c/gate-S1"
 
 
 def _gate(change, repo):
     return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=repo).stdout)
-
-
-def test_gate_ok_records_result_ref(git_repo):
-    # Given: 已 start 且实现完整的切片 S1（门禁会绿）
-    change = gate_repo(git_repo)
-
-    # When: 运行切片门禁
-    out = _gate(change, git_repo)
-
-    # Then: 门禁绿；refs/flight/c/gate-S1 的父提交是门禁输出里的 commit，其 gate.json 的 slice / ok / commit / base 与门禁输出一致
-    assert out["ok"] is True, out
-    assert _ref(git_repo, GATE_REF), "门禁结论引用不存在"
-    rec = json.loads(git(git_repo, "show", GATE_REF + ":gate.json"))
-    keys = ("slice", "ok", "commit", "base")
-    assert {k: rec.get(k) for k in keys} == {k: out[k] for k in keys}, rec
-    assert git(git_repo, "rev-parse", GATE_REF + "^") == out["commit"]
-
-
-def test_resume_start_returns_recorded_gate(git_repo, tmp_path):
-    # Given: 切片 S1 在基点 X 上提交并门禁通过（结论已留存），随后从 X 新开一个干净 worktree（模拟隔离模式重派）
-    change = gate_repo(git_repo)
-    base = git(git_repo, "rev-parse", "HEAD~1")
-    gated = _gate(change, git_repo)
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), base)
-
-    # When: 在新 worktree 里运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 以 3 退出；stdout 是留存的门禁结论（ok 为 true、commit 为原切片 commit、recovered 为 true）；新 worktree 里没有切片标记
-    assert gated["ok"] is True and gated["base"] == base, gated
-    assert p.returncode == 3, (p.returncode, p.stdout, p.stderr)
-    out = json.loads(p.stdout)
-    assert out["ok"] is True and out["commit"] == gated["commit"] and out.get("recovered") is True, out
-    assert not (wt / ".openspec-slice").exists()
-
-
-def test_resume_start_ignores_foreign_gate_record(git_repo, tmp_path):
-    # Given: 切片 S1 的门禁结论已留存（base X、commit C）；C 之后又有提交 Y，在 Y 上新开 worktree
-    change = gate_repo(git_repo)
-    _gate(change, git_repo)
-    recorded = _ref(git_repo, GATE_REF)
-    write(git_repo / "notes.txt", "y\n")
-    other = commit_all(git_repo, "elsewhere")
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), other)
-
-    # When: 在 Y 上运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 以 0 退出并按原有逻辑起跑（输出含 checkpoint、不含 recovered）；留存的门禁结论引用保持不变
-    assert recorded, "门禁结论引用不存在"
-    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)
-    out = json.loads(p.stdout)
-    assert "checkpoint" in out and "recovered" not in out, out
-    assert _ref(git_repo, GATE_REF) == recorded
-
-
-def test_record_and_fresh_start_clear_gate_ref(git_repo):
-    # Given: 切片 S1 门禁通过、结论已留存
-    change = gate_repo(git_repo)
-    gated = _gate(change, git_repo)
-    recorded = _ref(git_repo, GATE_REF)
-    assert recorded, "门禁结论引用不存在"
-
-    # When: integrator 以 record 写回该结论；之后人为放回一份旧结论，再首轮 start S1
-    rec = run_hook("slice-gate", "record", "--change-dir", str(change), "--json", json.dumps(gated), cwd=git_repo)
-    after_record = _ref(git_repo, GATE_REF)
-    git(git_repo, "update-ref", GATE_REF, recorded)
-    start = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 写回后引用已不存在；首轮 start 后旧结论也被清掉
-    assert rec.returncode == 0 and after_record == "", (rec.stdout, rec.stderr, after_record)
-    assert start.returncode == 0 and _ref(git_repo, GATE_REF) == "", start.stderr
 
 
 ALIASED_XFAIL_TEST = '''
@@ -1149,29 +880,6 @@ def test_g7_reads_outcome_despite_addopts_quiet(git_repo):
 
     # Then: failed 里没有任何 G7 条目
     assert not [f for f in out["failed"] if f.startswith("G7")], out["failed"]
-
-
-# ---------------------------------------------------------------- flight-integrity-followups（scenario: executor-noreturn-recovery#resume-start-refuses-record-after-replan）
-
-def test_resume_start_refuses_record_after_replan(git_repo, tmp_path):  # 既有行为守卫：基点核对已挡住该路径，故不标 xfail
-    # Given: 切片 S1 门禁绿、结论已留存，随后飞行中断；人改了计划（proposal.md）并提交，又按批准提交了一次，再从新的分支尖端开 worktree
-    change = gate_repo(git_repo)
-    gated = _gate(change, git_repo)
-    write(change / "proposal.md", "## Why\n\n改过的计划。\n")
-    commit_all(git_repo, "replan")
-    write(change / "timeline.md", "approve\n")
-    tip = commit_all(git_repo, "chore(flight): approve")
-    wt = tmp_path / "wt"
-    git(git_repo, "worktree", "add", "-q", "--detach", str(wt), tip)
-
-    # When: 新一轮飞行里，首轮执行体未返回，重派在新 worktree 里运行 start S1 --resume-checkpoint
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(wt / "openspec" / "changes" / "c"), "--resume-checkpoint", cwd=wt)
-
-    # Then: 结论确实还留着；但不找回（以 0 退出、输出不含 recovered），旧计划下的 commit 不会被交出
-    assert gated["ok"] is True and _ref(git_repo, GATE_REF), gated
-    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)
-    out = json.loads(p.stdout)
-    assert "recovered" not in out and out.get("commit") != gated["commit"], out
 
 
 # ---------------------------------------------------------------- flight-integrity-followups（scenario: g7-runner-environment#*）
@@ -1322,8 +1030,6 @@ def test_gate_pairing_ignores_marker(git_repo):
 # ---------------------------------------------------------------- flight-measure
 # 骨架：S1（measure）、S2（G5 账本判据） 实现后去掉 xfail 标记。
 
-
-from conftest import ledger_append  # noqa: E402
 
 KEEP_SRC = "KEEP = 1\n"
 TWO_TESTS = '''
@@ -1562,23 +1268,13 @@ def test_start_tags_ledger_evidence(git_repo):
     write(change / "tasks.md", "- [ ] S1 x\n")
     commit_all(git_repo, "artifacts")
 
-    # When: 以 --evidence ledger 起跑；实现并提交；写入满足 G5 的测量后以账本模式运行 gate
+    # When: 以 --evidence ledger 起跑
     s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
-    marker = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
-    base = json.loads(s.stdout)["base"]
-    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
-    write(git_repo / "tests" / "test_mod.py", GOOD_TEST)
-    git(git_repo, "add", "src", "tests")
-    git(git_repo, "commit", "-q", "-m", "S1")
-    ledger_append(git_repo, "c", _measure_ev(base, [(target, "XFAIL")], agent="dispatch"))
-    ledger_append(git_repo, "c", _measure_ev(base, [(target, "FAILED")], changed=["tests/test_mod.py"]))
-    out = _ledger_gate(change, git_repo)
 
-    # Then: 标记含 evidence=ledger；gate 无 evidence.log 相关警告，hooks_missing 为 false
+    # Then: 退出 0；标记含 evidence=ledger
     assert s.returncode == 0, s.stderr
+    marker = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
     assert marker.get("evidence") == "ledger", marker
-    assert not any("evidence.log" in w for w in out["warnings"]), out["warnings"]
-    assert out["hooks_missing"] is False
 
 # ---------------------------------------------------------------- flight-measure S9
 # S9 已实现：骨架标记已去。
@@ -1770,3 +1466,64 @@ def test_measure_lists_guard_targets(git_repo):
 
     # Then: 输出 JSON 的 guards 为 [T1]
     assert json.loads(p.stdout)["guards"] == [T1], p.stdout + p.stderr
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# scenario: flight-retire-slice-gate#*
+
+
+def _refs(repo, prefix):
+    return git(repo, "for-each-ref", "--format=%(refname)", prefix)
+
+
+def test_checkpoint_is_noop(git_repo):
+    # Given: change c 的切片 S1（owns src/**）已 start；工作区里已跟踪的 src/mod.py 被改、另新建未跟踪的 src/new.py，都未提交
+    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return 0\n")
+    commit_all(git_repo, "artifacts")
+    assert run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo).returncode == 0
+    write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
+    write(git_repo / "src" / "new.py", "X = 1\n")
+    payload = json.dumps({"hook_event_name": "PostToolUse", "cwd": str(git_repo)})
+
+    # When: 以 PostToolUse 载荷运行 slice-gate.py checkpoint
+    p = run_hook("slice-gate", "checkpoint", stdin=payload, cwd=git_repo)
+
+    # Then: 退出 0；stdout 与 stderr 都为空；仓库里没有 refs/flight/c/S1 快照引用
+    assert p.returncode == 0, p.stderr
+    assert (p.stdout, p.stderr) == ("", "")
+    assert _refs(git_repo, "refs/flight/c/S1") == ""
+
+
+def test_g5_ledger_only(git_repo):
+    # Given: 切片 S1 映射 T1、T2，已 start，两者已实现、提交并通过；账本里没有 S1 的任何测量
+    change, base = _g5_repo(git_repo)
+
+    # When: 先不带 --evidence 运行 gate S1，再带 --evidence log 运行一次
+    plain = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    as_log = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--evidence", "log", cwd=git_repo)
+
+    # Then: 前者 G5 失败项含「缺少本片起点测量」，门禁 JSON 没有 hooks_missing 键；后者以非 0 退出，stdout 没有门禁 JSON
+    out = json.loads(plain.stdout)
+    assert any("缺少本片起点测量" in f for f in _g5(out)), out["failed"]
+    assert "hooks_missing" not in out, out
+    assert as_log.returncode != 0, (as_log.stdout, as_log.stderr)
+    assert as_log.stdout.strip() == "", as_log.stdout
+
+
+def test_retired_gate_mechanisms_gone(git_repo):
+    # Given: 切片 S1 映射 T1、T2，已实现并通过；账本里有起点测量（两者 XFAIL）与 source 为空的见红测量（两者 FAILED）
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate S1，再分别运行 start S1 --resume-checkpoint 与 waves
+    out = _ledger_gate(change, git_repo, "--base", base)
+    resume = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--resume-checkpoint", cwd=git_repo)
+    waves = run_hook("slice-gate", "waves", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: gate 绿；仓库里没有 refs/flight/c/gate-S1；门禁 JSON 没有 red_count；后两条命令都以非 0 退出
+    assert out["ok"] is True, out["failed"]
+    assert _refs(git_repo, "refs/flight/c/gate-S1") == ""
+    assert "red_count" not in out, out
+    assert resume.returncode != 0, (resume.stdout, resume.stderr)
+    assert waves.returncode != 0, (waves.stdout, waves.stderr)
