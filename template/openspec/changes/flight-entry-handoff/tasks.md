@@ -5,8 +5,8 @@
 
 ## 切片
 
-- [ ] S1 /opsx-apply 注册加拦截；写账本的入口只认人或宿主程序（composer · bridge · sdk） （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py`）
-- [ ] S2 落地交接 /flight:pr-ship（--worktree · --change-dir · --judges）；0.7.0 （deps: - · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py`）
-- [ ] S3 派发守卫放行主会话派发 flight:code-reviewer（仍须 model） （deps: - · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py`）
-- [ ] S4 pr-ship 与 code-reviewer 迁入插件（参数化路径、flight:code-reviewer）；apply 命令与 skill 指向 /flight:pr-ship 并写明来源规则 （deps: - · verify: `python3 -m pytest -q tests/test_code_reviewer_agent.py tests/test_template_docs.py tests/test_ship_verdict.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_flight_plugin.py`）
-- [ ] S5 安装器列出已迁入插件的旧副本；README · WORKFLOW · legacy skill · CLAUDE.md 改用 /flight:pr-ship 与 flight:code-reviewer （deps: S4 · verify: `python3 -m pytest -q tests/test_flight_entry_docs.py tests/test_install.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py`）
+- [x] S1 /opsx-apply 注册加拦截；写账本的入口只认人或宿主程序（composer · bridge · sdk） （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py`）
+- [x] S2 落地交接 /flight:pr-ship（--worktree · --change-dir · --judges）；0.7.0 （deps: - · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_plugin.py`）
+- [x] S3 派发守卫放行主会话派发 flight:code-reviewer（仍须 model） （deps: - · verify: `python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_plugin.py`）
+- [x] S4 pr-ship 与 code-reviewer 迁入插件（参数化路径、flight:code-reviewer）；apply 命令与 skill 指向 /flight:pr-ship 并写明来源规则 （deps: - · verify: `python3 -m pytest -q tests/test_code_reviewer_agent.py tests/test_template_docs.py tests/test_ship_verdict.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_flight_plugin.py`）
+- [x] S5 安装器列出已迁入插件的旧副本；README · WORKFLOW · legacy skill · CLAUDE.md 改用 /flight:pr-ship 与 flight:code-reviewer （deps: S4 · verify: `python3 -m pytest -q tests/test_flight_entry_docs.py tests/test_install.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py`）

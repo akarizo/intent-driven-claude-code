@@ -1,0 +1,67 @@
+{
+  "blocked": [],
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/commands/pr-ship.md",
+      "line": 136,
+      "summary": "新通则只要求主会话的 git、gh 与判定器命令用 (cd <worktree> && …) 运行，但第 8 步与第 10 步派给 flight:code-reviewer 的 prompt 没带 worktree 路径，取 diff 时仍写裸 HEAD：回退路径是 `git diff origin/<target>...HEAD`，follow-up 主路径是 `git diff <REVIEW_HEAD_上一轮>..HEAD`。按插件模块边界的经验，子 agent 的 shell 跟随主会话当前目录（需进一步确认）。飞行落地时主会话的 cwd 不是 --worktree，HEAD 就会解析成主仓库当前分支：回退路径可能得到空 diff 并误报「无变更」；follow-up 复核拿到的 diff 与修复补丁无关，可能对没审过的东西判「通过」，进而影响收尾复裁的 ready/draft。",
+      "fix": "第 8 步与第 10 步的 reviewer prompt 各加一行「工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）」。HEAD 不再交给子 agent 解析，改为主会话在 worktree 里先 `git rev-parse HEAD` 拿到 SHA，再嵌进 prompt。第 8 步：`git -C <worktree> diff origin/<target>...<REVIEW_HEAD_1>`。第 10 步：`git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>`。参考材料里的 <change-dir> 也写成绝对路径。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md",
+      "line": 149,
+      "summary": "legacy 逐 task 守门把派发类型改成了 `subagent_type: flight:code-reviewer`（4b 第 149 行、聚焦复核第 191 行、整合审第 243 行），但全文没有一处要求显式传 `model`。插件的 spawnVerdict（template/plugins/flight/hooks/envelope.ts:513）对所有 `flight:*` 派发、也包括主会话可派的 flight:code-reviewer，都会以「派发须显式指定 model（铁律 11）」拒绝。原来的项目 agent `code-reviewer` 不受这个守卫约束；全新安装的项目又已经没有那个文件。结果是 `--gate=per-task` 每次派守门员都会被拒，legacy 模式整体失效。只改了名字，派发契约没有跟着改。",
+      "fix": "在 4b、聚焦复核、整合审三处派发说明里都加上：先跑 `python3 .claude/hooks/session-model.py` 判定 `<main>`（exit 3 = 判不出，停下交人工），派发 Agent 时显式带 `model: \"<main>\"`，写法与 `/flight:pr-ship` 第 8 步一致。在 Guardrails 或常见错误表里补一行「派 flight:code-reviewer 不带 model 会被插件守卫拒绝」。如有必要，在 tests/test_flight_entry_docs.py 加一条断言：legacy skill 里每处派 flight:code-reviewer 都配有 model。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_envelope.py",
+      "line": 246,
+      "summary": "flight-entry-handoff 段头注释仍写「骨架：S3 实现后去掉 xfail 标记。」，xfail 已去，与文件内其他段的约定（「S? 已实现：骨架标记已去。」）不一致，属遗留陈述",
+      "fix": "把该行改为「# S3 已实现：骨架标记已去。」，与同文件其他段保持一致"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 163,
+      "summary": "交接参数串里的三个路径（changeTree / changeDir / hooksDir）没加引号，直接拼进 args。仓库绝对路径一旦含空格（比如 macOS 的 iCloud「Mobile Documents」目录），/flight:pr-ship 按 ARGUMENTS 拆分 --worktree 等参数就会错位，toast 里给人手动运行的命令串也会跟着错。实现与 S2 切片包规定的格式完全一致，所以只记 LOW。实际影响取决于 S4 中 pr-ship.md 怎么解析 ARGUMENTS，需进一步确认。",
+      "fix": "可选做法：路径含空格或引号时，用 JSON.stringify 或单引号转义包住再拼接，同时补一条带空格路径的用例；或者在 S4 的 pr-ship.md 用法里写明路径不得含空格。任选其一，并和切片包对齐。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/agents/code-reviewer.md",
+      "line": 69,
+      "summary": "迁入插件后，正文第 69 行仍写裸命令名「（/pr-ship 贴评论）」，而该命令已改名为 /flight:pr-ship。描述行已同步，正文没跟上。切片约束写的是「正文不变」，属于约束本身漏掉的点，不算执行偏离。",
+      "fix": "改为「（/flight:pr-ship 贴评论）」，与 description 保持一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 645,
+      "summary": "flightCommand 的文档注释仍写「abort / resume 只认人发出」。本切片已把来源放宽到 HOST_ORIGINS（composer、bridge、sdk），注释和实现、拒绝文案不一致。",
+      "fix": "把注释改为「abort / resume 只认人或宿主程序发出（HOST_ORIGINS）」，与 HOST_ORIGINS 常量注释和 originRefusal 文案保持一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_install.py",
+      "line": 453,
+      "summary": "断言 `\"/flight:pr-ship\" in p.stdout` 很弱。安装器结尾「更多」段（install.sh:565）每次都会输出 `/flight:pr-ship`，所以即使「已迁入」提示块不在，这一条也会通过。目前靠路径与「已迁入 flight 插件」两条断言兜住，但这一条本身没测到 Then 要求的内容。",
+      "fix": "把这条改为断言提示块的整句（或至少「改用 /flight:pr-ship 与 flight:code-reviewer」这段子串）出现在 stdout 中。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_install.py",
+      "line": 486,
+      "summary": "去掉 xfail 后，段首注释「骨架：S5 实现后去掉 xfail 标记。」已经过时。tests/test_flight_entry_docs.py 第 1 行 docstring 里的同一句也一样。",
+      "fix": "删掉这两处「骨架：S5 实现后去掉 xfail 标记」的字样，或改成描述测试本身的注释。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "bfdddd5320f9a3319a45817dec817bc441ff3545"
+  }
+}
