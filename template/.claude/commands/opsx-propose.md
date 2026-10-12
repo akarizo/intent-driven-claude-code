@@ -50,6 +50,7 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
 
    - 一次性写出全部该建的工件（proposal → specs → design(按触发器) → adr(按触发器) → tasks）。
    - **tasks 阶段**额外产出（详见 schema 的 tasks instruction）：`slices.json`、每个切片一份 `slices/<S>.md` 切片包、每个 scenario 一个 `xfail(strict)` 测试骨架（放进所属切片 owns 的测试文件）、由 `slices.json` 生成的 `tasks.md`。
+   - **护栏 scenario**：行为在 base 上已成立的 scenario（保持原行为、不回归）列进所属切片的 `guards`，测试在规划时写完整、不带 xfail、base 上须通过；G5 只豁免 `guards` 里且起点测量已通过的目标（详见 schema）。
    - 随后跑：
      ```bash
      python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
@@ -67,7 +68,7 @@ description: 一次成稿：一步生成完整 change 的全部工件（含切�
    python3 .claude/hooks/slice-gate.py baseline --change-dir openspec/changes/<name>
    ```
    用**后台**方式运行（例如 Bash 的 `run_in_background`），不等它跑完，直接进入 step 6 交接。它跑一次全量测试，把耗时写回 `slices.json.gate.full_suite_sec`；同时跑 lint / typecheck 基线与每片 `verify`，产出 `gate-baseline.json`。
-   verify 在基线上必须绿（骨架是 strict-xfail）。
+   verify 在基线上必须绿（骨架是 strict-xfail；护栏测试不带 xfail、须已通过）。
    baseline 运行期间改计划文件不会被覆盖（结束时只写回耗时）；改的是 gate 命令或某片 `verify` 时基线判红（「重跑 baseline」），按下面的红处理，跑完后须重跑 baseline。
    baseline 结束（后台通知）时只报告一行：
    - 退出 0 → 「基线绿（全量 N 秒；预存红 k 条）」；

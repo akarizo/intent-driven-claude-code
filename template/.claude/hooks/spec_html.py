@@ -479,6 +479,18 @@ def load_timeline_rows(change_dir):
     return rows
 
 
+# 护栏标签配色：与模板里的状态标签同风格（描边 + 浅底），亮色 / 暗色各一套。
+# 模板样式表不在本 hook 里，故随飞行区一起输出。
+GUARD_CHIP_STYLE = (
+    '<style>'
+    '.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }'
+    '[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }'
+    '@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] '
+    '{ color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }'
+    '</style>'
+)
+
+
 def render_flight(change_dir):
     text = read_text(os.path.join(change_dir, "slices.json"))
     if not text:
@@ -505,6 +517,7 @@ def render_flight(change_dir):
             % (esc(sid), inline_md(s.get("title", "")), wave_of.get(sid, 0),
                esc(", ".join(s.get("deps") or []) or "-"), owns_html, esc(s.get("verify", "")))
         )
+        guards = set(s.get("guards") or [])
         for scen_id in s.get("scenarios") or []:
             target = scenario_tests.get(scen_id, "")
             if target and "::" in target:
@@ -514,9 +527,10 @@ def render_flight(change_dir):
                     status = "passed"
             else:
                 status = "missing"
+            guard_chip = '<span class="chip" data-state="guard">护栏</span>' if scen_id in guards else ""
             scenario_rows.append(
-                '<tr><td>%s</td><td><code>%s</code></td><td><span class="chip" data-state="%s">%s</span></td></tr>'
-                % (esc(scen_id), esc(target or "-"), status, status)
+                '<tr><td>%s</td><td><code>%s</code></td><td>%s<span class="chip" data-state="%s">%s</span></td></tr>'
+                % (esc(scen_id), esc(target or "-"), guard_chip, status, status)
             )
 
     timeline_rows = load_timeline_rows(change_dir)
@@ -532,7 +546,7 @@ def render_flight(change_dir):
     else:
         timeline_html = '<h3>飞行记录</h3><p class="placeholder">尚无飞行记录事件。</p>'
 
-    return (
+    return GUARD_CHIP_STYLE + (
         '<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th>'
         '<th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody>%s</tbody></table>'
         '<h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th>'
