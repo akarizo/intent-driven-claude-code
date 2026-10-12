@@ -6,3 +6,4 @@
 2026-10-12T08:09:16Z	gate	S4 ok
 2026-10-12T08:09:50Z	gate	S1 ok
 2026-10-12T08:15:24Z	gate	S5 ok
+2026-10-12T08:29:13Z	fix	blocking=2
