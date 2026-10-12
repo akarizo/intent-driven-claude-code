@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -202,10 +200,9 @@ def test_undeterminable_reason_neutral():
     assert_ts_passed("undeterminable-reason-neutral")
 
 # ---------------------------------------------------------------- flight-measure-strict
-# 骨架：S2 实现后去掉 xfail 标记。
+# S2 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_quoted_command_words_recognized():
     # Given: 执行体 worktree 为 W，主仓库为 /repo
     # When: 判定 \git push、g''it push origin x、git "push"、git p\ush、"git" -C /repo commit -m x、git commit "--amend"、\env git push、\cd /repo && git commit -m x、\bash -c 'git push'，以及 W 内的 git commit -m "$(cat msg)"
@@ -213,7 +210,6 @@ def test_quoted_command_words_recognized():
     assert_ts_passed("quoted-command-words-recognized")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_expanded_command_word_undeterminable():
     # Given: 执行体 worktree 为 W
     # When: 判定 $G push、${GIT:-git} push、$(which git) push、`which git` push、git $SUB origin，以及 echo $HOME、git status
