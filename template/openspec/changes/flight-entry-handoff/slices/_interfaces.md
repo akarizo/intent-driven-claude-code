@@ -30,3 +30,10 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
 ```
 
 ## S4
+
+## S1
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
