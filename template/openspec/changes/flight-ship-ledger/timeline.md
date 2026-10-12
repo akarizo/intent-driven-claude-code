@@ -10,3 +10,4 @@
 2026-10-12T17:03:01Z	final	red
 2026-10-12T23:38:39Z	final	ok
 2026-10-12T23:38:41Z	apply-done	blocked=0 blocking=0
+2026-10-12T23:38:41Z	ship	ready
