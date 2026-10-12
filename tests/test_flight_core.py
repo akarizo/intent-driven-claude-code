@@ -132,3 +132,13 @@ def test_old_plan_gate_not_regated():
     # When: 求 attempt 3 的下一批动作
     # Then: S1 是带续接、不带 base 的派发，不拿旧计划的绿门禁补跑
     assert_ts_passed("plan-change-forces-fresh-dispatch/old-plan-gate")
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+def test_gate_from_other_agent_not_regated():
+    # Given: attempt 1 派 S1 执行体 a1，attempt 2（同指纹）续派 a2，之后 a1 的绿门禁（base b1）才记入；attempt 3 同指纹起飞
+    # When: 求 attempt 3 的下一批动作
+    # Then: S1 是带续接、不带 base 的派发，不是 regate
+    assert_ts_passed("gate-from-other-agent-not-regated")

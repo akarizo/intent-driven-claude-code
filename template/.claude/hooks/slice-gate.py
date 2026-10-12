@@ -331,6 +331,11 @@ def lint_plan(data):
         for d in s.get("deps") or []:
             if d not in ids:
                 errors.append("deps: %s 依赖的 %s 不存在" % (s.get("id"), d))
+        for g in s.get("guards") or []:
+            if g not in (s.get("scenarios") or []):
+                errors.append("guards: %s 的护栏 %s 不在本片 scenarios 里" % (s.get("id"), g))
+            elif not (data.get("scenario_tests") or {}).get(g):
+                errors.append("guards: %s 的护栏 %s 没有 scenario_tests 映射" % (s.get("id"), g))
     waves, leftover = compute_waves(slices)
     if leftover:
         errors.append("cycle: 依赖成环 %s" % ", ".join(leftover))
@@ -454,8 +459,8 @@ def evidence_state(change_dir, slice_id):
 MEASURE_RED = ("FAILED", "ERROR")
 
 
-def g5_ledger_verdict(events, slice_id, base, pairs):
-    """G5 账本判据（纯函数）。pairs = [(scenario id, 映射目标)]；返回 (failed, warnings)。"""
+def g5_ledger_verdict(events, slice_id, base, pairs, guards=()):
+    """G5 账本判据（纯函数），逐目标判。pairs = [(scenario id, 映射目标)]；guards = 本片护栏 scenario id；返回 (failed, warnings)。"""
     failed, warnings = [], []
     targets = []
     for sid, t in pairs:
@@ -467,20 +472,27 @@ def g5_ledger_verdict(events, slice_id, base, pairs):
     starts = [e for e in ms if e.get("changed") == []]
     if not starts:
         return failed + ["G5 measure: 缺少本片起点测量（base %s）" % base[:8]], warnings
-    passed_at_start = set(t for e in starts for t, o in e.get("outcomes") or [] if o == "PASSED")
-    required = []
+    def hits(evs, want):
+        return set(t for e in evs for t, o in e.get("outcomes") or [] if o in want)
+
+    passed_at_start = hits(starts, ("PASSED",))
+    clean = [e for e in ms if e.get("source") == []]
+    clean_red, clean_pass, any_red = hits(clean, MEASURE_RED), hits(clean, ("PASSED",)), hits(ms, MEASURE_RED)
     for sid, t in targets:
-        if t in passed_at_start:
-            warnings.append("G5 measure: %s 在本片起点已通过，免于先红" % t)
+        if sid in guards:
+            if t in passed_at_start:
+                warnings.append("G5 measure: %s 为护栏（计划已批准），起点测量已通过，免于先红" % t)
+            else:
+                failed.append("G5 measure: 护栏 %s → %s 在起点测量里未通过（护栏测试须在规划时写好、base 上已通过）" % (sid, t))
+        elif t in clean_red:
+            continue
+        elif t in clean_pass:
+            failed.append("G5 measure: %s → %s 在改生产代码之前就已通过：若它描述的行为在 base 上本已成立，"
+                          "应在计划里标为护栏（slices.json guards）并预写测试；不要改坏生产代码造红" % (sid, t))
+        elif t in any_red:
+            failed.append("G5 measure: %s → %s 只在改了生产代码之后测到红（改源码后的红不算先红证据）" % (sid, t))
         else:
-            required.append((sid, t))
-    reds = [(e, set(t for t, o in e.get("outcomes") or [] if o in MEASURE_RED)) for e in ms]
-    for sid, t in required:
-        if not any(t in r for _, r in reds):
             failed.append("G5 measure: %s → %s 从未在控制面测量中红过（写好测试后调用 measure 看它红，再写实现）" % (sid, t))
-    need = set(t for _, t in required)
-    if need and not any(e.get("source") == [] and r & need for e, r in reds):
-        failed.append("G5 measure: 每次见红时都已改动生产代码（RED 须先于实现）")
     return failed, warnings
 
 
@@ -841,9 +853,30 @@ def detect_test_cmd(root):
 
 # ---------------------------------------------------------------- 子命令
 
+def guard_marker_errors(change_dir, data):
+    """护栏映射的 .py 测试仍带 xfail 标记 → lint 错误。判法复用 scenario_status（装饰器解析 + 实跑，认得出别名装饰器）。"""
+    mapping = data.get("scenario_tests") or {}
+    errors, root = [], None
+    for s in data.get("slices") or []:
+        guards = [g for g in s.get("guards") or [] if g in (s.get("scenarios") or [])
+                  and (mapping.get(g) or "").split("::", 1)[0].endswith(".py")]
+        if not guards:
+            continue
+        root = root or toplevel(os.path.abspath(change_dir))
+        v, _, _, _ = scenario_status(root, dict(data, slices=[{"id": s["id"], "scenarios": guards}]), {s["id"]})
+        for g in guards:
+            head = "%s → %s " % (g, mapping[g])
+            # 文本标记命中 →「仍标记 xfail/skip」；别名装饰器 → 实跑结果 XFAIL / XPASS
+            if any(head in x and ("仍标记" in x or "实际结果 XFAIL" in x or "实际结果 XPASS" in x) for x in v):
+                errors.append("guards: %s 的护栏 %s 的测试 %s 仍带 xfail（护栏须在规划时写好、base 上已通过）"
+                              % (s["id"], g, mapping[g]))
+    return errors
+
+
 def cmd_lint(args, print_waves=True):
     data = load_plan(args.change_dir)
     errors, waves = lint_plan(data)
+    errors.extend(guard_marker_errors(args.change_dir, data))
     if errors:
         die("slices.json 不合法：\n  - " + "\n  - ".join(errors))
     if print_waves:
@@ -1132,7 +1165,7 @@ def cmd_gate(args):
         else:
             mapping = data.get("scenario_tests") or {}
             pairs = [(sid, mapping[sid]) for sid in sl.get("scenarios") or [] if mapping.get(sid)]
-            f5, w5 = g5_ledger_verdict(events, args.slice, args.measure_base or base, pairs)
+            f5, w5 = g5_ledger_verdict(events, args.slice, args.measure_base or base, pairs, set(sl.get("guards") or []))
             failed.extend(f5)
             warnings.extend(w5)
     else:
@@ -1217,8 +1250,10 @@ def cmd_measure(args):
     committed, uncommitted = changed_files(root, base)
     # 簿记文件（start 写的切片标记、change 目录下的 timeline 等）不算本片改动，口径与 source_files 的排除一致
     changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
+    guard_ids = set(by_id[args.slice].get("guards") or [])
+    guards = [tests[sid] for sid in by_id[args.slice].get("scenarios") or [] if sid in guard_ids and tests.get(sid)]
     print(json.dumps({"slice": args.slice, "base": base, "commit": git(root, "rev-parse", "HEAD"),
-                      "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed,
+                      "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed, "guards": guards,
                       "source": source_files(changed, change_rel), "tail": _tail(text, 40)}, ensure_ascii=False))
 
 

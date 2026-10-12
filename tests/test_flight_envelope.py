@@ -198,3 +198,47 @@ def test_undeterminable_reason_neutral():
     # When: 判定 pushd +1 && git commit 与 cd "$X" && git add
     # Then: 都被拒，理由含「无法判定」与「目录栈旋转」，不含「相对路径且无绝对基准」
     assert_ts_passed("undeterminable-reason-neutral")
+
+# ---------------------------------------------------------------- flight-measure-strict
+# S2 已实现：骨架标记已去。
+
+
+def test_quoted_command_words_recognized():
+    # Given: 执行体 worktree 为 W，主仓库为 /repo
+    # When: 判定 \git push、g''it push origin x、git "push"、git p\ush、"git" -C /repo commit -m x、git commit "--amend"、\env git push、\cd /repo && git commit -m x、\bash -c 'git push'，以及 W 内的 git commit -m "$(cat msg)"
+    # Then: 前九条都被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized")
+
+
+def test_expanded_command_word_undeterminable():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 $G push、${GIT:-git} push、$(which git) push、`which git` push、git $SUB origin，以及 echo $HOME、git status
+    # Then: 前五条都被拒且理由含「无法判定」，后两条不拒
+    assert_ts_passed("expanded-command-word-undeterminable")
+
+# ---------------------------------------------------------------- PR #48 评审修复
+
+
+def test_shell_c_option_quoted():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 bash "-c" 'git push'、bash \-c 'git push' 与 sh -c 'git status'
+    # Then: 前两条被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized/shell-c-option")
+
+def test_quoted_assignments_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 export "GIT_DIR=…" && git commit、env "GIT_DIR=…" git commit、git -c 'core.hooksPath'=… commit、git -c core.hooks\Path=… commit，及 export PATH="$PATH:/x" && git status
+    # Then: 前四条被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized/quoted-assignments")
+
+def test_double_quoted_backtick_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 "`which git`" push origin x 与 W 内的 git commit -m "`cat msg`"
+    # Then: 前者被拒且理由含「无法判定」，后者不拒
+    assert_ts_passed("expanded-command-word-undeterminable/double-quoted-backtick")
+
+def test_shell_reserved_words_stripped():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 then / do / else / time / if 之后的 git push 五条，与 if true; then git status; fi
+    # Then: 前五条被拒，最后一条不拒
+    assert_ts_passed("shell-reserved-words-stripped")

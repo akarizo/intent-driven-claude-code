@@ -24,6 +24,7 @@ export type MeasureJson = {
   unmeasurable: string[]
   changed: string[]
   source: string[]
+  guards: string[]
   tail: string
 }
 
@@ -53,6 +54,7 @@ export async function measureSlice(
     unmeasurable: strs(j.unmeasurable),
     changed: strs(j.changed),
     source: strs(j.source),
+    guards: strs(j.guards),
     tail: typeof j.tail === 'string' ? j.tail : '',
   }
   const b = { change: f.change, at: new Date(await ctx.now()).toISOString(), session: f.session }
@@ -67,6 +69,12 @@ function report(m: MeasureJson): string {
   const red = m.outcomes.filter(([, s]) => s === 'FAILED' || s === 'ERROR').map(([t]) => t)
   lines.push(red.length ? `本次见红：${red.join('，')}` : '本次未见红')
   if (red.length && m.source.length) lines.push(`注意：测量时已改动生产代码 ${m.source.join('，')}，这次红不能作为先红证据`)
+  if (!m.source.length) {
+    for (const [t, s] of m.outcomes) {
+      if (s === 'PASSED' && !m.guards.includes(t))
+        lines.push(`注意：${t} 在改生产代码之前就已通过：若它描述的行为在 base 上本已成立，这是计划错误（应标为护栏）；不要改坏生产代码造红，照实收口说明`)
+    }
+  }
   if (m.unmeasurable.length) lines.push(`不可测的目标：${m.unmeasurable.join('，')}`)
   if (m.tail) lines.push(m.tail)
   return lines.join('\n')

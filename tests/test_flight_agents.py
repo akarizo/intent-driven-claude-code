@@ -2,6 +2,8 @@
 agent 定义文件由 pytest 直接解析；提示词是 TS 纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S3 写定义文件、提示词与同名 TS 测试后逐条去掉 xfail 标记。"""
 from conftest import ROOT
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 AGENTS = ROOT / "template" / "plugins" / "flight" / "agents"
@@ -125,3 +127,13 @@ def test_prompt_names_previous_branch():
     # When: 生成执行体提示词，另生成一份不带 previous 的
     # Then: 前者含该分支、「git show」与「不得 cherry-pick」；后者不含「上一次」
     assert_ts_passed("prompt-names-previous-branch")
+
+# ---------------------------------------------------------------- flight-measure-strict
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+def test_prompt_forbids_fabricated_red():
+    # Given: 一份普通的执行体提示词输入
+    # When: 生成执行体提示词
+    # Then: 含「护栏」「不得改坏生产代码」「照实收口」
+    assert_ts_passed("prompt-forbids-fabricated-red")

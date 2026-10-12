@@ -106,7 +106,7 @@ Common artifact patterns:
   - The Capabilities section is critical - each capability listed will need a spec file.
 - **specs/<capability>/spec.md**: Create one spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
 - **design.md**: Document technical decisions, architecture, and implementation approach（未命中触发器则只写一行跳过声明）。
-- **tasks.md**: 由 `slices.json` 生成的切片格式任务清单——先写 `slices.json`（结构见 schema 的 tasks instruction）与每个切片的 `slices/<S>.md` 切片包、每个 scenario 一个 `xfail(strict)` 测试骨架（放进所属切片 owns 的测试文件），再生成 `tasks.md`；随后跑 `python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>`，红则修 `slices.json` 直到绿。
+- **tasks.md**: 由 `slices.json` 生成的切片格式任务清单——先写 `slices.json`（结构见 schema 的 tasks instruction）与每个切片的 `slices/<S>.md` 切片包、每个 scenario 一个 `xfail(strict)` 测试骨架（放进所属切片 owns 的测试文件；行为在 base 上已成立的护栏 scenario 列进切片的 `guards`，测试写完整、不带 xfail、base 上须通过，G5 只豁免 `guards` 里且起点测量已通过的目标，详见 schema），再生成 `tasks.md`；随后跑 `python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>`，红则修 `slices.json` 直到绿。
 
 For other schemas, follow the `instruction` field from the CLI output.
 

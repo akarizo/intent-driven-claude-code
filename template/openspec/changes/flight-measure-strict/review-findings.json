@@ -1,0 +1,73 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 1273,
+      "summary": "measure-hints-unguarded-pass 第二次调用只断言结果不含「在改生产代码之前就已通过」，这条断言可能空过：如果第二次 tool.call 失败、被拒，或 result 为 undefined（String(undefined) 得到 'undefined'），断言照样成立，所以它证明不了「护栏目标不追加提示」这一行为。",
+      "fix": "给 results[1] 加正向断言，证明第二次测量确实正常返回，例如 expect(results[1]).toContain('tests/test_demo.py::test_a：PASSED') 和 expect(results[1]).toContain('本次见红')，再保留现有的 not.toContain 断言。还可以顺带断言 results[0] 不含 'tests/test_demo.py::test_b 在改生产代码之前就已通过'，覆盖 FAILED 目标不追加提示。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/spec_html.py",
+      "line": 482,
+      "summary": "护栏标签配色写死在 hook 里，用 hex 硬编码，并在 render_flight 每次返回前拼一个 <style>（没有护栏也输出，且落在 body 内的 section#flight 里）。其他状态标签都在模板 spec.html.tmpl:627-630 里用 CSS 变量（--color-*）配色。这里在 Python 中另抄了一份模板的主题切换逻辑（[data-theme=dark] 与 :root:not([data-theme]) 媒体查询）：模板以后改主题机制，这里会悄悄失效，样式也被拆在两处维护。受 owns 限制（模板不在本片 owns 里）可以理解，但留下了漂移点。",
+      "fix": "后续切片把 .chip[data-state=\"guard\"] 规则移进 template/.claude/skills/spec-html-render/templates/spec.html.tmpl，与 627-630 行并列，复用现有 CSS 变量（或新增 --color-guard / --color-guard-soft，在 light/dark 两套变量里各定义一次），然后删掉 GUARD_CHIP_STYLE 和 render_flight 返回值前的拼接。在那之前，至少只在有护栏行时才输出这个 <style>。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/openspec/adr/DRAFT-flight-measure-protocol.md",
+      "line": 22,
+      "summary": "第 3.3 条已改为 G5 逐目标判、只认 source 为空的红，比第 3.4 条（至少一次见红时 source 为空）严格，3.4 已被完全覆盖却仍原样保留，读者会以为两条判据各管一件事。另外，当前 base 上的 slice-gate.py g5_ledger_verdict 还是旧判据（逐目标要求见过红即可，source 只做整体判断），ADR 依赖 S1 落地后才与代码一致。需进一步确认 S1 的实现是否与这里的措辞一致。",
+      "fix": "3.4 注明已被 3.3 覆盖（或合并进 3.3），等 S1 合回后核对 g5_ledger_verdict 的判据与 ADR 3.2–3.4 的措辞逐条对得上。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_measure_strict_docs.py",
+      "line": 1,
+      "summary": "xfail 已去掉，但模块 docstring 仍写着「骨架：S4 实现后去掉 xfail 标记。」，成了过时说明。",
+      "fix": "把 docstring 改为「flight-measure-strict 的文档（scenario: flight-guard-scenarios#docs-state-guard-rule）。」，删掉骨架那句。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 302,
+      "summary": "parseGit 只对全局选项名做了 shellWord，`-c` 和分开写的 `--config-env` 的参数仍保持原样，交给 configKeys；configKeys 只用 unquote 去一层整词引号，不处理反斜杠，也不拒 $。切片包假设「选项的参数照旧交给 resolveDir，它会把 $ 判为无法判定」，这个假设对 -c 不成立。抽查实测 `git -c core.hooks\\Path=/tmp/h commit -m x` 放行，绕过 core.hooksPath 拒绝，与本片要堵的去引号绕过同类。`git -c \"core.hooks\"Path=x commit` 这类写法同样会漏。",
+      "fix": "configKeys 改用 shellWord 解析 -c / --config-env 的值；结果为 null 时，在 dangerOf 或 segmentsVerdict 里按「无法判定」拒绝，例如返回 'git -c / --config-env 的值无法判定'。补一条 TS 用例：`git -c core.hooks\\Path=/tmp/h commit -m x` 应被拒。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 870,
+      "summary": "guard_marker_errors 判断「仍带 xfail」的方式是对 scenario_status 返回的违规文案做子串匹配（「仍标记」「实际结果 XFAIL」「实际结果 XPASS」）。这让 lint 依赖了 G7 的提示措辞。以后 G7 只要改一个字，护栏 xfail 检查就会悄无声息地失效（不报错、直接放行），而现有测试只覆盖别名装饰器这一条路径，文本标记路径没人守。",
+      "fix": "让 scenario_status（或从中抽出的小函数）返回结构化信息，例如 [(sid, target, kind)]，kind 取 marked / XFAIL / XPASS 等，guard_marker_errors 按 kind 判断，不再匹配文案。或者至少补一个文本标记 @pytest.mark.xfail 的 lint 用例，把「仍标记」这条路径也守住。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 870,
+      "summary": "G7 的「仍标记 xfail/skip」由 MARK_RE（xfail|skip）判出，所以护栏测试带的是 skip 标记时也会命中，但报错仍写「仍带 xfail」，会误导排查。",
+      "fix": "按实际命中的标记写报错，或改成「仍带 xfail/skip 标记」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 334,
+      "summary": "lint_plan 没有校验 guards 的类型。如果 guards 误写成字符串（如 \"cap#one\"），lint 会逐字符报出一串「护栏 c 不在本片 scenarios 里」之类的错误，看不出原因；cmd_gate 里的 set(sl.get(\"guards\") or []) 也会把字符串拆成字符集合。",
+      "fix": "在 lint_plan 里先检查 guards 是否为 list，不是 list 就报一条错误「guards: <S> 的 guards 须为列表」，然后跳过逐项检查。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 1758,
+      "summary": "test_lint_checks_guards 对每个用例只检查整段输出里分别出现了「guards:」「S1」和 scenario id，没有确认它们在同一条 guards 错误里。第 2、3 个用例的「S1」「cap#one」也可能来自别的错误行，断言偏弱。",
+      "fix": "从输出里取出以「guards:」开头的那一行，断言这一行同时含 S1 和对应的 sid；第 3 个用例断言这一行含「xfail」。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "a8d43d625bd4c2eac341c63f2c81ab4378e3a1aa"
+  }
+}

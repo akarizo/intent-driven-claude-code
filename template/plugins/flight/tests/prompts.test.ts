@@ -85,3 +85,16 @@ test('prompts-reviewer-diffs-against-first-parent', async () => {
   expect(review).toContain('取 diff 失败')
   expect(review).toContain('HIGH')
 })
+
+test('prompt-forbids-fabricated-red', async () => {
+  // Given: change demo、切片 S1、切片包 template/openspec/changes/demo/slices/S1.md，首次派发（无续接）
+  const base = { change: 'demo', changeDir: CHANGE_DIR, slice: 'S1' }
+
+  // When: 生成执行体提示词
+  const prompt = executorPrompt(base)
+
+  // Then: 提示词含「护栏」「不得改坏生产代码」「照实收口」
+  expect(prompt).toContain('护栏')
+  expect(prompt).toContain('不得改坏生产代码')
+  expect(prompt).toContain('照实收口')
+})

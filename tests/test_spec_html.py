@@ -210,3 +210,31 @@ def test_spec_html_shows_fingerprint(tmp_path):
     assert p.returncode == 0, p.stderr
     html = (d / "spec.html").read_text(encoding="utf-8")
     assert "计划指纹" in html and short.stdout.strip() in html
+
+# ---------------------------------------------------------------- flight-measure-strict
+import re  # noqa: E402
+
+
+def test_approval_page_marks_guards(tmp_path):
+    # Given: change 的 slices.json：S1 的 scenarios 为 cap#one、cap#two，guards 为 [cap#one]
+    change = artifacts(tmp_path / "openspec" / "changes" / "add-export")
+    write(change / "slices.json", json.dumps({
+        "version": 1, "change": "add-export", "gate": {"test": "pytest -q"},
+        "slices": [
+            {"id": "S1", "title": "护栏片", "scenarios": ["cap#one", "cap#two"], "guards": ["cap#one"],
+             "owns": ["app/x.py"], "deps": [], "verify": "pytest -q"},
+        ],
+        "scenario_tests": {},
+    }, ensure_ascii=False))
+    out = tmp_path / "spec.html"
+
+    # When: 渲染 spec.html
+    p = render(change, out)
+
+    # Then: 退出 0；cap#one 所在行含「护栏」，cap#two 所在行不含
+    assert p.returncode == 0, p.stderr
+    rows = re.findall(r"<tr>(?:(?!</tr>).)*</tr>", out.read_text(encoding="utf-8"), re.S)
+    one = [r for r in rows if "cap#one" in r]
+    two = [r for r in rows if "cap#two" in r]
+    assert len(one) == 1 and "护栏" in one[0]
+    assert len(two) == 1 and "护栏" not in two[0]

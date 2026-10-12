@@ -1493,24 +1493,35 @@ def test_g5_ledger_requires_red_before_source(git_repo):
     # When: 以账本模式运行 gate
     out = _ledger_gate(change, git_repo, "--base", base)
 
-    # Then: 门禁红；G5 失败项含「每次见红时都已改动生产代码」
+    # Then: 门禁红；G5 失败项分别点名 T1、T2，且都含「只在改了生产代码之后测到红」
     assert out["ok"] is False
-    assert any("每次见红时都已改动生产代码" in f for f in _g5(out)), out["failed"]
+    assert any(T1 in f and "只在改了生产代码之后测到红" in f for f in _g5(out)), out["failed"]
+    assert any(T2 in f and "只在改了生产代码之后测到红" in f for f in _g5(out)), out["failed"]
+
+
+def _set_guards(change, repo, guards):
+    # 把 slices.json 里 S1 的 guards 改成给定列表并提交
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    data["slices"][0]["guards"] = list(guards)
+    write_plan(change, data)
+    git(repo, "add", str(change / "slices.json"))
+    git(repo, "commit", "-q", "-m", "guards")
 
 
 def test_g5_ledger_exempts_targets_passing_at_start(git_repo):
-    # Given: 起点测量里 T1 已 PASSED、T2 为 XFAIL；之后一次测量 T2 为 FAILED、source 为空；两者现已通过
+    # Given: 切片 S1 的 guards 为 [cap#one]（T1）；起点测量里 T1 已 PASSED、T2 为 XFAIL；之后一次测量 T2 为 FAILED、source 为空；两者现已通过
     change, base = _g5_repo(git_repo)
+    _set_guards(change, git_repo, ["cap#one"])
     ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "XFAIL")], agent="dispatch"))
     ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
 
     # When: 以账本模式运行 gate
     out = _ledger_gate(change, git_repo, "--base", base)
 
-    # Then: G5 无失败项、门禁绿；警告点名 T1「起点已通过」
+    # Then: G5 无失败项、门禁绿；警告点名 T1 并含「护栏」
     assert _g5(out) == [], out["failed"]
     assert out["ok"] is True, out["failed"]
-    assert any(T1 in w and "起点已通过" in w for w in out["warnings"]), out["warnings"]
+    assert any(T1 in w and "护栏" in w for w in out["warnings"]), out["warnings"]
 
 
 def test_g5_ledger_needs_start_measure(git_repo):
@@ -1644,3 +1655,118 @@ def test_gate_flags_committed_bytecode(git_repo):
 
     # Then: G6 点名这个已提交的字节码（只有未提交的副产物才被忽略）
     assert any(f.startswith("G6") and "__pycache__" in f for f in out["failed"]), out["failed"]
+
+# ---------------------------------------------------------------- flight-measure-strict
+
+
+def test_g5_red_after_source_not_counted(git_repo):
+    # Given: S1 映射 T1、T2（非护栏）；起点测量两者 XFAIL；source 为空的测量里 T1 FAILED、T2 XFAIL；之后 source 含 src/mod.py 的测量里 T2 FAILED
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "XFAIL")], changed=["tests/test_mod.py"]))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "FAILED")],
+                                             changed=["src/mod.py", "tests/test_mod.py"], source=["src/mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项点名 T2 且含「只在改了生产代码之后测到红」，不点名 T1
+    assert out["ok"] is False
+    assert any(T2 in f and "只在改了生产代码之后测到红" in f for f in _g5(out)), out["failed"]
+    assert not any(T1 in f for f in _g5(out)), out["failed"]
+
+
+def test_g5_unguarded_pass_before_source_red(git_repo):
+    # Given: S1 映射 T1、T2（非护栏）；起点测量 T1 PASSED、T2 XFAIL；source 为空的测量里 T1 PASSED、T2 FAILED
+    change, base = _g5_repo(git_repo)
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项点名 T1，含「在改生产代码之前就已通过」与「护栏」；警告里没有「免于先红」
+    assert out["ok"] is False
+    assert any(T1 in f and "在改生产代码之前就已通过" in f and "护栏" in f for f in _g5(out)), out["failed"]
+    assert not any("免于先红" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_g5_guard_exempt_when_passing_at_start(git_repo):
+    # Given: S1 的 guards 为 [cap#one]（T1）；起点测量 T1 PASSED、T2 XFAIL；source 为空的测量里 T2 FAILED
+    change, base = _g5_repo(git_repo)
+    _set_guards(change, git_repo, ["cap#one"])
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "PASSED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: G5 无失败项、门禁绿；警告点名 T1 并含「护栏」
+    assert _g5(out) == [], out["failed"]
+    assert out["ok"] is True, out["failed"]
+    assert any(T1 in w and "护栏" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_g5_guard_must_pass_at_start(git_repo):
+    # Given: S1 的 guards 为 [cap#one]（T1）；起点测量 T1、T2 都 XFAIL；source 为空的测量里两者都 FAILED
+    change, base = _g5_repo(git_repo)
+    _set_guards(change, git_repo, ["cap#one"])
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "XFAIL"), (T2, "XFAIL")], agent="dispatch"))
+    ledger_append(git_repo, "c", _measure_ev(base, [(T1, "FAILED"), (T2, "FAILED")], changed=["tests/test_mod.py"]))
+
+    # When: 以账本模式运行 gate
+    out = _ledger_gate(change, git_repo, "--base", base)
+
+    # Then: 门禁红；G5 失败项点名 T1，含「护栏」与「起点测量里未通过」
+    assert out["ok"] is False
+    assert any(T1 in f and "护栏" in f and "起点测量里未通过" in f for f in _g5(out)), out["failed"]
+
+
+GUARD_XFAIL_TEST = '''
+import pytest
+
+XF = pytest.mark.xfail(strict=True, reason="骨架")
+
+
+@XF
+def test_one():
+    # Given: 尚未实现的行为
+    value = 1
+    # When: 检查是否等于 2
+    ok = value == 2
+    # Then: 断言失败
+    assert ok
+'''
+
+
+def test_lint_checks_guards(git_repo):
+    # Given: 三份计划：S1 的 guards 含不在 scenarios 里的 cap#other；护栏 cap#one 没有 scenario_tests 映射；护栏 cap#one 的测试（T1）用别名装饰器带 strict xfail
+    s1 = slice_("S1", ["src/mod.py", "tests/test_mod.py"], scenarios=["cap#one"])
+    cases = [
+        (dict(s1, guards=["cap#other"]), {"cap#one": T1}, "cap#other"),
+        (dict(s1, guards=["cap#one"]), {}, "cap#one"),
+        (dict(s1, guards=["cap#one"]), {"cap#one": T1}, "cap#one"),
+    ]
+    write(git_repo / "tests" / "test_mod.py", GUARD_XFAIL_TEST)
+    changes = [write_plan(git_repo / "openspec" / "changes" / ("c%d" % i), plan([sl], scenario_tests=m))
+               for i, (sl, m, _) in enumerate(cases)]
+
+    # When: 分别运行 slice-gate lint
+    procs = [run_hook("slice-gate", "lint", "--change-dir", str(c), cwd=git_repo) for c in changes]
+
+    # Then: 三次都非 0 退出，输出含 guards:、S1 与对应 scenario id；第三次含「xfail」
+    for p, (_, _, sid) in zip(procs, cases):
+        assert p.returncode != 0 and all(k in p.stdout + p.stderr for k in ("guards:", "S1", sid)), p.stdout + p.stderr
+    assert "xfail" in procs[2].stdout + procs[2].stderr, procs[2].stderr
+
+
+def test_measure_lists_guard_targets(git_repo):
+    # Given: S1 映射 T1、T2，guards 为 [cap#one]（T1），已 start
+    change, _ = _g5_repo(git_repo)
+    _set_guards(change, git_repo, ["cap#one"])
+
+    # When: 运行 slice-gate measure S1
+    p = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), cwd=git_repo)
+
+    # Then: 输出 JSON 的 guards 为 [T1]
+    assert json.loads(p.stdout)["guards"] == [T1], p.stdout + p.stderr
