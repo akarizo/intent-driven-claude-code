@@ -467,10 +467,10 @@ test('no-model-callable-approval-path', async ($, on) => {
   // When: 会话启动
   await $.session.start(START)
 
-  // Then: 插件确实处理了启动（读过会话版本），注册的工具恰为 submit_findings 与 measure，注册的命令恰为 flight
+  // Then: 插件确实处理了启动（读过会话版本），注册的工具恰为 submit_findings 与 measure，注册的命令恰为 flight 与 opsx-apply
   expect(log.versionReads).toBeGreaterThan(0)
   expect([...log.tools].sort()).toEqual(['measure', 'submit_findings'])
-  expect(log.commands).toEqual(['flight'])
+  expect([...log.commands].sort()).toEqual(['flight', 'opsx-apply'])
 })
 
 test('only-findings-tool-registered', async ($, on) => {
@@ -489,9 +489,9 @@ test('only-findings-tool-registered', async ($, on) => {
   for (const c of calls) await $.tool.call(c as never)
   for (const c of flights) await $.command.run(c as never)
 
-  // Then: 工具恰为 submit_findings 与 measure、命令恰为 flight；全部调用都没有向账本写入任何事件（自然没有 approve）
+  // Then: 工具恰为 submit_findings 与 measure、命令恰为 flight 与 opsx-apply；全部调用都没有向账本写入任何事件（自然没有 approve）
   expect([...log.tools].sort()).toEqual(['measure', 'submit_findings'])
-  expect(log.commands).toEqual(['flight'])
+  expect([...log.commands].sort()).toEqual(['flight', 'opsx-apply'])
   expect(log.git.filter(c => c.args[0] === 'hash-object')).toEqual([])
 })
 

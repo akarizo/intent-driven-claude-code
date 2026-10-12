@@ -36,8 +36,17 @@ const AUTHORIZE = '授权提交'
 const TAKEOVER = '--takeover'
 const MEASURE_RETRY = 'flight：暂时无法判定你的归属（账本读取失败），稍后重试测量'
 const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover]'
-/** 写账本的 /flight 子命令只认人在终端发出的来源（design D8） */
-const HUMAN_ORIGINS = ['composer', 'bridge']
+/** 写账本的入口（/opsx-apply、/flight abort、/flight resume）只认人或宿主程序发出的来源：终端、Remote Control、SDK */
+const HOST_ORIGINS = ['composer', 'bridge', 'sdk']
+
+/** 来源不在 HOST_ORIGINS 时的统一拒绝文案 */
+function originRefusal(cmd: string, kind: string | undefined): string {
+  return `flight：${cmd} 会写账本，只接受人或宿主程序发出（终端、Remote Control、SDK；本次来源：${kind ?? '未标明'}）`
+}
+
+function originOf(e: unknown): string | undefined {
+  return (e as { origin?: { kind?: string } }).origin?.kind
+}
 
 // 飞行面板（Pane flight）的内容：showStatus 与 /flight panel 刷新，ui.render 绘制
 const panel = atom({ plugin: 'flight', key: 'panel' } as const, { change: '', lines: [] } as FlightPanel)
@@ -636,9 +645,7 @@ async function abortCommand($: Engine, f: Flight, state: State): Promise<string>
 /** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
 async function flightCommand($: Engine, args: string[], origin: string | undefined): Promise<string> {
   const [sub, ...rest] = args
-  if ((sub === 'abort' || sub === 'resume') && !HUMAN_ORIGINS.includes(origin ?? '')) {
-    return `flight：/flight ${sub} 会写账本，只接受人在终端发出（本次来源：${origin ?? '未标明'}）`
-  }
+  if ((sub === 'abort' || sub === 'resume') && !HOST_ORIGINS.includes(origin ?? '')) return originRefusal(`/flight ${sub}`, origin)
   if (sub === 'resume') return takeoff($, rest, { resume: true })
   if (sub !== 'status' && sub !== 'panel' && sub !== 'abort') return FLIGHT_USAGE
   // 省略 change：本进程只登记了一个 change 且它在飞时取它
@@ -669,6 +676,8 @@ export function registerOrchestrator(on: On): void {
     const args = argsOf(e.args)
     if (args.includes(RETIRED_ENGINE)) return { text: RETIRED_ENGINE_TEXT }
     if (args.some(a => PASS_THROUGH.includes(a))) return next(e)
+    const origin = originOf(e)
+    if (!HOST_ORIGINS.includes(origin ?? '')) return { text: originRefusal('/opsx-apply', origin) }
     try {
       return { text: await takeoff($, args) }
     } catch (err) {
@@ -693,13 +702,17 @@ export function registerOrchestrator(on: On): void {
     } catch {
       // 登记不了时 /flight 不出现在补全里；起飞与驱动不受影响
     }
+    try {
+      await $.command.register({ name: 'opsx-apply', description: '飞行模式 apply：由 flight 插件状态机执行（批准后起飞）', argumentHint: '<change>' })
+    } catch {
+      // 项目已有同名命令文件时引擎拒绝登记；command.run 拦截照旧接管 /opsx-apply
+    }
     return next(e)
   })
 
   on('command.run', { command: 'flight' }, async ($, e) => {
-    const origin = (e as unknown as { origin?: { kind?: string } }).origin?.kind
     try {
-      return { text: await flightCommand($, argsOf(e.args), origin) }
+      return { text: await flightCommand($, argsOf(e.args), originOf(e)) }
     } catch (err) {
       return { text: `flight：/flight 出错（${firstLine(err instanceof Error ? err.message : String(err))}）` }
     }
