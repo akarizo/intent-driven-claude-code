@@ -44,7 +44,11 @@ type World = {
   timelineThrows?: string
   commandThrows?: string
   dirty?: string
+  mainHead?: string
+  mergeBase?: RunResult
 }
+
+const SHIP_READY = JSON.stringify({ ready: true, commit: 'h'.repeat(40), reasons: [], blocked: [], blocking: [], deferred: [], fix: null, review: null }) + '\n'
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: '' })
 const has = (c: Call, ...parts: string[]) => parts.every(p => c.argv.some(a => a === p || a.endsWith(`/${p}`)))
@@ -58,7 +62,7 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
   if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) return ok(log.ledger.map(x => JSON.stringify(x)).join('\n') + '\n')
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'final')
     return ok(cwd === FIX_TREE ? (w.fixFinalOut ?? gateJson({})) : (w.finalOut ?? gateJson({})))
-  if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok('ready\n')
+  if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok(SHIP_READY)
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineThrows !== undefined) throw new Error(w.timelineThrows)
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineFails !== undefined)
     return { exitCode: w.timelineExit ?? 1, stdout: '', stderr: w.timelineFails }
@@ -74,7 +78,11 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
     case 'rev-parse':
       // rev-parse --verify refs/heads/<分支>（freshWorktree 查占用）：分支都不存在
       if (args.some(a => String(a).startsWith('refs/heads/'))) return { exitCode: 1, stdout: '', stderr: '' }
+      // git -C <主 worktree> rev-parse HEAD：全量评审取主 worktree 的 HEAD
+      if (args[0] === '-C' && args[1] === MAIN && w.mainHead !== undefined) return ok(w.mainHead + '\n')
       return ok('d'.repeat(40) + '\n')
+    case 'merge-base':
+      return w.mergeBase ?? ok('b'.repeat(40) + '\n')
     case 'commit-tree':
       return ok('c'.repeat(40) + '\n')
     case 'status':
@@ -363,6 +371,57 @@ test('fixer-stop-final-never-reuses', async () => {
   // Then: slice-gate.py final 的调用 cwd 为修复 worktree，argv 不含 --reuse-fix
   expect(finals(log).map(c => c.cwd)).toEqual([FIX_TREE])
   expect(finals(log)[0].argv).not.toContain('--reuse-fix')
+})
+
+/** 同 ctxOf，但 spawn 一律放行为 agent，并记下派发参数。 */
+function spawningCtx(w: World, agent: string) {
+  const { ctx, log } = ctxOf(w)
+  const spawned: { role: string; cwd: string; prompt: string; description: string }[] = []
+  ctx.spawn = async x => {
+    spawned.push({ role: x.role, cwd: x.cwd, prompt: x.prompt, description: x.description })
+    return { agentId: agent }
+  }
+  return { ctx, log, spawned }
+}
+
+test('whole-review-dispatch-records-range', async () => {
+  // Given: 三个世界，S1 都已合回且评审结果为空列表；世界一主 worktree HEAD 为 m0、git merge-base c9 m0 输出 b0、派发得 agent W；
+  //        世界二 merge-base 以 1 退出；世界三修复体派发得 agent F1、修复 worktree 里 final 输出 ok true
+  const ledger = [TAKEOFF, DISPATCH_A, MERGED, REVIEWED]
+  const one = spawningCtx({ ledger, mainHead: 'm0', mergeBase: ok('b0\n') }, 'W')
+  const two = spawningCtx({ ledger, mainHead: 'm0', mergeBase: { exitCode: 1, stdout: '', stderr: 'fatal: Not a valid commit name c9' } }, 'W')
+  const three = spawningCtx({ ledger }, 'F1')
+  const whole = { kind: 'dispatch', role: 'reviewer', slice: 'whole', mode: 'whole', commit: 'c9', prior: [] } as unknown as Action
+  const fixer = { kind: 'dispatch', role: 'fixer', slice: 'fix-r1', findings: [HIGH] } as unknown as Action
+
+  // When: 世界一、二执行全量评审的派发动作；世界三执行修复体动作（slice fix-r1）并让 F1 收口
+  await Promise.all([runLandingAction(one.ctx, FLIGHT, whole), runLandingAction(two.ctx, FLIGHT, whole)])
+  await runLandingAction(three.ctx, FLIGHT, fixer).then(() => onLandingStop(three.ctx, foundOf(three.log), 'F1'))
+
+  // Then: 世界一派发的提示词含 git diff b0 c9，账本末条为 slice whole、commit c9、base b0 的 dispatch；
+  //       世界二没有派发，账本末条为 blocked review:whole（infra），原因含「算不出全量评审的起点」；
+  //       世界三的修复体 dispatch 的 worktree 为 flight-demo-fix-r1、branch 为 flight/demo/fix-r1，收口门禁事件的 slice 为 fix-r1
+  expect(one.spawned[0]?.prompt).toContain('git diff b0 c9')
+  expect(one.log.ledger.at(-1)).toMatchObject({ ev: 'dispatch', role: 'reviewer', slice: 'whole', commit: 'c9', base: 'b0' })
+  expect(two.spawned).toEqual([])
+  expect(two.log.ledger.at(-1)).toMatchObject({ ev: 'blocked', slice: 'review:whole', kind: 'infra', reason: expect.stringContaining('算不出全量评审的起点') })
+  expect(three.log.ledger.find(e => e.ev === 'dispatch' && e.agent === 'F1')).toMatchObject({ slice: 'fix-r1', worktree: `${MAIN}/.claude/worktrees/flight-demo-fix-r1`, branch: 'flight/demo/fix-r1' })
+  expect(three.log.ledger.at(-1)).toMatchObject({ ev: 'gate', agent: 'F1', slice: 'fix-r1' })
+})
+
+test('followup-review-dispatch-uses-action-range', async () => {
+  // Given: S1 已合回且评审结果为空列表；派发得 agent V；动作为 slice whole-r1、mode followup、base c9、commit c10、prior 一条 HIGH src/a.py:3
+  const { ctx, log, spawned } = spawningCtx({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED] }, 'V')
+  const followup = { kind: 'dispatch', role: 'reviewer', slice: 'whole-r1', mode: 'followup', base: 'c9', commit: 'c10', prior: [HIGH] } as unknown as Action
+
+  // When: 执行复核的派发动作
+  await runLandingAction(ctx, FLIGHT, followup)
+
+  // Then: 提示词含 git diff c9 c10 与「第 1 轮」，description 为「复核 第 1 轮」；账本末条为 slice whole-r1、commit c10、base c9 的 dispatch
+  expect(spawned[0]?.prompt).toContain('git diff c9 c10')
+  expect(spawned[0]?.prompt).toContain('第 1 轮')
+  expect(spawned[0]?.description).toBe('复核 第 1 轮')
+  expect(log.ledger.at(-1)).toMatchObject({ ev: 'dispatch', role: 'reviewer', slice: 'whole-r1', commit: 'c10', base: 'c9' })
 })
 
 test('landing-hands-off-to-flight-pr-ship', async () => {

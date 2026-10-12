@@ -408,25 +408,55 @@ test('land-rejects-non-integer-line', () => {
 
 test('land-closeout-writes-records', async () => {
   // Given: tasks.md 有 S1、S2、S3 三个未勾选行；S1、S2 已合回，S3 被阻断（gate，G7 x）；阻断项 0、deferred 1 条 LOW、无修复；
-  //        status 报 tasks.md 与 review-findings.json 有改动；ship 退出 0、stdout 为 ready: 全绿
+  //        status 报 tasks.md 与 review-findings.json 有改动；ship 退出 0、stdout 为 ready 的 JSON（blocked [S3]、deferred [LOW]、reasons 空）
   const tasks = '# tasks\n- [ ] S1 甲\n- [ ] S2 乙\n- [ ] S3 丙\n'
   const status = ` M ${CD}/tasks.md\n?? ${CD}/review-findings.json\n`
-  const { io, calls, fs } = fakeIo({ [`${CT}/${CD}/tasks.md`]: tasks }, argv =>
-    has(argv, 'status') ? { stdout: status } : has(argv, 'ship') ? { stdout: 'ready: 全绿\n' } : undefined,
-  )
   const low = { severity: 'LOW' as const, file: 'a.py', line: 1, summary: 's', fix: 'f' }
   const lists = { blocked: [{ slice: 'S3', kind: 'gate' as const, reason: 'G7 x' }], blocking: [], deferred: [low], fix: null }
+  const ship = JSON.stringify({ ready: true, commit: 'h1', reasons: [], ...lists, review: null })
+  const { io, calls, fs } = fakeIo({ [`${CT}/${CD}/tasks.md`]: tasks }, argv =>
+    has(argv, 'status') ? { stdout: status } : has(argv, 'ship') ? { stdout: ship + '\n' } : undefined,
+  )
 
   // When: 落地收口
-  const result = await closeout(io, F, lists, ['S1', 'S2'])
+  const result = await closeout(io, F, ['S1', 'S2'])
 
   // Then: review-findings.json 为 {blocked:[S3], blocking:[], deferred:[LOW], fix:null}（2 空格缩进）；tasks.md 勾 S1、S2，S3 未勾；
-  //       依次运行 timeline.py record apply-done --note "blocked=1 blocking=0"、提交「chore(flight): 收口」、slice-gate.py ship；返回 ready 与 ship 的 stdout
+  //       依次运行 slice-gate.py ship、timeline.py record apply-done --note "blocked=1 blocking=0"、提交「chore(flight): 收口」；返回 ready 与空 reasons
   expect(fs.get(`${CT}/${CD}/review-findings.json`)).toBe(JSON.stringify(lists, null, 2) + '\n')
   expect(fs.get(`${CT}/${CD}/tasks.md`)).toBe('# tasks\n- [x] S1 甲\n- [x] S2 乙\n- [ ] S3 丙\n')
-  const steps = [find(calls, 'timeline.py', 'apply-done', 'blocked=1 blocking=0'), find(calls, 'commit', 'chore(flight): 收口'), find(calls, 'slice-gate.py', 'ship')]
+  const steps = [find(calls, 'slice-gate.py', 'ship'), find(calls, 'timeline.py', 'apply-done', 'blocked=1 blocking=0'), find(calls, 'commit', 'chore(flight): 收口')]
   expect(steps.every((i, k) => i >= 0 && (k === 0 || i > steps[k - 1]))).toBe(true)
-  expect(result).toEqual({ verdict: 'ready', reasons: 'ready: 全绿\n' })
+  expect(result).toEqual({ verdict: 'ready', reasons: '' })
+})
+
+test('closeout-writes-ship-output', async () => {
+  // Given: 世界一 ship 退出 1、输出 {ready:false, reasons:["阻断 1 条"], blocked:[], blocking:[HIGH a.ts:3], deferred:[LOW b.ts:1], fix:{ok:true, commit:"m1"}, review:null}；
+  //        世界二 ship 退出 1、输出 oops；世界三飞行记录无改动、HEAD 为 f2；三个世界的 tasks.md 都有未勾选的 S1
+  const high = { severity: 'HIGH' as const, file: 'a.ts', line: 3, summary: '空指针', fix: '判空' }
+  const low = { severity: 'LOW' as const, file: 'b.ts', line: 1, summary: '命名', fix: '改名' }
+  const fields = { blocked: [], blocking: [high], deferred: [low], fix: { ok: true, commit: 'm1' } }
+  const shipOut = JSON.stringify({ ready: false, commit: 'h1', reasons: ['阻断 1 条'], ...fields, review: null })
+  const tasks = { [`${CT}/${CD}/tasks.md`]: '- [ ] S1 甲\n' }
+  const one = fakeIo(tasks, argv => (has(argv, 'ship') ? { exitCode: 1, stdout: shipOut + '\n' } : undefined))
+  const two = fakeIo(tasks, argv => (has(argv, 'ship') ? { exitCode: 1, stdout: 'oops\n' } : undefined))
+  const three = fakeIo({}, argv => (has(argv, 'rev-parse', 'HEAD') ? { stdout: 'f2\n' } : undefined))
+
+  // When: 世界一、二各执行落地收口（已合回 S1）；世界三以备注 blocking=1、slice fix-r1 调用 mergeFix
+  const [r1, r2, r3] = await Promise.all([closeout(one.io, F, ['S1']), closeout(two.io, F, ['S1']), mergeFix(three.io, F, 'blocking=1', undefined, 'fix-r1')])
+
+  // Then: 世界一 review-findings.json 四字段恰为 JSON 中的值、apply-done 的 note 为 blocked=0 blocking=1、verdict draft；
+  //       世界二 verdict draft 且 reasons 含「ship 输出无法解析」、没有写 review-findings.json、没有跑 apply-done；
+  //       世界三 merge --no-ff flight/demo/fix-r1 -m "integrate: fix-r1"，返回 ok 与 f2
+  expect(one.fs.get(`${CT}/${CD}/review-findings.json`)).toBe(JSON.stringify(fields, null, 2) + '\n')
+  expect(find(one.calls, 'timeline.py', 'apply-done', 'blocked=0 blocking=1')).toBeGreaterThan(-1)
+  expect(r1.verdict).toBe('draft')
+  expect(r2.verdict).toBe('draft')
+  expect(r2.reasons).toContain('ship 输出无法解析')
+  expect(two.fs.has(`${CT}/${CD}/review-findings.json`)).toBe(false)
+  expect(find(two.calls, 'apply-done')).toBe(-1)
+  expect(three.calls[find(three.calls, 'merge', '--no-ff')].argv).toEqual(['git', '-C', CT, 'merge', '--no-ff', 'flight/demo/fix-r1', '-m', 'integrate: fix-r1'])
+  expect(r3).toEqual({ ok: true, commit: 'f2' })
 })
 
 test('classify-dirty-paths', () => {

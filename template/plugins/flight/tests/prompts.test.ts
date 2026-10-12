@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { executorPrompt, fixerPrompt, resolverPrompt, reviewerPrompt } from '../hooks/prompts.ts'
+import { executorPrompt, fixerPrompt, followupReviewPrompt, resolverPrompt, reviewerPrompt, wholeReviewPrompt } from '../hooks/prompts.ts'
 
 const CHANGE_DIR = 'template/openspec/changes/demo'
 const GATE_BY_CONTROL_PLANE = '门禁由控制面在你收口时运行'
@@ -97,4 +97,19 @@ test('prompt-forbids-fabricated-red', async () => {
   expect(prompt).toContain('护栏')
   expect(prompt).toContain('不得改坏生产代码')
   expect(prompt).toContain('照实收口')
+})
+
+test('whole-and-followup-prompts', async () => {
+  // Given: change demo、判定器目录 /repo/hooks；prior 一条 HIGH a.ts:3（summary「漏判空」）；全量评审范围 b0..c9，第 1 轮复核范围 c9..c10
+  const prior = [{ severity: 'HIGH' as const, file: 'a.ts', line: 3, summary: '漏判空', fix: '补判空' }]
+
+  // When: 分别生成全量评审与第 1 轮复核提示词
+  const [whole, followup] = [
+    wholeReviewPrompt({ change: 'demo', changeDir: CHANGE_DIR, hooksDir: '/repo/hooks', base: 'b0', commit: 'c9', prior }),
+    followupReviewPrompt({ change: 'demo', changeDir: CHANGE_DIR, round: 1, base: 'c9', commit: 'c10', prior }),
+  ]
+
+  // Then: 全量含 git diff b0 c9、a.ts:3、submit_findings、取 diff 失败、/repo/hooks/timeline.py report；复核含 git diff c9 c10、第 1 轮、a.ts:3、submit_findings、照原级别
+  for (const s of ['git diff b0 c9', 'a.ts:3', 'submit_findings', '取 diff 失败', '/repo/hooks/timeline.py report']) expect(whole).toContain(s)
+  for (const s of ['git diff c9 c10', '第 1 轮', 'a.ts:3', 'submit_findings', '照原级别']) expect(followup).toContain(s)
 })

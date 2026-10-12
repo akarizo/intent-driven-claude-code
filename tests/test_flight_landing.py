@@ -1,8 +1,6 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -131,7 +129,6 @@ def test_landing_hands_off_to_flight_pr_ship():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_whole_review_dispatch_records_range():
     # Given: 主 worktree HEAD 为 m0，merge-base c9 m0 输出 b0；另一世界 merge-base 退出 1
     # When: 执行派发评审员（slice whole、mode whole、commit c9）；再执行修复体动作（slice fix-r1）并让它收口
