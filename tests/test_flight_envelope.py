@@ -230,3 +230,9 @@ def test_quoted_assignments_denied():
     # When: 判定 export "GIT_DIR=…" && git commit、env "GIT_DIR=…" git commit、git -c 'core.hooksPath'=… commit、git -c core.hooks\Path=… commit，及 export PATH="$PATH:/x" && git status
     # Then: 前四条被拒，最后一条不拒
     assert_ts_passed("quoted-command-words-recognized/quoted-assignments")
+
+def test_double_quoted_backtick_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 "`which git`" push origin x 与 W 内的 git commit -m "`cat msg`"
+    # Then: 前者被拒且理由含「无法判定」，后者不拒
+    assert_ts_passed("expanded-command-word-undeterminable/double-quoted-backtick")

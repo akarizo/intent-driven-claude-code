@@ -195,11 +195,13 @@ function progName(toks: readonly string[]): string {
  * 反引号命令替换出现在命令名位置：某个反引号往前到上一个分隔符之间，剥掉 VAR=val 与前缀命令（含其选项）后没有别的词。
  * 每个反引号都查（不按奇偶分起止：转义或单引号里的反引号会让奇偶错位）；结束反引号前缀含起始反引号与替换内容，不会多拒。
  * 在 bashVerdict 切段之前判（切段后反引号已丢失）。
- * ceiling: 不区分引号，双引号里的反引号（如 `"`x`"`）前面留下的 `"` 算作一个词而不判；空替换 `` 会多拒 -> 漏拒或误拒出现时换成 shell 词法分析。
+ * 去引号后为空的词（双引号里的反引号 `"`x`"` 前面留下的 `"`）不算词，故 `"`which git`" push` 也判为命令名位置。
+ * ceiling: 不区分引号，空替换 `` 会多拒 -> 漏拒或误拒出现时换成 shell 词法分析。
  */
 function backtickAsCommandName(command: string): boolean {
   for (let i = command.indexOf('`'); i >= 0; i = command.indexOf('`', i + 1)) {
-    if (words(command.slice(0, i).split(/&&|\|\||[;|&\n(]/).pop() ?? '').toks.length === 0) return true
+    // 去引号后为空的词（双引号里的反引号 `"`x`"` 前面留下的 `"`）不算词（PR #48 评审 MEDIUM）
+    if (words(command.slice(0, i).split(/&&|\|\||[;|&\n(]/).pop() ?? '').toks.filter(t => shellWord(t, true) !== '').length === 0) return true
   }
   return false
 }

@@ -668,3 +668,15 @@ test('quoted-command-words-recognized/quoted-assignments', () => {
   expect(v.slice(0, 4).map(x => x !== undefined)).toEqual([true, true, true, true])
   expect(v[4]).toBeUndefined()
 })
+
+test('expanded-command-word-undeterminable/double-quoted-backtick', () => {
+  // Given: 执行体 worktree 为 W；双引号里的反引号替换作命令名的 git push，与 W 内参数里含反引号替换的 git commit -m "`cat msg`"
+  const cmds = ['"`which git`" push origin x', 'git commit -m "`cat msg`"']
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 第一条被拒且理由含「无法判定」；第二条不被拒
+  expect(v[0]?.deny ?? '').toContain('无法判定')
+  expect(v[1]).toBeUndefined()
+})
