@@ -1,6 +1,6 @@
 ---
 name: openspec-apply-change
-description: Implement tasks from an OpenSpec change using flight mode — 批准后从门禁 lint 一路跑到 PR，中途不问，模型按角色显式路由。Use when the user wants to start implementing, continue implementation, or work through tasks.
+description: Implement tasks from an OpenSpec change using flight mode — 由 flight 插件状态机执行，批准后从门禁 lint 一路跑到 PR，中途不问，模型按角色显式路由。Use when the user wants to start implementing, continue implementation, or work through tasks.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -10,9 +10,8 @@ metadata:
 ---
 
 **执行引擎（先读）**
-- 装了 flight 插件（0.2.0 及以上）时，`/opsx-apply` 由插件的**状态机**执行：起飞检查（批准、干净工作区、lint / preflight、主模型）与整个飞行（派发、收口门禁、合回、评审、修复、final、收口、pr-ship）都不经模型，**模型不执行下面的步骤**。
-- 只有人显式加 `--engine=workflow` 时，才由模型按下面的步骤用 Workflow 引擎飞（旧引擎，后续 change 删除）；插件**不会自动回退**到旧引擎。
-- 插件缺席即**停飞**：没有插件，批准无从写入账本，step 0 的 `takeoff-gate.py` 必然拒绝。
+- `/opsx-apply` 由 flight 插件（0.2.0 及以上）的**状态机**执行：起飞检查（批准、干净工作区、lint / preflight、版本、主模型）与整个飞行（派发、收口门禁、合回、评审、修复、final、收口、pr-ship）都不经模型。
+- 插件是唯一实现：插件缺席、未加载或版本不符即**停飞**，没有第二条路径（见文末「模型读到本 skill 即停飞」）。
 - **续飞与接管**：
   - 最新一次起飞来自另一个会话、尚未落地或停飞时，插件拒飞并提示；确认那个会话已结束后，加 `--takeover` 重新发出；
   - 续飞时新派发的执行体、修复体、解冲突 agent 遇到同名 worktree 已存在，会另起 `<名>-a<attempt>`，旧现场原样保留，清理由人执行；
@@ -26,83 +25,56 @@ metadata:
   - 读取（Read / Grep / Glob）只在主仓库内免询问，主仓库之外按你的权限设置；
   - 飞行中主会话对在飞的 change worktree 只读。这一条是尽力而为：shell 已 `cd` 进去后不带路径的 git 命令拦不到，会话重启后要等再次起飞才恢复。
 
-飞行模式跑完一次 apply：批准自检（`takeoff-gate.py` 比对账本指纹；非 0 → 停下报告并交出 `spec.html` 路径，不派发）→ 选 change → git 纪律检查 → 切片规划 lint → 记录并提交批准事件 → 启动切片工作流（模型按角色显式路由；不可用则回退并行 Agent 派发）→ 收工作流 JSON → 收口分解（打印各角色实际模型）→ 直接进入 `/pr-ship`。除四种暂停例外，全程不问询。
+**REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 在本 change 的 `.worktrees/<name>/` worktree 上起飞，切片 worktree 由插件按该 skill 的飞行 carve-out 创建。
 
-**REQUIRED SUB-SKILL：** 用 `openspec-git-discipline`（含 **Worktree Isolation**）—— apply 必须在本 change 的 `.worktrees/<name>/` worktree 内进行，实现代码落在那里。
-
-**Input**：可选指定 change 名。留空则从会话上下文推断，仍歧义才列候选。`--gate=per-task` → 转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余步骤不适用于该分支。
+**Input**：可选指定 change 名。留空则取会话所在 worktree 的分支 `worktree-<name>`。
 `授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
-`--engine=workflow`（可选）→ 显式选旧引擎：由模型按下面的步骤用 Workflow 引擎飞；不加则由 flight 插件状态机执行，插件缺席即停飞。
 `--takeover`（可选）→ 只在「最新一次起飞来自另一个会话、尚未落地或停飞，而且你已确认那个会话已结束」时使用；不加时插件会拒飞并提示。
+`--gate=per-task`（可选）→ 插件不接管，把命令原样交给模型；模型转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余段落不适用于该分支。
+
+**起飞检查（插件执行；任一项不过即不起飞，原样回报原因，不问询）**
+- **批准指纹**：起飞时插件以 `takeoff-gate.py --change-dir` 比对账本 `refs/flight/<name>/ledger` 里最新的批准指纹与当前计划指纹；未批准、计划已变或账本损坏 → 不起飞，交出 `openspec/changes/<name>/spec.html` 的路径，请人核对 `spec.html` 顶部的计划指纹、在批准带按「批准起飞」后重新发出 `/opsx-apply <name>`。
+- **git 与 Claude Code 版本**：git 低于 2.38（合回用 `merge-tree --write-tree`）或 Claude Code 低于插件下限 → 不起飞。
+- **版本核对**：插件副本须是已安装的版本，判定器（主检出的 `.claude/hooks/`）须认识全部账本事件；不符 → 不起飞，先把主检出更新到与插件同一版本。
+- **跨会话**：最新一次起飞来自另一个会话、尚未落地或停飞 → 拒飞，提示用 `--takeover` 接管。
+- **工作区与「授权提交」**：change worktree 有工件之外的未提交改动 → 拒绝起飞；未提交的只有本 change 工件 → 提示加 `授权提交`；上一次飞行遗留的飞行记录先单独提交。
+- **lint / preflight**：
+  ```bash
+  python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
+  python3 .claude/hooks/slice-gate.py preflight --change-dir openspec/changes/<name>
+  ```
+  `lint` 非 0（规划红）或 `preflight` 非 0（`gate-baseline.json` 缺基线 / 基线红 / 基线过期）→ 不起飞，把 stderr 原样回报；基线由 propose 的 `baseline` 步骤生成，缺了回去补。
+- **主模型**：有 `--model=` 以它为准；否则由 `session-model.py` 判定 `<main>`；判不出 → 不起飞，提示用 `--model=<alias>` 重发。禁模型自述主模型。
+- **上一次派出的 agent**：仍在运行 → 等它们结束再起飞。
+- 全部通过后：首次起飞时插件以 `takeoff-gate.py` 的批准证据原文记 `timeline.py record approve` 并提交 `chore(flight): approve`，再把 takeoff 事件写入账本。
+
+**派发与收口门禁（插件执行，中途不问）**
+- **派发**：按 preflight 给出的 waves 逐 wave 派 `flight:executor`，每片一间 worktree（`.claude/worktrees/flight-<name>-<S>`，分支 `flight/<name>/<S>`，基于 change 分支尖端）。执行体按切片包 TDD，改生产代码前调用 `measure`，由控制面测量并写入账本。
+- **收口门禁**：执行体收口时控制面运行切片门禁；红了把失败项交回执行体接着修，仍红记 blocked。门禁绿的切片由控制面合回 change 分支。
+- **评审、修复与 final**：`flight:reviewer` 评审已合回的切片；阻断 finding 交 `flight:fixer` 批量修复；再跑 final 门禁。有切片 blocked 或 final 未通过 → 停飞，修好后重发 `/opsx-apply <name>` 续飞。
+- **续飞另起 worktree**：续飞时同名 worktree 已存在就另起 `<S>-a<attempt>`，旧现场保留，清理由人执行。
+- **落地交 `/pr-ship`**：控制面写 `review-findings.json`、在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`、提交飞行记录，跑 `slice-gate.py ship` 机械裁决 draft / ready，然后调用 `/pr-ship`。主会话不自判 draft。
 
 **模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
 
-| 角色 | 模型 | effort |
-|---|---|---|
-| slice-executor（实现 / 批量修复） | 会话主模型别名 `<main>`（由 `session-model.py` 判定，见 step 4） | high |
-| code-reviewer（切片评审 / 复核） | 会话主模型别名 `<main>`（由 `session-model.py` 判定，见 step 4） | high |
-| integrator（合回 / 抽接口 / final） | `sonnet` | low |
+| 角色 | 模型 |
+|---|---|
+| `flight:executor`（实现切片） | 会话主模型 `<main>` |
+| `flight:reviewer`（切片评审） | 会话主模型 `<main>` |
+| `flight:fixer`（批量修复 / 解冲突） | 会话主模型 `<main>` |
+| 起飞检查 · 门禁 · 合回 · final · 落地 | 不用模型：机械动作由插件执行，零 token |
 
-**Steps**
-
-0. **批准自检（起飞判据；批准由脚本校验，禁模型自证）**
-   先按 step 1 的规则定出 `<name>`（有参数直接用参数），再跑：
-   ```bash
-   python3 .claude/hooks/takeoff-gate.py --change-dir openspec/changes/<name>   # exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏
-   ```
-   `exit 0` → stdout 是批准证据一行 `<批准时间> · fp <指纹前 8 位> · ledger <账本 tip 前 8 位>`（账本 `refs/flight/<name>/ledger` 最新 approve 事件的指纹 == 当前计划指纹），原样留给 step 3 的 approve 事件。`exit 3` → stderr 给出三种原因之一：**未批准**（账本里没有批准记录）· **计划已变需重新批准**（批准时的指纹 ≠ 当前计划指纹，工件改过）· **账本损坏**（账本里有不合法事件）。**停下报告**：原样转述 stderr，打印 `openspec/changes/<name>/spec.html` 的绝对路径；补救 = 请人类核对 `spec.html` 顶部的计划指纹，在批准带按「批准起飞」后重新发出 `/opsx-apply <change>`；批准带没出现 = 未装 flight 插件，执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。不进入任何后续步骤、不派发任何 agent。
-
-1. **选 change**
-   - 有参数用参数；否则从会话上下文推断；只有一个活跃 change 自动选；歧义 → `openspec list --json` + **AskUserQuestion** 让用户选。
-   - 宣告：`Using change: <name>`。
-
-1.5 **确认已在本 change 的 worktree 内**（见 `openspec-git-discipline` 的 Worktree Isolation）
-   CWD 必须是 `.worktrees/<name>/`；不在则进入已存在的 worktree；worktree 缺失 → 停下报告，不在主仓库工作区写实现代码。
-   `git status --short` 确认工件已单独 commit、工作树干净；不满足 → 停下报告。
-
-2. **切片规划 lint**
-   ```bash
-   python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
-   python3 .claude/hooks/slice-gate.py preflight --change-dir openspec/changes/<name>
-   ```
-   `lint` 拿到 stdout 的 waves JSON。exit 非 0（规划红）→ 停下报告规划问题，不进入实现。
-   `preflight` 校验 `gate-baseline.json`：exit 非 0（缺基线 / 基线红 / 基线过期）→ 停下把 stderr 原样报告，不进入实现；基线由 propose 的 `baseline` 步骤生成，缺了回去补。
-
-3. **记录批准事件并提交飞行记录**
-   ```bash
-   python3 .claude/hooks/timeline.py record approve --change-dir openspec/changes/<name> --note "<批准证据>"
-   git add openspec/changes/<name>/timeline.md && git commit -m "chore(flight): approve"
-   ```
-   `<批准证据>` 用 step 0 `takeoff-gate.py` stdout 的原文（`<时间> · fp <8位> · ledger <8位>`），不自己编。飞行记录文件由 hook 自动追加，起飞前必须已提交，否则 integrator 合回并行切片时会被 `git merge` 拒绝。写 `openspec/changes/<name>/.flight`（JSON，字段 `{"started","approval","models","efforts","raw","source"}`）。
-
-4. **启动切片工作流**
-   - 先定出会话主模型别名 `<main>`：
-     ```bash
-     python3 .claude/hooks/session-model.py   # stdout: opus|sonnet|haiku|fable；exit 3 = 判定不出
-     ```
-     `exit ≠ 0` → **停下报告**，提示用 `--model=<alias>` 显式指定后重跑；有 `--model=` 旗标时以旗标为准。禁模型自述主模型。
-   - 优先用 **Workflow** 工具：`name: "opsx-apply"`，`args: {change, changeDir, hooksDir: ".claude/hooks", agentsDir: ".claude/agents", waves, useAgentTypes: true, branch: "<git branch --show-current>", models: {executor: "<main>", reviewer: "<main>", integrator: "sonnet"}, efforts: {executor: "high", reviewer: "high", integrator: "low"}}`。`models` 缺任一角色脚本会拒绝起飞。
-   - 同时传 `deps: <slices.json 里每片的 deps 映射>`，依赖已 blocked 的切片脚本不再派发。
-   - Workflow 不可用（工具缺失 / `disableWorkflows`）→ **回退**，语义与脚本逐项一致：按 waves 逐 wave 用 **Agent** 工具在同一条消息里并行派发 `subagent_type: slice-executor`、`model: "<main>"`（每个执行体（含单片 wave 与 fix）都带 `isolation: worktree`，每个 wave 都派 integrator 合回；Agent 工具没有 effort 参数，effort 由 agent frontmatter 决定：执行体 / 评审员 high，integrator low；执行体 `slice-gate.py start` 带 `--expect-branch <branch>`，由 `slice-gate.py` 校验 worktree 是否从 change 分支最新 commit 分叉，start 非 0 则执行体把它打印的 JSON 原样返回），回报只收其原样 JSON；门禁红则以其 `failed` 重派同一切片一次——重派 prompt 带上一轮的 `commit` 与 `base`：第零步 HEAD 不是该 commit 则 `git cherry-pick <commit>`（冲突 abort 并记 `G0 base`），再 `slice-gate.py start <S> --base <base>` 接续同一基准（start 幂等）；执行体未返回门禁 JSON（Agent 工具回报 partial 或无 JSON）也重派一次（Agent 调用抛错与未返回同样处理：重派一次）——prompt 说明上一轮未返回，`slice-gate.py start <S> --resume-checkpoint` 从快照恢复半成品后继续；重派仍无 JSON 记 blocked（infra）；仍红记 blocked，依赖它的切片直接记 blocked；wave 后派 `integrator`（`model: "sonnet"`）先提交飞行记录、合回（只合回、不跑 final）、逐片 `slice-gate.py record --json '<该切片门禁 JSON 原文>'` 写回门禁结论与天花板行；评审用 `code-reviewer`（`model: "<main>"`）并行派发（`run_in_background` 语义：不等）；最后一次批量修复（fix 同样 `isolation: worktree`；fix 第一步先做基点校验 `git merge-base --is-ancestor $(git rev-parse <branch>) HEAD`，不成立则不做改动、返回 `G0 base`，`start fix` 也带 `--expect-branch <branch>`；fix 未返回、Agent 调用抛错或 G0 拒绝都重派一次，仍无可合回结果记 blocked（infra）、不合回且照常跑 final），integrator 先合回 fix 的 commit、再跑 final。integrator 与 final 抛错或未返回时重派一次，仍失败记 blocked（infra）；评审未返回只记录（blocked，infra），不重派——切片级评审缺失由 pr-ship 的整 PR 评审兜住。
-   - 两条路径最终都产出同一份 JSON：`{change, models, efforts, slices, blocked, blocking, deferred, fix, final}`。
-
-5. **收口分解**
-   ```bash
-   python3 .claude/hooks/timeline.py record apply-done --change-dir openspec/changes/<name>
-   python3 .claude/hooks/session-decompose.py --session <当前会话 jsonl，取 ~/.claude/projects/<slug>/ 下最新> --workflow <Workflow 返回的 Transcript dir> --expect-models '<.flight 里的 models>'
-   python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>
-   ```
-   `--expect-models` 机械对账：非 0 → 铁律 11 违规，收口报告点名不符的 agent，并把它作为一条 `severity: HIGH` 追加进 `review-findings.json.blocking`，由 `ship` 机械判 draft。打印飞行记录（含各 agent 实际模型）；把 `{blocked, blocking, deferred, fix}` 原样写入 `openspec/changes/<name>/review-findings.json`（`blocked` 带 `kind: gate | infra`）；删除 `.flight`；跑 `python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>`（只读 gate-report.md 每切片最新行 + final 对齐 HEAD + blocking；退出 0 ready / 1 draft；`final 过期` → 重跑 final 再 ship）；把门禁绿的切片在 `tasks.md` 里勾选；飞行记录文件单独 `chore(flight)` commit。
-
-6. **不问，直接进入 `/pr-ship`**
-   无论 `ship` 结果如何都调用；`/pr-ship` 自己再跑 `ship` 决定 draft / ready 并把 `ship --markdown` 段落贴进正文。主会话不自判 draft。
+**模型读到本 skill 即停飞**
+- 除 `--gate=per-task` 外，插件接管时 `/opsx-apply` 不会到达模型。模型读到这里，说明 flight 插件缺席、未加载或版本不符。
+- 必须停下报告，不得改用其他方式（手工派发 agent、照本文逐步执行等）实现本 change。
+- 指引：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` → `claude plugin install flight@intent-driven -s project` → `/reload-plugins`，然后重新发出 `/opsx-apply <name>`。
 
 **暂停例外（仅这四种）**：spec 自相矛盾 · 需要破坏性操作 · 测试环境本身坏 · 同一门禁项连续 2 次红。
 
 **Guardrails**
 - 启动到 `/pr-ship` 之间不出现 AskUserQuestion。
-- 模型按角色显式路由；派发时不得省略 `model`；收口报告必须打印各角色实际模型。
+- 模型按角色显式路由；插件派发时不省略 `model`。
 - 起飞批准以账本指纹为判据（人在批准带按「批准起飞」才写入账本），由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
 - `<main>` 由 `.claude/hooks/session-model.py` 判定，**禁模型自述**；判定不出停飞，人工 `--model=<alias>` 覆盖。
 - `--gate=per-task` 转 legacy skill，不与本流程混用。

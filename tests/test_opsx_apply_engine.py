@@ -22,13 +22,12 @@ def test_apply_docs_describe_plugin_engine():
     docs = {p.name: preamble(p) for p in (COMMAND, SKILL)}
 
     # When: 读两份文档在第一个步骤之前的部分
-    missing = {name: [w for w in ("插件", "状态机", "--engine=workflow", "停飞") if w not in text]
+    missing = {name: [w for w in ("插件", "状态机", "停飞") if w not in text]
                for name, text in docs.items()}
 
-    # Then: 两份都含「插件」「状态机」「--engine=workflow」「停飞」，且都写明不会自动回退到旧引擎
+    # Then: 两份都含「插件」「状态机」「停飞」，且都不再出现 --engine=workflow
     assert missing == {COMMAND.name: [], SKILL.name: []}, missing
-    for name, text in docs.items():
-        assert re.search(r"不会?自动回退", text), name
+    assert [name for name, text in docs.items() if "--engine=workflow" in text] == []
 
 # ---------------------------------------------------------------- flight-envelope S5
 

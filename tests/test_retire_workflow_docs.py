@@ -1,6 +1,4 @@
-"""flight-retire-workflow-engine 的文档（scenario: flight-retire-docs#*）。骨架：S4 实现后去掉 xfail 标记。"""
-import pytest
-
+"""flight-retire-workflow-engine 的文档（scenario: flight-retire-docs#*）。S4 已解锁。"""
 from conftest import ROOT
 
 STALE = ("--engine=workflow", "opsx-apply.js", "integrator", "slice-executor", "session-decompose")
@@ -10,7 +8,6 @@ def read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：/opsx-apply 文档尚未只讲插件路径")
 def test_apply_docs_plugin_only():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     docs = [read("template/.claude/commands/opsx-apply.md"), read("template/.claude/skills/openspec-apply-change/SKILL.md")]
@@ -24,7 +21,6 @@ def test_apply_docs_plugin_only():
     assert missing == [[], []], missing
 
 
-@pytest.mark.xfail(strict=True, reason="S4：git 纪律 skill 尚未改写为插件 worktree")
 def test_git_discipline_describes_plugin_worktrees():
     # Given: openspec-git-discipline/SKILL.md
     text = read("template/.claude/skills/openspec-git-discipline/SKILL.md")
@@ -37,7 +33,6 @@ def test_git_discipline_describes_plugin_worktrees():
     assert "integrator" not in text and "opsx-apply.js" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="S4：evidence.log 尚未改称飞行外")
 def test_evidence_log_means_outside_flight():
     # Given: pr-ship.md 与 code-reviewer.md
     docs = [read("template/.claude/commands/pr-ship.md"), read("template/.claude/agents/code-reviewer.md")]
