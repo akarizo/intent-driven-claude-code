@@ -24,3 +24,20 @@ def test_docs_reference_plugin_ship():
     assert all("/flight:pr-ship" in d for d in docs.values())
     assert all("flight:code-reviewer" in docs[rel] for rel in ("README.md", "docs/WORKFLOW_zh.md", LEGACY))
     assert all(".claude/agents/code-reviewer.md" not in docs[rel] for rel in ("README.md", "docs/WORKFLOW_zh.md"))
+
+
+def test_pr_ship_reviewer_prompts_pin_worktree():
+    # Given: template/plugins/flight/commands/pr-ship.md（子 agent 的 shell 不一定在 --worktree 里）
+    text = read("template/plugins/flight/commands/pr-ship.md")
+
+    # When: 切出第 8 步与第 10 步
+    step8 = text[text.index("8. **"):text.index("9. **")]
+    step10 = text[text.index("10. **"):text.index("11. **")]
+
+    # Then: 两步的 reviewer prompt 都带工作目录行；取 diff 用 git -C <worktree> 且 HEAD 已由主会话解析成 SHA；不再把裸 ..HEAD 交给子 agent
+    for step in (step8, step10):
+        assert "工作目录: <worktree>" in step and "<abs-change-dir>" in text
+    assert "git -C <worktree> diff origin/<target>...<REVIEW_HEAD_1>" in step8
+    assert "git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>" in step10
+    assert "git rev-parse HEAD" in step10
+    assert "<REVIEW_HEAD_上一轮>..HEAD" not in step10
