@@ -23,8 +23,14 @@ export type FlightBand = {
   items: FlightItem[]
 }
 
+/** 飞行面板（Pane flight）：每行一条进度摘要；lines 为空时显示「尚无飞行」。 */
+export type FlightPanel = {
+  change: string
+  lines: string[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    flight: { band: FlightBand }
+    flight: { band: FlightBand; panel: FlightPanel }
   }
 }

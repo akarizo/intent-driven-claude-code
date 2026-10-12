@@ -1527,3 +1527,17 @@ def test_retired_gate_mechanisms_gone(git_repo):
     assert "red_count" not in out, out
     assert resume.returncode != 0, (resume.stdout, resume.stderr)
     assert waves.returncode != 0, (waves.stdout, waves.stderr)
+
+# ---------------------------------------------------------------- flight-interaction
+
+
+def test_judges_declare_features(tmp_path):
+    # Given: 本 change 合入后的 slice-gate.py
+    # When: 运行 slice-gate.py features
+    p = run_hook("slice-gate", "features", cwd=tmp_path)
+
+    # Then: 退出 0，输出的行含三项能力
+    assert p.returncode == 0, p.stdout + p.stderr
+    feats = p.stdout.split()
+    for f in ("evidence-ledger-only", "g5-per-target", "guards"):
+        assert f in feats, feats

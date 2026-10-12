@@ -1,6 +1,4 @@
 """flight 插件的版本核对（scenario: flight-version-check#*）。versions.ts 是纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-measure
@@ -33,3 +31,13 @@ def test_judges_must_know_events():
     # When: 分别核对判定器
     # Then: 第一种通过；第二种拒飞且含 measure 与主检出；第三种拒飞且含判定器过旧
     assert_ts_passed("judges-must-know-events")
+
+# ---------------------------------------------------------------- flight-interaction
+# S2 已实现：同名 TS 测试在 template/plugins/flight/tests/versions.test.ts。
+
+
+def test_takeoff_refuses_stale_judges():
+    # Given: 三个判定器目录：features 以 2 退出 / 只列 evidence-ledger-only / 列全三项
+    # When: 分别运行 checkJudges
+    # Then: 前两个不通过（原因含「判定器过旧」或缺少的能力，并含「主检出」），第三个通过
+    assert_ts_passed("takeoff-refuses-stale-judges")

@@ -8,6 +8,7 @@
 #                                              标记已是同一切片时不改（resume），保住区间；
 #                                              给了 --expect-branch 先校验 HEAD 是该分支最新 commit 的后代，否则打印 G0 JSON、exit 1、不写标记
 #   checkpoint                                 已退役：兼容空壳（仍注册它的 settings 用），读掉 stdin、不输出、恒 exit 0
+#   features                                   打印判定器声明的能力（FEATURES），每行一项；不读 change 目录，恒 exit 0
 #   gate     S --change-dir DIR [--base REF]  跑 G1–G8（G5 只按账本）；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记
 #   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
 #                                              控制面（flight 插件）把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
@@ -50,6 +51,9 @@ REPORT = "gate-report.md"
 EVIDENCE = "evidence.log"
 TIMELINE = "timeline.md"
 BASELINE = "gate-baseline.json"
+# 判定器声明的能力（features 子命令逐行打印）。
+# 以后判定器新增插件依赖的能力时在这里追加；插件 versions.ts 的 REQUIRED_FEATURES 与之对应。
+FEATURES = ("evidence-ledger-only", "g5-per-target", "guards")
 # verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
 VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -890,6 +894,13 @@ def cmd_checkpoint(args):
     sys.exit(0)
 
 
+def cmd_features(args):
+    """打印判定器声明的能力，每行一项；不读 change 目录，恒 exit 0。"""
+    for f in FEATURES:
+        print(f)
+    sys.exit(0)
+
+
 def cmd_start(args):
     root = toplevel()
     data = load_plan(args.change_dir)
@@ -1374,6 +1385,7 @@ def main():
     p.add_argument("--evidence", choices=["ledger"], default="ledger",
                    help="G5 留痕来源：只有 ledger（控制面账本里的 measure 事件），标记里记 evidence=ledger")
     sub.add_parser("checkpoint", help="已退役：兼容空壳，读掉 stdin、不输出、恒 exit 0")
+    sub.add_parser("features", help="打印判定器声明的能力，每行一项，恒 exit 0")
     p = sub.add_parser("gate")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
@@ -1399,7 +1411,7 @@ def main():
     args = ap.parse_args()
     {"lint": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
      "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship,
-     "checkpoint": cmd_checkpoint, "measure": cmd_measure}[args.cmd](args)
+     "checkpoint": cmd_checkpoint, "measure": cmd_measure, "features": cmd_features}[args.cmd](args)
 
 
 if __name__ == "__main__":

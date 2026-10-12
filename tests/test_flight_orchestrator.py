@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -378,3 +376,48 @@ def test_per_task_passes_through():
     # When: 人发出 /opsx-apply demo --gate=per-task
     # Then: 命令交给模型（插件不作答），账本无新事件
     assert_ts_passed("per-task-passes-through")
+
+# ---------------------------------------------------------------- flight-interaction
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+def test_flight_status_prints_progress():
+    # Given: 插件已加载，demo 已起飞（attempt 1）
+    # When: 发出 /flight status demo 与不带 change 的 /flight status
+    # Then: 会话开始时登记过 flight 命令；两次回复都含 demo、attempt 1、W1/2
+    assert_ts_passed("flight-status-prints-progress")
+
+
+def test_flight_abort_stops_agents():
+    # Given: demo 已起飞并派出 agent-1、agent-2，agent.list 里都是 running
+    # When: 发出 /flight abort demo，随后 agent-1 结束（aborted）
+    # Then: 账本有原因含「人工中止」的 halt，排在两次 TaskStop 之前；TaskStop 依次停 agent-1、agent-2；之后没有新的 dispatch 或 merge
+    assert_ts_passed("flight-abort-stops-agents")
+
+
+def test_flight_resume_only_unfinished():
+    # Given: 三份账本：没有 takeoff / attempt 1 已落地 / attempt 1 已停飞
+    # When: 分别发出 /flight resume demo
+    # Then: 前两份拒绝（含 /opsx-apply 或「已落地」）且无新事件；第三份含「续飞」与「✈ 起飞」，有 attempt 2 的 takeoff
+    assert_ts_passed("flight-resume-only-unfinished")
+
+
+def test_panel_opens_at_takeoff():
+    # Given: demo 已批准、工作区干净
+    # When: 发出 /opsx-apply demo，再请求绘制 Pane flight
+    # Then: 插件以 id flight 调用过 ui.open；面板文本含 demo 与 W1/2
+    assert_ts_passed("panel-opens-at-takeoff")
+
+
+def test_abort_during_drive_stops_late_dispatch():
+    # Given: 起飞后 drive 派发 S1 执行体时 spawn 被挂起（S2 尚未派发），agent-1 在 agent.list 里 running
+    # When: 人发出 /flight abort demo，halt 写入后放行 spawn（PR #50 评审 HIGH）
+    # Then: drive 只做完手上的 S1 派发、不再派发 S2；agent-1 被 TaskStop 停下
+    assert_ts_passed("abort-during-drive-stops-late-dispatch")
+
+
+def test_flight_command_human_only():
+    # Given: 两份账本：demo attempt 1 在飞（agent-1 running）/ demo attempt 1 已停飞
+    # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）
+    # Then: 四次 abort / resume 都回复「只接受人在终端发出」与所见来源，账本无新事件、没有 TaskStop；status 回复含 demo 与 attempt 1
+    assert_ts_passed("flight-command-human-only")

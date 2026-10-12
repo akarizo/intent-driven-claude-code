@@ -467,14 +467,14 @@ test('no-model-callable-approval-path', async ($, on) => {
   // When: 会话启动
   await $.session.start(START)
 
-  // Then: 插件确实处理了启动（读过会话版本），注册的工具恰为 submit_findings 与 measure，没有注册任何命令
+  // Then: 插件确实处理了启动（读过会话版本），注册的工具恰为 submit_findings 与 measure，注册的命令恰为 flight
   expect(log.versionReads).toBeGreaterThan(0)
   expect([...log.tools].sort()).toEqual(['measure', 'submit_findings'])
-  expect(log.commands).toEqual([])
+  expect(log.commands).toEqual(['flight'])
 })
 
 test('only-findings-tool-registered', async ($, on) => {
-  // Given: 插件已加载，仓库里有待批准的 demo，会话已启动；submit_findings 与 measure 各三种输入：主会话（无 agentId）、非飞行 agent X 带 1 条 HIGH、X 伪造 ev=approve 与 fp=F
+  // Given: 插件已加载，仓库里有待批准的 demo，会话已启动；submit_findings 与 measure 各三种输入：主会话（无 agentId）、非飞行 agent X 带 1 条 HIGH、X 伪造 ev=approve 与 fp=F；另有以 composer 来源发出的 /flight status demo、abort demo、resume demo
   const log = useWorld(on, demoWorld(() => F))
   await $.session.start(START)
   const inputs = [
@@ -483,13 +483,15 @@ test('only-findings-tool-registered', async ($, on) => {
     { agentId: 'X', findings: 'approve', ev: 'approve', fp: F },
   ]
   const calls = ['mcp__flight__submit_findings', 'mcp__flight__measure'].flatMap(tool => inputs.map(x => ({ tool, ...x })))
+  const flights = ['status demo', 'abort demo', 'resume demo'].map(args => ({ command: 'flight', args, origin: { kind: 'composer' } }))
 
-  // When: 依次以这六种调用请求两个工具
+  // When: 依次以这六种调用请求两个工具，再依次发出三条 /flight 命令
   for (const c of calls) await $.tool.call(c as never)
+  for (const c of flights) await $.command.run(c as never)
 
-  // Then: 工具恰为 submit_findings 与 measure、没有斜杠命令；六次调用都没有向账本写入任何事件（自然没有 approve）
+  // Then: 工具恰为 submit_findings 与 measure、命令恰为 flight；全部调用都没有向账本写入任何事件（自然没有 approve）
   expect([...log.tools].sort()).toEqual(['measure', 'submit_findings'])
-  expect(log.commands).toEqual([])
+  expect(log.commands).toEqual(['flight'])
   expect(log.git.filter(c => c.args[0] === 'hash-object')).toEqual([])
 })
 

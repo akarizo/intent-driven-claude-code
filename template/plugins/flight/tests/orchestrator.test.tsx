@@ -33,6 +33,8 @@ type World = {
   fpRun?: Run
   /** 派发 agent 时抛异常 */
   spawnThrows?: boolean
+  /** 第 n 个 agent.spawn 返回前等它（用来让 drive 停在一个动作中途） */
+  spawnHold?: (n: number) => Promise<void>
   /** update-ref 一直返回非 0（旧值不符，账本写入总失败） */
   updateRefFails?: boolean
   /** 跟踪 change 目录飞行记录的提交状态：fs.write 写过 → `git status --porcelain -- <记录>` 报改动，git commit 后清空 */
@@ -125,6 +127,12 @@ function useWorld(on: On, w: World) {
     /** fs.exists / fs.read 问过的路径（Io.read 先问 exists，不存在就不再读） */
     asked: [] as string[],
     files,
+    /** 插件登记的斜杠命令名 */
+    registered: [] as string[],
+    /** 插件 $.ui.open 的面板 id */
+    opens: [] as string[],
+    /** TaskStop 停过的 task_id，及当时账本是否已有 halt */
+    stops: [] as { id: string; halted: boolean }[],
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
@@ -155,19 +163,42 @@ function useWorld(on: On, w: World) {
     return { text: 'from-model' }
   })
   on('agent.offer', () => ({ isOffered: true }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('command.register', ($, e) => {
+    log.registered.push(e.name)
+    return { value: { command: e.name } }
+  })
+  // 插件之下的引擎绘制（插件没有接 Pane 时由它作答）
+  on('ui.render', { component: 'Pane' }, ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box key="engine">
+        <Text>engine</Text>
+      </Box>
+    )
+  })
+  on('ui.open', ($, e) => {
+    log.opens.push(String((e as unknown as { id?: unknown }).id))
+    return { value: undefined } as never
+  })
   on('tool.call', ($, e) => {
-    const x = e as unknown as { tool: string; file_path?: string; notebook_path?: string; command?: string }
+    const x = e as unknown as { tool: string; file_path?: string; notebook_path?: string; command?: string; task_id?: string }
+    if (x.tool === 'TaskStop') {
+      log.stops.push({ id: String(x.task_id), halted: log.events.some(y => y.ev === 'halt') })
+      return { result: { message: `Successfully stopped task: ${x.task_id}` } } as never
+    }
     log.reached.push(`${x.tool} ${x.file_path ?? x.notebook_path ?? x.command ?? ''}`)
     return { result: {}, text: '' } as never
   })
   const checks = [...(w.checks ?? [])]
   on('tool.check', () => ({ decision: checks.shift() ?? 'ask' }) as never)
-  on('agent.spawn', ($, e) => {
+  on('agent.spawn', async ($, e) => {
     const x = e as unknown as Omit<Spawn, 'agentId'>
     if (w.spawnThrows) throw new Error('spawn 炸了')
     agents += 1
     const agentId = `agent-${agents}`
     log.spawns.push({ subagent_type: x.subagent_type, model: x.model, cwd: x.cwd, prompt: x.prompt, agentId })
+    if (w.spawnHold) await w.spawnHold(agents)
     return {
       model: 'claude-opus-5-5',
       agentId,
@@ -204,6 +235,7 @@ function useWorld(on: On, w: World) {
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
+      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\n'))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, '[["S1", "S2"], ["S3"]]\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
         const s = String(argv[3])
@@ -1285,4 +1317,153 @@ test('measure-hints-unguarded-pass', async ($, on) => {
   expect(results[0]).toContain('护栏')
   expect(results[0]).toContain('不要改坏生产代码造红')
   expect(results[1]).not.toContain('在改生产代码之前就已通过')
+})
+
+// ---------------------------------------------------------------- flight-interaction（S4）
+
+const START = { cwd: TREE, surface: 'terminal', isInteractive: true } as const
+const PANE = { component: 'Pane', requestId: 'flight', props: {}, viewport: { columns: 120, rows: 30 } } as const
+/** 人在终端发出的命令来源 */
+const HUMAN = { origin: { kind: 'composer' } }
+
+test('flight-status-prints-progress', async ($, on) => {
+  // Given: 插件已加载、会话已启动；demo 已由 /opsx-apply 起飞（attempt 1，waves [[S1, S2], [S3]]）
+  const log = useWorld(on, demoWorld())
+  await $.session.start(START as never)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+
+  // When: 依次发出 /flight status demo 与不带 change 的 /flight status
+  const replies: string[] = []
+  for (const args of ['status demo', 'status']) replies.push(String((await $.command.run({ command: 'flight', args })).text))
+
+  // Then: 会话开始时登记过 flight 命令；两次回复都含 demo、attempt 1、W1/2
+  expect(log.registered).toContain('flight')
+  for (const r of replies) {
+    expect(r).toContain('demo')
+    expect(r).toContain('attempt 1')
+    expect(r).toContain('W1/2')
+  }
+})
+
+test('flight-abort-stops-agents', async ($, on) => {
+  // Given: demo 已起飞并派出 agent-1（S1）、agent-2（S2），agent.list 里两者都是 running
+  const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const before = log.events.length
+
+  // When: 人在终端发出 /flight abort demo，随后 agent-1 以 aborted 结束
+  await $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+  await $.turn.complete({ ...ended('agent-1'), reason: 'aborted', isAborted: true } as never)
+
+  // Then: 账本有原因含「人工中止」的 halt；TaskStop 依次停 agent-1、agent-2，且都在 halt 写入之后；之后没有新的 dispatch 或 merge；状态行已清空（不再显示「运行」）
+  const after = log.events.slice(before)
+  expect(String(after.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
+  expect(log.stops).toEqual([{ id: 'agent-1', halted: true }, { id: 'agent-2', halted: true }])
+  expect(after.filter(x => x.ev === 'dispatch' || x.ev === 'merge')).toEqual([])
+  expect(log.statuses.at(-1)).toBe('')
+})
+
+test('abort-during-drive-stops-late-dispatch', async ($, on) => {
+  // Given: /opsx-apply demo 起飞后，drive 派发 S1 的执行体时 agent.spawn 被挂起（drive 停在第一个动作中途，S2 尚未派发）；agent.list 里 agent-1 是 running
+  let enter = () => {}
+  let release = () => {}
+  const entered = new Promise<void>(r => (enter = r))
+  const released = new Promise<void>(r => (release = r))
+  const w = demoWorld({
+    agents: [{ id: 'agent-1', status: 'running' }],
+    spawnHold: async n => {
+      if (n !== 1) return
+      enter()
+      await released
+    },
+  })
+  const log = useWorld(on, w)
+  const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await entered
+
+  // When: 人在终端发出 /flight abort demo；账本写入 halt 之后才放行挂起的 spawn
+  const abort = $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+  for (let i = 0; i < 200 && !log.events.some(x => x.ev === 'halt'); i++) await new Promise(r => setTimeout(r, 5))
+  release()
+  await Promise.all([takeoff, abort])
+
+  // Then: halt 原因含「人工中止」；halt 之后 drive 只做完手上的 S1 派发，没有再派发 S2；挂起期间派出的 agent-1 也被 TaskStop 停下
+  const halt = log.events.findIndex(x => x.ev === 'halt')
+  expect(String(log.events[halt]?.reason ?? '没有 halt')).toContain('人工中止')
+  expect(log.spawns.map(s => s.agentId)).toEqual(['agent-1'])
+  expect(log.events.slice(halt).filter(x => x.ev === 'dispatch' || x.ev === 'merge').map(x => x.slice)).toEqual(['S1'])
+  expect(log.stops).toEqual([{ id: 'agent-1', halted: true }])
+})
+
+test('flight-resume-only-unfinished', async ($, on) => {
+  // Given: 三份账本依次为：没有 takeoff；attempt 1 的 takeoff 与 land（ready）；attempt 1 的 takeoff 与 halt（会话中断），都来自本会话 sess-1
+  const takeoff1 = ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })
+  const ledgers = [[], [takeoff1, ev.land(B0, { attempt: 1, verdict: 'ready' })], [takeoff1, ev.halt(B0, { attempt: 1, reason: '会话中断' })]]
+  const log = useWorld(on, demoWorld())
+
+  // When: 每份账本下各由人在终端发出一次 /flight resume demo
+  const replies: string[] = []
+  const added: string[][] = []
+  for (const ledger of ledgers) {
+    log.events.splice(0, log.events.length, ...(ledger as Record<string, unknown>[]))
+    replies.push(String((await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)).text))
+    added.push(log.events.slice(ledger.length).map(x => `${x.ev}:${x.attempt ?? ''}`))
+  }
+
+  // Then: 第一份回复含 /opsx-apply、第二份含「已落地」，两者都没有新事件；第三份回复含「续飞」与「✈ 起飞」，新事件首条是 attempt 2 的 takeoff
+  expect(replies[0]).toContain('/opsx-apply')
+  expect(replies[1]).toContain('已落地')
+  expect(added.slice(0, 2)).toEqual([[], []])
+  expect(replies[2]).toContain('续飞')
+  expect(replies[2]).toContain('✈ 起飞')
+  expect(added[2]?.[0]).toBe('takeoff:2')
+})
+
+test('panel-opens-at-takeoff', async ($, on) => {
+  // Given: demo 已批准、工作区干净，waves [[S1, S2], [S3]]
+  const log = useWorld(on, demoWorld())
+
+  // When: 人发出 /opsx-apply demo，再在 terminal 上请求绘制 Pane flight
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
+
+  // Then: 插件以 id flight 调用过 ui.open；面板文本含 demo 与 W1/2
+  expect(log.opens).toContain('flight')
+  expect(await ui.find({ text: /demo/ })).toBeDefined()
+  expect(await ui.find({ text: /W1\/2/ })).toBeDefined()
+})
+
+test('flight-command-human-only', async ($, on) => {
+  // Given: 两份账本（都来自本会话 sess-1）：flying = attempt 1 的 takeoff 与 agent-1（S1）的 dispatch，agent.list 里 agent-1 running；halted = attempt 1 的 takeoff 与 halt（会话中断）
+  const takeoff1 = ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })
+  const flying = [takeoff1, ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'agent-1', model: 'opus', worktree: SLICE1 })]
+  const halted = [takeoff1, ev.halt(B0, { attempt: 1, reason: '会话中断' })]
+  const trigger = { origin: { kind: 'scheduled-trigger' } }
+  const sends = [
+    { ledger: flying, args: 'abort demo', from: trigger },
+    { ledger: flying, args: 'abort demo', from: {} },
+    { ledger: halted, args: 'resume demo', from: trigger },
+    { ledger: halted, args: 'resume demo', from: {} },
+    { ledger: flying, args: 'status demo', from: trigger },
+  ]
+  const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }] }))
+
+  // When: 每次换上对应账本后发出 /flight <子命令>：abort 与 resume 各以 scheduled-trigger 来源与不带来源发出一次，最后以 scheduled-trigger 来源发出 status
+  const replies: string[] = []
+  const added: number[] = []
+  for (const s of sends) {
+    log.events.splice(0, log.events.length, ...(s.ledger as Record<string, unknown>[]))
+    replies.push(String((await $.command.run({ command: 'flight', args: s.args, ...s.from } as never)).text))
+    added.push(log.events.length - s.ledger.length)
+  }
+
+  // Then: 四次 abort / resume 回复都含「只接受人在终端发出」与所见来源（scheduled-trigger / 未标明）；五次都没有新事件；没有 TaskStop；status 回复含 demo 与 attempt 1
+  for (const [i, r] of replies.slice(0, 4).entries()) {
+    expect(r).toContain('只接受人在终端发出')
+    expect(r).toContain(i % 2 === 0 ? 'scheduled-trigger' : '未标明')
+  }
+  expect(added).toEqual([0, 0, 0, 0, 0])
+  expect(log.stops).toEqual([])
+  expect(replies[4]).toContain('demo')
+  expect(replies[4]).toContain('attempt 1')
 })
