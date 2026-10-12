@@ -163,7 +163,6 @@ def test_approve_dedupe_prefills_command():
 # 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_tools_and_commands_invariant():
     # Given: 插件已加载，仓库里有待批准的 demo，会话已启动
     # When: 对三个工具各以主会话、非飞行 agent、伪造 approve 三种输入调用

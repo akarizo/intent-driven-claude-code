@@ -13,6 +13,7 @@ import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix,
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
 import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
+import { SHIP_TOOL, shipPr } from './ship'
 import { checkJudges, checkPluginCopy } from './versions'
 
 type Engine = EngineInterface
@@ -38,6 +39,14 @@ const MEASURE_RETRY = 'flight：暂时无法判定你的归属（账本读取失
 const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover]'
 /** 写账本的入口（/opsx-apply、/flight abort、/flight resume）只认人或宿主程序发出的来源：终端、Remote Control、SDK */
 const HOST_ORIGINS = ['composer', 'bridge', 'sdk']
+// 不变量（design D6）：模型可调用的工具恰为三个（measure、submit_findings、ship）；ship 只认主会话（带 agentId 一律拒绝）；ship 只写 ship 事件。
+const SHIP_MAIN_ONLY = 'flight：ship 只接受主会话调用'
+/** --gate=per-task 且 /opsx-apply 由本插件登记（项目没有命令文件）时的回复：无从透传给模型，指给 legacy skill */
+const PER_TASK_GUIDANCE =
+  'flight：本项目没有 /opsx-apply 命令文件（/opsx-apply 由 flight 插件登记，只接管飞行），--gate=per-task 无从交给模型。' +
+  '要走 legacy 逐 task 守门：让模型读 .claude/skills/legacy/openspec-subagent-apply-change/SKILL.md，按它逐 task 守门执行该 change'
+/** 本进程最近一次 session.start 里 opsx-apply 是否由本插件登记成功（成功 = 项目没有同名命令文件） */
+let opsxRegistered = false
 
 /** 来源不在 HOST_ORIGINS 时的统一拒绝文案 */
 function originRefusal(cmd: string, kind: string | undefined): string {
@@ -362,8 +371,9 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
       .filter(e => e.ev === 'review')
       .flatMap(e => (Array.isArray(e.findings) ? (e.findings as { severity: string }[]) : []))
       .filter(x => x.severity === 'CRITICAL' || x.severity === 'HIGH').length
-    const fixer = dispatchOf(lastDispatch(state, 'fix', 'fixer', A))
-    return merged('fix', await mergeFix(io, f, `blocking=${blocking}`, fixer?.branch || undefined))
+    // 切片级修复（fix）与修复轮（fix-r<k>）都按动作的 slice 合回：分支取该 slice 本 attempt 最后一个修复体的
+    const fixer = dispatchOf(lastDispatch(state, a.slice, 'fixer', A))
+    return merged(a.slice, await mergeFix(io, f, `blocking=${blocking}`, fixer?.branch || undefined, a.slice))
   }
   if (a.kind === 'blocked') return record(ev.blocked(b, { attempt: A, slice: a.slice, kind: a.blockKind, reason: a.reason }))
   // dispatch reviewer / fixer、final、land、halt
@@ -675,7 +685,8 @@ export function registerOrchestrator(on: On): void {
   on('command.run', { command: 'opsx-apply' }, async ($, e, next) => {
     const args = argsOf(e.args)
     if (args.includes(RETIRED_ENGINE)) return { text: RETIRED_ENGINE_TEXT }
-    if (args.some(a => PASS_THROUGH.includes(a))) return next(e)
+    // 命令由本插件登记时项目没有命令文件，透传给模型也无从执行：直接指给 legacy skill
+    if (args.some(a => PASS_THROUGH.includes(a))) return opsxRegistered ? { text: PER_TASK_GUIDANCE } : next(e)
     const origin = originOf(e)
     if (!HOST_ORIGINS.includes(origin ?? '')) return { text: originRefusal('/opsx-apply', origin) }
     try {
@@ -683,7 +694,10 @@ export function registerOrchestrator(on: On): void {
     } catch (err) {
       return { text: `flight：起飞异常，不起飞（${firstLine(err instanceof Error ? err.message : String(err))}）` }
     }
-  }).catch(($, e, next) => (argsOf(e.args).some(a => PASS_THROUGH.includes(a)) && !next.called ? next(e) : { text: 'flight：起飞异常，不起飞' }))
+  }).catch(($, e, next) => {
+    if (!argsOf(e.args).some(a => PASS_THROUGH.includes(a)) || next.called) return { text: 'flight：起飞异常，不起飞' }
+    return opsxRegistered ? { text: PER_TASK_GUIDANCE } : next(e)
+  })
 
   // register.tsx 已有无 matcher 的 session.start；同事件第二个 hook 须带 matcher（3a S8 实测），用恒真的 cwd matcher
   on('session.start', { cwd: /^/ }, async ($, e, next) => {
@@ -698,14 +712,21 @@ export function registerOrchestrator(on: On): void {
       // 注册不了时执行体只是无从请求测量：G5 账本判据会判红，不静默放过
     }
     try {
+      await $.tool.register({ ...SHIP_TOOL, isDeferred: false })
+    } catch {
+      // 注册不了时模型调不到 ship：PR 停在 draft，由人决定
+    }
+    try {
       await $.command.register({ name: 'flight', description: '飞行：status | panel | abort | resume' })
     } catch {
       // 登记不了时 /flight 不出现在补全里；起飞与驱动不受影响
     }
     try {
       await $.command.register({ name: 'opsx-apply', description: '飞行模式 apply：由 flight 插件状态机执行（批准后起飞）', argumentHint: '<change>' })
+      opsxRegistered = true
     } catch {
-      // 项目已有同名命令文件时引擎拒绝登记；command.run 拦截照旧接管 /opsx-apply
+      // 项目已有同名命令文件时引擎拒绝登记；command.run 拦截照旧接管 /opsx-apply，--gate=per-task 照旧透传给它
+      opsxRegistered = false
     }
     return next(e)
   })
@@ -745,6 +766,20 @@ export function registerOrchestrator(on: On): void {
     if (found === undefined && owner !== undefined && !('pending' in owner) && active.has(owner.change)) return { deny: MEASURE_RETRY }
     return onMeasure(ctx, found, agentId)
   }).catch(() => ({ deny: 'flight：测量请求处理失败' }))
+
+  // ship（design D5 / D6）：只认主会话；核对、裁决、贴评论、切换与写 ship 事件全在 ship.ts
+  on('tool.call', { tool: `mcp__flight__${SHIP_TOOL.name}` }, async ($, e) => {
+    const x = e as unknown as { agentId?: string; change?: unknown; pr?: unknown }
+    if (x.agentId) return { deny: SHIP_MAIN_ONLY }
+    if (typeof x.change !== 'string' || x.change === '' || typeof x.pr !== 'string' || x.pr === '') {
+      return { deny: 'flight：ship 的输入须为 {change: 非空字符串, pr: 非空字符串}' }
+    }
+    const at = await locate($, x.change)
+    if ('error' in at) return { deny: at.error }
+    const ledger = await readLedger(ioHere($), at.f)
+    if ('error' in ledger) return { deny: `flight：账本读取失败：${firstLine(ledger.error)}` }
+    return shipPr(ctxOf($), at.f, reduce(ledger.events), x.pr)
+  }).catch(() => ({ deny: 'flight：ship 处理失败' }))
 
   // 能力包络（D5 / D6 / D8）：飞行 agent 按角色限写与限 git；主会话对在飞树只读
   on('tool.call', { tool: ['Write', 'Edit', 'NotebookEdit', 'Bash'] }, async ($, e, next) => {

@@ -10,7 +10,7 @@ type Entry = { scope?: unknown; projectPath?: unknown; installPath?: unknown; ve
 const UPDATE_MAIN = '先把主检出更新到与插件同一版本'
 
 /** 起飞所需的判定器能力：slice-gate.py features 须逐行列出全部各项 */
-export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guards'] as const
+export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guards', 'ship-ledger'] as const
 
 /** p 在 dir 之下（不含 dir 本身）；两者都已规范化 */
 const under = (dir: string, p: string) => p.startsWith(dir + '/')

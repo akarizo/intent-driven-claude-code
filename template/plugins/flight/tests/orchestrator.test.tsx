@@ -92,6 +92,12 @@ const ARTIFACTS = [`${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'tes
 // 测试里 $.plugin.root 是插件真实目录（本测试文件的上一级）
 const PLUGIN_ROOT = String(import.meta.dir).replace(/\/tests$/, '')
 
+/** change worktree 的 HEAD（世界里不带分支名的 rev-parse 一律答它） */
+const HEAD = 'd'.repeat(40)
+const PR_VIEW = JSON.stringify({ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'worktree-demo', headRefOid: HEAD, isDraft: true })
+/** slice-gate ship 的裁决：ready */
+const SHIP_READY = JSON.stringify({ ready: true, commit: HEAD, reasons: [], blocked: [], blocking: [], deferred: [], fix: null, review: { slice: 'whole', agent: 'r9', commit: HEAD } })
+
 function res(exitCode: number, stdout: string, stderr = ''): Run {
   return { exitCode, stdout, stderr }
 }
@@ -240,7 +246,8 @@ function useWorld(on: On, w: World) {
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
-      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\n'))
+      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\n'))
+      if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, SHIP_READY))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, '[["S1", "S2"], ["S3"]]\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
         const s = String(argv[3])
@@ -262,6 +269,8 @@ function useWorld(on: On, w: World) {
       if (script === 'slice-gate.py') return wrap(res(0, ''))
       throw new Error(`unexpected argv: ${argv.join(' ')}`)
     }
+    // gh：pr view 应答 PR 7（头分支 worktree-demo、头 commit 与 change worktree 的 HEAD 相同、draft）；pr comment / pr ready 一律成功
+    if (argv[0] === 'gh') return wrap(argv[2] === 'view' ? res(0, PR_VIEW) : res(0, ''))
     if (argv[0] !== 'git') throw new Error(`unexpected argv: ${argv.join(' ')}`)
     let args = argv.slice(1)
     if (args[0] === '-C') {
@@ -298,6 +307,8 @@ function useWorld(on: On, w: World) {
       }
       case 'commit-tree':
         return wrap(res(0, 'c'.repeat(40) + '\n'))
+      case 'remote':
+        return wrap(res(0, 'git@github.com:o/r.git\n'))
       case '--version':
         return wrap(res(0, (w.gitVersion ?? 'git version 2.43.0') + '\n'))
       case 'merge-base':
@@ -421,8 +432,9 @@ test('engine-workflow-refused', async ($, on) => {
 })
 
 test('per-task-passes-through', async ($, on) => {
-  // Given: 插件已加载，世界里 demo 已批准
-  const log = useWorld(on, demoWorld())
+  // Given: 插件已加载，世界里 demo 已批准；项目已有 /opsx-apply 命令文件（command.register 拒绝 opsx-apply），会话已开始
+  const log = useWorld(on, demoWorld({ registerRefuses: ['opsx-apply'] }))
+  await $.session.start(START as never)
 
   // When: 人发出 /opsx-apply demo --gate=per-task
   const r = await $.command.run({ command: 'opsx-apply', args: 'demo --gate=per-task', ...HUMAN } as never)
@@ -1532,4 +1544,80 @@ test('ledger-entries-accept-host-origins', async ($, on) => {
   expect(added.slice(0, 2)).toEqual([0, 0])
   expect(replies[2]).toContain('✈ 起飞 demo')
   expect(String(log.events.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
+})
+
+// ---------------------------------------------------------------- flight-ship-ledger（S5）
+
+const TAKEOFF_1 = ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })
+const shipCall = (agentId?: string) => ({ tool: 'mcp__flight__ship', change: 'demo', pr: '7', ...(agentId ? { agentId } : {}) }) as never
+
+test('ship-tool-main-session-only', async ($, on) => {
+  // Given: demo 账本为本会话 attempt 1 的 takeoff、S1 执行体 agent-x 的 dispatch、land（ready）；origin 为 GitHub，PR 7 的头分支 worktree-demo、头 commit 与 change worktree 的 HEAD 相同；slice-gate ship 裁决 ready
+  const ledger = [
+    TAKEOFF_1,
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'agent-x', model: 'opus', worktree: SLICE1 }),
+    ev.land(B0, { attempt: 1, verdict: 'ready' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger }))
+
+  // When: 执行体 agent-x 与主会话（不带 agentId）依次以 {change: demo, pr: 7} 调用 mcp__flight__ship
+  const answers: { deny?: string; result?: unknown }[] = []
+  for (const id of ['agent-x', undefined]) answers.push((await $.tool.call(shipCall(id))) as { deny?: string; result?: unknown })
+
+  // Then: agent-x 被拒、理由含「只接受主会话」；主会话的 result 含 ready；demo 账本末条为 ship 事件
+  expect(answers[0]?.deny).toContain('只接受主会话')
+  expect(String(answers[1]?.result)).toContain('ready')
+  expect(log.events.at(-1)?.ev).toBe('ship')
+})
+
+test('fix-round-merges-by-slice', async ($, on) => {
+  // Given: demo 账本为本会话 attempt 1：S1/S2/S3 已合回、切片评审无发现、final 绿、全量评审 whole 给 1 条 HIGH；
+  //        fix-r1 修复体 fix-1 在 flight-demo-fix-r1（分支 flight/demo/fix-r1）派发，收口门禁绿
+  const FIX_R1 = `${MAIN}/.claude/worktrees/flight-demo-fix-r1`
+  const merged = (slice: string) => ev.merge(B0, { attempt: 1, slice, ok: true, commit: 'c'.repeat(40), failed: [] })
+  const reviewed = (slice: string, findings: (typeof HIGH_FINDING)[]) => ev.review(B0, { attempt: 1, slice, agent: `r-${slice}`, findings })
+  const ledger = [
+    TAKEOFF_1,
+    merged('S1'), merged('S2'), merged('S3'),
+    reviewed('S1', []), reviewed('S2', []), reviewed('S3', []),
+    ev.final(B0, { attempt: 1, ok: true, commit: 'c'.repeat(40), failed: [] }),
+    ev.dispatch(B0, { attempt: 1, slice: 'whole', role: 'reviewer', agent: 'r-whole', model: 'opus', worktree: TREE, commit: 'c'.repeat(40) }),
+    reviewed('whole', [HIGH_FINDING]),
+    ev.ended(B0, { attempt: 1, agent: 'r-whole', reason: 'answer', model: 'claude-opus-5-5' }),
+    ev.dispatch(B0, { attempt: 1, slice: 'fix-r1', role: 'fixer', agent: 'fix-1', model: 'opus', worktree: FIX_R1, branch: 'flight/demo/fix-r1' }),
+    ev.gate(B0, { attempt: 1, agent: 'fix-1', slice: 'fix-r1', ok: true, commit: 'c'.repeat(40), failed: [] }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, paths: [FIX_R1] }))
+
+  // When: 修复体 fix-1 结束（turn.complete），drive 执行合回
+  await $.turn.complete(ended('fix-1') as never)
+
+  // Then: change worktree 里运行了 merge --no-ff flight/demo/fix-r1 -m integrate: fix-r1；账本末条 merge 的 slice 为 fix-r1、ok 为 true
+  expect(runOf(log, `-C ${TREE} merge --no-ff flight/demo/fix-r1 -m integrate: fix-r1`)).toBe(true)
+  expect(log.events.filter(x => x.ev === 'merge').at(-1)).toMatchObject({ slice: 'fix-r1', ok: true })
+})
+
+test('per-task-guidance-when-plugin-registers', async ($, on) => {
+  // Given: 一个世界先后扮演两种项目：甲的 command.register 照常应答（插件登记了 opsx-apply）；乙对 opsx-apply 抛 refused（项目已有命令文件）
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  const send = () => $.command.run({ command: 'opsx-apply', args: 'demo --gate=per-task', ...HUMAN } as never)
+  const replies: string[] = []
+  const reached: string[][] = []
+
+  // When: 每种项目各开始一次会话，再由人在终端发出 /opsx-apply demo --gate=per-task
+  for (const refuses of [[], ['opsx-apply']]) {
+    w.registerRefuses = refuses
+    await $.session.start(START as never)
+    replies.push(String((await send()).text))
+    reached.push([...log.commands])
+  }
+
+  // Then: 甲的回复含「本项目没有 /opsx-apply 命令文件」与 legacy skill 路径，命令没到达模型；乙的命令原样到达模型并由它作答；账本没有事件
+  expect(replies[0]).toContain('本项目没有 /opsx-apply 命令文件')
+  expect(replies[0]).toContain('.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md')
+  expect(reached[0]).toEqual([])
+  expect(replies[1]).toBe('from-model')
+  expect(reached[1]).toEqual(['opsx-apply demo --gate=per-task'])
+  expect(log.events).toEqual([])
 })
