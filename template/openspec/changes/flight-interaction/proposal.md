@@ -26,6 +26,10 @@
     - 先在账本记停飞（`人工中止（/flight abort）`），再用 TaskStop 停掉本 attempt 在飞的 agent，回复里逐个列出停下或没停下的；
     - 被停的 agent 留在 worktree 里的未提交改动，续飞时照旧续接。
   - `/flight resume <change> [--takeover] [授权提交]`（用户定）：只续未落地的 attempt，按同一份计划走起飞路径；从未起飞或已落地时拒绝并说明。
+- **写账本的子命令只认人**（用户定，attempt 1 停飞后补）：
+  - `abort` 与 `resume` 只接受人在终端发出（引擎标记的来源 `composer`，或 Remote Control 的 `bridge`），其他来源拒绝且不写账本；
+  - 插件注册的命令恰为 `flight`，任何工具或命令都不写 approve；
+  - 这条取代 flight-measure 与 flight-approval-ledger 里「插件不注册斜杠命令」的约束（design D8）。
 - **飞行面板**（用户定：起飞时自动打开）：内容与 `/flight status` 相同，随控制面推进实时刷新。
 - **起飞核对判定器能力**（用户定）：
   - `slice-gate.py features` 列出判定器支持的能力；
@@ -56,6 +60,7 @@
 - **插件**：
   - `template/plugins/flight/hooks/` 下的 `versions.ts`、`core.ts`、`orchestrator.tsx`，新增 `abort.ts`；
   - `types/index.d.ts` 新增面板状态；
+  - `tests/flight.test.tsx` 的两条守卫改为期望登记的命令恰为 `flight`；
   - 版本 0.6.0。
 - **文档**：`template/.claude/commands/opsx-apply.md`、`template/.claude/skills/openspec-apply-change/SKILL.md`、`install.sh`、`README.md`。
 - **本 change 自己的飞行**：插件 0.5.0 不核对判定器能力。起飞前主检出须在 f42ebcb（已核对）。

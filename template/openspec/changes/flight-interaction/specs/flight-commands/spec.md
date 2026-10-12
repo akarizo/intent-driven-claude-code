@@ -42,3 +42,16 @@ Feature: 用户定：起飞时自动打开
 - **WHEN** 人发出 `/opsx-apply demo`，再请求绘制 Pane `flight`
 - **THEN** 插件以 id `flight` 调用过 `ui.open`
 - **AND** 绘制出的面板文本含 `demo` 与 `W1/2`
+
+### Requirement: 插件注册的命令只有 flight，写账本的子命令只认人
+插件注册的斜杠命令 SHALL 恰为 `flight`，模型可调用的工具 SHALL 恰为 `submit_findings` 与 `measure`；任何工具或命令在任何输入下都 SHALL NOT 追加 approve 事件。本要求取代 flight-measure（「插件 SHALL NOT 注册斜杠命令」）与 flight-approval-ledger（「插件 SHALL NOT 注册会写账本的斜杠命令」）里对斜杠命令的约束。
+`/flight abort` 与 `/flight resume` 会写账本，SHALL 只在 `command.run` 的 `e.origin.kind` 为 `composer`（人在终端回车）或 `bridge`（Remote Control）时执行；来源为其他或未标明时，SHALL 回复含「只接受人在终端发出」与所见来源的拒绝，且 SHALL NOT 写事件、SHALL NOT 停任何 agent。`status` 与 `panel` 不限来源。
+Feature: 用户定（2026-10-12）：按第一性原理改不变量，写账本的入口只认人
+
+#### Scenario: flight-command-human-only
+- **GIVEN** 两份账本：
+  - demo 的 attempt 1 在飞，已派出 agent-1（running）；
+  - demo 的 attempt 1 已停飞
+- **WHEN** 对第一份分别以 `scheduled-trigger` 来源和不带来源发出 `/flight abort demo`，对第二份同样发出 `/flight resume demo`，再对第一份以 `scheduled-trigger` 来源发出 `/flight status demo`
+- **THEN** 四次 abort / resume 的回复都含「只接受人在终端发出」与所见来源，两份账本都没有新事件，也没有调用过 `TaskStop`
+- **AND** status 的回复含 `demo` 与 `attempt 1`

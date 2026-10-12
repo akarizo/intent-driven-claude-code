@@ -204,6 +204,7 @@ function useWorld(on: On, w: World) {
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
+      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\n'))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, '[["S1", "S2"], ["S3"]]\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
         const s = String(argv[3])

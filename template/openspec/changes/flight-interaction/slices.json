@@ -5,7 +5,7 @@
     "test": "python3 -m pytest -q tests",
     "lint": "python3 -m compileall -q template/.claude/hooks",
     "typecheck": null,
-    "full_suite_sec": 98.9
+    "full_suite_sec": 118.3
   },
   "slices": [
     {
@@ -54,19 +54,22 @@
     },
     {
       "id": "S4",
-      "title": "/flight 命令接线（status · panel · abort · resume）、起飞自动开面板；0.6.0",
+      "title": "/flight 命令接线（status · panel · abort · resume）、写账本的子命令只认人、起飞自动开面板；0.6.0",
       "scenarios": [
         "flight-commands#flight-status-prints-progress",
         "flight-commands#flight-abort-stops-agents",
         "flight-commands#flight-resume-only-unfinished",
-        "flight-commands#panel-opens-at-takeoff"
+        "flight-commands#panel-opens-at-takeoff",
+        "flight-commands#flight-command-human-only"
       ],
       "owns": [
         "template/plugins/flight/hooks/orchestrator.tsx",
         "template/plugins/flight/tests/orchestrator.test.tsx",
         "tests/test_flight_orchestrator.py",
         "template/plugins/flight/types/index.d.ts",
-        "template/plugins/flight/.claude-plugin/plugin.json"
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "tests/test_flight_plugin.py"
       ],
       "deps": [
         "S3",
@@ -121,6 +124,7 @@
     "flight-commands#flight-abort-stops-agents": "tests/test_flight_orchestrator.py::test_flight_abort_stops_agents",
     "flight-commands#flight-resume-only-unfinished": "tests/test_flight_orchestrator.py::test_flight_resume_only_unfinished",
     "flight-commands#panel-opens-at-takeoff": "tests/test_flight_orchestrator.py::test_panel_opens_at_takeoff",
+    "flight-commands#flight-command-human-only": "tests/test_flight_orchestrator.py::test_flight_command_human_only",
     "flight-interaction-docs#docs-describe-flight-commands": "tests/test_flight_interaction_docs.py::test_docs_describe_flight_commands",
     "flight-interaction-docs#apply-guardrails-consistent": "tests/test_flight_interaction_docs.py::test_apply_guardrails_consistent",
     "flight-interaction-docs#apply-skill-natural-language-trigger": "tests/test_flight_interaction_docs.py::test_apply_skill_natural_language_trigger",

@@ -99,6 +99,7 @@ abortFlight(x: {
 
 ### D4 · `/flight` 命令接线（orchestrator.tsx）
 - **注册**：在 `session.start`（带 cwd matcher 的那个 hook）里调用 `$.command.register({ name: 'flight', description: '飞行：status | panel | abort | resume' })`，由 `command.run { command: 'flight' }` 分派。
+- **来源**：`abort` 与 `resume` 先查 `e.origin.kind`，只认 `composer` 与 `bridge`（见 D8）。
 - **抽出 `locate($, name)`**：把 `takeoff` 里「定位 worktree、change 目录、判定器目录、构造 Flight」的部分抽成这个函数，供 takeoff / status / resume 共用，起飞行为不变。
 - **省略 `<change>`**：本进程只有一个在飞的 flight（`flights` 与 `active`）时取它；否则回复用法，要求给出 change 名。
 - **四个子命令**：
@@ -131,6 +132,31 @@ abortFlight(x: {
 ### D7 · 版本
 插件 0.6.0。
 
+### D8 · 命令来源：写账本的子命令只认人（用户定，2026-10-12，attempt 1 停飞后补）
+- **起因**：attempt 1 的 S4 照 D4 注册了 `/flight`，撞上已立的不变量，三次收口门禁都红后被阻断：
+  - 测试侧：`flight.test.tsx` 的 `no-model-callable-approval-path` 与 `only-findings-tool-registered` 断言插件没有登记任何命令；
+  - 规格侧：flight-measure 要求「插件 SHALL NOT 注册斜杠命令」，flight-approval-ledger 要求「SHALL NOT 注册会写账本的斜杠命令」；
+  - 这两份测试不在 S4 的 owns 里，是规划漏项。
+- **这条不变量在防什么**：铁律 7 与 3 要求模型够得着的入口不能往账本写会改变判定的事件，尤其是 approve。「不注册斜杠命令」是 3a 时的保守替代：那时不知道模型能不能调用插件命令，就一个都不注册。
+- **实测**（2026-10-12，CLI 2.1.296，`scratchpad/mods/origin-spike`）：
+  - 模型用 Skill 调用插件 `$.command.register` 的命令，引擎拒绝（「is a built-in CLI command, not a skill. Ask the user to run … themselves」），`command.run` 不触发；
+  - 模型用 Skill 调用项目文件命令，只注入正文，`command.run` 同样不触发；
+  - `claude plugin test` 里 `$.command.run` 不带来源时插件看到 `undefined`，可以传 `origin: { kind: 'composer' }` 模拟人在终端发出。
+- **仍可能存在的间接路径（未实测）**：定时任务（CronCreate、`/loop` 存下的 prompt）、别的会话 SendMessage 送来的斜杠命令。引擎在 `command.run` 上标明来源：`composer` 是人在终端回车，由引擎盖章、不推定。
+- **按写入后果分级**：
+
+  | 子命令 | 写入 | 非人来源触发的最坏后果 |
+  |---|---|---|
+  | status / panel | 不写 | 无 |
+  | abort | halt | 飞行被叫停；造不出假绿，绕不过人工门 |
+  | resume | takeoff | 批准绕不过，但能推翻人做的中止、自行重新起飞，违背「人发起飞行」 |
+
+- **决定**：
+  - 插件注册的命令恰为 `flight`；工具仍恰为 `submit_findings` 与 `measure`；任何工具或命令都不写 approve。
+  - `abort` 与 `resume` 只认 `composer` 与 `bridge` 两种来源。其他来源（含未标明）一律拒绝：不写事件、不停 agent，拒绝语写出所见来源，便于第一次真用时核对引擎盖章。
+  - `status` 与 `panel` 不限来源。
+- **范围外**：`/opsx-apply` 起飞入口同样不查来源，属于同类缺口，留到阶段 4，与「插件自己注册 `/opsx-apply`」一起处理。
+
 ## 切片与 wave
 
 ```mermaid
@@ -143,7 +169,7 @@ flowchart LR
     S6["S6 · abort.ts 人工中止"]
   end
   subgraph W2[wave 2]
-    S4["S4 · /flight 接线、续飞、面板；0.6.0"]
+    S4["S4 · /flight 接线、只认人、续飞、面板；0.6.0"]
   end
   S3 --> S4
   S6 --> S4
@@ -156,3 +182,4 @@ flowchart LR
 - **TaskStop 的兼容性**：TaskStop 是内置工具，其输入 `task_id` 接受 agentId 是实测结论（2.1.296），引擎升级可能改变。abort 停不下时会在回复里列出原因，停飞事件照样已写入，控制面不会再推进。
 - **能力核对会拦住老判定器**：只要主检出没快进就拒飞。这正是本 change 要的行为，提示里写明怎么处理。
 - **面板挤占终端宽度**：窄终端由引擎挂起（不显示），状态行仍在。
+- **来源盖章与文档不符**：若真实引擎给人敲的命令标的不是 `composer`，人发出的 abort / resume 也会被拒。拒绝语写出所见来源，第一次真用即可核对；`status` 与 `panel` 不受影响。

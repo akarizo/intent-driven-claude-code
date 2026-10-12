@@ -6,3 +6,5 @@
 2026-10-12T05:03:38Z	gate	S1 ok
 2026-10-12T05:04:16Z	gate	S3 ok
 2026-10-12T05:05:10Z	gate	S5 ok
+2026-10-12T05:43:21Z	baseline	exit 1, 107.5s red
+2026-10-12T05:48:27Z	baseline	exit 0, 118.3s ok

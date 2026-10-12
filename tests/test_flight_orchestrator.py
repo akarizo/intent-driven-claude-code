@@ -413,3 +413,11 @@ def test_panel_opens_at_takeoff():
     # When: 发出 /opsx-apply demo，再请求绘制 Pane flight
     # Then: 插件以 id flight 调用过 ui.open；面板文本含 demo 与 W1/2
     assert_ts_passed("panel-opens-at-takeoff")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_flight_command_human_only():
+    # Given: 两份账本：demo attempt 1 在飞（agent-1 running）/ demo attempt 1 已停飞
+    # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）
+    # Then: 四次 abort / resume 都回复「只接受人在终端发出」与所见来源，账本无新事件、没有 TaskStop；status 回复含 demo 与 attempt 1
+    assert_ts_passed("flight-command-human-only")
