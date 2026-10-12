@@ -142,9 +142,13 @@ def test_prompt_forbids_fabricated_red():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
 def test_whole_and_followup_prompts():
     # Given: change demo、判定器目录 /repo/hooks、prior 一条 HIGH a.ts:3；agents/reviewer.md
-    # When: 生成全量评审（b0..c9）与第 1 轮复核（c9..c10）提示词；读 reviewer.md 正文
+    body = parse("reviewer")[1]
+
+    # When: 生成全量评审（b0..c9）与第 1 轮复核（c9..c10）提示词（同名 TS 测试）；读 reviewer.md 正文
+    found = {w: (w in body) for w in ("全量", "复核", "^1", "取 diff 失败", "HIGH")}
+
     # Then: 全量含 git diff b0 c9、a.ts:3、submit_findings、取 diff 失败、timeline.py report；复核含 git diff c9 c10、第 1 轮、照原级别；reviewer.md 含全量、复核、^1、取 diff 失败、HIGH；同名 TS 测试通过
-    pytest.fail("骨架：S3 写实断言")
+    assert found == {"全量": True, "复核": True, "^1": True, "取 diff 失败": True, "HIGH": True}, found
+    assert_ts_passed("whole-and-followup-prompts")

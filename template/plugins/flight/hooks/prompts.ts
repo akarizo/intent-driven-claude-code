@@ -56,6 +56,36 @@ export function reviewerPrompt(x: { change: string; changeDir: string; slice: st
   ].join('\n')
 }
 
+const priorLines = (prior: Finding[], none: string) => (prior.length ? prior.map(f => `- [${f.severity}] ${f.file}:${f.line} — ${f.summary}`) : [`- （${none}）`])
+const REVIEW_TAIL = [
+  '取不到 diff 或 diff 为空：提交一条 severity 为 HIGH 的 finding，summary 写「取 diff 失败」，不得提交空列表。',
+  '只读；不重跑测试套件，至多 1 次定向抽查。',
+  '必须调用 submit_findings 提交（severity / file / line / summary / fix），没有问题也提交空列表；提交后一行结束。',
+]
+
+/** 全量评审：change 分支相对分叉点的全部改动（design D1）。 */
+export function wholeReviewPrompt(x: { change: string; changeDir: string; hooksDir: string; base: string; commit: string; prior: Finding[] }): string {
+  return [
+    `全量评审 OpenSpec change \`${x.change}\`：审查范围为 \`git diff ${x.base} ${x.commit}\`（change 分支相对分叉点的全部改动）。`,
+    `验收依据：${x.changeDir} 下的 proposal.md、design.md、specs/、slices.json。`,
+    `门禁与测量统计以 \`python3 ${x.hooksDir}/timeline.py report --change-dir ${x.changeDir}\` 为准，在 worktree 里运行。`,
+    '切片评审提过、修复体已修的 CRITICAL/HIGH 如下：逐条核对，没闭环或修得不对的照原级别再提交。',
+    ...priorLines(x.prior, '切片评审没有 CRITICAL/HIGH'),
+    ...REVIEW_TAIL,
+  ].join('\n')
+}
+
+/** 复核：只审第 round 轮修复带来的改动（design D1）。 */
+export function followupReviewPrompt(x: { change: string; changeDir: string; round: number; base: string; commit: string; prior: Finding[] }): string {
+  return [
+    `复核 OpenSpec change \`${x.change}\`（${x.changeDir}）第 ${x.round} 轮修复：审查范围为 \`git diff ${x.base} ${x.commit}\`，只审这一轮修复带来的改动。`,
+    '上一轮的 CRITICAL/HIGH 如下：未闭环或修得不对的照原级别再提交。',
+    ...priorLines(x.prior, '上一轮没有 CRITICAL/HIGH'),
+    '修复补丁新引入的问题照常分级提交；与本次修复无关的代码不报。',
+    ...REVIEW_TAIL,
+  ].join('\n')
+}
+
 export function resolverPrompt(x: { change: string; changeDir: string; slice: string; conflicts: string[] }): string {
   return [
     `任务二 · 解合回冲突：OpenSpec change \`${x.change}\` 合回切片 ${x.slice} 时，当前 worktree 处于 git merge 冲突中。`,
