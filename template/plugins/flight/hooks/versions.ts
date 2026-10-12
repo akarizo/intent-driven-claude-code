@@ -9,6 +9,9 @@ type Entry = { scope?: unknown; projectPath?: unknown; installPath?: unknown; ve
 
 const UPDATE_MAIN = '先把主检出更新到与插件同一版本'
 
+/** 起飞所需的判定器能力：slice-gate.py features 须逐行列出全部各项 */
+export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guards'] as const
+
 /** p 在 dir 之下（不含 dir 本身）；两者都已规范化 */
 const under = (dir: string, p: string) => p.startsWith(dir + '/')
 
@@ -67,5 +70,11 @@ export async function checkJudges(io: Io, x: { hooksDir: string; required: reado
   const known = new Set(r.stdout.split('\n').map(s => s.trim()).filter(Boolean))
   const missing = x.required.filter(e => !known.has(e))
   if (missing.length > 0) return { ok: false, reason: `flight：判定器（${x.hooksDir}）不认识事件 ${missing.join('，')}：${UPDATE_MAIN}` }
+
+  const f = await io.run(['python3', `${x.hooksDir}/slice-gate.py`, 'features'])
+  if (f.exitCode !== 0) return { ok: false, reason: `flight：判定器过旧（${x.hooksDir}/slice-gate.py 没有 features 子命令）：${UPDATE_MAIN}` }
+  const has = new Set(f.stdout.split('\n').map(s => s.trim()).filter(Boolean))
+  const lacking = REQUIRED_FEATURES.filter(n => !has.has(n))
+  if (lacking.length > 0) return { ok: false, reason: `flight：判定器（${x.hooksDir}）缺少能力 ${lacking.join('，')}：${UPDATE_MAIN}` }
   return { ok: true, line: '' }
 }
