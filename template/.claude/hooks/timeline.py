@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # timeline · 飞行记录
 #   record <event> --change-dir DIR [--note TEXT]   追加一行「ISO时间\t事件\t备注」到 <DIR>/timeline.md
-#   report --change-dir DIR                         打印事件表与 approve → pr-open 用时（分钟）
-#     账本有 takeoff 时门禁红次数与测量统计取自账本（同目录 ledger.py）；否则按 timeline 行统计
+#   report --change-dir DIR                         打印事件表与 approve → PR 打开用时（分钟）
+#     「PR 打开」优先取账本（同目录 ledger.py）第一条 ship 事件的时间；没有 ship 事件或账本读不出时取最后一条 pr-open 行
+#     账本有 takeoff 时门禁红次数与测量统计取自账本；否则按 timeline 行统计
 # 事件约定：approve · slice-start · gate · review · fix · final · apply-done · pr-open · pause · baseline
 # 兼容 Python 3.8+，只用标准库。
 import argparse
@@ -59,6 +60,17 @@ def load(change_dir):
     return rows
 
 
+def _first_ship_at(events):
+    """账本里第一条 ship 事件的时间（UTC）；没有、或时间解析不了 → None。"""
+    for e in events or []:
+        if e.get("ev") == "ship":
+            try:
+                return parse_ts(e.get("at") or "")
+            except ValueError:
+                return None
+    return None
+
+
 def minutes(a, b):
     return round((b - a).total_seconds() / 60, 1)
 
@@ -71,8 +83,14 @@ def report(change_dir):
     print("时间\t事件\t备注")
     for ts, ev, note in rows:
         print("%s\t%s\t%s" % (ts.strftime("%Y-%m-%dT%H:%M:%SZ"), ev, note))
+    try:
+        events = ledger.read_events(change_dir)
+    except Exception:
+        events = None
     approve = next((ts for ts, ev, _ in rows if ev == "approve"), None)
-    pr_open = next((ts for ts, ev, _ in reversed(rows) if ev == "pr-open"), None)
+    pr_open = _first_ship_at(events)
+    if pr_open is None:
+        pr_open = next((ts for ts, ev, _ in reversed(rows) if ev == "pr-open"), None)
     apply_done = next((ts for ts, ev, _ in reversed(rows) if ev == "apply-done"), None)
     print("")
     print("批准 → apply 完成：%s min" % (minutes(approve, apply_done) if approve and apply_done else "n/a"))
@@ -85,10 +103,6 @@ def report(change_dir):
             sid = note.split()[0]
             if sid in starts:
                 print("切片 %s：start → gate ok %s min" % (sid, minutes(starts[sid], ts)))
-    try:
-        events = ledger.read_events(change_dir)
-    except Exception:
-        events = None
     if events and any(e.get("ev") == "takeoff" for e in events):
         gate = sum(1 for e in events if e.get("ev") == "gate" and e.get("ok") is False)
         final = sum(1 for e in events if e.get("ev") == "final" and e.get("ok") is False)
