@@ -48,7 +48,6 @@ def test_takeoff_refuses_stale_judges():
 # 骨架：S5 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_judges_need_ship_ledger():
     # Given: 判定器 /j4：events 列出全部所需事件，features 只输出 evidence-ledger-only、g5-per-target、guards
     # When: 对 /j4 运行 checkJudges

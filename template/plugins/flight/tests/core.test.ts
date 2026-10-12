@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-state-machine（core-*），事件形状对照 spec flight-ledger-events。核心是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
-import { agentOf, closeoutLists, ev, next, reduce, stopVerdict, summarize, summaryLines } from '../hooks/core'
+import { agentOf, ev, next, reduce, routingFindings, stopVerdict, summarize, summaryLines } from '../hooks/core'
 import type { FlightEvent, Plan, Role } from '../hooks/core'
 
 const AT = '2026-10-09T00:00:00Z'
@@ -263,8 +263,8 @@ test('core-reports-routing-mismatch', () => {
     ended(1, 'a1', 'claude-sonnet-5-5'),
   ])
 
-  // When: 求收口清单
-  const { blocking } = closeoutLists(state)
+  // When: 求路由核对的发现
+  const blocking = routingFindings(state)
 
   // Then: 恰有一条 HIGH（file routing、line 0），summary 含「路由不符」、executor、opus、claude-sonnet-5-5
   expect(blocking).toHaveLength(1)

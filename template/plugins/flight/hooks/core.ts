@@ -293,24 +293,6 @@ export function routingFindings(state: State): Finding[] {
     })
 }
 
-export function closeoutLists(state: State): {
-  blocked: { slice: string; kind: 'gate' | 'infra'; reason: string }[]
-  blocking: Finding[]
-  deferred: Finding[]
-  fix: { ok: boolean; commit: string } | null
-} {
-  const findings = reviewFindings(state)
-  const fixMerge = last(state.events.filter(e => e.ev === 'merge' && e.slice === FIX))
-  return {
-    blocked: state.events
-      .filter(e => e.ev === 'blocked' && Number(e.attempt) === state.attempt)
-      .map(e => ({ slice: str(e, 'slice'), kind: e.kind as 'gate' | 'infra', reason: str(e, 'reason') })),
-    blocking: [...findings.filter(f => BLOCKING.includes(f.severity)), ...routingFindings(state)],
-    deferred: findings.filter(f => !BLOCKING.includes(f.severity)),
-    fix: fixMerge ? { ok: fixMerge.ok === true, commit: str(fixMerge, 'commit') } : null,
-  }
-}
-
 export type SliceRow = {
   id: string
   wave: number
