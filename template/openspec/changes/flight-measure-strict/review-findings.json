@@ -1,14 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/envelope.ts",
-      "line": 190,
-      "summary": "backtickAsCommandName 用 open 开关按奇偶区分起始和结束反引号，但没有排除转义的反引号（\\`）和单引号里的反引号，奇偶一错位，命令名位置的反引号替换就漏判。抽查实测 `echo \\` ; `which git` push` 和 `echo '`' ; `which git` push` 的 bashVerdict 都返回 undefined（放行），bash 实际会执行 git push。切段后 ` push` 段的命令名是 push，parseGit 也认不出，拒绝表被绕过。design D7 原文是「反引号之前」，并没有要求只看起始反引号。",
-      "fix": "去掉 open 开关，对每个反引号都检查：前缀切到最后一个分隔符后，words(...).toks.length === 0 就拒绝。结束反引号的前缀里含起始反引号和替换内容，toks 不为空，不会多拒；只有空替换 `` 这种情况会多拒。另在 quoted-command-words-recognized 或 expanded-command-word-undeterminable 里补上 `echo \\` ; `which git` push` 和 `echo '`' ; `which git` push` 两条应拒用例。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "MEDIUM",

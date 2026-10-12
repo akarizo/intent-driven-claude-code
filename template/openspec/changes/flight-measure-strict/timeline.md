@@ -9,3 +9,8 @@
 2026-10-12T01:05:12Z	final	ok
 2026-10-12T01:05:13Z	apply-done	blocked=0 blocking=1
 2026-10-12T01:05:13Z	ship	draft: 1 条 CRITICAL/HIGH 评审未闭环
+2026-10-12T01:20:30Z	ship	draft: 1 条 CRITICAL/HIGH 评审未闭环
+2026-10-12T01:21:12Z	pr-open	https://github.com/akarizo/intent-driven-claude-code/pull/48
+2026-10-12T01:40:00Z	final	ok
+2026-10-12T01:43:09Z	ship	ready
+2026-10-12T01:43:11Z	pr-ready	https://github.com/akarizo/intent-driven-claude-code/pull/48
