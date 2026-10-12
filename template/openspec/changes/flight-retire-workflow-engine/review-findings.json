@@ -1,0 +1,119 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_install.py",
+      "line": 457,
+      "summary": "scenario 测试没有覆盖切片包里的两条规则：一是有移除时输出「已移除 N 条退役 hook 注册」，二是 entry 的 hooks 清空后去掉 entry、事件数组清空后去掉事件键。这两处实现即使回归，测试仍会通过。spec 的 Then 没有点名这两条，所以不算未覆盖验收，只是保护不足。",
+      "fix": "在同一用例里补三条断言：`assert \"已移除 3 条退役 hook 注册\" in p.stdout`；在合并后的 settings 中，PreToolUse 里不再有 matcher 为 `Workflow|Agent|Task` 的空 entry；Stop 事件只剩用户那条 entry。"
+    },
+    {
+      "severity": "LOW",
+      "file": "install.sh",
+      "line": 363,
+      "summary": "`strip_retired(frag.get(\"hooks\", {}))` 对模板 fragment 也做无条件过滤。S2 删掉 hooks.json 里的退役注册之前，这样做是必要的兜底。但它会长期生效：以后模板如果有意按原样重新注册其中某条命令（例如 stop-gate.py 无参版本），安装器会静默丢掉这条注册，而且不计数、不提示，排查起来困难。",
+      "fix": "在注释里写明：这是为兼容旧 fragment 而做的兜底，今后要恢复 RETIRED 中的命令，必须先从 RETIRED 移除。或者在 S2 合入后去掉对 frag 的过滤，只保留对用户 settings 的过滤。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 372,
+      "summary": "engine-workflow-refused 断言了 log.commands 和 log.events 为空，但切片包写的约束是「不交给模型、不写事件、不派发」，「不派发」这一条没有断言。实现里提前 return 已经在起飞检查之前，所以眼下不会派发；只是以后若有人把这个判断挪到 takeoff 之后，测试抓不到回归。",
+      "fix": "在 Then 段加一行 expect(log.spawns).toEqual([])，和同文件 takeoff-refused-without-approval 用例的写法保持一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 366,
+      "summary": "S6 已经去掉了 xfail，段头注释还写着「骨架：S6 … 实现后去掉 xfail 标记」，内容已过时。",
+      "fix": "把这行改成说明性注释，比如「S6 已解锁；per-task-passes-through 为护栏」，或者直接删掉这行。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/test-evidence.py",
+      "line": 52,
+      "summary": "标记分支删掉后，find_change 的第二个返回值在所有路径上都是常量 \"-\"（或 None）。docstring「返回 (change_dir, slice_id)」和 main 里的 slice_id 变量已经没有实际语义，读代码的人会以为切片列仍可能写成切片 id。",
+      "fix": "可选：在 docstring 里注明切片列恒为 \"-\"（飞行外不归属切片），或让 find_change 只返回 change_dir、写行时直接写 \"-\"。保留现状也不影响行为。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_slice_gate.py",
+      "line": 1527,
+      "summary": "test_retired_gate_mechanisms_gone 里的 `assert \"red_count\" not in out` 什么也验证不到：旧实现的 red_count 只在门禁红时写进 .openspec-slice 标记，从来没进过门禁 JSON；本用例跑的又是绿门禁。改动前这条断言照样成立，「red_count 已删除」这一点实际没有测试覆盖（spec 的 Then 写的是「门禁 JSON」，措辞本身就不准）。",
+      "fix": "在同一用例（或新增守卫用例）里加一次必红的门禁：已 start 的切片，账本没有测量，此时 G5 红。跑完后读 .openspec-slice，断言标记里没有 red_count 键。旧实现下这条会红，新实现下会绿。同时建议把 spec 的 Then 改成「门禁红后标记里没有 red_count」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 674,
+      "summary": "test_start_keeps_marker_for_same_slice 仍在手工注入 red_count=1，并断言 start 之后它保持不变。这个字段已经退役，现在的断言只验证了 start 原样保留标记，名字却还指向一个已不存在的机制，读的人容易误会。",
+      "fix": "把注入的字段改成中性的自定义键（例如 extra），或直接删掉 red_count 相关的注入与断言，只保留 base 不变、timeline 记 resume 的断言。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 914,
+      "summary": "`marker ={...` 等号后少一个空格，下一行续行的缩进也没按新位置对齐，是删代码时留下的格式残渣。",
+      "fix": "改成 `marker = {\"slice\": ...`，并把第 915 行续行缩进对齐到左花括号之后。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 916,
+      "summary": "--evidence 现在 choices 只有 ledger、缺省也是 ledger，cmd_start 里的 `if args.evidence == \"ledger\"`（第 907、916 行）恒为真，成了死条件。",
+      "fix": "可选：直接写 marker[\"evidence\"] = \"ledger\"，第 907 行只保留 `\"evidence\" not in existing`。也可以保持现状，便于以后加模式；只做提示。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/skills/openspec-apply-change/SKILL.md",
+      "line": 67,
+      "summary": "「模型读到本 skill 即停飞」一段断言「模型读到这里 = flight 插件缺席、未加载或版本不符」。但这个 skill 的 description 写了 \"Use when the user wants to start implementing...\"，用户只用自然语言说「开始实现」、没发 /opsx-apply 时，插件装好了也会触发它。这时模型会误判成插件缺席，并让人去装已经装好的插件，指引是错的。",
+      "fix": "在该段加一条区分：如果本 skill 是经自然语言触发的（本轮没有 /opsx-apply 命令），停下并提示人发出 `/opsx-apply <name>`；只有已经发了 /opsx-apply（且不是 --gate=per-task）仍读到这里，才按插件缺席处理，给安装 / 重载指引。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_ship_verdict.py",
+      "line": 225,
+      "summary": "切片包要求：apply 文档仍保留 review-findings / ship 说明的，照旧断言。现在 opsx-apply.md 与 SKILL.md 的「落地交 /pr-ship」一条仍写着控制面写 `review-findings.json`、跑 `slice-gate.py ship`，可新测试只断言 pr-ship.md。apply 两份文档里写入方的契约已没有任何测试守护，以后被删也不会红。",
+      "fix": "在 test_pr_ship_reads_full_findings_and_calls_ship（或另起一个测试）里补上：对 CMD/'opsx-apply.md' 与 openspec-apply-change/SKILL.md 各断言含 `review-findings.json` 与 `slice-gate.py ship`，且不含「final 未绿或有 blocked 切片」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 67,
+      "summary": "「版本核对」一条把两种失败合成一个补救：「不符 → 先把主检出更新到与插件同一版本」。插件实际是两种拒飞（versions.ts:61 / :66-69）：插件副本与已安装版本不一致，补救是 /reload-plugins；判定器不认识账本事件，才是更新主检出。现在的写法会把人引向错误的补救。skill 同一处措辞一样。",
+      "fix": "拆成两句：插件副本不是已安装版本 → 先 `/reload-plugins`；判定器（主检出 .claude/hooks/）不认识账本事件 → 把主检出更新到与插件同一版本。两份文档同改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_template_docs.py",
+      "line": 558,
+      "summary": "断言 `\".flight`\" not in t` 只认带反引号结尾的写法，旧引擎里其他写法的 .flight 引用（比如 `.flight（JSON`）挡不住，防回归力度弱。现在的文档里本来就没有 `.flight` 子串（`.claude/worktrees/flight-` 不含它）。",
+      "fix": "改成 `assert \".flight\" not in t`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/openspec/adr/DRAFT-flight-single-implementation.md",
+      "line": 19,
+      "summary": "Context 写「DRAFT-flight-orchestrator-state-machine 与 DRAFT-flight-measure-protocol 已约定旧引擎与回退路径在阶段 3c 删除」，但 orchestrator-state-machine 原文（第 7 条）只写了「旧 Workflow 引擎在删除前」，没有提到 3c；明确写 3c 的只有 measure-protocol 第 5 条。把这个约定算到两份 ADR 名下与原文不符。",
+      "fix": "改为「DRAFT-flight-measure-protocol 第 5 条约定回退路径与 evidence.log 随 Workflow 引擎在 3c 删除；DRAFT-flight-orchestrator-state-machine 第 7 条预告了旧引擎的删除」。ADR 尚在本 change 内新建，可以原地改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "CLAUDE.md",
+      "line": 17,
+      "summary": "铁律 11 仍写「机械角色 = sonnet low」（按切片包「其余不变」保留），但本片 README / WORKFLOW / snippet 第 51 行已改为「机械动作由插件代码执行，零 token」，路由表里也没有 sonnet 角色了。同一 change 内铁律与文档说法互相矛盾。",
+      "fix": "本片按规格不改。另立 backlog 或在后续 change 把铁律 11 的「机械角色 = sonnet low」改为「机械动作由插件代码执行（零 token）」，CLAUDE.md 与 snippet 第 34 行同改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_docs_iron_rules.py",
+      "line": 114,
+      "summary": "测试函数名 test_apply_step0_explains_ledger_gate 仍叫 step0，但 step 0 已被 S4 删除，函数现在断言的是「起飞检查」段。另外 flight-measure 段头注释「骨架：S8 实现后去掉 xfail 标记」后面留下 4 个空行（删掉 import pytest 后的残留），flight-retire 段头的「骨架：S5 实现后去掉 xfail 标记」也已过时。",
+      "fix": "函数名改为 test_apply_takeoff_check_explains_ledger_gate（如有 scenario 映射引用它，同步更新映射）。删掉多余空行和两条过时的骨架注释。"
+    }
+  ],
+  "fix": null
+}
