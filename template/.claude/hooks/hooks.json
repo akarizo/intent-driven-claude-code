@@ -9,15 +9,6 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/intent-gate.py\""
           }
         ]
-      },
-      {
-        "matcher": "Workflow|Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/takeoff-gate.py\""
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -47,15 +38,6 @@
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-evidence.py\""
           }
         ]
-      },
-      {
-        "matcher": "Write|Edit|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py\" checkpoint"
-          }
-        ]
       }
     ],
     "PostToolUseFailure": [
@@ -65,35 +47,6 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-evidence.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/slice-gate.py\" checkpoint"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py\""
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py\""
           }
         ]
       }
