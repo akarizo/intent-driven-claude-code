@@ -1529,10 +1529,8 @@ def test_retired_gate_mechanisms_gone(git_repo):
     assert waves.returncode != 0, (waves.stdout, waves.stderr)
 
 # ---------------------------------------------------------------- flight-interaction
-# 骨架：S1 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S1：slice-gate 尚无 features 子命令")
 def test_judges_declare_features(tmp_path):
     # Given: 本 change 合入后的 slice-gate.py
     # When: 运行 slice-gate.py features
