@@ -7,3 +7,10 @@
 def key(entry):
 def strip_retired(hook_map):
 ```
+
+## S6
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
