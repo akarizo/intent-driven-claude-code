@@ -503,10 +503,13 @@ export function mainSessionVerdict(active: readonly ActiveTree[], tool: string, 
   return { deny: `飞行中，主会话对 ${hit.change} 只读；等落地或停飞（命令含在飞树路径且${mutating ? '含改动类 git 子命令' : '含 > 重定向'}）` }
 }
 
+/** 主会话也可派发的 flight:* 类型：供 /flight:pr-ship 的评审由主会话派发（仍须 model，在飞 agent 仍不得派发） */
+const MAIN_SPAWNABLE = ['flight:code-reviewer']
+
 /** agent.spawn 守卫（D9） */
 export function spawnVerdict(x: { subagentType: string; originPlugin: string | undefined; model: string | undefined; parentInFlight: boolean }): Deny | undefined {
   if (x.subagentType.startsWith('flight:')) {
-    if (x.originPlugin !== 'flight') return { deny: 'flight:* 只能由 flight 控制面派发' }
+    if (x.originPlugin !== 'flight' && !MAIN_SPAWNABLE.includes(x.subagentType)) return { deny: 'flight:* 只能由 flight 控制面派发' }
     if (!x.model?.trim()) return { deny: '派发须显式指定 model（铁律 11）' }
   }
   // 插件自己的派发发生在飞行 agent 收口 / turn.complete 的帧里，父 agent 可能就是刚结束的那个：只拦非插件来源

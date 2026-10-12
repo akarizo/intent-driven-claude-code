@@ -3,12 +3,11 @@ executable-specs#schema-tasks-produce-slices / propose-command-triggers）。
 骨架：xfail(strict) 直到 S5 实现；执行体去掉标记即解锁。"""
 import re
 
-import pytest
-
 from conftest import ROOT
 
 CMD = ROOT / "template" / ".claude" / "commands"
 SKILLS = ROOT / "template" / ".claude" / "skills"
+SHIP = ROOT / "template" / "plugins" / "flight" / "commands" / "pr-ship.md"
 SCHEMA = ROOT / "template" / "openspec" / "schemas" / "intent-driven"
 
 
@@ -22,7 +21,7 @@ def test_apply_command_zero_prompts():
 
     # When: 找出启动步骤与 pr-ship 步骤之间的文本
     launch = text.index("slice-gate.py lint")
-    ship = text.index("/pr-ship", launch)
+    ship = text.index("/flight:pr-ship", launch)
     middle = text[launch:ship]
 
     # Then: 含 lint→preflight→派发与收口门禁→pr-ship 的插件路径要素；不再有旧引擎的 Workflow 参数与收口分解；启动到 pr-ship 之间无 AskUserQuestion；保留 --gate=per-task 指向 legacy；不再有模式问询与水位线
@@ -34,8 +33,8 @@ def test_apply_command_zero_prompts():
 
 
 def test_pr_ship_single_review():
-    # Given: template/.claude/commands/pr-ship.md
-    text = read(CMD / "pr-ship.md")
+    # Given: template/plugins/flight/commands/pr-ship.md
+    text = read(SHIP)
 
     # When: 统计 AskUserQuestion 出现次数并检查评审输入
     asks = text.count("AskUserQuestion")
@@ -131,8 +130,8 @@ def test_apply_resolves_main_model():
 
 
 def test_pr_ship_resolves_main_model():
-    # Given: /pr-ship 命令
-    text = read(CMD / "pr-ship.md")
+    # Given: /flight:pr-ship 命令
+    text = read(SHIP)
 
     # When: 检查两处 code-reviewer 派发的 <main> 来源
     asks = text.count('model: "<main>"')
@@ -162,8 +161,8 @@ def test_apply_checks_approval_gate():
 
 
 def test_pr_ship_asks_before_autofix():
-    # Given: template/.claude/commands/pr-ship.md
-    text = read(CMD / "pr-ship.md")
+    # Given: template/plugins/flight/commands/pr-ship.md
+    text = read(SHIP)
 
     # When: 切出 step 10、step 11 与 Guardrails
     step10 = text[text.index("10. **"):text.index("11. **")]
@@ -213,12 +212,12 @@ def test_schema_verify_excludes_typecheck():
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: review-diff-fallback#*）
 
-AGENTS = ROOT / "template" / ".claude" / "agents"
+AGENTS = ROOT / "template" / "plugins" / "flight" / "agents"
 
 
 def test_pr_ship_review_diff_fallback():
-    # Given: template/.claude/commands/pr-ship.md
-    text = read(CMD / "pr-ship.md")
+    # Given: template/plugins/flight/commands/pr-ship.md
+    text = read(SHIP)
 
     # When: 切出 step 8（呼叫 code-reviewer 评审 diff）
     step8 = text[text.index("8. **"):text.index("9. **")]
@@ -230,7 +229,7 @@ def test_pr_ship_review_diff_fallback():
 
 
 def test_reviewer_diff_empty_vs_unreachable():
-    # Given: template/.claude/agents/code-reviewer.md
+    # Given: template/plugins/flight/agents/code-reviewer.md
     text = read(AGENTS / "code-reviewer.md")
 
     # When: 切出「评审流程」段
@@ -273,3 +272,18 @@ def test_schema_requires_gate_test():
     # Then: 写明 gate.test 必填；写明预存红按基线差分、无需手写 deselect
     assert "gate.test" in tasks and "必填" in tasks
     assert "预存红" in tasks and "差分" in tasks and "deselect" in tasks
+
+# ---------------------------------------------------------------- flight-entry-handoff
+
+
+def test_apply_docs_point_to_flight_pr_ship():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    docs = [read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")]
+
+    # When: 找不带 flight: 前缀的 /pr-ship
+    bare = [re.findall(r"(?<![\w:])/pr-ship", d) for d in docs]
+
+    # Then: 都没有不带前缀的 /pr-ship、都含 /flight:pr-ship；都写明来源规则（Remote Control 与 SDK）
+    assert bare == [[], []], bare
+    assert all("/flight:pr-ship" in d for d in docs)
+    assert all("Remote Control" in d and "SDK" in d for d in docs)

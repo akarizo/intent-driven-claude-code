@@ -16,7 +16,7 @@ proposal → specs → design → adr → tasks   ┐
                                   /claudemd-commit
                                           │  沉淀本轮知识（预算中性：加一减一）
                                           ▼
-                                       /pr-ship
+                                       /flight:pr-ship
                                           │  端到端送出 + 干净 subagent 自审
                                           ▼
                                   /opsx-verify
@@ -39,7 +39,7 @@ proposal → specs → design → adr → tasks   ┐
 
 1. **把命令、技能、schema 适配到 Claude Code**（`.claude/commands/` 与 `.claude/skills/`）+ 一键 `install.sh`
 2. **把 [obra/superpowers](https://github.com/obra/superpowers) 的 TDD skill 中文化移植进来**，并叠加 BDD Given/When/Then 单测注释规范——见 `.claude/skills/test-driven-development/`
-3. **新增命令补齐变更全周期**：`/pr-ship`（送出 + 自审）/ `/claudemd-commit`（预算中性沉淀）/ `/claudemd-distill`（蒸馏）+ `claudemd-lint`（机械门禁）
+3. **新增命令补齐变更全周期**：`/flight:pr-ship`（送出 + 自审）/ `/claudemd-commit`（预算中性沉淀）/ `/claudemd-distill`（蒸馏）+ `claudemd-lint`（机械门禁）
 
 ---
 
@@ -50,7 +50,7 @@ proposal → specs → design → adr → tasks   ┐
 | [Claude Code](https://claude.com/claude-code) | 最新即可 | 官方 CLI / Desktop / Web / IDE 任一即可 |
 | Node.js | ≥ 18 | nvm / fnm / volta / brew |
 | OpenSpec CLI | ≥ 1.3 | `npm install -g @fission-ai/openspec`（或 pnpm / bun add 全局） |
-| [`gh`](https://cli.github.com/) 或 [`glab`](https://gitlab.com/gitlab-org/cli) | 最新 | `/pr-ship` 命令需要，按你的远端平台二选一 |
+| [`gh`](https://cli.github.com/) 或 [`glab`](https://gitlab.com/gitlab-org/cli) | 最新 | `/flight:pr-ship` 命令需要，按你的远端平台二选一 |
 
 可选：[Superpowers](https://github.com/obra/superpowers) 已被自动 reuse（若你 `~/.claude` 装过）。
 
@@ -148,9 +148,8 @@ curl -fsSL https://raw.githubusercontent.com/akarizo/intent-driven-claude-code/m
 ```
 your-project/
 ├── .claude/
-│   ├── commands/       # 15 个 slash 命令（见下方）
+│   ├── commands/       # 14 个 slash 命令（见下方；/flight:pr-ship 由 flight 插件提供）
 │   ├── skills/         # 16 个 skill + 1 个 legacy（见下方）
-│   ├── agents/         # 1 个 agent：code-reviewer（见下方；飞行角色由 flight 插件提供）
 │   ├── hooks/          # 分级门禁 intent-gate.py + 飞行门禁 slice-gate.py 等 + 提醒 intent-reminder.py + hooks.json 片段（需 python3）
 │   ├── settings.json   # 合并注入上述 hooks（已存在则只并 hooks 节，保留你其余配置）
 │   └── claudemd-standard.md   # CLAUDE.md 层级规范（sync/distill 硬约束基线）
@@ -218,7 +217,7 @@ your-project/
     → 门禁绿的切片由控制面合回 change 分支
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
   → slice-gate.py final（全量测试 + 全部 scenario 转 pass）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
-  → 落地交 /pr-ship
+  → 落地交 /flight:pr-ship
 ```
 
 **飞行中的交互**（flight 插件提供；起飞时自动打开飞行面板）：
@@ -260,7 +259,7 @@ RED → 验证 RED → GREEN → 验证 GREEN → REFACTOR
 
 解析顺序自 Claude Code v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，env 只是默认值。插件派发时显式带 `model`；收口从账本对账各角色实际模型并打印在飞行记录里，不符即阻断——2026-09-10 的自举 wave 3 就是因为派发时没显式传 `model`，九个 agent 全落到了 Sonnet。
 
-`<main>` 不靠模型自述：起飞检查与 `/pr-ship` 跑 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出）。**判定不出不起飞**（需 `/opsx-apply <change> --model=<alias>` 显式指定）。同日两次实测补充：起飞时模型自己宣告 `fable` 而主模型其实是 Opus；`/opsx-propose` 产出工件后未经人类批准就直冲 `/opsx-apply` 没有停——两处都是"自述式判定"的必然结果，故改为脚本判定。
+`<main>` 不靠模型自述：起飞检查与 `/flight:pr-ship` 跑 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出）。**判定不出不起飞**（需 `/opsx-apply <change> --model=<alias>` 显式指定）。同日两次实测补充：起飞时模型自己宣告 `fable` 而主模型其实是 Opus；`/opsx-propose` 产出工件后未经人类批准就直冲 `/opsx-apply` 没有停——两处都是"自述式判定"的必然结果，故改为脚本判定。
 
 **两处人类审批不可省**：第一处是**起飞批准**——人审完 `spec.html` 后在 Claude Code 输入框上方的**批准带**按「批准起飞」，`flight@intent-driven` 插件把计划指纹写入账本 `refs/flight/<change>/ledger`；插件起飞检查时以 `.claude/hooks/takeoff-gate.py` 比对账本最新批准的指纹与当前计划指纹（exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏，均不起飞），模型自证无效；第二处是 PR review。批准带依赖 `flight@intent-driven` 插件，`install.sh` 会项目级安装；手动安装：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
 
@@ -293,12 +292,12 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ### 阶段 4 · 送出 + 自审（PR/MR 闭环）
 
-`/pr-ship` 端到端：
+`/flight:pr-ship` 端到端：
 
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
-  → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；飞行外改动读 evidence.log）作为评审输入 → 起【干净的】code-reviewer subagent 评审（不重跑测试）
+  → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；飞行外改动读 evidence.log）作为评审输入 → 起【干净的】flight:code-reviewer subagent 评审（不重跑测试）
   → 报告作为评论入库（签名必带）
   → 与用户逐条讨论修复 → 落地补丁到同 PR → 自动修复至多 2 轮增量复核（mode=follow-up，只审修复补丁）
 ```
@@ -340,7 +339,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ## Legacy 模式：逐 task 守门（`--gate=per-task`）
 
-飞行模式是默认。`/opsx-apply <name> --gate=per-task` 仍可选回旧的**逐 task 阻断式守门**——每个 task 派 fresh 实现 subagent 走完 TDD，紧接着派 `code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox，靠 **review 水位线**（`review-log.md`）记已审区间避免重复审同一段代码：
+飞行模式是默认。`/opsx-apply <name> --gate=per-task` 仍可选回旧的**逐 task 阻断式守门**——每个 task 派 fresh 实现 subagent 走完 TDD，紧接着派 `flight:code-reviewer` 守门（CRITICAL/HIGH 阻断），过了才勾 checkbox，靠 **review 水位线**（`review-log.md`）记已审区间避免重复审同一段代码：
 
 | 守门点 | 评审模式 | diff 范围 | 动作 |
 | --- | --- | --- | --- |
@@ -352,7 +351,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
-## 15 个 slash 命令
+## 14 个 slash 命令 + 插件命令
 
 按命名空间分组。
 
@@ -371,6 +370,8 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 | `/opsx-bulk-apply` | 多变更并行 worktree 实现 |
 | `/opsx-mini "<理由+范围>" \| --done` | 声明 mini 任务，留痕 `.mini-active` 让分级门禁放行其源码（命令本身即逻辑，无同名 skill） |
 
+`/opsx-apply` 由 flight 插件注册：项目里有同名命令文件 `.claude/commands/opsx-apply.md` 时，由插件拦截执行。
+
 ### `/claudemd-*`（CLAUDE.md 知识维护，3 个 + 1 个门禁）
 
 | 工具 | 时机 | 模式 |
@@ -383,11 +384,11 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 日常增长由 commit 的预算中性约束住 → distill 不再承担「止血」职责，只做定期重排。
 
-### `/pr-*`（PR/MR 闭环，1 个）
+### `/flight:pr-ship`（PR/MR 闭环，由 flight 插件提供）
 
 | 命令 | 目的 |
 | --- | --- |
-| `/pr-ship [target-branch]` | 端到端送出本次变更：commit → push → 创建 PR/MR → 干净 subagent 自审 → 评论入库 → 迭代修复 |
+| `/flight:pr-ship [target-branch]` | 端到端送出本次变更：commit → push → 创建 PR/MR → 干净 subagent 自审 → 评论入库 → 迭代修复 |
 
 ### `/spec-*`（意图可视化，1 个）
 
@@ -447,11 +448,11 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ---
 
-## agent（`.claude/agents/` 与 flight 插件）
+## agent（flight 插件提供）
 
 | Agent | 职责 |
 | --- | --- |
-| `code-reviewer`（`.claude/agents/`） | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与留痕摘要为准（飞行模式看账本测量统计，飞行外看 `evidence.log`），**不重跑测试套件**，至多 1 次定向抽查。用于 `/pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `flight:code-reviewer`（插件） | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与留痕摘要为准（飞行模式看账本测量统计，飞行外看 `evidence.log`），**不重跑测试套件**，至多 1 次定向抽查。用于 `/flight:pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
 | `flight:executor`（插件） | 飞行中的切片执行体：在自己的 worktree 里按切片包做 TDD，只写 `owns` 内文件，改生产代码前调用 `measure`；收口门禁由控制面运行。 |
 | `flight:reviewer`（插件） | 飞行中的切片评审员，只读。 |
 | `flight:fixer`（插件） | 飞行中的批量修复 / 解冲突，只能写全部 `owns` 的并集。 |
@@ -510,7 +511,7 @@ openspec schema validate intent-driven
 | 插件机制 | `opencode.json` 声明 superpowers | 不需要：Claude Code 用户自行装 [Superpowers](https://github.com/obra/superpowers) |
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
 | 飞行式 apply | 无 | 默认模式：`slices.json` 切片 + flight 插件按 wave 并行派 `flight:executor` + `slice-gate.py` 机械门禁 + `flight:reviewer` 评审；`--gate=per-task` 保留旧的逐 task 守门（`legacy/openspec-subagent-apply-change`）。**中文化自研，不依赖 obra/superpowers 插件** |
-| PR 闭环 | 无 | `/pr-ship` 端到端送出 + 干净 subagent 自审（复用 `code-reviewer` agent） |
+| PR 闭环 | 无 | `/flight:pr-ship` 端到端送出 + 干净 subagent 自审（复用插件的 `flight:code-reviewer` agent） |
 | 知识维护 | 无 | `/claudemd-commit`（预算中性，加一减一）+ `/claudemd-distill`（定期重排）+ `claudemd-lint`（机械门禁：字节预算 / 悬空指针） |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |

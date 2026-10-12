@@ -12,7 +12,7 @@ metadata:
 
 # OpenSpec Subagent Apply（逐 task 守门，legacy）
 
-用 fresh subagent 逐个 task 实现一个 OpenSpec change：**每个 task 由一个干净的实现 subagent 走完整 TDD 写出来，紧接着由一个干净的 `code-reviewer` subagent 守门**，CRITICAL/HIGH 级问题不修复不许勾选 checkbox。全部 task 完成后做一次整体 full review + `/opsx-verify`，最后收口报告，**不 merge 不 archive**。
+用 fresh subagent 逐个 task 实现一个 OpenSpec change：**每个 task 由一个干净的实现 subagent 走完整 TDD 写出来，紧接着由一个干净的 `flight:code-reviewer` subagent 守门**，CRITICAL/HIGH 级问题不修复不许勾选 checkbox。全部 task 完成后做一次整体 full review + `/opsx-verify`，最后收口报告，**不 merge 不 archive**。
 
 这是"tdd → subagent 开发 → subagent-review，每个功能有守门员"的落地。
 
@@ -32,7 +32,7 @@ metadata:
 
 | Skill | 粒度 | 隔离 | 守门 |
 | --- | --- | --- | --- |
-| `openspec-apply-change`（串行） | 单 change，主会话逐 task 串行写 | 本 change 的 worktree | 无（靠 /pr-ship 末尾） |
+| `openspec-apply-change`（串行） | 单 change，主会话逐 task 串行写 | 本 change 的 worktree | 无（靠 /flight:pr-ship 末尾） |
 | **本 skill** | 单 change，**逐 task 派 subagent** | 本 change 的 worktree（不为每 task 各开） | **每 task 一个守门员** + 末尾 full review |
 | `openspec-bulk-apply-change` | **多 change**，各派 subagent 跑整个 apply | 每 change 一个 worktree | 各自 apply 内的纪律 |
 
@@ -40,7 +40,7 @@ metadata:
 
 ## Review 水位线（`review-log.md`）
 
-逐 task 守门产生的审查状态**必须落盘**，供后续 review 点（本 skill 的整合审、`/pr-ship` 的 PR 评审、`/opsx-verify` 的测试纪律检查）判断「哪段范围已经审过、哪些 finding 已经处理」，避免同一份代码被反复全量重审。
+逐 task 守门产生的审查状态**必须落盘**，供后续 review 点（本 skill 的整合审、`/flight:pr-ship` 的 PR 评审、`/opsx-verify` 的测试纪律检查）判断「哪段范围已经审过、哪些 finding 已经处理」，避免同一份代码被反复全量重审。
 
 **路径**：`openspec/changes/<change>/review-log.md`。落在 `openspec/` 内 → `intent-gate.py` 天然豁免、随 change 一起归档、人类可读、可进 PR。
 
@@ -62,7 +62,7 @@ REVIEWED_UPTO: <已被守门审过并通过的最新 commit>
 - LOW `src/api.py:12` — 命名 `tmp2` 不表意
 ````
 
-**唯一写入方 = 本 skill 的主会话**：在 4d 勾选 checkbox 时追加一行并推进 `REVIEWED_UPTO`。`code-reviewer` subagent **不读**这个文件——它拿到的「已审范围 / 已处理 finding」由主会话摘进 prompt，保持 reviewer 干净、不带本地状态。
+**唯一写入方 = 本 skill 的主会话**：在 4d 勾选 checkbox 时追加一行并推进 `REVIEWED_UPTO`。`flight:code-reviewer` subagent **不读**这个文件——它拿到的「已审范围 / 已处理 finding」由主会话摘进 prompt，保持 reviewer 干净、不带本地状态。
 
 **兜底原则**：任何读取方**读不到 `review-log.md` → 一切回退全量审**。水位线只能缩小「已被守门覆盖」那部分的范围，**永远不能**让未审代码蒙混过关——`REVIEWED_UPTO` 之后的任何 commit 一律按全量标准审。
 
@@ -109,7 +109,7 @@ git status --short          # 工作区必须干净
 
 #### 4a. 派 fresh 实现 subagent
 
-用 **Agent 工具**（`subagent_type: general-purpose`——它有 Write/Edit/Bash，能写代码、跑测试、commit；**不要**用只读的 `code-reviewer`）派发。
+用 **Agent 工具**（`subagent_type: general-purpose`——它有 Write/Edit/Bash，能写代码、跑测试、commit；**不要**用只读的 `flight:code-reviewer`）派发。
 
 派发前主会话先准备好要塞进 prompt 的**运行上下文**（subagent 是 cold 的，这些它无从自知）：repo 根绝对路径、本 change 目录路径、相关源文件位置（从 contextFiles / 既有代码定位）、项目测试命令（探测：有 `package.json` 看 `scripts.test`、有 `pytest.ini`/`pyproject.toml` 用 `pytest`、有 `go.mod` 用 `go test`，等等）。
 
@@ -144,9 +144,9 @@ prompt 必须**自包含**（subagent 不带主会话上下文）：
 
 > 主会话在派发前记下 `git rev-parse HEAD`（本 task 起点 = 上一个 commit），用于 4b 圈定 diff。
 
-#### 4b. 派 code-reviewer subagent 守门
+#### 4b. 派 flight:code-reviewer subagent 守门
 
-实现 subagent 返回后（它已 commit 本 task），用 **Agent 工具**（`subagent_type: code-reviewer`）派发。**本 task 净 diff 就是那个 commit**——用两点 diff 精确圈定，不再有歧义：
+实现 subagent 返回后（它已 commit 本 task），先跑 `python3 .claude/hooks/session-model.py` 判定 `<main>`（stdout 即别名；exit 3 = 判不出 → 停下交人工给出别名，禁模型自述），再用 **Agent 工具**（`subagent_type: flight:code-reviewer`、`model: "<main>"`，写法同 `/flight:pr-ship` 第 8 步；不带 `model` 会被插件守卫拒绝）派发。**本 task 净 diff 就是那个 commit**——用两点 diff 精确圈定，不再有歧义：
 
 ```
 背景：review 一个 OpenSpec change 里单个 task 的实现。这是 intent-driven 工作流的逐 task 守门。
@@ -171,7 +171,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 - reviewer 报告**有 CRITICAL 或 HIGH** → **不勾 checkbox**。派一个 fresh 修复 subagent（`subagent_type: general-purpose`）。它也是 cold 的，prompt 必须把"修什么、在哪、问题是什么"讲全：
 
   ```
-  背景：修复一个 OpenSpec change 里某 task 实现被 code-reviewer 挡下的问题。在本 change 的 worktree 内直接操作（主会话已进入它），不要 push / 切分支 / 新建 worktree。
+  背景：修复一个 OpenSpec change 里某 task 实现被 flight:code-reviewer 挡下的问题。在本 change 的 worktree 内直接操作（主会话已进入它），不要 push / 切分支 / 新建 worktree。
 
   运行环境：<同 4a：repo 根 / change 目录 / 相关源文件 / 测试命令 / 有 Write·Edit·Bash 权限>
   本 task：<task 编号 + 描述>
@@ -188,7 +188,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
   完成后报告：改了什么、新增哪些复现测试、RED→GREEN 输出、最终 commit SHA。
   ```
 
-  修完派一个 fresh `code-reviewer` 做**聚焦复核**——**不重审整个 task**，只看修复增量与原 finding 是否闭环：
+  修完派一个 fresh `flight:code-reviewer`（`model: "<main>"`，`<main>` 同 4b 由 `python3 .claude/hooks/session-model.py` 判定，exit 3 则停下交人工）做**聚焦复核**——**不重审整个 task**，只看修复增量与原 finding 是否闭环：
 
   ```
   背景：复核一个 OpenSpec change 里某 task 的修复补丁，判断上一轮 code review 挡下的问题是否已闭环。
@@ -220,14 +220,14 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 
 - 在区间表追加一行：`scope` = 本 task 编号、`range` = `<本 task 起点 SHA>..<当前 HEAD>`、`verdict` = `pass`、`阻断并修复` = 本 task 回灌修掉的 CRITICAL/HIGH 条数；
 - 把 `REVIEWED_UPTO` 推进到当前 HEAD；
-- 把本 task 守门报告里**未阻断**的 MEDIUM / LOW 逐条登记到 `## Deferred` 清单（带 `文件:行号` + 一句摘要）——它们后续会随 `/pr-ship` 的 PR 评论上浮给人类 reviewer，不要只留在会话里。
+- 把本 task 守门报告里**未阻断**的 MEDIUM / LOW 逐条登记到 `## Deferred` 清单（带 `文件:行号` + 一句摘要）——它们后续会随 `/flight:pr-ship` 的 PR 评论上浮给人类 reviewer，不要只留在会话里。
 
 > 勾选这个动作本身的改动会落进**下一个** task 的 commit 里（或由用户在 pr-ship 前单独 commit），无所谓——它不影响逐 task 净 diff 的圈定（diff 比的是实现 subagent 的代码 commit）。`review-log.md` 的改动同理。
 > 输出建议：每个 task 实时显示 `Working on task N/M: <desc>` → `实现 subagent 返回（commit <SHA>）` → `守门：<通过 / 阻断 X 项，回灌第 K 轮>` → `✓ task complete`。
 
 ### 5. 整合审位置判定（全部 task 完成后）
 
-整合审（跨 task 交互 / 整体一致性 / 端到端完整性）在一次变更里**只跑一次**。它跑在本地还是跑在 `/pr-ship`，由**用户明确选择**决定——**不要靠推断**「用户是不是打算立刻 ship」。
+整合审（跨 task 交互 / 整体一致性 / 端到端完整性）在一次变更里**只跑一次**。它跑在本地还是跑在 `/flight:pr-ship`，由**用户明确选择**决定——**不要靠推断**「用户是不是打算立刻 ship」。
 
 **硬跳过条件（先判，命中就不问）**：change 只有 **1 个 task** → 整合审**恒跳过**，理由是逐 task 守门已覆盖它的全部 diff，再审一次就是重复审同一份。在收口报告里注明跳过与理由。
 
@@ -236,11 +236,11 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 - question：`<name> 的全部 task 已通过守门。整合审（跨 task 交互 / 整体一致性 / 端到端完整性）跑在哪一步？`
 - header：`整合审`
 - options：
-  - `立即 /pr-ship（推荐）` — **跳过本地整合审**，整合审在 PR 阶段做。`/pr-ship` 本来就必须产出一份贴 PR 的报告，整合审搭在那里零额外成本，且结论对人类 reviewer 可见。
+  - `立即 /flight:pr-ship（推荐）` — **跳过本地整合审**，整合审在 PR 阶段做。`/flight:pr-ship` 本来就必须产出一份贴 PR 的报告，整合审搭在那里零额外成本，且结论对人类 reviewer 可见。
   - `暂不 ship，先在本地整合审` — 现在跑一次本地整合审（见下），之后再决定是否 ship。
   - `都跳过` — 直接收口（用户自负其责，收口报告里注明整合审未执行）。
 
-选「暂不 ship」时，派一个 `code-reviewer` subagent 审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）：
+选「暂不 ship」时，派一个 `flight:code-reviewer` subagent（`model: "<main>"`，`<main>` 同 4b 由 `python3 .claude/hooks/session-model.py` 判定，exit 3 则停下交人工）审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）：
 
 ```
 背景：对一个 OpenSpec change 做整合审——全部 task 已逐个通过守门，现在只看它们拼起来有没有问题。
@@ -276,7 +276,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 
 - change 名 + schema
 - 每个 task：commit SHA、守门轮数、阻挡过的 CRITICAL/HIGH（摘要）、最终状态
-- **整合审位置**：本地已跑 / 交给 `/pr-ship` / 跳过（含理由）——以及跑了的话，结论是什么
+- **整合审位置**：本地已跑 / 交给 `/flight:pr-ship` / 跳过（含理由）——以及跑了的话，结论是什么
 - **水位线区间**：`BASE_REF` → `REVIEWED_UPTO`，覆盖 N 个 task
 - `/opsx-verify` 结论
 - 改动文件汇总 + 本次产生的 commit 列表（`git log <BASE_REF>..HEAD --oneline`）
@@ -284,7 +284,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 
 结尾固定提示：
 
-> 本次做了实现 + 逐 task 守门 + 验证，产生了 N 个本地 commit（在当前分支，**未 push、未 merge、未 archive**）。下一步：`/claudemd-commit`（预算中性沉淀知识）→ `/pr-ship`（送出 + 合并前守门；逐 task commit 可在 PR 时选 squash 合并）。合回 main 后再 `/opsx-archive <name>`。
+> 本次做了实现 + 逐 task 守门 + 验证，产生了 N 个本地 commit（在当前分支，**未 push、未 merge、未 archive**）。下一步：`/claudemd-commit`（预算中性沉淀知识）→ `/flight:pr-ship`（送出 + 合并前守门；逐 task commit 可在 PR 时选 squash 合并）。合回 main 后再 `/opsx-archive <name>`。
 
 ## Guardrails
 
@@ -297,7 +297,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 - **每个 task 一个本地 commit**（实现 subagent 产生，落当前分支）——这是逐 task 圈 diff 的锚点，且已被 `openspec-git-discipline` 的 carve-out 允许（用户在 step 6 已知情同意）。
 - **不 push、不 merge、不 archive、不碰 main、不擅自建分支**——除非用户明确指示。逐 task 本地 commit ≠ 上述任一项。
 - 回灌**硬上限 3 轮**；到顶仍阻断就停下交用户，不再问"要不要继续"、不蒙混勾选。
-- **守门通过必须写水位线**（4d）：不写 `review-log.md`，后续 `/pr-ship` 与 `/opsx-verify` 就读不到已审范围，会退回全量重审——重复就是这么来的。
+- **守门通过必须写水位线**（4d）：不写 `review-log.md`，后续 `/flight:pr-ship` 与 `/opsx-verify` 就读不到已审范围，会退回全量重审——重复就是这么来的。
 - **修复用独立 `fix:` commit，禁 `--amend`**：amend 改写 SHA 会让修复增量区间不可圈定，聚焦复核只能退回重审整个 task。
 - **整合审只跑一次**，位置由用户在 step 5 明确选，不靠推断；1 个 task 的 change 恒跳过。
 - 子 agent 不能再嵌套 subagent；`--no-confirm`（bulk-apply）一律走串行 `openspec-apply-change`。
@@ -316,7 +316,8 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 | 取 diff 用三点 `A...HEAD` | 逐 task 线性累积用**两点** `A..HEAD`；三点比的是 merge-base 之后，分支场景会取错 |
 | 工作区脏就开工 | 首个 task commit 会裹进无关改动；step 3 先 `git status --short` 验干净 |
 | 实现 subagent 不 commit / 主会话替它 commit | 由实现 subagent 自己在 task 末尾 commit（它最清楚改了什么）；主会话只记起点 SHA |
-| 实现 subagent 用了只读的 code-reviewer 类型 | 实现要 Write/Edit/Bash，用 `general-purpose`；`code-reviewer` 只给守门 |
+| 派 flight:code-reviewer 不带 model | 插件守卫以「派发须显式指定 model（铁律 11）」拒绝；先跑 `session-model.py` 判定 `<main>`，派发显式带 `model: "<main>"` |
+| 实现 subagent 用了只读的 flight:code-reviewer 类型 | 实现要 Write/Edit/Bash，用 `general-purpose`；`flight:code-reviewer` 只给守门 |
 | 修复用 `git commit --amend` | SHA 被改写 → 修复增量区间不可圈定 → 聚焦复核退化成重审整个 task。统一新增独立 `fix:` commit |
 | 守门通过了却不写 `review-log.md` | 后续 review 点读不到已审范围，全量重审，本 skill 的去重设计当场失效。4d 勾 checkbox 与写水位线是同一步 |
 | 靠推断「用户是不是要立刻 ship」决定跑不跑整合审 | 模型读不了心。step 5 用 AskUserQuestion 明确问，按答案硬判定 |

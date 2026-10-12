@@ -173,7 +173,7 @@ def test_measure_adr_and_review_refs():
 
     # When: 读取 ADR 与两份文档
     adr = adr_path.read_text(encoding="utf-8") if adr_path.exists() else ""
-    docs = [read("template/.claude/commands/pr-ship.md"), read("template/.claude/agents/code-reviewer.md")]
+    docs = [read("template/plugins/flight/commands/pr-ship.md"), read("template/plugins/flight/agents/code-reviewer.md")]
 
     # Then: ADR 已采纳并点名两份关联 ADR；两份文档写明飞行模式看测量统计、evidence.log 属飞行外
     assert "Status: accepted" in adr

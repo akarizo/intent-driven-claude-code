@@ -35,21 +35,21 @@ def test_fixer_stop_runs_final():
 def test_landing_runs_pr_ship():
     # Given: 全部合回、评审有结果、无阻断、final 绿、ship 为 ready
     # When: 推进飞行
-    # Then: 账本依次追加 final（ok true）与 land（ready）；运行了 /pr-ship demo
+    # Then: 账本依次追加 final（ok true）与 land（ready）；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
     assert_ts_passed("landing-runs-pr-ship")
 
 
 def test_final_red_halts():
     # Given: change worktree 的 final ok false、failed [G2 lint]
     # When: 推进飞行
-    # Then: 账本追加 final（ok false）与 halt（含 G2 lint）；没有运行 /pr-ship
+    # Then: 账本追加 final（ok false）与 halt（含 G2 lint）；没有运行 /flight:pr-ship
     assert_ts_passed("final-red-halts")
 
 
 def test_landing_stops_when_ledger_unreadable():
     # Given: 账本有未闭环的 HIGH，但 ledger.py show 以 1 退出
     # When: drive 交来 land 动作
-    # Then: 不写 review-findings.json、不运行 /pr-ship、账本无新增、提示「账本读取失败」
+    # Then: 不写 review-findings.json、不运行 /flight:pr-ship、账本无新增、提示「账本读取失败」
     assert_ts_passed("landing-stops-when-ledger-unreadable")
 
 # ---------------------------------------------------------------- flight-hardening
@@ -59,7 +59,7 @@ def test_landing_stops_when_ledger_unreadable():
 def test_landing_prints_flight_record():
     # Given: 全部合回、评审有结果、final 绿；timeline report 输出「批准 → apply 完成：12.0 min」；各 agent 实际模型都是 claude-opus-5-5、主模型 opus
     # When: 执行落地动作
-    # Then: Ctx.log 收到含「飞行记录 · demo」「批准 → apply 完成：12.0 min」「路由对账：一致」的文本，且在运行 /pr-ship 之前
+    # Then: Ctx.log 收到含「飞行记录 · demo」「批准 → apply 完成：12.0 min」「路由对账：一致」的文本，且在运行 /flight:pr-ship 之前
     assert_ts_passed("landing-prints-flight-record")
 
 
@@ -81,16 +81,16 @@ def test_fixer_dispatch_commits_records_first():
 
 
 def test_land_handoff_failure_keeps_landing():
-    # Given: 全部合回、final 绿；运行 /pr-ship 抛出「no command named /pr-ship in this session」
+    # Given: 全部合回、final 绿；运行 /flight:pr-ship 抛出「no command named /flight:pr-ship in this session」
     # When: 执行落地动作
-    # Then: 落地动作不抛错，账本末条为 land；toast 含「手动运行 /pr-ship」，Ctx.log 收到含「/pr-ship」的文本
+    # Then: 落地动作不抛错，账本末条为 land；toast 含「手动运行 /flight:pr-ship」，Ctx.log 收到含「/flight:pr-ship」的文本
     assert_ts_passed("land-handoff-failure-keeps-landing")
 
 
 def test_flight_record_survives_report_throw():
     # Given: 全部合回、final 绿；timeline report 时 io.run 抛错「spawn ENOENT」
     # When: 执行落地动作
-    # Then: Ctx.log 收到含「（timeline report 失败：spawn ENOENT）」的文本，且先 log 后运行 /pr-ship
+    # Then: Ctx.log 收到含「（timeline report 失败：spawn ENOENT）」的文本，且先 log 后运行 /flight:pr-ship
     assert_ts_passed("flight-record-survives-report-throw")
 
 
@@ -116,3 +116,11 @@ def test_fixer_stop_final_never_reuses():
     # Then: slice-gate.py final 的调用在修复 worktree 里运行，参数不含 --reuse-fix
     assert_ts_passed("fixer-stop-final-never-reuses")
 
+# ---------------------------------------------------------------- flight-entry-handoff
+
+
+def test_landing_hands_off_to_flight_pr_ship():
+    # Given: demo 全部合回、final 绿；change worktree /repo/.worktrees/demo、change 目录 template/openspec/changes/demo、判定器 /repo/template/.claude/hooks
+    # When: 执行落地；另一个世界里运行命令抛「no command named /flight:pr-ship」后执行落地
+    # Then: 运行的命令恰为 flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks；失败时账本末条为 land、toast 含「请手动运行 /flight:pr-ship --worktree /repo/.worktrees/demo」
+    assert_ts_passed("landing-hands-off-to-flight-pr-ship")

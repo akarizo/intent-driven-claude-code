@@ -6,7 +6,15 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 支持 **GitHub（gh）** 与 **GitLab（glab）** 两个平台，按 `origin` URL 自动判断。
 
-**Input**：可选指定 target branch（默认 `main`）。例如 `/pr-ship develop`。飞行模式收口调用本命令时，draft / ready 由 `slice-gate.py ship` 机械裁决（建 PR 前裁一次、自动修复收尾再裁一次，双向转换），本命令不自行判断。
+**Input**：`/flight:pr-ship [<target>] [--worktree <path>] [--change-dir <path>] [--judges <dir>]`，例如 `/flight:pr-ship develop`。
+- `<target>`：target branch，缺省 `main`。
+- `--worktree`：要送出的 worktree，缺省为当前目录。
+- `--change-dir`：change 目录，缺省 `openspec/changes/<name>`；下文写作 `<change-dir>`。
+- `--judges`：判定器目录，缺省 `.claude/hooks`；下文写作 `<judges>`。
+- 飞行落地时插件给齐 `--worktree`、`--change-dir`、`--judges` 三个参数，参数附在「ARGUMENTS」里；按原样使用，不自行改写。
+- 飞行模式收口调用本命令时，draft / ready 由 `slice-gate.py ship` 机械裁决（建 PR 前裁一次、自动修复收尾再裁一次，双向转换），本命令不自行判断。
+
+**在 worktree 里运行（通则）**：下文所有 git、gh / glab 与判定器（`python3 <judges>/…`）命令都在 `--worktree` 里以子 shell `(cd <worktree> && …)` 运行，例如 `(cd <worktree> && git status --short)`；不改主会话的当前目录。
 
 **Steps**
 
@@ -24,7 +32,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    验鉴权：`gh auth status`（或 `glab auth status`）。
    - **未安装** → 输出用户需要自己在终端跑的安装命令（`brew install gh` / `brew install glab` 等），不代为执行。
    - **未鉴权** → 输出 `gh auth login` / `glab auth login` 指引，让用户自己跑（交互命令，不能代跑）。
-   - 任一条不过 → 退出本次 `/pr-ship`，等用户跑完再重试。
+   - 任一条不过 → 退出本次 `/flight:pr-ship`，等用户跑完再重试。
 
 2. **梳理本轮变更范围**
 
@@ -36,7 +44,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
    git log --oneline origin/<target-branch>...HEAD
    ```
 
-   **CLAUDE.md 特别检查**：若工作树或本分支有 `CLAUDE.md` 的改动，跑一次 `python3 .claude/hooks/claudemd-lint.py`；带 ERROR 的 CLAUDE.md 不进 PR——直接停下报告需要先处理的项（不问询，等用户改完重跑）。
+   **CLAUDE.md 特别检查**：若工作树或本分支有 `CLAUDE.md` 的改动，跑一次 `python3 <judges>/claudemd-lint.py`；带 ERROR 的 CLAUDE.md 不进 PR——直接停下报告需要先处理的项（不问询，等用户改完重跑）。
 
 3. **如有未提交改动，直接 commit（不问询）**
 
@@ -86,12 +94,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
      ## 测试计划
      - [ ] <验证项 1>
      ```
-   - 飞行模式（`openspec/changes/<name>/slices.json` 存在）→ 跑机械裁决并把段落原样贴进正文：
+   - 飞行模式（`<change-dir>/slices.json` 存在）→ 跑机械裁决并把段落原样贴进正文：
      ```bash
-     python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name> --markdown   # 退出 0 = ready，1 = draft
+     python3 <judges>/slice-gate.py ship --change-dir <change-dir> --markdown   # 退出 0 = ready，1 = draft
      ```
      输出非空时追加到正文（不 ready 时是「## 飞行门禁未全绿」+ reasons；有 blocked 切片时附「### 飞行中记 blocked 的切片」并标 `gate` / `infra`）。不要自己改写或删减 reasons。
-   - `openspec/changes/<name>/review-findings.json` 存在（飞行收口写入的 `{blocked, blocking, deferred, fix}`）→ 正文追加一段「## 切片评审（未自动修的 MEDIUM/LOW）」逐条列出 `文件:行号 — 摘要 — 修法`，让人类 reviewer 看得见 AI 放过了什么。
+   - `<change-dir>/review-findings.json` 存在（飞行收口写入的 `{blocked, blocking, deferred, fix}`）→ 正文追加一段「## 切片评审（未自动修的 MEDIUM/LOW）」逐条列出 `文件:行号 — 摘要 — 修法`，让人类 reviewer 看得见 AI 放过了什么。
 
    起草完直接用于创建 PR，不再逐项确认。
 
@@ -109,33 +117,36 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
    抓取返回的 PR/MR URL 与编号，并记飞行事件：
    ```bash
-   python3 .claude/hooks/timeline.py record pr-open --change-dir openspec/changes/<name> --note "<PR URL>"
-   python3 .claude/hooks/timeline.py report --change-dir openspec/changes/<name>    # 打印批准 → PR 打开用时
+   python3 <judges>/timeline.py record pr-open --change-dir <change-dir> --note "<PR URL>"
+   python3 <judges>/timeline.py report --change-dir <change-dir>    # 打印批准 → PR 打开用时
    ```
 
-8. **呼叫干净的 code-reviewer subagent 评审 diff（唯一模式：full）**
+8. **呼叫干净的 flight:code-reviewer subagent 评审 diff（唯一模式：full）**
 
    ```bash
-   git rev-parse HEAD                        # 记为 REVIEW_HEAD_1
-   python3 .claude/hooks/session-model.py    # stdout: opus|sonnet|haiku|fable，记为 <main>；exit 3 = 判定不出
+   git rev-parse HEAD                        # 记为 REVIEW_HEAD_1（SHA，嵌进 prompt；HEAD 不交给子 agent 解析）
+   python3 <judges>/session-model.py    # stdout: opus|sonnet|haiku|fable，记为 <main>；exit 3 = 判定不出
    ```
 
-   用 **Agent 工具**启一个 `subagent_type=code-reviewer`、`model: "<main>"`（`<main>` = `python3 .claude/hooks/session-model.py` 的输出，禁模型自述；判定不出则**停下报告**，让用户显式给出别名后重跑；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
+   子 agent 的 shell 不一定在 `<worktree>` 里：prompt 里的 `<worktree>` 写绝对路径，`<abs-change-dir>` = `<change-dir>` 的绝对路径（相对路径按 `<worktree>` 解析）。
+
+   用 **Agent 工具**启一个 `subagent_type=flight:code-reviewer`、`model: "<main>"`（`<main>` = `python3 <judges>/session-model.py` 的输出，禁模型自述；判定不出则**停下报告**，让用户显式给出别名后重跑；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
 
    ```
    背景: review GitHub/GitLab 上的 PR/MR #<num>。
    仓库: <origin URL>；target: <target>；PR/MR URL: <url>
+   工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）
 
    评审模式: full
    审查范围: 本 PR 相对 target 分支的完整 diff。
    取 diff: 首选 `gh pr diff <num>`（GitHub）或 `glab mr diff <num>`（GitLab）。
-   拉取失败（例如 diff 过大 HTTP 406）→ `git fetch origin <target>` 后 `git diff origin/<target>...HEAD`。
+   拉取失败（例如 diff 过大 HTTP 406）→ `git -C <worktree> fetch origin <target>` 后 `git -C <worktree> diff origin/<target>...<REVIEW_HEAD_1>`（即 `git diff origin/<target>...HEAD`，HEAD 已由主会话解析为 <REVIEW_HEAD_1>）。
    diff 确实为空 → 报告"无变更"并停止。
    两种都拉不到 → 报告"取 diff 失败"并停止，不得报告"无变更"。
 
    参考材料（不重跑测试套件，以此为准）：
-   - 飞行模式：openspec/changes/<name>/gate-report.md（各切片门禁 G1–G7 结论）与 `python3 .claude/hooks/timeline.py report` 的门禁红次数和测量统计，均来自账本（G5 先红证据 = 控制面测量）
-   - 飞行外（主会话修复等）：openspec/changes/<name>/evidence.log 摘要（RED→GREEN 留痕）
+   - 飞行模式：<abs-change-dir>/gate-report.md（各切片门禁 G1–G7 结论）与 `python3 <judges>/timeline.py report` 的门禁红次数和测量统计，均来自账本（G5 先红证据 = 控制面测量）
+   - 飞行外（主会话修复等）：<abs-change-dir>/evidence.log 摘要（RED→GREEN 留痕）
 
    按你既定的分级标准、finding 格式与签名输出完整 markdown，准备直接贴成 PR/MR 评论。
    monorepo 跨多个 sub-repo 时按 sub-repo 分块组织 finding。
@@ -163,11 +174,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
     - 有 CRITICAL/HIGH → 唯一一次 **AskUserQuestion**：『自动修并 push』/『只贴评论交人』；无人应答默认只贴评论。
       - 选「只贴评论交人」（或默认）→ 不修代码：finding 留在 PR 评论里，`review-findings.json.blocking` 保留这些 CRITICAL/HIGH，下文「收尾复裁」的 `ship` 照常裁 draft。
       - 选「自动修并 push」→ 走下面的原有流程（至多 2 轮）。
-    - 自动修：主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
+    - 自动修：主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 在 worktree 里 `git rev-parse HEAD` 记为 REVIEW_HEAD_本轮（SHA）→ 派一个 fresh `subagent_type=flight:code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
       ```
       背景: 复核 PR/MR #<num> 的修复补丁。
+      工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）
       评审模式: follow-up
-      审查范围（仅这个范围）: `git diff <REVIEW_HEAD_上一轮>..HEAD`。
+      审查范围（仅这个范围）: `git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>`。
       上一轮的 CRITICAL/HIGH finding（逐条核对是否已闭环）：
       <贴出上一轮报告的 CRITICAL/HIGH 条目>
       按你既定的分级标准输出，结论行明确"通过 / 阻断"，末尾签名。不要修代码。
@@ -176,12 +188,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
     - 复核仍有 CRITICAL/HIGH 且已跑满 2 轮 → 停下交人，列出仍阻断的 finding。
     - MEDIUM/LOW：只写进评论，不自动修，不占用轮次。
 
-    **收尾复裁（飞行模式必做，双向转换）**：只更新 `review-findings.json` 的 `blocking` 字段为本命令评审仍未闭环的 CRITICAL/HIGH（闭环了就写 `[]`），`blocked` / `deferred` / `fix` 三个字段原样保留不动，有修复 commit 时先重跑 `python3 .claude/hooks/slice-gate.py final --change-dir openspec/changes/<name>` 让 final 行对齐新 HEAD，再跑：
+    **收尾复裁（飞行模式必做，双向转换）**：只更新 `review-findings.json` 的 `blocking` 字段为本命令评审仍未闭环的 CRITICAL/HIGH（闭环了就写 `[]`），`blocked` / `deferred` / `fix` 三个字段原样保留不动，有修复 commit 时先重跑 `python3 <judges>/slice-gate.py final --change-dir <change-dir>` 让 final 行对齐新 HEAD，再跑：
     ```bash
-    python3 .claude/hooks/slice-gate.py ship --change-dir openspec/changes/<name>
+    python3 <judges>/slice-gate.py ship --change-dir <change-dir>
     ```
-    - 退出 0 且 PR 当前是 draft → 转 ready：`gh pr ready <num>`（GitLab：`glab mr update <num> --ready`），然后 `python3 .claude/hooks/timeline.py record pr-ready --change-dir openspec/changes/<name> --note "<PR URL>"`。
-    - 退出 1 且 PR 当前是 ready → 退回 draft：`gh pr ready --undo <num>`（GitLab：`glab mr update <num> --draft`），然后 `python3 .claude/hooks/timeline.py record pr-draft --change-dir openspec/changes/<name> --note "<reasons>"`，并把 `ship --markdown` 的段落追加为一条 PR 评论。
+    - 退出 0 且 PR 当前是 draft → 转 ready：`gh pr ready <num>`（GitLab：`glab mr update <num> --ready`），然后 `python3 <judges>/timeline.py record pr-ready --change-dir <change-dir> --note "<PR URL>"`。
+    - 退出 1 且 PR 当前是 ready → 退回 draft：`gh pr ready --undo <num>`（GitLab：`glab mr update <num> --draft`），然后 `python3 <judges>/timeline.py record pr-draft --change-dir <change-dir> --note "<reasons>"`，并把 `ship --markdown` 的段落追加为一条 PR 评论。
     - 其余情况不动 PR 状态。裁决完再 `git push` 飞行记录（timeline / gate-report / review-findings）。
 
 11. **收尾**
@@ -191,7 +203,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 **Output Summary（命令收尾时打印）**
 
 ```
-## /pr-ship 完成
+## /flight:pr-ship 完成
 
 **PR/MR**: <URL>
 **target**: <target-branch>
@@ -222,7 +234,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 
 **与已有命令的配合**
 
-| 上游 | 本命令 (`/pr-ship`) | 下游 |
+| 上游 | 本命令 (`/flight:pr-ship`) | 下游 |
 | --- | --- | --- |
 | `/opsx-apply` 飞行模式跑完 | ship: commit → PR → self-review → 自动修复 | 人类 reviewer 看 / 合并 |
 | `/claudemd-commit` 沉淀完知识 | ship: 把 CLAUDE.md 改动也带进同一个 PR | 累积多轮后 `/claudemd-distill` |
@@ -230,6 +242,6 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 典型使用顺序：
 1. `/opsx-apply <change>` → 飞行模式跑完实现 + 测试
 2. `/claudemd-commit` → 把本轮变更里新的约定 / 反模式沉淀到记忆层
-3. `/pr-ship` → ship + 自审 + 自动修复到阻断项清零或跑满 2 轮
+3. `/flight:pr-ship` → ship + 自审 + 自动修复到阻断项清零或跑满 2 轮
 4. 人类 reviewer 看 / 合并到 main
 5. （合并几轮后）`/claudemd-distill` → 收敛 CLAUDE.md

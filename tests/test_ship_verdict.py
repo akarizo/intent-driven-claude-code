@@ -6,7 +6,7 @@ import pytest
 
 from conftest import ROOT, commit_all, git, run_hook, write
 
-CMD = ROOT / "template" / ".claude" / "commands"
+CMD = ROOT / "template" / "plugins" / "flight" / "commands"
 
 
 def ship_repo(git_repo, slice_verdict="ok", final_verdict="ok", final_at_head=True, findings=None, plan=True):
@@ -206,7 +206,7 @@ def test_ship_markdown_empty_when_ready(git_repo):
 
 def test_pr_ship_bidirectional_transition():
     """scenario: ship-verdict#命令文本包含双向转换"""
-    # Given: template/.claude/commands/pr-ship.md
+    # Given: template/plugins/flight/commands/pr-ship.md
     text = (CMD / "pr-ship.md").read_text(encoding="utf-8")
 
     # When: 定位建 PR 步骤与自动修复步骤
@@ -224,7 +224,7 @@ def test_pr_ship_bidirectional_transition():
 
 def test_pr_ship_reads_full_findings_and_calls_ship():
     """scenario: ship-verdict#飞行收口写全量 review-findings 并调用 ship（文字落在 pr-ship.md）"""
-    # Given: template/.claude/commands/pr-ship.md
+    # Given: template/plugins/flight/commands/pr-ship.md
     text = (CMD / "pr-ship.md").read_text(encoding="utf-8")
 
     # When: 取第一次提到 review-findings.json 之后的文本

@@ -192,13 +192,13 @@ test('landing-runs-pr-ship', async () => {
   // When: 推进飞行
   await advance(ctx, log)
 
-  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 final（ok true）与 land（verdict ready）；状态行被清除；运行了 /pr-ship demo
+  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 final（ok true）与 land（verdict ready）；状态行被清除；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
   const commitAt = log.calls.findIndex(c => c.argv[0] === 'git' && has(c, 'commit', 'chore(flight): 记录'))
   expect(commitAt).toBeGreaterThan(-1)
   expect(commitAt).toBeLessThan(log.calls.indexOf(finals(log)[0]))
   expect(log.ledger.slice(4)).toMatchObject([{ ev: 'final', ok: true }, { ev: 'land', verdict: 'ready' }])
   expect(log.statuses).toEqual([undefined])
-  expect(log.commands).toEqual(['pr-ship demo'])
+  expect(log.commands).toEqual([`flight:pr-ship --worktree ${CT} --change-dir ${CD} --judges ${HOOKS}`])
 })
 
 test('final-red-halts', async () => {
@@ -238,7 +238,7 @@ test('landing-prints-flight-record', async () => {
   // When: 推进飞行（final 后执行落地动作）
   await advance(ctx, log)
 
-  // Then: Ctx.log 只收到一段文本，含「飞行记录 · demo」「批准 → apply 完成：12.0 min」「路由对账：一致」；打印先于运行 /pr-ship
+  // Then: Ctx.log 只收到一段文本，含「飞行记录 · demo」「批准 → apply 完成：12.0 min」「路由对账：一致」；打印先于运行 /flight:pr-ship
   expect(log.logs).toHaveLength(1)
   expect(log.logs[0]).toContain('飞行记录 · demo')
   expect(log.logs[0]).toContain('批准 → apply 完成：12.0 min')
@@ -287,17 +287,17 @@ test('halt-prints-flight-record-when-report-fails', async () => {
 })
 
 test('land-handoff-failure-keeps-landing', async () => {
-  // Given: S1 已合回且评审结果为空列表；slice-gate ship 为 ready；运行 /pr-ship 抛出 Error「no command named /pr-ship in this session」
-  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], commandThrows: 'no command named /pr-ship in this session' })
+  // Given: S1 已合回且评审结果为空列表；slice-gate ship 为 ready；运行 /flight:pr-ship 抛出 Error「no command named /flight:pr-ship in this session」
+  const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], commandThrows: 'no command named /flight:pr-ship in this session' })
 
   // When: drive 交来 land 动作
   const thrown = await runLandingAction(ctx, FLIGHT, { kind: 'land' }).then(() => undefined, (e: unknown) => e)
 
-  // Then: 落地动作不抛错；账本末条为 land；toast 含「手动运行 /pr-ship」；Ctx.log 有一段含「接 /pr-ship 失败：no command named」的文本
+  // Then: 落地动作不抛错；账本末条为 land；toast 含「手动运行 /flight:pr-ship」；Ctx.log 有一段含「接 /flight:pr-ship 失败：no command named」的文本
   expect(thrown).toBeUndefined()
   expect(log.ledger.at(-1)).toMatchObject({ ev: 'land' })
-  expect(log.toasts.some(t => t.includes('手动运行 /pr-ship'))).toBe(true)
-  expect(log.logs.some(t => t.includes('接 /pr-ship 失败：no command named'))).toBe(true)
+  expect(log.toasts.some(t => t.includes('手动运行 /flight:pr-ship'))).toBe(true)
+  expect(log.logs.some(t => t.includes('接 /flight:pr-ship 失败：no command named'))).toBe(true)
 })
 
 test('flight-record-survives-report-throw', async () => {
@@ -307,7 +307,7 @@ test('flight-record-survives-report-throw', async () => {
   // When: 推进飞行（final 后执行落地动作）
   await advance(ctx, log)
 
-  // Then: Ctx.log 首段含「（timeline report 失败：spawn ENOENT）」；调用顺序为先 log 后运行 /pr-ship
+  // Then: Ctx.log 首段含「（timeline report 失败：spawn ENOENT）」；调用顺序为先 log 后运行 /flight:pr-ship
   expect(log.logs[0]).toContain('（timeline report 失败：spawn ENOENT）')
   expect(log.seq).toEqual(['log', 'command'])
 })
@@ -363,4 +363,20 @@ test('fixer-stop-final-never-reuses', async () => {
   // Then: slice-gate.py final 的调用 cwd 为修复 worktree，argv 不含 --reuse-fix
   expect(finals(log).map(c => c.cwd)).toEqual([FIX_TREE])
   expect(finals(log)[0].argv).not.toContain('--reuse-fix')
+})
+
+test('landing-hands-off-to-flight-pr-ship', async () => {
+  // Given: 两个世界，S1 都已合回且评审结果为空列表、slice-gate ship 为 ready；change worktree /repo/.worktrees/demo、change 目录 template/openspec/changes/demo、判定器 /repo/template/.claude/hooks；第二个世界里运行命令抛出 Error「no command named /flight:pr-ship」
+  const ok = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED] })
+  const bad = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], commandThrows: 'no command named /flight:pr-ship' })
+  const args = `--worktree ${CT} --change-dir ${CD} --judges ${HOOKS}`
+
+  // When: 两个世界各自执行一次 land 动作
+  await Promise.all([runLandingAction(ok.ctx, FLIGHT, { kind: 'land' }), runLandingAction(bad.ctx, FLIGHT, { kind: 'land' })])
+
+  // Then: 第一个世界运行的命令恰为 flight:pr-ship 加三项参数；第二个世界账本末条为 land、toast 含「请手动运行 /flight:pr-ship」加完整参数、Ctx.log 含「落地完成，但接 /flight:pr-ship 失败：no command named /flight:pr-ship」
+  expect(ok.log.commands).toEqual([`flight:pr-ship ${args}`])
+  expect(bad.log.ledger.at(-1)).toMatchObject({ ev: 'land' })
+  expect(bad.log.toasts.some(t => t.includes(`请手动运行 /flight:pr-ship ${args}`))).toBe(true)
+  expect(bad.log.logs).toContain('落地完成，但接 /flight:pr-ship 失败：no command named /flight:pr-ship')
 })

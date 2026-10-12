@@ -22,6 +22,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 `授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
 `--takeover`（可选）→ 只在「最新一次起飞来自另一个会话、尚未落地或停飞，而且你已确认那个会话已结束」时使用；不加时插件会拒飞并提示。
+**来源规则**：`/opsx-apply` 起飞只接受终端（composer）、Remote Control（bridge）或 SDK 宿主（sdk）发出；定时任务、别的会话的消息、插件代发一律拒绝，不写账本。
 `--gate=per-task`（可选）→ 跳过飞行模式：插件不接管，把命令原样交给模型；模型转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令其余段落不适用）。
 
 **起飞检查（插件执行；任一项不过即不起飞，原样回报原因，不问询）**
@@ -45,7 +46,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 - **收口门禁**：执行体收口时控制面运行切片门禁；红了把失败项交回执行体接着修，仍红记 blocked。门禁绿的切片由控制面合回 change 分支。
 - **评审、修复与 final**：`flight:reviewer` 评审已合回的切片；阻断 finding 交 `flight:fixer` 批量修复；再跑 final 门禁。有切片 blocked 或 final 未通过 → 停飞，修好后重发 `/opsx-apply <name>` 续飞。
 - **续飞另起 worktree**：续飞时同名 worktree 已存在就另起 `<S>-a<attempt>`，旧现场保留，清理由人执行。
-- **落地交 `/pr-ship`**：控制面写 `review-findings.json`、在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`、提交飞行记录，跑 `slice-gate.py ship` 机械裁决 draft / ready，然后调用 `/pr-ship`；它会自己再跑一次 `ship` 决定以 draft 还是 ready 建 PR。主会话不自行判断 draft。
+- **落地交 `/flight:pr-ship`**：控制面写 `review-findings.json`、在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`、提交飞行记录，跑 `slice-gate.py ship` 机械裁决 draft / ready，然后调用 `/flight:pr-ship`；它会自己再跑一次 `ship` 决定以 draft 还是 ready 建 PR。主会话不自行判断 draft。
 
 **模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
 
@@ -61,6 +62,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 - `/flight panel [<change>]`：打开飞行面板；起飞时会自动打开。
 - `/flight abort [<change>]`：只中止本会话起飞的飞行；先在账本记停飞，再停下在飞的 agent，它们未提交的改动留在各自 worktree。
 - `/flight resume <change> [--takeover]`：只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞。
+- **来源规则**：`/opsx-apply` 起飞、`/flight abort`、`/flight resume` 只接受终端（composer）、Remote Control（bridge）或 SDK 宿主（sdk）发出；定时任务、别的会话的消息、插件代发一律拒绝，不写账本。
 
 **模型读到本命令即停飞**
 - 先看本轮是否发过 `/opsx-apply`：
@@ -77,7 +79,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 - 同一门禁项连续 2 次红
 
 **Guardrails**
-- 启动到 `/pr-ship` 之间不出现 AskUserQuestion（四种暂停例外走「停下报告」，不是问询）。
+- 启动到 `/flight:pr-ship` 之间不出现 AskUserQuestion（四种暂停例外走「停下报告」，不是问询）。
 - 模型按角色显式路由；插件派发时不省略 `model`。
 - 起飞批准以账本指纹为判据（人在批准带按「批准起飞」才写入账本），由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
 - `<main>` 由 `.claude/hooks/session-model.py` 判定，**禁模型自述**；判定不出停飞，人工 `--model=<alias>` 覆盖。

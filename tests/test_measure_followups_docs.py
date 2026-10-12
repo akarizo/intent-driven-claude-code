@@ -13,7 +13,7 @@ def step4(text):
 
 def test_premerge_uses_write_tree():
     # Given: pr-ship.md
-    text = read("template/.claude/commands/pr-ship.md")
+    text = read("template/plugins/flight/commands/pr-ship.md")
 
     # When: 取第 4 步
     part = step4(text)

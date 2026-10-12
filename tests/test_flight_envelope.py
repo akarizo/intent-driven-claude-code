@@ -242,3 +242,13 @@ def test_shell_reserved_words_stripped():
     # When: 判定 then / do / else / time / if 之后的 git push 五条，与 if true; then git status; fi
     # Then: 前五条被拒，最后一条不拒
     assert_ts_passed("shell-reserved-words-stripped")
+
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+def test_main_session_spawns_code_reviewer():
+    # Given: 派发守卫 spawnVerdict
+    # When: 判定四种派发：主会话带 model 派 flight:code-reviewer / 主会话不带 model / 在飞 agent 带 model / 主会话带 model 派 flight:reviewer
+    # Then: 第一种放行；其余拒绝理由依次含「铁律 11」「飞行中的 agent 不得再派发子 agent」「只能由 flight 控制面派发」
+    assert_ts_passed("main-session-spawns-code-reviewer")
