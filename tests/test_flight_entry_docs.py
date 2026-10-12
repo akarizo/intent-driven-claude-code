@@ -41,3 +41,19 @@ def test_pr_ship_reviewer_prompts_pin_worktree():
     assert "git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>" in step10
     assert "git rev-parse HEAD" in step10
     assert "<REVIEW_HEAD_上一轮>..HEAD" not in step10
+
+
+def test_legacy_reviewer_spawn_carries_model():
+    # Given: legacy 逐 task 守门 skill（插件守卫拒绝不带 model 的 flight:* 派发）
+    text = read(LEGACY)
+
+    # When: 切出 4b 守门、聚焦复核、整合审三处派 flight:code-reviewer 的段落
+    gate = text[text.index("#### 4b."):text.index("#### 4c.")]
+    focus = text[text.index("修完派一个 fresh `flight:code-reviewer`"):text.index("#### 4d.")]
+    integ = text[text.index("选「暂不 ship」时"):text.index("## Guardrails")]
+
+    # Then: 三处都显式带 model: "<main>"；4b 写明 session-model.py 判定与 exit 3 停下；常见错误表点名不带 model 会被拒
+    assert all('model: "<main>"' in seg for seg in (gate, focus, integ))
+    assert "python3 .claude/hooks/session-model.py" in gate and "exit 3" in gate
+    mistakes = text[text.index("## Common Mistakes"):]
+    assert "不带 model" in mistakes and "拒绝" in mistakes
