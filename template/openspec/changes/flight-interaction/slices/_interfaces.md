@@ -120,3 +120,11 @@ export function summarize(state: State): FlightSummary {
 export function summaryLines(s: FlightSummary): string[] {
 export const ev: {
 ```
+
+## S5
+
+### install.sh
+```
+def key(entry):
+def strip_retired(hook_map):
+```
