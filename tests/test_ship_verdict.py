@@ -1,6 +1,5 @@
 """slice-gate.py ship：飞行收口的机械 draft / ready 裁决，只读账本、slices.json 与 git（scenario: ship-verdict#* / flight-ship-ledger#*）。"""
 import json
-import re
 
 from conftest import ROOT, commit_all, git, ledger_append, make_change, run_hook, write
 
@@ -263,36 +262,32 @@ def test_ship_markdown_empty_when_ready(git_repo):
 
 # ---------------------------------------------------------------- 命令文本契约
 
-def test_pr_ship_bidirectional_transition():
-    """scenario: ship-verdict#命令文本包含双向转换"""
+def test_pr_ship_flight_creates_draft_then_calls_ship_tool():
+    """flight-ship-ledger：飞行模式以 draft 建 PR，由 ship 工具按账本裁决（原「双向转换」改由插件完成）"""
     # Given: template/plugins/flight/commands/pr-ship.md
     text = (CMD / "pr-ship.md").read_text(encoding="utf-8")
 
-    # When: 定位建 PR 步骤与自动修复步骤
-    create = text.index("7. **创建 PR/MR**")
-    autofix = text.index("10. **CRITICAL/HIGH 自动修复", create)
+    # When: 切出第 7 步（创建 PR/MR）
+    step7 = text[text.index("7. **创建 PR/MR**"):text.index("8. **")]
 
-    # Then: 建 PR 前引用 ship 裁决；自动修复收尾引用 gh pr ready 与 --undo、glab 对应参数、记 pr-ready / pr-draft 事件；不再有模型自判散文
-    assert "slice-gate.py ship" in text[create:autofix]
-    tail = text[autofix:]
-    assert "gh pr ready <num>" in tail and "gh pr ready --undo <num>" in tail
-    assert "--ready" in tail and "--draft" in tail
-    assert "timeline.py record pr-ready" in tail and "timeline.py record pr-draft" in tail
-    assert "门禁未全绿 → 加 `--draft`" not in text
+    # Then: 第 7 步含 --draft、`ship` 工具与 mcp__flight__ship，不含 gh pr ready；全文不再有模型执行的「收尾复裁」
+    assert "--draft" in step7
+    assert "`ship` 工具" in step7 and "mcp__flight__ship" in step7
+    assert "gh pr ready" not in step7
+    assert "收尾复裁" not in text
 
 
-def test_pr_ship_reads_full_findings_and_calls_ship():
-    """scenario: ship-verdict#飞行收口写全量 review-findings 并调用 ship（文字落在 pr-ship.md）"""
+def test_pr_ship_does_not_rewrite_blocking():
+    """flight-ship-ledger：飞行模式不让模型改写 review-findings.json 的裁决依据"""
     # Given: template/plugins/flight/commands/pr-ship.md
     text = (CMD / "pr-ship.md").read_text(encoding="utf-8")
 
-    # When: 取第一次提到 review-findings.json 之后的文本
-    tail = text[text.index("review-findings.json"):]
+    # When: 切出 Guardrails 段
+    guard = text[text.index("**Guardrails**"):]
 
-    # Then: 写明 review-findings.json 的四个字段 {blocked, blocking, deferred, fix}；引用 slice-gate.py ship；不再有「final 未绿或有 blocked 切片」自判散文
-    assert re.search(r"\{blocked, blocking, deferred, fix\}", tail)
-    assert "slice-gate.py ship" in text
-    assert "final 未绿或有 blocked 切片" not in text
+    # Then: 全文不再要求只更新 blocking 字段；Guardrails 写明飞行模式不改 review-findings.json
+    assert "只更新 `review-findings.json`" not in text and "`blocking` 字段为" not in text
+    assert "不改 `review-findings.json`" in guard
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: ship-final-freshness#*）
