@@ -37,3 +37,11 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
 ```
 export function registerOrchestrator(on: On): void {
 ```
+
+## S5
+
+### install.sh
+```
+def key(entry):
+def strip_retired(hook_map):
+```
