@@ -142,3 +142,14 @@ def test_gate_from_other_agent_not_regated():
     # When: 求 attempt 3 的下一批动作
     # Then: S1 是带续接、不带 base 的派发，不是 regate
     assert_ts_passed("gate-from-other-agent-not-regated")
+
+# ---------------------------------------------------------------- flight-interaction
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
+def test_summary_from_ledger():
+    # Given: demo 的账本：attempt 1、waves [[S1, S2], [S3]]；S1 已合回且评审 1 条 HIGH，S2 门禁红 1 次后仍在执行，S3 未派
+    # When: 求 summaryLines(summarize(state))
+    # Then: 首行含 demo、attempt 1、W1/2；S1 已合回、S2 门禁红 1、S3 待派；末行含修复与 final
+    assert_ts_passed("summary-from-ledger")

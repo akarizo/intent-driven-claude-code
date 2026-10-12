@@ -33,3 +33,14 @@ def test_judges_must_know_events():
     # When: 分别核对判定器
     # Then: 第一种通过；第二种拒飞且含 measure 与主检出；第三种拒飞且含判定器过旧
     assert_ts_passed("judges-must-know-events")
+
+# ---------------------------------------------------------------- flight-interaction
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_takeoff_refuses_stale_judges():
+    # Given: 三个判定器目录：features 以 2 退出 / 只列 evidence-ledger-only / 列全三项
+    # When: 分别运行 checkJudges
+    # Then: 前两个不通过（原因含「判定器过旧」或缺少的能力，并含「主检出」），第三个通过
+    assert_ts_passed("takeoff-refuses-stale-judges")

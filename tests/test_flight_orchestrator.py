@@ -378,3 +378,38 @@ def test_per_task_passes_through():
     # When: 人发出 /opsx-apply demo --gate=per-task
     # Then: 命令交给模型（插件不作答），账本无新事件
     assert_ts_passed("per-task-passes-through")
+
+# ---------------------------------------------------------------- flight-interaction
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_flight_status_prints_progress():
+    # Given: 插件已加载，demo 已起飞（attempt 1）
+    # When: 发出 /flight status demo 与不带 change 的 /flight status
+    # Then: 会话开始时登记过 flight 命令；两次回复都含 demo、attempt 1、W1/2
+    assert_ts_passed("flight-status-prints-progress")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_flight_abort_stops_agents():
+    # Given: demo 已起飞并派出 agent-1、agent-2，agent.list 里都是 running
+    # When: 发出 /flight abort demo，随后 agent-1 结束（aborted）
+    # Then: 账本有原因含「人工中止」的 halt，排在两次 TaskStop 之前；TaskStop 依次停 agent-1、agent-2；之后没有新的 dispatch 或 merge
+    assert_ts_passed("flight-abort-stops-agents")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_flight_resume_only_unfinished():
+    # Given: 三份账本：没有 takeoff / attempt 1 已落地 / attempt 1 已停飞
+    # When: 分别发出 /flight resume demo
+    # Then: 前两份拒绝（含 /opsx-apply 或「已落地」）且无新事件；第三份含「续飞」与「✈ 起飞」，有 attempt 2 的 takeoff
+    assert_ts_passed("flight-resume-only-unfinished")
+
+
+@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
+def test_panel_opens_at_takeoff():
+    # Given: demo 已批准、工作区干净
+    # When: 发出 /opsx-apply demo，再请求绘制 Pane flight
+    # Then: 插件以 id flight 调用过 ui.open；面板文本含 demo 与 W1/2
+    assert_ts_passed("panel-opens-at-takeoff")
