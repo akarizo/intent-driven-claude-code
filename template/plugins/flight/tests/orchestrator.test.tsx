@@ -33,6 +33,8 @@ type World = {
   fpRun?: Run
   /** 派发 agent 时抛异常 */
   spawnThrows?: boolean
+  /** 第 n 个 agent.spawn 返回前等它（用来让 drive 停在一个动作中途） */
+  spawnHold?: (n: number) => Promise<void>
   /** update-ref 一直返回非 0（旧值不符，账本写入总失败） */
   updateRefFails?: boolean
   /** 跟踪 change 目录飞行记录的提交状态：fs.write 写过 → `git status --porcelain -- <记录>` 报改动，git commit 后清空 */
@@ -190,12 +192,13 @@ function useWorld(on: On, w: World) {
   })
   const checks = [...(w.checks ?? [])]
   on('tool.check', () => ({ decision: checks.shift() ?? 'ask' }) as never)
-  on('agent.spawn', ($, e) => {
+  on('agent.spawn', async ($, e) => {
     const x = e as unknown as Omit<Spawn, 'agentId'>
     if (w.spawnThrows) throw new Error('spawn 炸了')
     agents += 1
     const agentId = `agent-${agents}`
     log.spawns.push({ subagent_type: x.subagent_type, model: x.model, cwd: x.cwd, prompt: x.prompt, agentId })
+    if (w.spawnHold) await w.spawnHold(agents)
     return {
       model: 'claude-opus-5-5',
       agentId,
@@ -1357,6 +1360,38 @@ test('flight-abort-stops-agents', async ($, on) => {
   expect(String(after.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
   expect(log.stops).toEqual([{ id: 'agent-1', halted: true }, { id: 'agent-2', halted: true }])
   expect(after.filter(x => x.ev === 'dispatch' || x.ev === 'merge')).toEqual([])
+})
+
+test('abort-during-drive-stops-late-dispatch', async ($, on) => {
+  // Given: /opsx-apply demo 起飞后，drive 派发 S1 的执行体时 agent.spawn 被挂起（drive 停在第一个动作中途，S2 尚未派发）；agent.list 里 agent-1 是 running
+  let enter = () => {}
+  let release = () => {}
+  const entered = new Promise<void>(r => (enter = r))
+  const released = new Promise<void>(r => (release = r))
+  const w = demoWorld({
+    agents: [{ id: 'agent-1', status: 'running' }],
+    spawnHold: async n => {
+      if (n !== 1) return
+      enter()
+      await released
+    },
+  })
+  const log = useWorld(on, w)
+  const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo' })
+  await entered
+
+  // When: 人在终端发出 /flight abort demo；账本写入 halt 之后才放行挂起的 spawn
+  const abort = $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+  for (let i = 0; i < 200 && !log.events.some(x => x.ev === 'halt'); i++) await new Promise(r => setTimeout(r, 5))
+  release()
+  await Promise.all([takeoff, abort])
+
+  // Then: halt 原因含「人工中止」；halt 之后 drive 只做完手上的 S1 派发，没有再派发 S2；挂起期间派出的 agent-1 也被 TaskStop 停下
+  const halt = log.events.findIndex(x => x.ev === 'halt')
+  expect(String(log.events[halt]?.reason ?? '没有 halt')).toContain('人工中止')
+  expect(log.spawns.map(s => s.agentId)).toEqual(['agent-1'])
+  expect(log.events.slice(halt).filter(x => x.ev === 'dispatch' || x.ev === 'merge').map(x => x.slice)).toEqual(['S1'])
+  expect(log.stops).toEqual([{ id: 'agent-1', halted: true }])
 })
 
 test('flight-resume-only-unfinished', async ($, on) => {

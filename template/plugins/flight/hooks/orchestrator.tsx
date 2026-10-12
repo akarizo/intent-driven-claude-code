@@ -8,7 +8,7 @@ import { agentOf, ev, next as nextActions, reduce, stopVerdict, summarize, summa
 import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
-import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktree, flights, judge, judgesDir, markPending, ownership, owners, readLedger, trees } from './io'
+import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktree, flights, judge, judgesDir, markPending, ownership, owners, readLedger, terminals, trees } from './io'
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
@@ -363,6 +363,8 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
   const session = await $.session.id()
   let seen = -1
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    // 读账本之前记下本进程的 land / halt 次数：之后变了，说明这批动作执行期间已停飞（如 /flight abort）
+    const halts = terminals.get(f.change) ?? 0
     const ledger = await readLedger(io, f)
     if ('error' in ledger) {
       await runLandingAction(ctx, f, { kind: 'halt', reason: `账本读取失败：${firstLine(ledger.error)}` })
@@ -392,6 +394,8 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
     const actions = nextActions(state, { waves: state.takeoff.waves as string[][], deps }, fpNow)
     if (!actions.length) return
     for (const a of actions) {
+      // 中途停飞：手上的动作已做完，不再开始新动作（PR #50 评审 HIGH）
+      if ((terminals.get(f.change) ?? 0) !== halts) return
       let progressed: boolean
       try {
         progressed = await perform(ctx, f, state, a, slices)
@@ -601,8 +605,12 @@ async function abortCommand($: Engine, f: Flight, state: State): Promise<string>
       return 'events' in after && after.events.some(e => e.ev === 'halt' && ofA(e))
     },
     async live() {
-      const ended = new Set(state.events.filter(e => e.ev === 'ended').map(e => String(e.agent)))
-      const mine = [...new Set(state.events.filter(e => e.ev === 'dispatch' && ofA(e)).map(e => String(e.agent)))].filter(id => !ended.has(id))
+      // 等手上这轮 drive 做完（它在动作之间已看到停飞），再按最新账本求在飞 agent，免得漏掉中途派出的（PR #50 评审 HIGH）
+      await queue
+      const now = await readLedger(ctx.io, f)
+      const evs = 'events' in now ? now.events : state.events
+      const ended = new Set(evs.filter(e => e.ev === 'ended').map(e => String(e.agent)))
+      const mine = [...new Set(evs.filter(e => e.ev === 'dispatch' && ofA(e)).map(e => String(e.agent)))].filter(id => !ended.has(id))
       const running = new Set((await $.agent.list()).filter(x => LIVE.includes(String(x.status))).map(x => x.id))
       return mine.filter(id => running.has(id))
     },

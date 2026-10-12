@@ -409,6 +409,13 @@ def test_panel_opens_at_takeoff():
     assert_ts_passed("panel-opens-at-takeoff")
 
 
+def test_abort_during_drive_stops_late_dispatch():
+    # Given: 起飞后 drive 派发 S1 执行体时 spawn 被挂起（S2 尚未派发），agent-1 在 agent.list 里 running
+    # When: 人发出 /flight abort demo，halt 写入后放行 spawn（PR #50 评审 HIGH）
+    # Then: drive 只做完手上的 S1 派发、不再派发 S2；agent-1 被 TaskStop 停下
+    assert_ts_passed("abort-during-drive-stops-late-dispatch")
+
+
 def test_flight_command_human_only():
     # Given: 两份账本：demo attempt 1 在飞（agent-1 running）/ demo attempt 1 已停飞
     # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）

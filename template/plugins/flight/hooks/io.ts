@@ -132,6 +132,9 @@ export async function appendEvent(io: Io, f: Flight, event: FlightEvent): Promis
 /** 在飞集合：takeoff 写入后登记，land / halt 写入后移除（design D8）。 */
 export const active: Map<string, ActiveTree> = new Map()
 
+/** 本进程写入 land / halt 的次数（按 change）：drive 在动作之间据此发现中途停飞（PR #50 评审 HIGH）。 */
+export const terminals: Map<string, number> = new Map()
+
 export type Owner = { change: string; role: Role; slice: string; worktree: string }
 
 /** agent 归属缓存：dispatch 写入后登记。 */
@@ -140,7 +143,10 @@ export const owners: Map<string, Owner> = new Map()
 // ceiling: 两张表只在本进程内维护，进程重启后要等下一次 takeoff 才重建在飞集合 -> 需要跨重启强制时，从账本 refs/flight/* 重建
 function remember(f: Flight, e: FlightEvent): void {
   if (e.ev === 'takeoff') active.set(f.change, { change: f.change, changeTree: f.changeTree, slicePrefix: worktreePath(f, '') })
-  else if (e.ev === 'land' || e.ev === 'halt') active.delete(f.change)
+  else if (e.ev === 'land' || e.ev === 'halt') {
+    active.delete(f.change)
+    terminals.set(f.change, (terminals.get(f.change) ?? 0) + 1)
+  }
   else if (e.ev === 'dispatch') {
     owners.set(String(e.agent), { change: f.change, role: e.role as Role, slice: String(e.slice), worktree: String(e.worktree) })
     pending.delete(String(e.agent))
