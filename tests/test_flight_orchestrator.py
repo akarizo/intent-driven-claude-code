@@ -363,7 +363,6 @@ def test_old_session_stops_driving():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_measure_hints_unguarded_pass():
     # Given: demo 在飞，agent-1 是 S1 执行体；测量应答 test_a PASSED、test_b FAILED、source 为空，guards 分别为空与 [test_a]
     # When: agent-1 两次调用 mcp__flight__measure

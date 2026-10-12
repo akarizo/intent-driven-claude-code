@@ -91,8 +91,8 @@ function res(exitCode: number, stdout: string, stderr = ''): Run {
 }
 
 /** slice-gate measure 退出 0 时打印的 JSON */
-function measureJson(slice: string, base: string, outcomes: [string, string][], source: string[]): string {
-  return JSON.stringify({ slice, base, commit: 'c'.repeat(40), outcomes, unmeasurable: [], changed: source, source, tail: '1 passed' })
+function measureJson(slice: string, base: string, outcomes: [string, string][], source: string[], guards: string[] = []): string {
+  return JSON.stringify({ slice, base, commit: 'c'.repeat(40), outcomes, unmeasurable: [], changed: source, source, guards, tail: '1 passed' })
 }
 
 function wrap(r: Run) {
@@ -1247,4 +1247,28 @@ test('measure-unknown-owner-says-retry', async ($, on) => {
   expect(r.deny).toContain('稍后重试')
   expect(r.deny).not.toContain('只有本次飞行的执行体')
   expect(log.runs.slice(runsBefore).filter(isMeasure)).toEqual([])
+})
+
+test('measure-hints-unguarded-pass', async ($, on) => {
+  // Given: demo 已起飞，S1 的 start 打印 base B1，agent-1 是 S1 的执行体；两份测量应答都是
+  //   tests/test_demo.py::test_a PASSED、tests/test_demo.py::test_b FAILED、source 为空，guards 依次为 [] 与 [test_a]
+  const w = demoWorld({ bases: { [SLICE1]: B1 } })
+  useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo' })
+  const outcomes: [string, string][] = [['tests/test_demo.py::test_a', 'PASSED'], ['tests/test_demo.py::test_b', 'FAILED']]
+  const answers = [[], ['tests/test_demo.py::test_a']].map(guards => res(0, measureJson('S1', B1, outcomes, [], guards)))
+
+  // When: agent-1 依次在两份应答下调用 mcp__flight__measure
+  const results: string[] = []
+  for (const a of answers) {
+    w.measures = { S1: a }
+    results.push(String(((await $.tool.call(measureCall('agent-1'))) as { result?: unknown }).result))
+  }
+
+  // Then: 第一次结果含 test_a、「在改生产代码之前就已通过」「护栏」「不要改坏生产代码造红」；第二次结果不含「在改生产代码之前就已通过」
+  expect(results[0]).toContain('tests/test_demo.py::test_a')
+  expect(results[0]).toContain('在改生产代码之前就已通过')
+  expect(results[0]).toContain('护栏')
+  expect(results[0]).toContain('不要改坏生产代码造红')
+  expect(results[1]).not.toContain('在改生产代码之前就已通过')
 })

@@ -132,7 +132,6 @@ def test_prompt_names_previous_branch():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_prompt_forbids_fabricated_red():
     # Given: 一份普通的执行体提示词输入
     # When: 生成执行体提示词
