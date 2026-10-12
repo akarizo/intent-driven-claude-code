@@ -128,10 +128,25 @@ function ctxOf(w: World): { ctx: Ctx; log: Log } {
 
 const foundOf = (log: Log): Found => ({ flight: FLIGHT, events: [...log.ledger] })
 
-/** 推进飞行：按账本算下一批动作，把 final / land / halt 交给 runLandingAction，直到没有这类动作。 */
+/** 全量评审员 W 的一次往返：派发（commit 为 final 的 commit）、评审结果为空列表、结束时实际模型 claude-opus-5-5。 */
+function cleanWholeReview(commit: string): FlightEvent[] {
+  return [
+    event('dispatch', { attempt: 1, slice: 'whole', role: 'reviewer', agent: 'W', model: 'opus', worktree: CT, commit, base: 'b'.repeat(40) }),
+    event('review', { attempt: 1, slice: 'whole', agent: 'W', findings: [] }),
+    event('ended', { attempt: 1, agent: 'W', reason: 'completed', model: 'claude-opus-5-5' }),
+  ]
+}
+
+/** 推进飞行：按账本算下一批动作，把 final / land / halt 交给 runLandingAction；全量评审派发不经 spawn，直接记下 W 以空列表返回；直到没有这类动作。 */
 async function advance(ctx: Ctx, log: Log): Promise<void> {
   for (let round = 0; round < 5; round++) {
-    const acts = next(reduce(log.ledger), PLAN, FP).filter((a: Action) => a.kind === 'final' || a.kind === 'land' || a.kind === 'halt')
+    const all = next(reduce(log.ledger), PLAN, FP)
+    const whole = all.flatMap((a: Action) => (a.kind === 'dispatch' && a.role === 'reviewer' && a.mode === 'whole' ? [a] : []))[0]
+    if (whole) {
+      log.ledger.push(...cleanWholeReview(whole.commit))
+      continue
+    }
+    const acts = all.filter((a: Action) => a.kind === 'final' || a.kind === 'land' || a.kind === 'halt')
     if (!acts.length) return
     for (const a of acts) await runLandingAction(ctx, FLIGHT, a)
   }
@@ -194,17 +209,23 @@ test('fixer-stop-runs-final', async () => {
 })
 
 test('landing-runs-pr-ship', async () => {
-  // Given: S1 已合回且评审结果为空列表，无阻断；change 目录的 timeline.md 有未提交改动；change worktree 里 final 输出 ok true；slice-gate ship 退出 0（ready）
+  // Given: S1 已合回且评审结果为空列表，无阻断；change 目录的 timeline.md 有未提交改动；change worktree 里 final 输出 ok true；全量评审员 W 以空列表返回；slice-gate ship 退出 0（ready）
   const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED] })
 
   // When: 推进飞行
   await advance(ctx, log)
 
-  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 final（ok true）与 land（verdict ready）；状态行被清除；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
+  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 final（ok true）、全量评审 W 的 dispatch / review / ended 与 land（verdict ready）；状态行被清除；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
   const commitAt = log.calls.findIndex(c => c.argv[0] === 'git' && has(c, 'commit', 'chore(flight): 记录'))
   expect(commitAt).toBeGreaterThan(-1)
   expect(commitAt).toBeLessThan(log.calls.indexOf(finals(log)[0]))
-  expect(log.ledger.slice(4)).toMatchObject([{ ev: 'final', ok: true }, { ev: 'land', verdict: 'ready' }])
+  expect(log.ledger.slice(4)).toMatchObject([
+    { ev: 'final', ok: true },
+    { ev: 'dispatch', role: 'reviewer', slice: 'whole' },
+    { ev: 'review', slice: 'whole', findings: [] },
+    { ev: 'ended', agent: 'W' },
+    { ev: 'land', verdict: 'ready' },
+  ])
   expect(log.statuses).toEqual([undefined])
   expect(log.commands).toEqual([`flight:pr-ship --worktree ${CT} --change-dir ${CD} --judges ${HOOKS}`])
 })
@@ -238,7 +259,7 @@ test('landing-stops-when-ledger-unreadable', async () => {
 })
 
 test('landing-prints-flight-record', async () => {
-  // Given: S1 已由 A 合回、R 的评审结果为空列表，A 与 R 结束时实际模型都是 claude-opus-5-5（起飞主模型 opus）；final 绿；timeline report 输出「批准 → apply 完成：12.0 min」
+  // Given: S1 已由 A 合回、R 的评审结果为空列表，A 与 R 结束时实际模型都是 claude-opus-5-5（起飞主模型 opus）；final 绿；全量评审员 W 以空列表返回、实际模型同为 claude-opus-5-5；timeline report 输出「批准 → apply 完成：12.0 min」
   const endedA = event('ended', { attempt: 1, agent: 'A', reason: 'completed', model: 'claude-opus-5-5' })
   const endedR = event('ended', { attempt: 1, agent: 'R', reason: 'completed', model: 'claude-opus-5-5' })
   const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, endedA, MERGED, DISPATCH_R, REVIEWED, endedR], timelineReport: '批准 → apply 完成：12.0 min\n' })
@@ -309,7 +330,7 @@ test('land-handoff-failure-keeps-landing', async () => {
 })
 
 test('flight-record-survives-report-throw', async () => {
-  // Given: S1 已合回且评审结果为空列表、final 绿；timeline report 时 io.run 抛出 Error「spawn ENOENT」
+  // Given: S1 已合回且评审结果为空列表、final 绿、全量评审员 W 以空列表返回；timeline report 时 io.run 抛出 Error「spawn ENOENT」
   const { ctx, log } = ctxOf({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED], timelineThrows: 'spawn ENOENT' })
 
   // When: 推进飞行（final 后执行落地动作）
