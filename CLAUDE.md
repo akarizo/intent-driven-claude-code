@@ -9,7 +9,7 @@
 3. TDD 与留痕：生产代码前必有先失败的测试；测试由可信方运行并留痕（飞行中 = 控制面测量写入账本；飞行外 = hook 写 evidence.log），不接受自述。
 4. 独立评审必有：每个 change 至少一次不带主会话立场的 reviewer；CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁止勾选、禁止声明完成、禁止 PR。
-6. Git 边界：每 change 一间 worktree；不自动 merge、不推 main、不删 worktree；ADR 不可改只 supersede。显式跑 `/opsx-apply` / `/pr-ship` = 授权该命令文档内的 commit · push feature 分支 · 建 PR · 贴 review 评论 · draft↔ready 转换。
+6. Git 边界：每 change 一间 worktree；不自动 merge、不推 main、不删 worktree；ADR 不可改只 supersede。显式跑 `/opsx-apply` / `/flight:pr-ship` = 授权该命令文档内的 commit · push feature 分支 · 建 PR · 贴 review 评论 · draft↔ready 转换。
 7. 两处人类审批不可省：飞行计划批准与 PR review；第一处 = 人在 Claude Code 批准带上按「批准起飞」，flight 插件把计划指纹写入 `refs/flight/<change>/ledger`，`.claude/hooks/takeoff-gate.py` 比对账本指纹与当前计划指纹，模型不得自证。
 8. 度量必打印：每次 apply 收口打印飞行记录；无数据不得声称提速。
 9. 零 token 优先：能用脚本 / hook 判定的不交给模型。

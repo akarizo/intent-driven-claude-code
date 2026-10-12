@@ -461,7 +461,7 @@ install_flight_plugin() {
 # 复制：库自有文件 vs 用户数据
 # ---------------------------------------------------------------------------
 # .claude/：库代码，升级时刷新（但保留用户的 ADR 风格 preferences.md 与用户数据 settings.json）
-# 递归复制已覆盖 commands/ · skills/（含 legacy/）· agents/（code-reviewer）
+# 递归复制已覆盖 commands/ · skills/（含 legacy/）
 # · hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新；飞行调度由 flight 插件控制面负责
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md settings.json"
 # openspec/：用户数据 + 种子目录，绝不覆盖
@@ -562,13 +562,14 @@ cat <<EOF
        openspec schema validate intent-driven
 
 更多:
-  - 15 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 3 个 claudemd-* + /spec-html + /pr-ship）
+  - 14 个 slash command 见 .claude/commands/（10 个 opsx-* 含 /opsx-mini + 3 个 claudemd-* + /spec-html）
+  - /flight:pr-ship 与 flight:code-reviewer 由 flight 插件提供
   - CLAUDE.md 门禁 claudemd-lint：PostToolUse hook 已自动接线（写完当场回灌）
     · 全仓扫描  python3 .claude/hooks/claudemd-lint.py
     · 预算中性  python3 .claude/hooks/claudemd-lint.py --diff-gate --base HEAD --msg-file <f>
     · pre-commit / commit-msg 片段见 .claude/claudemd-standard.md §13b
   - 16 个 skill 见 .claude/skills/（含 test-driven-development、spec-html-render；legacy/ 下 1 个旧的逐 task 守门 skill）
-  - agent 见 .claude/agents/（code-reviewer；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定））
+  - agent 由 flight 插件提供（flight:code-reviewer 与飞行角色；模型按角色显式路由：执行体与评审员 = 会话主模型（session-model.py 判定））
   - apply 默认飞行模式（slices.json 切片 + flight 插件控制面派发 + slice-gate.py 门禁 + 评审离路径）；旧的逐 task 守门用 /opsx-apply --gate=per-task
   - 分级门禁：中级+ 改源码前必须 /opsx-propose 建 5 工件；mini 先 /opsx-mini 留痕（hook 见 .claude/hooks/，需 python3）
   - 插件起飞时用 takeoff-gate 比对账本批准指纹（人在批准带按下「批准起飞」才写入账本，模型自证无效；需 flight@intent-driven 插件）
@@ -592,6 +593,19 @@ if [[ ${#retired_found[@]} -gt 0 ]]; then
   echo
   log_info "以下文件已退役：仍可被调用，且不再受起飞批准拦截，请尽快手动删除（安装器不代删）："
   for rel in "${retired_found[@]}"; do
+    log_info "  $rel"
+  done
+fi
+
+# 已迁入 flight 插件的旧副本：只列出、提示可手动删除，不替用户删
+moved_found=()
+for rel in .claude/commands/pr-ship.md .claude/agents/code-reviewer.md; do
+  if [[ -e "$TARGET/$rel" ]]; then moved_found+=("$rel"); fi
+done
+if [[ ${#moved_found[@]} -gt 0 ]]; then
+  echo
+  log_info "以下文件已迁入 flight 插件（改用 /flight:pr-ship 与 flight:code-reviewer），旧副本不再更新，可手动删除（安装器不代删）："
+  for rel in "${moved_found[@]}"; do
     log_info "  $rel"
   done
 fi
