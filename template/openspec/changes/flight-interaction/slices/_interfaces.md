@@ -128,3 +128,17 @@ export const ev: {
 def key(entry):
 def strip_retired(hook_map):
 ```
+
+## S4
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
+
+### template/plugins/flight/types/index.d.ts
+```
+export type FlightItem = {
+export type FlightBand = {
+export type FlightPanel = {
+```
