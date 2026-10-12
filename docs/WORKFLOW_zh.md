@@ -175,7 +175,10 @@ Rule: Users can export their own data
       G5 只读账本（缺起点测量 / 目标从未测红 / 每次见红都已改生产代码 → 判红）
     → 红了把失败项交回执行体接着修，仍红则该切片 blocked；门禁绿的切片由控制面合回 change 分支
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
-  → slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）→ timeline.py report 打印飞行记录 → 落地交 /flight:pr-ship
+  → slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）→ timeline.py report 打印飞行记录
+  → final 绿后 flight:reviewer 全量评审整条 change 分支 → 有 CRITICAL/HIGH 派 flight:fixer 自动修（至多 2 轮，每轮重跑 final 并复核）
+  → 落地交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
+    （飞行外的 /flight:pr-ship：干净评审员 + 至多一次问询）
 ```
 
 `evidence.log` 是飞行外（主会话修复等）由 hook 写的留痕，飞行中的 G5 不读它。
@@ -232,7 +235,8 @@ git commit -m "propose: add-user-export"
 git checkout -b feat/add-user-export
 /opsx-apply add-user-export
 #   （先在批准带按「批准起飞」）插件起飞检查 → 按 wave 并行派 flight:executor → 控制面跑切片门禁并合回
-#   → flight:reviewer 评审 → flight:fixer 批量修复 → final gate → 打印飞行记录 → /flight:pr-ship
+#   → flight:reviewer 评审 → flight:fixer 批量修复 → final gate → 全量评审与修复（至多 2 轮）
+#   → 打印飞行记录 → /flight:pr-ship（draft 建 PR，ship 工具按账本裁决 draft / ready）
 #   （想要旧的逐 task 阻断式守门：/opsx-apply add-user-export --gate=per-task）
 
 # 4. 实现合回 main 后归档
