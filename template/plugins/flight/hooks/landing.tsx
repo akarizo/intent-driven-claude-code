@@ -158,14 +158,15 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     await append(ev.land(b, { attempt, verdict }))
     await ctx.status(undefined)
     await ctx.log(await flightRecord(io, f, state, `飞行记录 · ${f.change}`))
-    // $.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
-    // 交接失败不停飞：已落地，不向上抛（否则 drive 会补记 halt），只提示人手动接
+    // 交接给插件自带命令 /flight:pr-ship（design D4）；$.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
+    // 交接失败不停飞：已落地，不向上抛（否则 drive 会补记 halt），只提示人带同样参数手动接
+    const args = `--worktree ${f.changeTree} --change-dir ${f.changeDir} --judges ${f.hooksDir}`
     try {
-      await ctx.runCommand('pr-ship', f.change)
+      await ctx.runCommand('flight:pr-ship', args)
     } catch (err) {
       const why = errLine(err)
-      await ctx.log(`落地完成，但接 /pr-ship 失败：${why}`)
-      await ctx.toast(`flight：${f.change} 已落地，但接 /pr-ship 失败：${why}；请手动运行 /pr-ship`)
+      await ctx.log(`落地完成，但接 /flight:pr-ship 失败：${why}`)
+      await ctx.toast(`flight：${f.change} 已落地，但接 /flight:pr-ship 失败：${why}；请手动运行 /flight:pr-ship ${args}`)
     }
     return
   }
