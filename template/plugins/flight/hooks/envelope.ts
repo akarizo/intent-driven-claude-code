@@ -204,7 +204,8 @@ function innerCommand(toks: readonly string[]): string | null | undefined {
   const prog = progName(toks)
   let k = -1
   if (prog === 'eval') k = 0
-  else if (SHELL_PROGS.has(prog)) k = toks.findIndex((t, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(t))
+  // -c 选项词也先 shellWord（`"-c"`、`\-c`，PR #48 评审 HIGH）；含展开的按 -c 处理，宁可多判
+  else if (SHELL_PROGS.has(prog)) k = toks.findIndex((t, i) => i > 0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(shellWord(t) ?? '-c'))
   if (k < 0) return undefined
   const text = toks.slice(k + 1).join(' ')
   const q = text[0]

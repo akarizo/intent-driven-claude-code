@@ -215,3 +215,12 @@ def test_expanded_command_word_undeterminable():
     # When: 判定 $G push、${GIT:-git} push、$(which git) push、`which git` push、git $SUB origin，以及 echo $HOME、git status
     # Then: 前五条都被拒且理由含「无法判定」，后两条不拒
     assert_ts_passed("expanded-command-word-undeterminable")
+
+# ---------------------------------------------------------------- PR #48 评审修复
+
+
+def test_shell_c_option_quoted():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 bash "-c" 'git push'、bash \-c 'git push' 与 sh -c 'git status'
+    # Then: 前两条被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized/shell-c-option")

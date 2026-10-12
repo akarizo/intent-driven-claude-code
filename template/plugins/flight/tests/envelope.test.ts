@@ -638,3 +638,15 @@ test('expanded-command-word-undeterminable', () => {
   expect(v.slice(0, 7).map(x => (x?.deny ?? '').includes('无法判定'))).toEqual([true, true, true, true, true, true, true])
   expect(v.slice(7)).toEqual([undefined, undefined])
 })
+
+test('quoted-command-words-recognized/shell-c-option', () => {
+  // Given: 执行体 worktree 为 W；-c 选项本身带引号或反斜杠的 bash -c 'git push' 两条，与 sh -c 'git status'
+  const cmds = [`bash "-c" 'git push'`, "bash \\-c 'git push'", "sh -c 'git status'"]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前两条被拒且理由含 git push；sh -c 'git status' 不被拒
+  expect(v.slice(0, 2).map(x => (x?.deny ?? '').includes('git push'))).toEqual([true, true])
+  expect(v[2]).toBeUndefined()
+})
