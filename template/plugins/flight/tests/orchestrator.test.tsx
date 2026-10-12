@@ -1355,11 +1355,12 @@ test('flight-abort-stops-agents', async ($, on) => {
   await $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
   await $.turn.complete({ ...ended('agent-1'), reason: 'aborted', isAborted: true } as never)
 
-  // Then: 账本有原因含「人工中止」的 halt；TaskStop 依次停 agent-1、agent-2，且都在 halt 写入之后；之后没有新的 dispatch 或 merge
+  // Then: 账本有原因含「人工中止」的 halt；TaskStop 依次停 agent-1、agent-2，且都在 halt 写入之后；之后没有新的 dispatch 或 merge；状态行已清空（不再显示「运行」）
   const after = log.events.slice(before)
   expect(String(after.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
   expect(log.stops).toEqual([{ id: 'agent-1', halted: true }, { id: 'agent-2', halted: true }])
   expect(after.filter(x => x.ev === 'dispatch' || x.ev === 'merge')).toEqual([])
+  expect(log.statuses.at(-1)).toBe('')
 })
 
 test('abort-during-drive-stops-late-dispatch', async ($, on) => {

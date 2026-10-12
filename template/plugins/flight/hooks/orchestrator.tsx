@@ -246,6 +246,11 @@ function showStatus($: Engine, f: Flight, state: State): void {
   const ended = new Set(state.events.filter(e => e.ev === 'ended').map(e => String(e.agent)))
   const running = state.events.filter(e => e.ev === 'dispatch' && inA(e) && !ended.has(String(e.agent))).length
   $.ui.status(`✈ ${f.change} · W${at < 0 ? waves.length : at + 1}/${waves.length} · 运行 ${running} · 阻断 ${blocked.length}`)
+  refreshPanel($, f, state)
+}
+
+/** 按账本归约刷新飞行面板，不动状态行。 */
+function refreshPanel($: Engine, f: Flight, state: State): void {
   void update($, panel, () => ({ change: f.change, lines: summaryLines(summarize(state)) }))
 }
 
@@ -592,7 +597,7 @@ async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {
   return `${resumed}✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`
 }
 
-/** /flight abort：先在账本记停飞，再停本 attempt 仍在跑的 agent（策略在 abort.ts）；之后刷新状态行与面板。 */
+/** /flight abort：先在账本记停飞，再停本 attempt 仍在跑的 agent（策略在 abort.ts）；之后只刷新面板（停飞已清空状态行）。 */
 async function abortCommand($: Engine, f: Flight, state: State): Promise<string> {
   const ctx = ctxOf($)
   const ofA = (e: Ev) => Number(e.attempt) === state.attempt
@@ -624,7 +629,7 @@ async function abortCommand($: Engine, f: Flight, state: State): Promise<string>
     },
   })
   const after = await readLedger(ctx.io, f)
-  if ('events' in after) showStatus($, f, reduce(after.events))
+  if ('events' in after) refreshPanel($, f, reduce(after.events))
   return text
 }
 
