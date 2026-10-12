@@ -462,12 +462,22 @@ def test_install_removes_retired_hooks(tmp_path):
     assert workflow.is_file()
 
 # ---------------------------------------------------------------- flight-interaction
-# 骨架：S5 实现后去掉 xfail 标记。
+# S5 已实现：xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：尚未实现")
-def test_install_warns_retired_files_unprotected():
+def test_install_warns_retired_files_unprotected(tmp_path):
     # Given: 已装旧版模板、.claude/workflows/opsx-apply.js 仍在的目标项目
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    workflow = target / ".claude" / "workflows" / "opsx-apply.js"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text("// old engine\n", encoding="utf-8")
+
     # When: 以升级方式运行 install.sh
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+
     # Then: 输出列出 .claude/workflows/opsx-apply.js，并含「仍可被调用」与「不再受起飞批准」
-    pytest.fail("骨架：S5 写实断言")
+    assert p.returncode == 0, p.stderr
+    assert ".claude/workflows/opsx-apply.js" in p.stdout, p.stdout
+    assert "仍可被调用" in p.stdout and "不再受起飞批准" in p.stdout, p.stdout

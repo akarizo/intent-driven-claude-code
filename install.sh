@@ -590,7 +590,7 @@ for rel in .claude/workflows/opsx-apply.js .claude/agents/integrator.md \
 done
 if [[ ${#retired_found[@]} -gt 0 ]]; then
   echo
-  log_info "以下文件已退役，可手动删除（安装器不代删）："
+  log_info "以下文件已退役：仍可被调用，且不再受起飞批准拦截，请尽快手动删除（安装器不代删）："
   for rel in "${retired_found[@]}"; do
     log_info "  $rel"
   done
