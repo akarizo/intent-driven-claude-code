@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -421,3 +423,22 @@ def test_flight_command_human_only():
     # When: 以 scheduled-trigger 来源与不带来源分别发出 /flight abort demo（第一份）、/flight resume demo（第二份），再以 scheduled-trigger 来源发出 /flight status demo（第一份）
     # Then: 四次 abort / resume 都回复「只接受人在终端发出」与所见来源，账本无新事件、没有 TaskStop；status 回复含 demo 与 attempt 1
     assert_ts_passed("flight-command-human-only")
+
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
+def test_opsx_apply_registered_or_intercepted():
+    # Given: 两个世界，demo 都已批准、工作区干净：甲的 command.register 照常应答；乙对 opsx-apply 抛「refused: it is the user's /opsx-apply」
+    # When: 各自开始会话，再由人在终端发出 /opsx-apply demo
+    # Then: 甲登记的命令排序后恰为 flight、opsx-apply；乙只登记 flight 且会话开始不抛错；两个世界的回复都含「✈ 起飞 demo」
+    assert_ts_passed("opsx-apply-registered-or-intercepted")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：同名 TS 测试尚未实现")
+def test_ledger_entries_accept_host_origins():
+    # Given: demo 已批准、工作区干净
+    # When: 依次以 scheduled-trigger、不带来源、sdk 发出 /opsx-apply demo，再以 sdk 发出 /flight abort demo
+    # Then: 前两次回复含「只接受人或宿主程序发出」与 scheduled-trigger / 未标明且无新事件；第三次含「✈ 起飞 demo」；第四次后账本有原因含「人工中止」的 halt
+    assert_ts_passed("ledger-entries-accept-host-origins")

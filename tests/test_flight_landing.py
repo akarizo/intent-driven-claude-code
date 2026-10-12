@@ -1,6 +1,8 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -116,3 +118,13 @@ def test_fixer_stop_final_never_reuses():
     # Then: slice-gate.py final 的调用在修复 worktree 里运行，参数不含 --reuse-fix
     assert_ts_passed("fixer-stop-final-never-reuses")
 
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
+def test_landing_hands_off_to_flight_pr_ship():
+    # Given: demo 全部合回、final 绿；change worktree /repo/.worktrees/demo、change 目录 template/openspec/changes/demo、判定器 /repo/template/.claude/hooks
+    # When: 执行落地；另一个世界里运行命令抛「no command named /flight:pr-ship」后执行落地
+    # Then: 运行的命令恰为 flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks；失败时账本末条为 land、toast 含「请手动运行 /flight:pr-ship --worktree /repo/.worktrees/demo」
+    assert_ts_passed("landing-hands-off-to-flight-pr-ship")

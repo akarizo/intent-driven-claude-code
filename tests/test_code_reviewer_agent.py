@@ -1,6 +1,8 @@
 """code-reviewer 与插件执行体定义的静态契约。flight-retire-workflow-engine 的 S6 把 tests/test_agents_workflow.py 里仍有对象的用例迁到这里。"""
 import re
 
+import pytest
+
 from conftest import ROOT
 
 AGENTS = ROOT / "template" / ".claude" / "agents"
@@ -53,3 +55,24 @@ def test_reviewer_flags_symptom_fix():
     # Then: 正确性维度含症状修复（同类输入经其他 caller 仍失败），且既有可维护性维度的重复代码与过度设计条目一条不少
     assert "症状修复" in body and "caller" in body
     assert "重复代码" in body and "过度设计" in body
+
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：pr-ship 与 code-reviewer 尚未迁入插件")
+def test_pr_ship_and_reviewer_live_in_plugin():
+    # Given: 本 change 合入后的仓库
+    plugin = ROOT / "template" / "plugins" / "flight"
+    ship, reviewer = plugin / "commands" / "pr-ship.md", plugin / "agents" / "code-reviewer.md"
+
+    # When: 检查插件与模板下的 pr-ship.md 与 code-reviewer.md
+    in_plugin = [ship.exists(), reviewer.exists()]
+    in_template = [(ROOT / "template" / ".claude" / "commands" / "pr-ship.md").exists(), (AGENTS / "code-reviewer.md").exists()]
+
+    # Then: 只在插件下存在；插件的 pr-ship.md 含 flight:code-reviewer、三个参数与缺省判定器目录，不再派 code-reviewer
+    assert in_plugin == [True, True] and in_template == [False, False], (in_plugin, in_template)
+    text = ship.read_text(encoding="utf-8")
+    for key in ("flight:code-reviewer", "--worktree", "--change-dir", "--judges", ".claude/hooks"):
+        assert key in text, key
+    assert "subagent_type=code-reviewer" not in text

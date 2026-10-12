@@ -481,3 +481,14 @@ def test_install_warns_retired_files_unprotected(tmp_path):
     assert p.returncode == 0, p.stderr
     assert ".claude/workflows/opsx-apply.js" in p.stdout, p.stdout
     assert "仍可被调用" in p.stdout and "不再受起飞批准" in p.stdout, p.stdout
+
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S5：尚未实现")
+def test_install_lists_files_moved_into_plugin(tmp_path):
+    # Given: 已装旧版模板、.claude/commands/pr-ship.md 与 .claude/agents/code-reviewer.md 仍在的目标项目；另一个空目录
+    # When: 以升级方式运行 install.sh；另在空目录做一次全新安装
+    # Then: 升级输出列出两个路径并含「已迁入 flight 插件」与 /flight:pr-ship，两个文件仍在；全新安装后没有这两个文件
+    pytest.fail("骨架：S5 写实断言")

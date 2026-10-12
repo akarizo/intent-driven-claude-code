@@ -273,3 +273,20 @@ def test_schema_requires_gate_test():
     # Then: 写明 gate.test 必填；写明预存红按基线差分、无需手写 deselect
     assert "gate.test" in tasks and "必填" in tasks
     assert "预存红" in tasks and "差分" in tasks and "deselect" in tasks
+
+# ---------------------------------------------------------------- flight-entry-handoff
+# 骨架：S4 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S4：apply 文档尚未指向 /flight:pr-ship")
+def test_apply_docs_point_to_flight_pr_ship():
+    # Given: /opsx-apply 命令与 openspec-apply-change skill
+    docs = [read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")]
+
+    # When: 找不带 flight: 前缀的 /pr-ship
+    bare = [re.findall(r"(?<![\w:])/pr-ship", d) for d in docs]
+
+    # Then: 都没有不带前缀的 /pr-ship、都含 /flight:pr-ship；都写明来源规则（Remote Control 与 SDK）
+    assert bare == [[], []], bare
+    assert all("/flight:pr-ship" in d for d in docs)
+    assert all("Remote Control" in d and "SDK" in d for d in docs)
