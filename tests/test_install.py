@@ -415,3 +415,14 @@ def test_readme_documents_pinned_install():
     assert "--branch stable-v2.0" in section, section
     assert "降级" in section, section
     assert "分支或 tag" in help_out, help_out
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
+def test_install_removes_retired_hooks():
+    # Given: 已装旧版模板的目标：settings 注册三条退役 hook 与一条用户自写的 stop-gate.py --mine；.claude/workflows/opsx-apply.js 存在
+    # When: 以升级方式运行 install.sh
+    # Then: 三条退役注册不在、用户那条仍在；输出含「退役」与 .claude/workflows/opsx-apply.js，该文件仍存在
+    pytest.fail("骨架：S3 写实断言")

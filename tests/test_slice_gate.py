@@ -1770,3 +1770,30 @@ def test_measure_lists_guard_targets(git_repo):
 
     # Then: 输出 JSON 的 guards 为 [T1]
     assert json.loads(p.stdout)["guards"] == [T1], p.stdout + p.stderr
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_checkpoint_is_noop():
+    # Given: 已 start 切片 S1、owns 内有未提交改动的仓库
+    # When: 以 PostToolUse 载荷运行 slice-gate.py checkpoint
+    # Then: 退出 0、stdout 与 stderr 为空，没有 refs/flight/<change>/S1 快照 ref
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_g5_ledger_only():
+    # Given: 已 start 切片 S1、账本无 S1 测量、S1 的 scenario 测试已实现并通过
+    # When: 不带 --evidence 运行 gate，再带 --evidence log 运行
+    # Then: 前者 G5 失败项含「缺少本片起点测量」、门禁 JSON 无 hooks_missing；后者非 0 退出且无门禁 JSON
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_retired_gate_mechanisms_gone():
+    # Given: 账本有 S1 起点与见红测量、S1 已实现并通过的仓库
+    # When: 账本模式运行 gate S1，再运行 start S1 --resume-checkpoint 与 waves
+    # Then: gate 绿、无 refs/flight/<change>/gate-S1、门禁 JSON 无 red_count；后两条命令非 0 退出
+    pytest.fail("骨架：S1 写实断言")

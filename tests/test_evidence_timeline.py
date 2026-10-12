@@ -441,3 +441,30 @@ def test_evidence_skips_ledger_marked_slice(git_repo):
     # Then: 第一次没有写 evidence.log；第二次写了一行 S1
     assert skipped
     assert "\tS1\t" in (change / "evidence.log").read_text(encoding="utf-8")
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_stop_gate_is_noop():
+    # Given: 存在 .openspec-slice 标记、本片门禁未绿的仓库
+    # When: 以 SubagentStop 载荷运行 stop-gate.py
+    # Then: 退出 0、stdout 为空（不 block）
+    pytest.fail("骨架：S2 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_test_evidence_skips_slice_worktrees():
+    # Given: 两个仓库：一个有 .openspec-slice 标记（evidence 为 log），一个在 worktree-demo 分支上无标记
+    # When: 各以跑 pytest 的 Bash 载荷运行 test-evidence.py
+    # Then: 前者 change 目录下没有 evidence.log；后者 demo 的 evidence.log 新增一行
+    pytest.fail("骨架：S2 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_retired_hooks_unregistered():
+    # Given: 本 change 合入后的模板
+    # When: 读取 template/.claude/hooks/hooks.json 的全部命令并检查 session-decompose.py
+    # Then: 命令不含 takeoff-gate.py、checkpoint、stop-gate.py，仍含 test-evidence.py；session-decompose.py 不存在
+    pytest.fail("骨架：S2 写实断言")

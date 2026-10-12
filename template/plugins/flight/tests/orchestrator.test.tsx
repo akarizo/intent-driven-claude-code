@@ -382,6 +382,19 @@ test('engine-workflow-passes-through', async ($, on) => {
   expect(log.events).toEqual([])
 })
 
+test('per-task-passes-through', async ($, on) => {
+  // Given: 插件已加载，世界里 demo 已批准
+  const log = useWorld(on, demoWorld())
+
+  // When: 人发出 /opsx-apply demo --gate=per-task
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo --gate=per-task' })
+
+  // Then: 命令原样到达模型并由它作答（legacy 路径）；账本没有事件
+  expect(log.commands).toEqual(['opsx-apply demo --gate=per-task'])
+  expect(r.text).toBe('from-model')
+  expect(log.events).toEqual([])
+})
+
 test('stop-gate-blocks-red-executor', async ($, on) => {
   // Given: /opsx-apply demo 已起飞，S1 的执行体 A 是 agent-1；它收口时 S1 门禁 ok false、failed [G7 demo#s1]
   const log = useWorld(on, demoWorld({ gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))

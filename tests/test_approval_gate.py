@@ -1,5 +1,6 @@
 """起飞门禁：判据为「账本最新批准指纹 == 当前计划指纹」（scenario: ledger-takeoff-gate#*）。
 转录只作反证（人类在转录里批准过也不再放行）。"""
+import pytest
 import json
 
 from conftest import approve_event, git, ledger_append, make_change, run_hook
@@ -273,3 +274,14 @@ def test_takeoff_hook_guards_workflow_dispatch(git_repo):  # 既有行为守卫�
     r = json.loads(denied.stdout)["hookSpecificOutput"]
     assert r["permissionDecision"] == "deny", r
     assert allowed.returncode == 0 and allowed.stdout.strip() == "", allowed.stdout
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_takeoff_gate_hook_mode_retired():
+    # Given: change demo 未批准；载荷为 args.changeDir 指向 demo 的 Workflow 派发
+    # When: 不带参数运行 takeoff-gate.py 并送入载荷，再以 --change-dir <demo> 运行
+    # Then: 前者退出 0、stdout 为空；后者以 3 退出、输出含「未批准」
+    pytest.fail("骨架：S2 写实断言")

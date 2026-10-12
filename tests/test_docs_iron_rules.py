@@ -180,3 +180,63 @@ def test_measure_adr_and_review_refs():
     for text in docs:
         assert "timeline.py report" in text or "测量" in text
         assert "evidence.log" in text and "回退" in text
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+def _rule(text, n):
+    return next(line for line in text.splitlines() if line.lstrip().startswith("%d. " % n))
+
+
+@pytest.mark.xfail(strict=True, reason="S5：铁律 10 尚未改写")
+def test_iron_rule_10_no_second_implementation():
+    # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
+    texts = [read("CLAUDE.md"), read("template/CLAUDE.md.snippet")]
+
+    # When: 各取第 10 条
+    rules = [_rule(t, 10) for t in texts]
+
+    # Then: 都含「停飞」与「不回退」，都不含「Workflow → Agent」
+    assert all("停飞" in r and "不回退" in r for r in rules), rules
+    assert not any("Workflow → Agent" in r for r in rules), rules
+
+
+@pytest.mark.xfail(strict=True, reason="S5：铁律 3、11 尚未改写")
+def test_iron_rules_3_and_11_updated():
+    # Given: 仓库根 CLAUDE.md 与 template/CLAUDE.md.snippet
+    claude, snippet = read("CLAUDE.md"), read("template/CLAUDE.md.snippet")
+
+    # When: 取两份的第 3 条与 CLAUDE.md 的第 11 条
+    r3 = [_rule(claude, 3), _rule(snippet, 3)]
+    r11 = _rule(claude, 11)
+
+    # Then: 第 3 条都含「飞行外」与 evidence.log、不含「回退路径」；CLAUDE.md 第 11 条含「账本」、不含 --expect-models
+    assert all("飞行外" in r and "evidence.log" in r and "回退路径" not in r for r in r3), r3
+    assert "账本" in r11 and "--expect-models" not in r11, r11
+
+
+@pytest.mark.xfail(strict=True, reason="S5：新 ADR 尚未写")
+def test_adr_records_retirement():
+    # Given: template/openspec/adr/DRAFT-flight-single-implementation.md
+    path = ROOT / "template" / "openspec" / "adr" / "DRAFT-flight-single-implementation.md"
+
+    # When: 读取全文
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    # Then: 已接受，写明取代的两份 ADR 与铁律 10，并说明 --engine=workflow 与停飞
+    for key in ("Status: accepted", "DRAFT-flight-orchestrator-state-machine", "DRAFT-flight-measure-protocol", "铁律 10", "--engine=workflow", "停飞"):
+        assert key in text, key
+
+
+@pytest.mark.xfail(strict=True, reason="S5：README 与 WORKFLOW 文档尚未改写")
+def test_readme_and_workflow_doc_plugin_only():
+    # Given: README.md 与 docs/WORKFLOW_zh.md
+    docs = {rel: read(rel) for rel in ("README.md", "docs/WORKFLOW_zh.md")}
+
+    # When: 逐份找旧引擎的字样
+    stale = {rel: [k for k in ("opsx-apply.js", "integrator", "slice-executor", "session-decompose", "Workflow 前置条件") if k in d] for rel, d in docs.items()}
+
+    # Then: 都不含旧引擎字样；都含 flight@intent-driven 与「停飞」
+    assert stale == {"README.md": [], "docs/WORKFLOW_zh.md": []}, stale
+    assert all("flight@intent-driven" in d and "停飞" in d for d in docs.values())

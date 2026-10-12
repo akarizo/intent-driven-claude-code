@@ -368,3 +368,21 @@ def test_measure_hints_unguarded_pass():
     # When: agent-1 两次调用 mcp__flight__measure
     # Then: 第一次结果含 test_a、「在改生产代码之前就已通过」「护栏」「不要改坏生产代码造红」；第二次不含「在改生产代码之前就已通过」
     assert_ts_passed("measure-hints-unguarded-pass")
+
+# ---------------------------------------------------------------- flight-retire-workflow-engine
+# 骨架：S6（per-task-passes-through 为护栏，已预写、不带 xfail） 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_engine_workflow_refused():
+    # Given: demo 已批准、工作区干净
+    # When: 人发出 /opsx-apply demo --engine=workflow
+    # Then: 插件作答含「旧 Workflow 引擎已删除」与 DRAFT-flight-single-implementation；命令没到达模型，账本无新事件
+    assert_ts_passed("engine-workflow-refused")
+
+
+def test_per_task_passes_through():
+    # Given: demo 已批准（护栏：base 上已成立，规划时预写）
+    # When: 人发出 /opsx-apply demo --gate=per-task
+    # Then: 命令交给模型（插件不作答），账本无新事件
+    assert_ts_passed("per-task-passes-through")
