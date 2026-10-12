@@ -146,7 +146,7 @@ prompt 必须**自包含**（subagent 不带主会话上下文）：
 
 #### 4b. 派 flight:code-reviewer subagent 守门
 
-实现 subagent 返回后（它已 commit 本 task），用 **Agent 工具**（`subagent_type: flight:code-reviewer`）派发。**本 task 净 diff 就是那个 commit**——用两点 diff 精确圈定，不再有歧义：
+实现 subagent 返回后（它已 commit 本 task），先跑 `python3 .claude/hooks/session-model.py` 判定 `<main>`（stdout 即别名；exit 3 = 判不出 → 停下交人工给出别名，禁模型自述），再用 **Agent 工具**（`subagent_type: flight:code-reviewer`、`model: "<main>"`，写法同 `/flight:pr-ship` 第 8 步；不带 `model` 会被插件守卫拒绝）派发。**本 task 净 diff 就是那个 commit**——用两点 diff 精确圈定，不再有歧义：
 
 ```
 背景：review 一个 OpenSpec change 里单个 task 的实现。这是 intent-driven 工作流的逐 task 守门。
@@ -188,7 +188,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
   完成后报告：改了什么、新增哪些复现测试、RED→GREEN 输出、最终 commit SHA。
   ```
 
-  修完派一个 fresh `flight:code-reviewer` 做**聚焦复核**——**不重审整个 task**，只看修复增量与原 finding 是否闭环：
+  修完派一个 fresh `flight:code-reviewer`（`model: "<main>"`，`<main>` 同 4b 由 `python3 .claude/hooks/session-model.py` 判定，exit 3 则停下交人工）做**聚焦复核**——**不重审整个 task**，只看修复增量与原 finding 是否闭环：
 
   ```
   背景：复核一个 OpenSpec change 里某 task 的修复补丁，判断上一轮 code review 挡下的问题是否已闭环。
@@ -240,7 +240,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
   - `暂不 ship，先在本地整合审` — 现在跑一次本地整合审（见下），之后再决定是否 ship。
   - `都跳过` — 直接收口（用户自负其责，收口报告里注明整合审未执行）。
 
-选「暂不 ship」时，派一个 `flight:code-reviewer` subagent 审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）：
+选「暂不 ship」时，派一个 `flight:code-reviewer` subagent（`model: "<main>"`，`<main>` 同 4b 由 `python3 .claude/hooks/session-model.py` 判定，exit 3 则停下交人工）审**整个 change 的累计 diff**（`git diff <BASE_REF>..HEAD`，**两点**——比 apply 开始到现在的全部 commit）：
 
 ```
 背景：对一个 OpenSpec change 做整合审——全部 task 已逐个通过守门，现在只看它们拼起来有没有问题。
@@ -316,6 +316,7 @@ RED→GREEN 证据：<实现 subagent 报告里的测试输出摘要——据此
 | 取 diff 用三点 `A...HEAD` | 逐 task 线性累积用**两点** `A..HEAD`；三点比的是 merge-base 之后，分支场景会取错 |
 | 工作区脏就开工 | 首个 task commit 会裹进无关改动；step 3 先 `git status --short` 验干净 |
 | 实现 subagent 不 commit / 主会话替它 commit | 由实现 subagent 自己在 task 末尾 commit（它最清楚改了什么）；主会话只记起点 SHA |
+| 派 flight:code-reviewer 不带 model | 插件守卫以「派发须显式指定 model（铁律 11）」拒绝；先跑 `session-model.py` 判定 `<main>`，派发显式带 `model: "<main>"` |
 | 实现 subagent 用了只读的 flight:code-reviewer 类型 | 实现要 Write/Edit/Bash，用 `general-purpose`；`flight:code-reviewer` 只给守门 |
 | 修复用 `git commit --amend` | SHA 被改写 → 修复增量区间不可圈定 → 聚焦复核退化成重审整个 task。统一新增独立 `fix:` commit |
 | 守门通过了却不写 `review-log.md` | 后续 review 点读不到已审范围，全量重审，本 skill 的去重设计当场失效。4d 勾 checkbox 与写水位线是同一步 |

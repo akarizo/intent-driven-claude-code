@@ -124,26 +124,29 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
 8. **呼叫干净的 flight:code-reviewer subagent 评审 diff（唯一模式：full）**
 
    ```bash
-   git rev-parse HEAD                        # 记为 REVIEW_HEAD_1
+   git rev-parse HEAD                        # 记为 REVIEW_HEAD_1（SHA，嵌进 prompt；HEAD 不交给子 agent 解析）
    python3 <judges>/session-model.py    # stdout: opus|sonnet|haiku|fable，记为 <main>；exit 3 = 判定不出
    ```
+
+   子 agent 的 shell 不一定在 `<worktree>` 里：prompt 里的 `<worktree>` 写绝对路径，`<abs-change-dir>` = `<change-dir>` 的绝对路径（相对路径按 `<worktree>` 解析）。
 
    用 **Agent 工具**启一个 `subagent_type=flight:code-reviewer`、`model: "<main>"`（`<main>` = `python3 <judges>/session-model.py` 的输出，禁模型自述；判定不出则**停下报告**，让用户显式给出别名后重跑；铁律：派发不得省略 `model`）。该 agent 的 system prompt 已含完整分级 rubric、finding 格式、签名——只传 PR 特有上下文：
 
    ```
    背景: review GitHub/GitLab 上的 PR/MR #<num>。
    仓库: <origin URL>；target: <target>；PR/MR URL: <url>
+   工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）
 
    评审模式: full
    审查范围: 本 PR 相对 target 分支的完整 diff。
    取 diff: 首选 `gh pr diff <num>`（GitHub）或 `glab mr diff <num>`（GitLab）。
-   拉取失败（例如 diff 过大 HTTP 406）→ `git fetch origin <target>` 后 `git diff origin/<target>...HEAD`。
+   拉取失败（例如 diff 过大 HTTP 406）→ `git -C <worktree> fetch origin <target>` 后 `git -C <worktree> diff origin/<target>...<REVIEW_HEAD_1>`（即 `git diff origin/<target>...HEAD`，HEAD 已由主会话解析为 <REVIEW_HEAD_1>）。
    diff 确实为空 → 报告"无变更"并停止。
    两种都拉不到 → 报告"取 diff 失败"并停止，不得报告"无变更"。
 
    参考材料（不重跑测试套件，以此为准）：
-   - 飞行模式：<change-dir>/gate-report.md（各切片门禁 G1–G7 结论）与 `python3 <judges>/timeline.py report` 的门禁红次数和测量统计，均来自账本（G5 先红证据 = 控制面测量）
-   - 飞行外（主会话修复等）：<change-dir>/evidence.log 摘要（RED→GREEN 留痕）
+   - 飞行模式：<abs-change-dir>/gate-report.md（各切片门禁 G1–G7 结论）与 `python3 <judges>/timeline.py report` 的门禁红次数和测量统计，均来自账本（G5 先红证据 = 控制面测量）
+   - 飞行外（主会话修复等）：<abs-change-dir>/evidence.log 摘要（RED→GREEN 留痕）
 
    按你既定的分级标准、finding 格式与签名输出完整 markdown，准备直接贴成 PR/MR 评论。
    monorepo 跨多个 sub-repo 时按 sub-repo 分块组织 finding。
@@ -171,11 +174,12 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR → 
     - 有 CRITICAL/HIGH → 唯一一次 **AskUserQuestion**：『自动修并 push』/『只贴评论交人』；无人应答默认只贴评论。
       - 选「只贴评论交人」（或默认）→ 不修代码：finding 留在 PR 评论里，`review-findings.json.blocking` 保留这些 CRITICAL/HIGH，下文「收尾复裁」的 `ship` 照常裁 draft。
       - 选「自动修并 push」→ 走下面的原有流程（至多 2 轮）。
-    - 自动修：主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 派一个 fresh `subagent_type=flight:code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
+    - 自动修：主会话直接按建议修代码 → 每个独立修复点一个 commit（message 引用 finding 摘要：`fix: 按 review 修 <finding 摘要>`）→ `git push` → 在 worktree 里 `git rev-parse HEAD` 记为 REVIEW_HEAD_本轮（SHA）→ 派一个 fresh `subagent_type=flight:code-reviewer`（`model: "<main>"`，同 step 8 由 `session-model.py` 判定，判定不出则停下报告）走 **`follow-up` 模式**复核：
       ```
       背景: 复核 PR/MR #<num> 的修复补丁。
+      工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）
       评审模式: follow-up
-      审查范围（仅这个范围）: `git diff <REVIEW_HEAD_上一轮>..HEAD`。
+      审查范围（仅这个范围）: `git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>`。
       上一轮的 CRITICAL/HIGH finding（逐条核对是否已闭环）：
       <贴出上一轮报告的 CRITICAL/HIGH 条目>
       按你既定的分级标准输出，结论行明确"通过 / 阻断"，末尾签名。不要修代码。
