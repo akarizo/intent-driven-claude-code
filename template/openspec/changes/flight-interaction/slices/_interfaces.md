@@ -9,3 +9,10 @@ export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guar
 export async function checkPluginCopy(io: Io, x: { pluginRoot: string; configDir: string; mainTree: string }): Promise<VersionCheck> {
 export async function checkJudges(io: Io, x: { hooksDir: string; required: readonly string[] }): Promise<VersionCheck> {
 ```
+
+## S6
+
+### template/plugins/flight/hooks/abort.ts
+```
+export async function abortFlight(x: {
+```
