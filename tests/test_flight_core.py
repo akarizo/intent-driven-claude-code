@@ -137,7 +137,6 @@ def test_old_plan_gate_not_regated():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_gate_from_other_agent_not_regated():
     # Given: attempt 1 派 S1 执行体 a1，attempt 2（同指纹）续派 a2，之后 a1 的绿门禁（base b1）才记入；attempt 3 同指纹起飞
     # When: 求 attempt 3 的下一批动作

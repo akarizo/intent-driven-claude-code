@@ -428,3 +428,26 @@ test('dispatch-records-branch', () => {
   // Then: 依次为 flight/demo/S1-a2、flight/demo/S3、空串
   expect(branches).toEqual(['flight/demo/S1-a2', 'flight/demo/S3', ''])
 })
+
+test('gate-from-other-agent-not-regated', () => {
+  // Given: waves [[S1, S2]]；attempt 1（指纹 F）派发 S1 执行体 a1，attempt 2（指纹 F）续派 S1 执行体 a2；
+  //   之后才记入 a1 的绿门禁（base b1）；attempt 3 仍以指纹 F 起飞
+  const evs = [
+    approve,
+    ev.takeoff(B, { attempt: 1, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.takeoff(B, { attempt: 2, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+    dispatch(2, 'S1', 'executor', 'a2'),
+    ev.gate(B, { attempt: 1, agent: 'a1', slice: 'S1', ok: true, commit: 'c-S1', failed: [], base: 'b1' }),
+    ev.takeoff(B, { attempt: 3, fp: F, branch: 'worktree-demo', waves: ONE.waves, model: 'opus' }),
+  ]
+
+  // When: 以指纹 F 求 attempt 3 的下一批动作
+  const got = next(reduce(evs), ONE, F)
+
+  // Then: S1 不拿 a1 的绿门禁补跑：是带续接说明（上一次飞行中断，无失败项）、不带 base 的派发；S2 是新派发
+  expect(got).toEqual([
+    { kind: 'dispatch', role: 'executor', slice: 'S1', continuation: { reason: '上一次飞行中断', failed: [] } },
+    { kind: 'dispatch', role: 'executor', slice: 'S2' },
+  ])
+})

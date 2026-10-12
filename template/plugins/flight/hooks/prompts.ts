@@ -27,6 +27,7 @@ export function executorPrompt(x: {
     `切片包：${slicePack(x.changeDir, x.slice)}（scenario、owns、verify、接口摘要都在里面，先读它）。`,
     `按切片包 TDD 实现；${OWNS_NOTE}每切片一个 commit。`,
     '写好测试后、改生产代码前，调用 `measure` 工具让控制面测一次并看它红；自己跑的测试不算证据。',
+    '某个目标在改生产代码前测量就已通过（且不是护栏）时，不得改坏生产代码来造红：照实收口，写明是哪个 scenario。',
   ]
   if (x.previous) {
     lines.push(
