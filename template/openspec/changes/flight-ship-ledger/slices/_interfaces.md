@@ -311,3 +311,5 @@ export function summarize(state: State): FlightSummary {
 export function summaryLines(s: FlightSummary): string[] {
 export const ev: {
 ```
+
+## S6
