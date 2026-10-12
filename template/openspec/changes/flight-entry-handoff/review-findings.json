@@ -1,21 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/commands/pr-ship.md",
-      "line": 136,
-      "summary": "新通则只要求主会话的 git、gh 与判定器命令用 (cd <worktree> && …) 运行，但第 8 步与第 10 步派给 flight:code-reviewer 的 prompt 没带 worktree 路径，取 diff 时仍写裸 HEAD：回退路径是 `git diff origin/<target>...HEAD`，follow-up 主路径是 `git diff <REVIEW_HEAD_上一轮>..HEAD`。按插件模块边界的经验，子 agent 的 shell 跟随主会话当前目录（需进一步确认）。飞行落地时主会话的 cwd 不是 --worktree，HEAD 就会解析成主仓库当前分支：回退路径可能得到空 diff 并误报「无变更」；follow-up 复核拿到的 diff 与修复补丁无关，可能对没审过的东西判「通过」，进而影响收尾复裁的 ready/draft。",
-      "fix": "第 8 步与第 10 步的 reviewer prompt 各加一行「工作目录: <worktree>（所有 git 命令以 git -C <worktree> 运行，读文件用 <worktree> 下的绝对路径）」。HEAD 不再交给子 agent 解析，改为主会话在 worktree 里先 `git rev-parse HEAD` 拿到 SHA，再嵌进 prompt。第 8 步：`git -C <worktree> diff origin/<target>...<REVIEW_HEAD_1>`。第 10 步：`git -C <worktree> diff <REVIEW_HEAD_上一轮>..<REVIEW_HEAD_本轮>`。参考材料里的 <change-dir> 也写成绝对路径。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md",
-      "line": 149,
-      "summary": "legacy 逐 task 守门把派发类型改成了 `subagent_type: flight:code-reviewer`（4b 第 149 行、聚焦复核第 191 行、整合审第 243 行），但全文没有一处要求显式传 `model`。插件的 spawnVerdict（template/plugins/flight/hooks/envelope.ts:513）对所有 `flight:*` 派发、也包括主会话可派的 flight:code-reviewer，都会以「派发须显式指定 model（铁律 11）」拒绝。原来的项目 agent `code-reviewer` 不受这个守卫约束；全新安装的项目又已经没有那个文件。结果是 `--gate=per-task` 每次派守门员都会被拒，legacy 模式整体失效。只改了名字，派发契约没有跟着改。",
-      "fix": "在 4b、聚焦复核、整合审三处派发说明里都加上：先跑 `python3 .claude/hooks/session-model.py` 判定 `<main>`（exit 3 = 判不出，停下交人工），派发 Agent 时显式带 `model: \"<main>\"`，写法与 `/flight:pr-ship` 第 8 步一致。在 Guardrails 或常见错误表里补一行「派 flight:code-reviewer 不带 model 会被插件守卫拒绝」。如有必要，在 tests/test_flight_entry_docs.py 加一条断言：legacy skill 里每处派 flight:code-reviewer 都配有 model。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "LOW",
