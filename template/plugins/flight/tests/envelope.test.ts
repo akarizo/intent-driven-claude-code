@@ -617,13 +617,24 @@ test('quoted-command-words-recognized', () => {
 })
 
 test('expanded-command-word-undeterminable', () => {
-  // Given: 执行体 worktree 为 W；命令名为 $G、${GIT:-git}、$(which git)、`which git` 的四条 git push，子命令为 $SUB 的 git 调用，与 echo $HOME、git status
-  const cmds = ['$G push', '${GIT:-git} push', '$(which git) push', '`which git` push', 'git $SUB origin', 'echo $HOME', 'git status']
+  // Given: 执行体 worktree 为 W；命令名为 $G、${GIT:-git}、$(which git)、`which git` 的四条 git push，子命令为 $SUB 的 git 调用，
+  //        前面有转义反引号或单引号里反引号、再接 `which git` push 的两条，与 echo $HOME、git status
+  const cmds = [
+    '$G push',
+    '${GIT:-git} push',
+    '$(which git) push',
+    '`which git` push',
+    'git $SUB origin',
+    'echo \\` ; `which git` push',
+    "echo '`' ; `which git` push",
+    'echo $HOME',
+    'git status',
+  ]
 
   // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
   const v = cmds.map(c => bashVerdict('executor', c, W, M))
 
-  // Then: 前五条被拒且理由含「无法判定」；后两条不被拒
-  expect(v.slice(0, 5).map(x => (x?.deny ?? '').includes('无法判定'))).toEqual([true, true, true, true, true])
-  expect(v.slice(5)).toEqual([undefined, undefined])
+  // Then: 前七条被拒且理由含「无法判定」；后两条不被拒
+  expect(v.slice(0, 7).map(x => (x?.deny ?? '').includes('无法判定'))).toEqual([true, true, true, true, true, true, true])
+  expect(v.slice(7)).toEqual([undefined, undefined])
 })
