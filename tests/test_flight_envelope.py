@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -249,7 +247,6 @@ def test_shell_reserved_words_stripped():
 # 骨架：S3 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S3：同名 TS 测试尚未实现")
 def test_main_session_spawns_code_reviewer():
     # Given: 派发守卫 spawnVerdict
     # When: 判定四种派发：主会话带 model 派 flight:code-reviewer / 主会话不带 model / 在飞 agent 带 model / 主会话带 model 派 flight:reviewer
