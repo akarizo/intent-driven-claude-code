@@ -268,3 +268,46 @@ def minutes(a, b):
 def report(change_dir):
 def main():
 ```
+
+## S5
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export function registerOrchestrator(on: On): void {
+```
+
+### template/plugins/flight/hooks/versions.ts
+```
+export type VersionCheck = { ok: true; line: string } | { ok: false; reason: string }
+export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guards', 'ship-ledger'] as const
+export async function checkPluginCopy(io: Io, x: { pluginRoot: string; configDir: string; mainTree: string }): Promise<VersionCheck> {
+export async function checkJudges(io: Io, x: { hooksDir: string; required: readonly string[] }): Promise<VersionCheck> {
+```
+
+### template/plugins/flight/hooks/core.ts
+```
+export type Role = 'executor' | 'reviewer' | 'fixer' | 'resolver'
+export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+export type Finding = { severity: Severity; file: string; line: number; summary: string; fix: string }
+export type GateJson = { slice: string; ok: boolean; commit: string; failed: string[]; warnings?: string[]; ceilings?: unknown[]; base?: string; summary?: string }
+export type FlightEvent = { v: 1; ev: string; change: string; at: string; by: { plugin: 'flight'; session: string }; [k: string]: unknown }
+export type Plan = { waves: string[][]; deps: Record<string, string[]> }
+export type Flight = { change: string; mainTree: string; changeTree: string; changeDir: string; branch: string; hooksDir: string; model: string; session: string }
+export type RunResult = { exitCode: number; stdout: string; stderr: string }
+export interface Io {
+export type Found = { flight: Flight; events: FlightEvent[] }
+export interface Ctx {
+export type Action =
+export type State = { readonly events: readonly Ev[]; readonly attempt: number; readonly takeoff: Ev | undefined }
+export function reduce(events: readonly FlightEvent[]): State {
+export function currentAttempt(state: State): number {
+export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number; branch: string; base?: string } | undefined {
+export function stopVerdict(state: State, agent: string, gate: GateJson): { kind: 'block'; text: string } | { kind: 'accept' } {
+export function next(state: State, plan: Plan, fpNow: string): Action[] {
+export function routingFindings(state: State): Finding[] {
+export type SliceRow = {
+export type FlightSummary = {
+export function summarize(state: State): FlightSummary {
+export function summaryLines(s: FlightSummary): string[] {
+export const ev: {
+```
