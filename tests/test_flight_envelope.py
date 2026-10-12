@@ -236,3 +236,9 @@ def test_double_quoted_backtick_denied():
     # When: 判定 "`which git`" push origin x 与 W 内的 git commit -m "`cat msg`"
     # Then: 前者被拒且理由含「无法判定」，后者不拒
     assert_ts_passed("expanded-command-word-undeterminable/double-quoted-backtick")
+
+def test_shell_reserved_words_stripped():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 then / do / else / time / if 之后的 git push 五条，与 if true; then git status; fi
+    # Then: 前五条被拒，最后一条不拒
+    assert_ts_passed("shell-reserved-words-stripped")

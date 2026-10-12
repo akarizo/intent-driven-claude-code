@@ -680,3 +680,22 @@ test('expanded-command-word-undeterminable/double-quoted-backtick', () => {
   expect(v[0]?.deny ?? '').toContain('无法判定')
   expect(v[1]).toBeUndefined()
 })
+
+test('shell-reserved-words-stripped', () => {
+  // Given: 执行体 worktree 为 W；git push 跟在 then、do、else、time 与 if 之后的五条，与 if true; then git status; fi
+  const cmds = [
+    'if true; then git push origin x; fi',
+    'while true; do git push; done',
+    'if false; then :; else git push; fi',
+    'time git push',
+    'if git push; then :; fi',
+    'if true; then git status; fi',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前五条都被拒且理由含 git push；最后一条不被拒
+  expect(v.slice(0, 5).map(x => (x?.deny ?? '').includes('git push'))).toEqual([true, true, true, true, true])
+  expect(v[5]).toBeUndefined()
+})

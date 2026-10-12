@@ -29,6 +29,8 @@ const PREFIX_OPTS: ReadonlyMap<string, { flags: readonly string[]; withArg: read
 ])
 /** 带 `-c` 时把其后文本当命令执行的 shell */
 const SHELL_PROGS = new Set(['bash', 'sh', 'zsh'])
+/** 段首可剥掉的 shell 保留字（其后才是命令名）；`time` 另带可选的 `-p` */
+const RESERVED_WORDS = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', 'time', '!', '{'])
 /** git config 的只读用法（flight-envelope-tightening D3）；其余用法一律拒绝 */
 const CONFIG_READ = new Set(['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'])
 /** 读标准输入会挂起的解释器（D3）：python、python3、python3.x、node、bash、sh、zsh、ruby、perl */
@@ -114,7 +116,7 @@ function denySegments(command: string): string[] {
 }
 
 /**
- * 段的词（按空白切）：去掉前导 `{`、`!`、`VAR=val`，以及 PREFIX_OPTS 里的前缀命令和其后的已知选项（带参数的连同参数）与 `VAR=val`。
+ * 段的词（按空白切）：去掉前导 shell 保留字（RESERVED_WORDS，含 `{`、`!`）、`VAR=val`，以及 PREFIX_OPTS 里的前缀命令和其后的已知选项（带参数的连同参数）与 `VAR=val`。
  * hasEnv 标记剥掉过任何前缀（bashUpgradable 据此不免询问，故剥前缀只会更严）；envKeys 为剥掉的赋值键名；
  * chdir 为 `env -C` / `--chdir` 的参数（未去引号）；unknownOpt 为剥前缀时遇到的不认识选项（此时 toks 为空，调用方须拒绝）。
  * `env -S` / `--split-string` 的参数就是命令文本：去引号后接回词序列继续剥，而不是丢掉（丢掉会漏判其中的 git）。
@@ -122,6 +124,10 @@ function denySegments(command: string): string[] {
  */
 function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[]; chdir?: string; unknownOpt?: string } {
   let toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+  // 段首的 shell 保留字之后才是命令名（`then git push`、`do git push`、`time git push`，PR #48 评审）；只认不带引号的原词
+  let reserved = 0
+  while (reserved < toks.length && (RESERVED_WORDS.has(toks[reserved]) || (toks[reserved] === '-p' && toks[reserved - 1] === 'time'))) reserved++
+  toks = toks.slice(reserved)
   const envKeys: string[] = []
   let chdir: string | undefined
   let prefix: { flags: readonly string[]; withArg: readonly string[] } | undefined
@@ -158,7 +164,7 @@ function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: str
     const arg = val ?? toks[++i] ?? ''
     if (opt === '-C' || opt === '--chdir') chdir = arg
   }
-  return { toks: toks.slice(i), hasEnv: i > 0, envKeys, chdir }
+  return { toks: toks.slice(i), hasEnv: i > 0 || reserved > 0, envKeys, chdir }
 }
 
 /**
