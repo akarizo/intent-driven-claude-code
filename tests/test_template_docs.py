@@ -25,9 +25,9 @@ def test_apply_command_zero_prompts():
     ship = text.index("/pr-ship", launch)
     middle = text[launch:ship]
 
-    # Then: 含 lint→waves→Workflow→回退→收 JSON→收口分解→pr-ship 的要素；启动到 pr-ship 之间无 AskUserQuestion；保留 --gate=per-task 指向 legacy；不再有模式问询与水位线
-    assert "Workflow" in middle and "useAgentTypes" in middle and "回退" in middle
-    assert "session-decompose" in middle and "timeline.py record approve" in middle
+    # Then: 含 lint→preflight→派发与收口门禁→pr-ship 的插件路径要素；不再有旧引擎的 Workflow 参数与收口分解；启动到 pr-ship 之间无 AskUserQuestion；保留 --gate=per-task 指向 legacy；不再有模式问询与水位线
+    assert "slice-gate.py preflight" in middle and "flight:executor" in middle and "门禁" in middle
+    assert "useAgentTypes" not in text and "session-decompose" not in text
     assert "AskUserQuestion" not in middle
     assert "--gate=per-task" in text and "legacy" in text
     assert "水位线" not in text and "整合审" not in text
@@ -40,9 +40,9 @@ def test_pr_ship_single_review():
     # When: 统计 AskUserQuestion 出现次数并检查评审输入
     asks = text.count("AskUserQuestion")
 
-    # Then: 问询至多 1 处；评审输入含 gate-report.md 与 evidence.log 并声明不重跑测试；自动修复至多 2 轮；无水位线
+    # Then: 问询至多 1 处；评审输入含 gate-report.md 与飞行外的 evidence.log 并声明不重跑测试；自动修复至多 2 轮；无水位线
     assert asks <= 1, asks
-    assert "gate-report.md" in text and "evidence.log" in text and "不重跑测试" in text
+    assert "gate-report.md" in text and "evidence.log" in text and "飞行外" in text and "不重跑测试" in text
     assert re.search(r"(至多|最多|≤)\s*2\s*轮", text)
     assert "水位线" not in text and "review-log" not in text
     assert text.count('model: "<main>"') >= 2, "code-reviewer 派发（首审与复核）都必须显式带 model"
@@ -100,14 +100,14 @@ def test_git_discipline_wave_parallel_carveout():
     section = text[text.index("## Worktree Isolation"):text.index("## Gates")]
 
     # When: 检查该节文字
-    # Then: 核心禁令原文保留（禁止嵌套子 worktree）；新增 carve-out 说明 wave 内并行切片的临时 worktree
-    #       由 Workflow/Agent 运行时创建与清理、由 integrator 合回、不 push / 不 merge main，
-    #       与 opsx-apply.js 的 isolation: worktree 并行机制不再自相矛盾
+    # Then: 核心禁令原文保留（禁止嵌套子 worktree）；carve-out 写明插件为每片开的 worktree 路径、分支、续飞另起名，
+    #       由控制面合回、执行体只在自己的 worktree 提交、不 push；不再有 integrator / isolation 旧说法
     assert "禁止为单个 task 各开 worktree，也禁止在 change worktree 内再嵌套子 worktree" in section
-    assert "wave" in section and "isolation" in section
-    assert "integrator" in section
-    assert "运行时" in section
+    assert ".claude/worktrees/flight-<change>-<S>" in section and "flight/<change>/<S>" in section
+    assert "<S>-a<attempt>" in section
+    assert "控制面" in section and "自己的 worktree" in section
     assert "不 push" in section
+    assert "integrator" not in section and "isolation" not in section
 
 
 # ---------------------------------------------------------------- 起飞判据（scenario: model-routing#apply-resolves-main-model /
@@ -122,13 +122,12 @@ def test_apply_resolves_main_model():
     # When: 检查两份文件里 <main> 的来源与失败处置
     texts = [cmd, skill]
 
-    # Then: <main> 取自 session-model.py；判定失败停下报告并提示 --model=；.flight 记录路由与来源；收口带 --expect-models；不再有"看 /model"式自述
+    # Then: <main> 取自 session-model.py；判不出不起飞并提示 --model=；不再有"看 /model"式自述；旧引擎的 --expect-models 与 .flight 已删
     for t in texts:
         assert "session-model.py" in t
         assert "看 `/model`" not in t
-        assert "--expect-models" in t
-    assert "--model=" in cmd and "停下报告" in cmd
-    assert ".flight" in cmd and '"models"' in cmd
+        assert "--expect-models" not in t and ".flight`" not in t
+    assert "--model=" in cmd and "不起飞" in cmd
 
 
 def test_pr_ship_resolves_main_model():
@@ -149,16 +148,14 @@ def test_apply_checks_approval_gate():
     cmd = read(CMD / "opsx-apply.md")
     skill = read(SKILLS / "openspec-apply-change" / "SKILL.md")
 
-    # When: 切出 step 0「批准自检」实体（step 1「选 change」之前），而非开头的流程摘要句
-    assert "0. **批准自检" in cmd, "step 0 批准自检整块缺失"
-    step0 = cmd[cmd.index("0. **批准自检"): cmd.index("1. **选 change**")]
+    # When: 两份各自切出写到 takeoff-gate 的那一行
+    lines = [next((ln for ln in t.splitlines() if "takeoff-gate" in ln), "") for t in (cmd, skill)]
 
-    # Then: step 0 内实跑 takeoff-gate.py --change-dir 并交出 spec.html、不问询；门禁调用早于 step 1；skill 一致；approve 事件带批准证据
-    assert "takeoff-gate.py --change-dir" in step0 and "spec.html" in step0
-    assert "AskUserQuestion" not in step0
-    assert cmd.index("takeoff-gate.py") < cmd.index("1. **选 change**")
-    assert "takeoff-gate.py" in skill
-    assert "record approve" in cmd and "批准证据" in cmd
+    # Then: 两份那一行都写明起飞时插件以 takeoff-gate 比对账本批准指纹、未批准不起飞并交出 spec.html，且不问询
+    for ln in lines:
+        assert "插件" in ln and "账本" in ln and "指纹" in ln, ln
+        assert "未批准" in ln and "不起飞" in ln and "spec.html" in ln, ln
+        assert "AskUserQuestion" not in ln, ln
 
 
 # ---------------------------------------------------------------- flight-preflight-and-retry（scenario: flight-doc-contracts#*）
@@ -214,47 +211,9 @@ def test_schema_verify_excludes_typecheck():
     assert "gate.typecheck" in rules and "gate.lint" in rules
 
 
-# ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#apply-docs-pass-branch ·
-# flight-doc-contracts#fallback-effort-from-frontmatter · review-diff-fallback#*）
-# S3 已解锁。
+# ---------------------------------------------------------------- flight-wave-fixes（scenario: review-diff-fallback#*）
 
 AGENTS = ROOT / "template" / ".claude" / "agents"
-
-
-def apply_docs():
-    return read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")
-
-
-def fallback(t):
-    """apply 命令 / skill 的回退路径段：从「Workflow 不可用」到「两条路径」。"""
-    return t[t.index("Workflow 不可用"):t.index("两条路径")]
-
-
-def test_apply_docs_pass_branch():
-    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
-    cmd, skill = apply_docs()
-
-    # When: 取两者全文与回退路径段
-    fallbacks = [fallback(t) for t in (cmd, skill)]
-
-    # Then: 两者的 Workflow args 用 branch（取自 git branch --show-current），全文不再出现 expectHead；回退段含 --expect-branch 与「原样」
-    for t, fb in zip((cmd, skill), fallbacks):
-        assert 'branch: "<git branch --show-current>"' in t
-        assert "expectHead" not in t
-        assert "--expect-branch" in fb and "原样" in fb
-
-
-def test_fallback_effort_from_frontmatter():
-    # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
-    cmd, skill = apply_docs()
-
-    # When: 取两者的回退路径段
-    fallbacks = [fallback(t) for t in (cmd, skill)]
-
-    # Then: 回退段都不把 effort 写成 Agent 派发参数（无 effort: high / effort: low），并写明 effort 由 agent frontmatter 决定
-    for fb in fallbacks:
-        assert "effort: high" not in fb and "effort: low" not in fb, fb
-        assert "frontmatter" in fb
 
 
 def test_pr_ship_review_diff_fallback():
