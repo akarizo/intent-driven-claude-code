@@ -80,6 +80,7 @@ const EVENTS: Record<string, Record<string, Check>> = {
     outcomes: [x => Array.isArray(x) && x.every(isOutcome), '不是合法的 outcomes 数组'],
     changed: STRS, source: STRS,
   },
+  ship: { attempt: ATTEMPT, pr: NONEMPTY, verdict: oneOf('ready', 'draft'), commit: STR },
 }
 
 /** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */
