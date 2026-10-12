@@ -165,14 +165,20 @@ test('core-reviews-fixes-then-finals', () => {
     ev.merge(B, { attempt: 1, slice: 'fix', ok: true, commit: 'm-fix', failed: [] }),
   ]
   const s3 = [...s2, ev.final(B, { attempt: 1, ok: true, commit: 'c-final', failed: [] })]
+  const s4 = [
+    ...s3,
+    ev.dispatch(B, { attempt: 1, slice: 'whole', role: 'reviewer', agent: 'w0', model: OPUS, worktree: '/wt/whole', commit: 'c-final' }),
+    ev.review(B, { attempt: 1, slice: 'whole', agent: 'w0', findings: [] }),
+  ]
 
-  // When: 对三个快照各求一次下一批动作
-  const got = [s1, s2, s3].map(evs => next(reduce(evs), ONE, F))
+  // When: 对四个快照各求一次下一批动作
+  const got = [s1, s2, s3, s4].map(evs => next(reduce(evs), ONE, F))
 
-  // Then: ① 派发修复 agent，findings 只含那条 HIGH；② 跑 final；③ 落地
+  // Then: ① 派发修复 agent，findings 只含那条 HIGH；② 跑 final；③ final 绿后派全量评审；④ 全量评审无 finding 后落地
   expect(got[0]).toEqual([{ kind: 'dispatch', role: 'fixer', findings: [high] }])
   expect(got[1]).toEqual([{ kind: 'final' }])
-  expect(got[2]).toEqual([{ kind: 'land' }])
+  expect(got[2]).toEqual([{ kind: 'dispatch', role: 'reviewer', slice: 'whole', mode: 'whole', commit: 'c-final', prior: [high] }])
+  expect(got[3]).toEqual([{ kind: 'land' }])
 })
 
 test('core-halts-on-final-red', () => {
@@ -477,6 +483,107 @@ test('summary-from-ledger', () => {
     'S1 W1 已合回 · 门禁红 0 · 测量 - · 评审 1 条（CRITICAL/HIGH 1）',
     'S2 W1 门禁红（1 次） · 门禁红 1 · 测量 - · 评审 未开始',
     'S3 W2 待派 · 门禁红 0 · 测量 - · 评审 未开始',
-    '修复 未派 · final 未跑',
+    '修复 未派 · final 未跑 · 全量评审 未开始',
+  ])
+})
+
+// scenario 来源：spec flight-whole-review（flight-ship-ledger）
+const ONE_S1: Plan = { waves: [['S1']], deps: {} }
+const H1 = { severity: 'HIGH' as const, file: 'a.ts', line: 3, summary: 'H1', fix: 'f1' }
+const W1 = { severity: 'HIGH' as const, file: 'b.ts', line: 4, summary: 'W1', fix: 'w1' }
+const W2 = { severity: 'HIGH' as const, file: 'c.ts', line: 5, summary: 'W2', fix: 'w2' }
+const W3 = { severity: 'HIGH' as const, file: 'd.ts', line: 6, summary: 'W3', fix: 'w3' }
+const L1 = { severity: 'LOW' as const, file: 'e.ts', line: 7, summary: 'L1', fix: 'l1' }
+const finalOk = (commit: string) => ev.final(B, { attempt: 1, ok: true, commit, failed: [] })
+const wholeDispatch = (slice: string, agent: string, commit: string) =>
+  ev.dispatch(B, { attempt: 1, slice, role: 'reviewer', agent, model: OPUS, worktree: `/wt/${slice}`, commit })
+/** 修复轮：修复体派发、收口门禁绿、结束 */
+const fixRound = (slice: string, agent: string) => [dispatch(1, slice, 'fixer', agent), gate(1, agent, slice, []), ended(1, agent)]
+/** S1 已合回，切片评审 1 条 HIGH H1，fix 已合回；本 attempt final 绿（c9） */
+const shipBase = (): FlightEvent[] => [
+  approve,
+  takeoff(1, ONE_S1.waves),
+  ...landed(1, 'S1', 'a1'),
+  dispatch(1, 'S1', 'reviewer', 'r1'),
+  ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [H1] }),
+  ended(1, 'r1'),
+  ...fixRound('fix', 'X'),
+  merged(1, 'fix'),
+  finalOk('c9'),
+]
+
+test('whole-review-before-landing', () => {
+  // Given: 三份账本：① shipBase（final 绿 c9，未派全量评审）；② ① 加 whole 评审员 w0（commit c9）派发与无 finding 的 review；
+  //   ③ ① 只追加 blocked review:whole（infra，评审未返回：w0）
+  const s1 = shipBase()
+  const s2 = [...s1, wholeDispatch('whole', 'w0', 'c9'), ev.review(B, { attempt: 1, slice: 'whole', agent: 'w0', findings: [] })]
+  const s3 = [...s1, ev.blocked(B, { attempt: 1, slice: 'review:whole', kind: 'infra', reason: '评审未返回：w0' })]
+
+  // When: 对三份账本各求一次下一批动作
+  const got = [s1, s2, s3].map(evs => next(reduce(evs), ONE_S1, F))
+
+  // Then: ① 恰为派发评审员（slice whole、mode whole、commit c9、prior [H1]）；② 恰为 land；③ 恰为 land
+  expect(got[0]).toEqual([{ kind: 'dispatch', role: 'reviewer', slice: 'whole', mode: 'whole', commit: 'c9', prior: [H1] }])
+  expect(got[1]).toEqual([{ kind: 'land' }])
+  expect(got[2]).toEqual([{ kind: 'land' }])
+})
+
+test('fix-rounds-capped-at-two', () => {
+  // Given: shipBase 后 whole 评审 w0（commit c9）给 1 条 HIGH W1；依次追加的六个快照：
+  //   ① 到此为止；② fix-r1 修复体 X1 门禁绿并结束；③ fix-r1 合回；④ final 绿 c10；
+  //   ⑤ whole-r1 评审 w1（commit c10）给 HIGH W2 并结束；⑥ fix-r2 修复体 X2 门禁绿、结束、合回，final 绿 c11，whole-r2 评审 w2（commit c11）给 HIGH W3 并结束
+  const s1 = [...shipBase(), wholeDispatch('whole', 'w0', 'c9'), ev.review(B, { attempt: 1, slice: 'whole', agent: 'w0', findings: [W1] }), ended(1, 'w0')]
+  const s2 = [...s1, ...fixRound('fix-r1', 'X1')]
+  const s3 = [...s2, merged(1, 'fix-r1')]
+  const s4 = [...s3, finalOk('c10')]
+  const s5 = [...s4, wholeDispatch('whole-r1', 'w1', 'c10'), ev.review(B, { attempt: 1, slice: 'whole-r1', agent: 'w1', findings: [W2] }), ended(1, 'w1')]
+  const s6 = [
+    ...s5,
+    ...fixRound('fix-r2', 'X2'),
+    merged(1, 'fix-r2'),
+    finalOk('c11'),
+    wholeDispatch('whole-r2', 'w2', 'c11'),
+    ev.review(B, { attempt: 1, slice: 'whole-r2', agent: 'w2', findings: [W3] }),
+    ended(1, 'w2'),
+  ]
+
+  // When: 对六个快照各求一次下一批动作
+  const got = [s1, s2, s3, s4, s5, s6].map(evs => next(reduce(evs), ONE_S1, F))
+
+  // Then: 依次为派发 fix-r1（findings [W1]）、合回 fix-r1、final、派发 whole-r1（followup、base c9、commit c10、prior [W1]）、
+  //   派发 fix-r2（findings [W2]）、land；全程没有派发 slice 为 fix 的修复体
+  expect(got[0]).toEqual([{ kind: 'dispatch', role: 'fixer', slice: 'fix-r1', findings: [W1] }])
+  expect(got[1]).toEqual([{ kind: 'merge', slice: 'fix-r1', via: 'fix' }])
+  expect(got[2]).toEqual([{ kind: 'final' }])
+  expect(got[3]).toEqual([{ kind: 'dispatch', role: 'reviewer', slice: 'whole-r1', mode: 'followup', base: 'c9', commit: 'c10', prior: [W1] }])
+  expect(got[4]).toEqual([{ kind: 'dispatch', role: 'fixer', slice: 'fix-r2', findings: [W2] }])
+  expect(got[5]).toEqual([{ kind: 'land' }])
+  expect(got.flat().some(a => a.kind === 'dispatch' && a.role === 'fixer' && (a.slice ?? 'fix') === 'fix')).toBe(false)
+})
+
+test('summary-shows-whole-review', () => {
+  // Given: 三份账本：① shipBase（final 绿，未派全量评审）；② ① 加 whole 评审员 w0 派发、无 review 无 blocked；
+  //   ③ whole 给 W1、fix-r1 合回、final 绿 c10 后，whole-r1 评审 w1 提交 2 条（HIGH W2、LOW L1）
+  const s1 = shipBase()
+  const s2 = [...s1, wholeDispatch('whole', 'w0', 'c9')]
+  const s3 = [
+    ...s2,
+    ev.review(B, { attempt: 1, slice: 'whole', agent: 'w0', findings: [W1] }),
+    ended(1, 'w0'),
+    ...fixRound('fix-r1', 'X1'),
+    merged(1, 'fix-r1'),
+    finalOk('c10'),
+    wholeDispatch('whole-r1', 'w1', 'c10'),
+    ev.review(B, { attempt: 1, slice: 'whole-r1', agent: 'w1', findings: [W2, L1] }),
+  ]
+
+  // When: 分别求 summaryLines(summarize(...)) 的末行
+  const tails = [s1, s2, s3].map(evs => summaryLines(summarize(reduce(evs))).at(-1))
+
+  // Then: 依次为「全量评审 未开始」「全量评审 进行中」「全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）」，修复与 final 部分为已合回、绿
+  expect(tails).toEqual([
+    '修复 已合回 · final 绿 · 全量评审 未开始',
+    '修复 已合回 · final 绿 · 全量评审 进行中',
+    '修复 已合回 · final 绿 · 全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）',
   ])
 })

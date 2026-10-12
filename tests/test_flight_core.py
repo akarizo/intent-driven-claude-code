@@ -1,7 +1,6 @@
 """flight 状态机核心（scenario: flight-state-machine#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架（标记已去）。"""
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -154,10 +153,9 @@ def test_summary_from_ledger():
     assert_ts_passed("summary-from-ledger")
 
 # ---------------------------------------------------------------- flight-ship-ledger
-# 骨架：S2 实现后去掉 xfail 标记。
+# S2 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_whole_review_before_landing():
     # Given: waves [[S1]]；S1 已合回，切片评审 1 条 HIGH H1，fix 已合回；本 attempt final ok（c9）
     # When: 求下一批动作；追加 whole 派发与无 finding 的 review 后再求；另取只追加 blocked review:whole 的账本求
@@ -165,7 +163,6 @@ def test_whole_review_before_landing():
     assert_ts_passed("whole-review-before-landing")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_fix_rounds_capped_at_two():
     # Given: 同上账本，whole 的 review 有 1 条 HIGH W1
     # When: 依次追加 fix-r1 派发 / 绿门禁 / 结束、merge、final ok（c10）、whole-r1 派发与 HIGH W2、再补齐第 2 轮直到 whole-r2 的 HIGH W3
@@ -173,7 +170,6 @@ def test_fix_rounds_capped_at_two():
     assert_ts_passed("fix-rounds-capped-at-two")
 
 
-@pytest.mark.xfail(strict=True, reason="S2：同名 TS 测试尚未实现")
 def test_summary_shows_whole_review():
     # Given: 三份账本：final 绿未派全量评审；whole 已派未提交；whole-r1 已提交 2 条（1 条 HIGH）
     # When: 分别求 summaryLines(summarize(...)) 的末行
