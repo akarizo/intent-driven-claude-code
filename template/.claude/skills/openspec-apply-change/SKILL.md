@@ -65,7 +65,16 @@ metadata:
 | `flight:fixer`（批量修复 / 解冲突） | 会话主模型 `<main>` |
 | 起飞检查 · 门禁 · 合回 · final · 落地 | 不用模型：机械动作由插件执行，零 token |
 
+**飞行中的交互（flight 插件）**
+- `/flight status [<change>]`：打印飞行进度。
+- `/flight panel [<change>]`：打开飞行面板；起飞时会自动打开。
+- `/flight abort [<change>]`：只中止本会话起飞的飞行；先在账本记停飞，再停下在飞的 agent，它们未提交的改动留在各自 worktree。
+- `/flight resume <change> [--takeover]`：只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞。
+
 **模型读到本 skill 即停飞**
+- 先看本轮是否发过 `/opsx-apply`：
+  - 本轮没有 `/opsx-apply` 命令（例如用户用自然语言要求开始实现，触发了本 skill）：不按插件缺席处理；停下，并提示人发出 `/opsx-apply <name>`。
+  - 本轮已发 `/opsx-apply`（且不是 `--gate=per-task`）仍读到这里，才按插件缺席处理，见下。
 - 除 `--gate=per-task` 外，插件接管时 `/opsx-apply` 不会到达模型。模型读到这里，说明 flight 插件缺席、未加载或版本不符。
 - 必须停下报告，不得改用其他方式（手工派发 agent、照本文逐步执行等）实现本 change。
 - 指引：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` → `claude plugin install flight@intent-driven -s project` → `/reload-plugins`，然后重新发出 `/opsx-apply <name>`。

@@ -221,6 +221,15 @@ your-project/
   → 落地交 /pr-ship
 ```
 
+**飞行中的交互**（flight 插件提供；起飞时自动打开飞行面板）：
+
+| 命令 | 作用 |
+| --- | --- |
+| `/flight status [<change>]` | 打印飞行进度 |
+| `/flight panel [<change>]` | 打开飞行面板 |
+| `/flight abort [<change>]` | 只中止本会话起飞的飞行：先在账本记停飞，再停下在飞的 agent，未提交的改动留在各自 worktree |
+| `/flight resume <change> [--takeover]` | 只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞 |
+
 **机械门禁**（`slice-gate.py`，零 token 判定）：
 
 | 阶段 | 检查 |

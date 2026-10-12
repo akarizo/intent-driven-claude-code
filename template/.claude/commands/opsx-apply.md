@@ -56,7 +56,16 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 | `flight:fixer`（批量修复 / 解冲突） | 会话主模型 `<main>` | 只能写全部 owns 的并集 |
 | 起飞检查 · 门禁 · 合回 · final · 落地 | 不用模型 | 机械动作由插件执行，零 token |
 
+**飞行中的交互（flight 插件）**
+- `/flight status [<change>]`：打印飞行进度。
+- `/flight panel [<change>]`：打开飞行面板；起飞时会自动打开。
+- `/flight abort [<change>]`：只中止本会话起飞的飞行；先在账本记停飞，再停下在飞的 agent，它们未提交的改动留在各自 worktree。
+- `/flight resume <change> [--takeover]`：只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞。
+
 **模型读到本命令即停飞**
+- 先看本轮是否发过 `/opsx-apply`：
+  - 本轮没有 `/opsx-apply` 命令（例如用户用自然语言要求开始实现，经 `openspec-apply-change` skill 读到本文）：不按插件缺席处理；停下，并提示人发出 `/opsx-apply <name>`。
+  - 本轮已发 `/opsx-apply`（且不是 `--gate=per-task`）仍读到这里，才按插件缺席处理，见下。
 - 除 `--gate=per-task` 外，插件接管时本命令不会到达模型。模型读到这里，说明 flight 插件缺席、未加载或版本不符。
 - 必须停下报告，不得改用其他方式（手工派发 agent、照本文逐步执行等）实现本 change。
 - 指引：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` → `claude plugin install flight@intent-driven -s project` → `/reload-plugins`，然后重新发出 `/opsx-apply <name>`。
@@ -70,7 +79,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 **Guardrails**
 - 启动到 `/pr-ship` 之间不出现 AskUserQuestion（四种暂停例外走「停下报告」，不是问询）。
 - 模型按角色显式路由；插件派发时不省略 `model`。
-- 起飞批准以账本指纹为判据（人在批准带按「批准起飞」才写入账本），由 `.claude/hooks/takeoff-gate.py` 校验（PreToolUse hook + 插件起飞检查），**禁模型自证**；脚本非 0 就不起飞。
+- 起飞批准以账本指纹为判据（人在批准带按「批准起飞」才写入账本），由 `.claude/hooks/takeoff-gate.py` 校验，**禁模型自证**；脚本非 0 就不起飞。
 - `<main>` 由 `.claude/hooks/session-model.py` 判定，**禁模型自述**；判定不出停飞，人工 `--model=<alias>` 覆盖。
 - `--gate=per-task` 是唯一非飞行路径，转给 legacy skill 承载。
 - 不自动 merge / push / 删 worktree。
