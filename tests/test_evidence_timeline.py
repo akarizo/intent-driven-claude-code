@@ -1,7 +1,8 @@
-"""test-evidence / timeline / stop-gate / session-decompose（scenario: slice-gate#evidence-*, stop-hook-*, flight-apply#timeline-*, session-decompose-*）。"""
+"""test-evidence / timeline / 退役 hook（scenario: slice-gate#evidence-*, flight-apply#timeline-*, flight-retire-hooks#*）。
+test-evidence 只记飞行外：切片 worktree（有 .openspec-slice 标记）一律不写，测试结果由控制面测量入账本。"""
 import json
 
-from conftest import run_hook, write
+from conftest import HOOKS, git, run_hook, write
 
 
 def marker_repo(git_repo):
@@ -13,6 +14,14 @@ def marker_repo(git_repo):
     return change
 
 
+def branch_repo(git_repo, name="c"):
+    """无标记、分支 worktree-<name> 的仓库（飞行外的 per-task 路径）。"""
+    change = git_repo / "openspec" / "changes" / name
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    git(git_repo, "checkout", "-q", "-b", "worktree-" + name)
+    return change
+
+
 def bash_event(cmd, stdout="", stderr="", event="PostToolUse", cwd="."):
     return json.dumps({"hook_event_name": event, "tool_name": "Bash", "cwd": str(cwd),
                        "tool_input": {"command": cmd}, "tool_response": {"stdout": stdout, "stderr": stderr, "interrupted": False}})
@@ -21,23 +30,23 @@ def bash_event(cmd, stdout="", stderr="", event="PostToolUse", cwd="."):
 # ---------------------------------------------------------------- test-evidence
 
 def test_evidence_log_records_test_runs(git_repo):
-    # Given: 根目录有指向切片 S1 的 .openspec-slice 标记；一条 PostToolUse Bash 事件，命令是 pytest 且输出 "3 passed"
-    change = marker_repo(git_repo)
+    # Given: 无标记、分支 worktree-c；一条 PostToolUse Bash 事件，命令是 pytest 且输出 "3 passed"
+    change = branch_repo(git_repo)
     event = bash_event("python3 -m pytest -q tests", stdout="3 passed in 0.1s", cwd=git_repo)
 
     # When: 运行 test-evidence.py
-    p = run_hook("test-evidence", stdin=event, cwd=git_repo)
+    run_hook("test-evidence", stdin=event, cwd=git_repo)
 
-    # Then: evidence.log 追加一行，含切片 S1、PASS 与命令
+    # Then: evidence.log 追加一行，含切片列 -、PASS 与命令
     line = (change / "evidence.log").read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert "\tS1\t" in line
+    assert "\t-\t" in line
     assert "\tPASS\t" in line
     assert "pytest" in line
 
 
 def test_evidence_log_records_failed_run(git_repo):
-    # Given: 同上标记；一条 PostToolUseFailure Bash 事件，命令是 pytest
-    change = marker_repo(git_repo)
+    # Given: 无标记、分支 worktree-c；一条 PostToolUseFailure Bash 事件，命令是 pytest
+    change = branch_repo(git_repo)
     event = bash_event("python3 -m pytest -q tests", stdout="1 failed", event="PostToolUseFailure", cwd=git_repo)
 
     # When: 运行 test-evidence.py
@@ -49,8 +58,8 @@ def test_evidence_log_records_failed_run(git_repo):
 
 
 def test_evidence_ignores_non_test_commands(git_repo):
-    # Given: 同上标记；一条 Bash 事件的命令是 git status（不是测试运行器）
-    change = marker_repo(git_repo)
+    # Given: 无标记、分支 worktree-c；一条 Bash 事件的命令是 git status（不是测试运行器）
+    change = branch_repo(git_repo)
     event = bash_event("git status --short", stdout="", cwd=git_repo)
 
     # When: 运行 test-evidence.py
@@ -58,57 +67,6 @@ def test_evidence_ignores_non_test_commands(git_repo):
 
     # Then: 不创建 evidence.log
     assert not (change / "evidence.log").exists()
-
-
-# ---------------------------------------------------------------- stop-gate
-
-def stop_event(cwd, active=False, event="Stop"):
-    return json.dumps({"hook_event_name": event, "stop_hook_active": active, "cwd": str(cwd)})
-
-
-def test_stop_hook_blocks_red_flight(git_repo):
-    # Given: 根目录存在指向切片 S1 的 .openspec-slice 标记，stop_hook_active 为 false
-    marker_repo(git_repo)
-
-    # When: Stop 事件触发 stop-gate.py
-    p = run_hook("stop-gate", stdin=stop_event(git_repo), cwd=git_repo)
-
-    # Then: 输出 decision 为 block，reason 点名 S1
-    out = json.loads(p.stdout)
-    assert out["decision"] == "block"
-    assert "S1" in out["reason"]
-
-
-def test_stop_hook_respects_stop_hook_active(git_repo):
-    # Given: 同上标记，但 stop_hook_active 为 true（本轮已经因 stop hook 续跑过）
-    marker_repo(git_repo)
-
-    # When: Stop 事件再次触发 stop-gate.py
-    p = run_hook("stop-gate", stdin=stop_event(git_repo, active=True), cwd=git_repo)
-
-    # Then: 不输出 block
-    assert "block" not in p.stdout
-
-
-def test_stop_hook_allows_after_two_reds(git_repo):
-    # Given: .openspec-slice 标记里 red_count 已经是 2（同一门禁项连续两次红，执行体按纪律该停下上报）
-    change = marker_repo(git_repo)
-    write(git_repo / ".openspec-slice", json.dumps({"slice": "S1", "change_dir": str(change), "base": "HEAD", "red_count": 2}))
-
-    # When: Stop 事件触发 stop-gate.py
-    p = run_hook("stop-gate", stdin=stop_event(git_repo), cwd=git_repo)
-
-    # Then: 不再 block（否则执行体会被强制续跑，违背「连续 2 次红即停」）
-    assert "block" not in p.stdout
-
-
-def test_stop_hook_silent_without_marker(git_repo):
-    # Given: 根目录没有 .openspec-slice 标记
-    # When: SubagentStop 事件触发 stop-gate.py
-    p = run_hook("stop-gate", stdin=stop_event(git_repo, event="SubagentStop"), cwd=git_repo)
-
-    # Then: 无输出
-    assert p.stdout.strip() == ""
 
 
 # ---------------------------------------------------------------- timeline
@@ -145,195 +103,8 @@ def test_timeline_report(tmp_path):
     assert "30" in p.stdout and "approve" in p.stdout
 
 
-# ---------------------------------------------------------------- session-decompose
-
-FIXTURE = [
-    {"type": "user", "timestamp": "2026-09-10T10:00:00Z", "message": {"role": "user", "content": "实现 X"}},
-    {"type": "assistant", "timestamp": "2026-09-10T10:00:10Z", "requestId": "r1",
-     "message": {"model": "claude-opus-5", "usage": {"input_tokens": 1, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 0, "output_tokens": 50},
-                 "content": [{"type": "tool_use", "id": "t1", "name": "Agent", "input": {"description": "impl S1", "prompt": "..."}}]}},
-    {"type": "user", "timestamp": "2026-09-10T10:00:11Z", "toolUseResult": {"status": "async_launched", "agentId": "a1", "description": "impl S1", "resolvedModel": "claude-sonnet-5"},
-     "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "launched"}]}},
-    {"type": "user", "timestamp": "2026-09-10T10:05:11Z", "message": {"role": "user", "content": "<task-notification><task-id>a1</task-id><status>completed</status><result>done</result></task-notification>"}},
-    {"type": "assistant", "timestamp": "2026-09-10T10:05:20Z", "requestId": "r2",
-     "message": {"model": "claude-opus-5", "usage": {"input_tokens": 1, "cache_read_input_tokens": 2000, "cache_creation_input_tokens": 0, "output_tokens": 20},
-                 "content": [{"type": "text", "text": "完成"}]}},
-    {"type": "system", "subtype": "turn_duration", "timestamp": "2026-09-10T10:05:20Z"},
-]
-
-
-def test_session_decompose_prints_workflow_models(tmp_path):
-    # Given: 一个 workflow journal 目录，含一个 agent 转录（assistant 消息 model 为 claude-sonnet-5）与其 meta.json（description "S4"）
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    (wf / "agent-a1.jsonl").write_text("\n".join(json.dumps(r) for r in [
-        {"type": "assistant", "timestamp": "2026-09-10T10:00:00Z", "requestId": "r1", "message": {"model": "claude-sonnet-5", "usage": {}, "content": [{"type": "text", "text": "x"}]}},
-        {"type": "assistant", "timestamp": "2026-09-10T10:03:00Z", "requestId": "r2", "message": {"model": "claude-sonnet-5", "usage": {}, "content": [{"type": "text", "text": "y"}]}},
-    ]) + "\n", encoding="utf-8")
-    (wf / "agent-a1.meta.json").write_text(json.dumps({"description": "S4", "workflowPhase": "Implement"}), encoding="utf-8")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 运行 session-decompose.py --session --workflow <dir>
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf))
-
-    # Then: 输出的工作流 agent 表含标签 S4 与实际模型 claude-sonnet-5
-    assert p.returncode == 0, p.stderr
-    assert "S4" in p.stdout and "claude-sonnet-5" in p.stdout
-
-
-def test_session_decompose_runs(tmp_path):
-    # Given: 一个含人类消息、Agent 派发、异步结果、task-notification、收尾 assistant 的最小转录 fixture
-    path = tmp_path / "sess.jsonl"
-    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 运行 session-decompose.py --session
-    p = run_hook("session-decompose", "--session", str(path))
-
-    # Then: 退出码 0，输出含「等子 agent」「模型生成」两类归因与派发数 1
-    assert p.returncode == 0, p.stderr
-    assert "等子 agent" in p.stdout and "模型生成" in p.stdout
-    assert "派发 1" in p.stdout
-
-
-# ---------------------------------------------------------------- 路由对账（scenario: model-routing#route-audit-*）
-
-
-def wf_agent(wf, name, model, phase, label, agent_type=None):
-    """在 workflow journal 目录里造一个 agent 转录 + meta（agent_type 对应真实 meta 的 agentType）。"""
-    (wf / ("agent-%s.jsonl" % name)).write_text("\n".join(json.dumps(r) for r in [
-        {"type": "assistant", "timestamp": "2026-09-10T10:00:00Z", "requestId": "r1",
-         "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "x"}]}},
-        {"type": "assistant", "timestamp": "2026-09-10T10:03:00Z", "requestId": "r2",
-         "message": {"model": model, "usage": {}, "content": [{"type": "text", "text": "y"}]}},
-    ]) + "\n", encoding="utf-8")
-    meta = {"description": label, "workflowPhase": phase}
-    if agent_type:
-        meta["agentType"] = agent_type
-    (wf / ("agent-%s.meta.json" % name)).write_text(json.dumps(meta), encoding="utf-8")
-
-
-ROUTE = json.dumps({"executor": "opus", "reviewer": "opus", "integrator": "sonnet"})
-
-
-def test_route_audit_flags_mismatch(tmp_path):
-    # Given: 一个 workflow journal，Implement 阶段的 agent 实际跑在 claude-sonnet-5，而路由表要求 executor=opus
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    wf_agent(wf, "a1", "claude-sonnet-5", "Implement", "S1")
-    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带 --expect-models 运行收口分解
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-
-    # Then: 非 0 退出，输出逐条列出不符项（标签 · 阶段 · 期望别名 · 实际 id）
-    assert p.returncode != 0, p.stdout
-    assert "S1" in p.stdout and "opus" in p.stdout and "claude-sonnet-5" in p.stdout
-
-
-def test_route_audit_passes_on_match(tmp_path):
-    # Given: 各 agent 实际模型与路由表一致（[1m] 变体也应归一为 opus）
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    wf_agent(wf, "a1", "claude-opus-5[1m]", "Implement", "S1")
-    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
-    wf_agent(wf, "a3", "claude-sonnet-5", "Finalize", "final")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带 --expect-models 运行，再不带参数运行一次
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-    plain = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf))
-
-    # Then: 一致时退出码 0 并打印对账结论；不传参时行为与既有一致（只打印，退出码 0）
-    assert p.returncode == 0, p.stderr
-    assert "对账" in p.stdout
-    assert plain.returncode == 0 and "claude-opus-5" in plain.stdout
-
-
-def test_route_audit_keys_on_agent_type_not_phase(tmp_path):
-    # Given: wave integrator（meta agentType=integrator、workflowPhase=Implement、实际 claude-sonnet-5）
-    #        与同阶段的 slice-executor（claude-opus-5）、Review 的 code-reviewer（claude-opus-5）
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1", agent_type="slice-executor")
-    wf_agent(wf, "a2", "claude-sonnet-5", "Implement", "integrate:w1", agent_type="integrator")
-    wf_agent(wf, "a3", "claude-opus-5", "Review", "review:S1", agent_type="code-reviewer")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带路由表运行收口对账
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-
-    # Then: 退出码 0，不把 integrate:w1 判成 executor 不符，对账结论把 integrator 记成 sonnet
-    assert p.returncode == 0, p.stdout
-    assert "integrate:w1" not in p.stdout.split("路由对账")[-1] and "❌" not in p.stdout
-    assert "integrator=sonnet" in p.stdout
-
-def test_route_audit_fails_on_zero_coverage(tmp_path):
-    # Given: 一个空的 workflow journal 目录（--workflow 指错或该目录尚无 agent 转录）
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带路由表运行收口对账
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-
-    # Then: 非 0 退出，逐条点名三个未采样到的角色，且不打印 ✅ 一致
-    assert p.returncode != 0, p.stdout
-    assert p.stdout.count("未采样到角色") == 3
-    assert "✅" not in p.stdout
-
-
-def test_route_audit_fails_when_one_role_missing(tmp_path):
-    # Given: journal 里只有 executor 与 integrator 在阶段内被采到，reviewer 因嵌套派发根本没出现
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1", agent_type="slice-executor")
-    wf_agent(wf, "a2", "claude-sonnet-5", "Finalize", "final-gate", agent_type="integrator")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带路由表运行收口对账
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-
-    # Then: 非 0 退出，点名缺的正是 reviewer（期望 opus），不打印 ✅ 一致
-    assert p.returncode != 0, p.stdout
-    assert "未采样到角色 reviewer（期望 opus）" in p.stdout
-    assert "✅" not in p.stdout
-
-
-def test_route_audit_ignores_empty_attempt(tmp_path):
-    # Given: 三个角色都被正常采样，另有一个被重试掉的空 attempt 转录（有 meta、无 assistant 轮次 → 实际模型 "?"）
-    wf = tmp_path / "wf"
-    wf.mkdir()
-    wf_agent(wf, "a1", "claude-opus-5", "Implement", "S1")
-    wf_agent(wf, "a2", "claude-opus-5", "Review", "review:S1")
-    wf_agent(wf, "a3", "claude-sonnet-5", "Finalize", "final")
-    (wf / "agent-a4.jsonl").write_text(json.dumps(
-        {"type": "user", "timestamp": "2026-09-10T10:00:00Z", "message": {"content": "x"}}) + "\n", encoding="utf-8")
-    (wf / "agent-a4.meta.json").write_text(
-        json.dumps({"description": "fix", "workflowPhase": "Fix", "agentType": "slice-executor"}), encoding="utf-8")
-    sess = tmp_path / "sess.jsonl"
-    sess.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in FIXTURE) + "\n", encoding="utf-8")
-
-    # When: 带 --expect-models 运行收口分解
-    p = run_hook("session-decompose", "--session", str(sess), "--workflow", str(wf), "--expect-models", ROUTE)
-
-    # Then: 空 attempt 只作未采样告警，不算跑错模型；三个角色都已采样故对账绿
-    assert p.returncode == 0, p.stdout + p.stderr
-    assert "❌" not in p.stdout
-    assert "对账" in p.stdout and "未采样" in p.stdout
-
-
 # ---------------------------------------------------------------- flight-preflight-and-retry（scenario: evidence-change-resolution#*）
-# S2 已实现：标记 → 分支名 → 唯一候选 → 不写。
-
-import pytest  # noqa: E402
-from conftest import git  # noqa: E402
+# 无标记时：分支名 → 唯一候选 → 不写；有标记一律不写。
 
 
 def _changes(git_repo, names):
@@ -370,23 +141,19 @@ def test_evidence_skips_ambiguous_change(git_repo):
     assert p.returncode == 0
 
 
-def test_evidence_single_candidate_fallback(git_repo):  # 既有行为守卫：单候选回退与标记优先在改动前后都成立，故不标 xfail
+def test_evidence_single_candidate_fallback(git_repo):
     # Given: 无标记；分支 main；只有 change a 有未勾选项
     _changes(git_repo, ["a"])
     event = bash_event("python3 -m pytest -q tests", stdout="1 passed", cwd=git_repo)
 
-    # When: 运行 test-evidence.py；再放标记指向 c 后运行一次
-    run_hook("test-evidence", stdin=event, cwd=git_repo)
-    change_c = marker_repo(git_repo)
+    # When: 运行 test-evidence.py
     run_hook("test-evidence", stdin=event, cwd=git_repo)
 
-    # Then: 单候选时写进 a；有标记时写进 c 且切片列为 S1
+    # Then: 单候选时写进 a
     assert (git_repo / "openspec" / "changes" / "a" / "evidence.log").exists()
-    line = (change_c / "evidence.log").read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert "\tS1\t" in line
+
 
 # ---------------------------------------------------------------- flight-measure
-# 骨架：S3 实现后去掉 xfail 标记。
 
 
 from conftest import ledger_append, make_change  # noqa: E402
@@ -425,46 +192,71 @@ def test_red_count_from_ledger(git_repo):
 
 
 def test_evidence_skips_ledger_marked_slice(git_repo):
-    # Given: 仓库根的切片标记写明 evidence=ledger
+    # Given: 仓库根的切片标记写明 evidence=ledger；一条 pytest 的 PostToolUse
     change = marker_repo(git_repo)
     marker = git_repo / ".openspec-slice"
     data = json.loads(marker.read_text(encoding="utf-8"))
     marker.write_text(json.dumps(dict(data, evidence="ledger")), encoding="utf-8")
     event = bash_event("python3 -m pytest -q tests", stdout="3 passed in 0.1s", cwd=git_repo)
 
-    # When: 喂一次 pytest 的 PostToolUse；去掉标记里的 evidence 再喂一次
-    run_hook("test-evidence", stdin=event, cwd=git_repo)
-    skipped = not (change / "evidence.log").exists()
-    marker.write_text(json.dumps(data), encoding="utf-8")
+    # When: 运行 test-evidence.py
     run_hook("test-evidence", stdin=event, cwd=git_repo)
 
-    # Then: 第一次没有写 evidence.log；第二次写了一行 S1
-    assert skipped
-    assert "\tS1\t" in (change / "evidence.log").read_text(encoding="utf-8")
-
-# ---------------------------------------------------------------- flight-retire-workflow-engine
-# 骨架：S2 实现后去掉 xfail 标记。
+    # Then: 没有写 evidence.log
+    assert not (change / "evidence.log").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
-def test_stop_gate_is_noop():
-    # Given: 存在 .openspec-slice 标记、本片门禁未绿的仓库
-    # When: 以 SubagentStop 载荷运行 stop-gate.py
-    # Then: 退出 0、stdout 为空（不 block）
-    pytest.fail("骨架：S2 写实断言")
+# ---------------------------------------------------------------- flight-retire-workflow-engine（scenario: flight-retire-hooks#*）
 
 
-@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
-def test_test_evidence_skips_slice_worktrees():
-    # Given: 两个仓库：一个有 .openspec-slice 标记（evidence 为 log），一个在 worktree-demo 分支上无标记
-    # When: 各以跑 pytest 的 Bash 载荷运行 test-evidence.py
-    # Then: 前者 change 目录下没有 evidence.log；后者 demo 的 evidence.log 新增一行
-    pytest.fail("骨架：S2 写实断言")
+def test_stop_gate_is_noop(git_repo):
+    # Given: 根目录有指向切片 S1 的 .openspec-slice 标记（无 red_count，本片门禁未绿）；SubagentStop 载荷 stop_hook_active=false
+    marker_repo(git_repo)
+    payload = json.dumps({"hook_event_name": "SubagentStop", "stop_hook_active": False, "cwd": str(git_repo)})
+
+    # When: 以该载荷运行 stop-gate.py
+    p = run_hook("stop-gate", stdin=payload, cwd=git_repo)
+
+    # Then: 退出 0；stdout 为空（不 block）
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == "", p.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_test_evidence_skips_slice_worktrees(git_repo, tmp_path):
+    # Given: 仓库甲有指向 change c 的 .openspec-slice 标记且 evidence="log"（c 的 tasks.md 有未勾选项）；
+    #        仓库乙在 worktree-demo 分支、无标记、有 openspec/changes/demo；两边都是跑 pytest 输出 "1 passed" 的 Bash 载荷
+    change_c = marker_repo(git_repo)
+    marker = git_repo / ".openspec-slice"
+    marker.write_text(json.dumps(dict(json.loads(marker.read_text(encoding="utf-8")), evidence="log")), encoding="utf-8")
+    other = tmp_path / "other"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    git(other, "config", "user.email", "t@example.com")
+    git(other, "config", "user.name", "t")
+    git(other, "commit", "-q", "--allow-empty", "-m", "init")
+    demo = branch_repo(other, "demo")
+    cmd = "python3 -m pytest -q tests"
+
+    # When: 分别在两个仓库运行 test-evidence.py
+    for repo in (git_repo, other):
+        run_hook("test-evidence", stdin=bash_event(cmd, stdout="1 passed", cwd=repo), cwd=repo)
+
+    # Then: 甲的 c 下没有 evidence.log；乙的 demo/evidence.log 恰好新增一行
+    assert not (change_c / "evidence.log").exists()
+    assert len((demo / "evidence.log").read_text(encoding="utf-8").strip().splitlines()) == 1
+
+
 def test_retired_hooks_unregistered():
-    # Given: 本 change 合入后的模板
-    # When: 读取 template/.claude/hooks/hooks.json 的全部命令并检查 session-decompose.py
-    # Then: 命令不含 takeoff-gate.py、checkpoint、stop-gate.py，仍含 test-evidence.py；session-decompose.py 不存在
-    pytest.fail("骨架：S2 写实断言")
+    # Given: 本 change 合入后的模板 template/.claude/hooks/
+    hooks_json = HOOKS / "hooks.json"
+
+    # When: 读取 hooks.json 里全部 hook 命令
+    config = json.loads(hooks_json.read_text(encoding="utf-8"))
+    commands = " ".join(h["command"] for groups in config["hooks"].values() for g in groups for h in g["hooks"])
+
+    # Then: 不含 takeoff-gate.py、checkpoint、stop-gate.py；仍含 test-evidence.py；session-decompose.py 不存在
+    assert "takeoff-gate.py" not in commands
+    assert "checkpoint" not in commands
+    assert "stop-gate.py" not in commands
+    assert "test-evidence.py" in commands
+    assert not (HOOKS / "session-decompose.py").exists()

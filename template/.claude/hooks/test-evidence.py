@@ -2,10 +2,11 @@
 # test-evidence · PostToolUse / PostToolUseFailure(Bash)：测试运行留痕，代替模型自述 RED / GREEN
 #
 # 命中测试运行器的 Bash 命令时，向 <change>/evidence.log 追加一行：
-#   ISO时间\t<切片id 或 ->\t<PASS|FAIL>\t<命令前 120 字符>
-# change 目录来源（三级，不猜）：① git toplevel 下 .openspec-slice 标记的 change_dir；
-#   ② 分支名 worktree-<name> 对应 openspec/changes/<name>；③ tasks.md 仍有未勾选项的 change 恰好 1 个；否则不写。
-#   标记含 evidence=ledger（账本模式切片）时不写。
+#   ISO时间\t-\t<PASS|FAIL>\t<命令前 120 字符>
+# 只记飞行外的测试留痕（主会话修复、per-task 路径）；切片 worktree 的测试由控制面测量入账本：
+#   git toplevel 下存在 .openspec-slice 标记 → 一律不写（不论标记里的 evidence 模式）。
+# change 目录来源（无标记时，两级，不猜）：① 分支名 worktree-<name> 对应 openspec/changes/<name>；
+#   ② tasks.md 仍有未勾选项的 change 恰好 1 个；否则不写。
 # 结果判定：事件为 PostToolUseFailure → FAIL；否则 stdout/stderr 命中 failed|error|FAIL → FAIL；其余 PASS。
 # fail-open：任何异常静默退出。兼容 Python 3.8+。
 import json
@@ -50,31 +51,19 @@ def current_branch(root):
 
 def find_change(root):
     """返回 (change_dir, slice_id)；找不到或多候选返回 (None, None)。"""
-    # 1 标记
-    marker = os.path.join(root, MARKER)
-    if os.path.isfile(marker):
-        try:
-            with open(marker, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if data.get("evidence") == "ledger":  # 账本模式切片：测试结果由 measure 事件记录，此处让位、不写
-                return None, None
-            cd = data.get("change_dir") or ""
-            if not os.path.isabs(cd):
-                cd = os.path.join(root, cd)
-            if os.path.isdir(cd):
-                return cd, data.get("slice") or "-"
-        except (OSError, ValueError):
-            pass
+    # 切片 worktree：测试结果由控制面测量入账本，此处一律不写
+    if os.path.isfile(os.path.join(root, MARKER)):
+        return None, None
     changes = os.path.join(root, "openspec", "changes")
     if not os.path.isdir(changes):
         return None, None
-    # 2 分支名 worktree-<name>
+    # 1 分支名 worktree-<name>
     branch = current_branch(root)
     if branch and branch.startswith(BRANCH_PREFIX):
         cd = os.path.join(changes, branch[len(BRANCH_PREFIX):])
         if os.path.isdir(cd):
             return cd, "-"
-    # 3 唯一候选
+    # 2 唯一候选
     candidates = []
     for name in sorted(os.listdir(changes)):
         if name == "archive":
