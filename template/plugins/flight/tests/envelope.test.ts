@@ -650,3 +650,21 @@ test('quoted-command-words-recognized/shell-c-option', () => {
   expect(v.slice(0, 2).map(x => (x?.deny ?? '').includes('git push'))).toEqual([true, true])
   expect(v[2]).toBeUndefined()
 })
+
+test('quoted-command-words-recognized/quoted-assignments', () => {
+  // Given: 执行体 worktree 为 W；带引号或反斜杠的 GIT_DIR 赋值（export、env 前缀）与 core.hooksPath 配置键共四条，及 export PATH="$PATH:/x" && git status
+  const cmds = [
+    'export "GIT_DIR=/repo/.git" && git commit -m x',
+    'env "GIT_DIR=/repo/.git" git commit -m x',
+    "git -c 'core.hooksPath'=/tmp/h commit -m x",
+    'git -c core.hooks\\Path=/tmp/h commit -m x',
+    'export PATH="$PATH:/x" && git status',
+  ]
+
+  // When: 逐条判定执行体的命令（带 worktree 与 mainTree）
+  const v = cmds.map(c => bashVerdict('executor', c, W, M))
+
+  // Then: 前四条都被拒；最后一条不被拒
+  expect(v.slice(0, 4).map(x => x !== undefined)).toEqual([true, true, true, true])
+  expect(v[4]).toBeUndefined()
+})

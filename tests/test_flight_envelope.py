@@ -224,3 +224,9 @@ def test_shell_c_option_quoted():
     # When: 判定 bash "-c" 'git push'、bash \-c 'git push' 与 sh -c 'git status'
     # Then: 前两条被拒，最后一条不拒
     assert_ts_passed("quoted-command-words-recognized/shell-c-option")
+
+def test_quoted_assignments_denied():
+    # Given: 执行体 worktree 为 W
+    # When: 判定 export "GIT_DIR=…" && git commit、env "GIT_DIR=…" git commit、git -c 'core.hooksPath'=… commit、git -c core.hooks\Path=… commit，及 export PATH="$PATH:/x" && git status
+    # Then: 前四条被拒，最后一条不拒
+    assert_ts_passed("quoted-command-words-recognized/quoted-assignments")
