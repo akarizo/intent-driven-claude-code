@@ -265,6 +265,83 @@ export function closeoutLists(state: State): {
   }
 }
 
+export type SliceRow = {
+  id: string
+  wave: number
+  phase: string // 待派 / 执行中 / 门禁红（n 次）/ 已合回 / 阻断（gate|infra）
+  agent?: string
+  reds: number // 本 attempt 门禁红次数
+  measured: string // 先红 / 未先红 / -
+  review: string // 未开始 / 进行中 / <n> 条（CRITICAL/HIGH <k>）
+}
+export type FlightSummary = {
+  change: string
+  attempt: number
+  waves: number
+  wave: number // 当前 wave（1 起），已全部完成为 waves
+  slices: SliceRow[]
+  fix: string // 未派 / 进行中 / 已合回 / 无需
+  final: string // 未跑 / 绿 / 红
+  end: string // 在飞 / 已落地（ready|draft）/ 已停飞（<原因>）
+}
+
+/** 飞行进度归约（design D2）：只看本 attempt 的事件，合回与评审跨 attempt 计入（与 next 口径一致）。 */
+export function summarize(state: State): FlightSummary {
+  const { takeoff, attempt: A, events: evs } = state
+  const waves = Array.isArray(takeoff?.waves) ? (takeoff?.waves as string[][]) : []
+  const ofA = (ev: string) => evs.filter(e => e.ev === ev && Number(e.attempt) === A)
+  const mergedOk = (s: string) => evs.some(e => e.ev === 'merge' && e.slice === s && e.ok === true)
+  const blockedNow = (s: string) => last(ofA('blocked').filter(e => e.slice === s))
+  const dispatchesA = (s: string, role: Role) => ofA('dispatch').filter(e => e.slice === s && e.role === role)
+  const failing = (e: Ev) => Array.isArray(e.outcomes) && (e.outcomes as [string, string][]).some(([, o]) => o === 'FAILED' || o === 'ERROR')
+
+  function row(id: string, wave: number): SliceRow {
+    const gates = ofA('gate').filter(e => e.slice === id)
+    const reds = gates.filter(g => g.ok === false).length
+    const exec = last(dispatchesA(id, 'executor'))
+    const b = blockedNow(id)
+    const lastGate = last(gates)
+    const phase = mergedOk(id) ? '已合回'
+      : b ? `阻断（${str(b, 'kind')}）`
+      : exec ? (lastGate && lastGate.ok !== true ? `门禁红（${reds} 次）` : '执行中')
+      : '待派'
+    const ms = ofA('measure').filter(e => e.slice === id)
+    const measured = !ms.length ? '-' : ms.some(m => !(Array.isArray(m.source) && m.source.length) && failing(m)) ? '先红' : '未先红'
+    const reviews = evs.filter(e => e.ev === 'review' && e.slice === id)
+    const findings = reviews.flatMap(e => (Array.isArray(e.findings) ? (e.findings as Finding[]) : []))
+    const review = reviews.length ? `${findings.length} 条（CRITICAL/HIGH ${findings.filter(f => BLOCKING.includes(f.severity)).length}）`
+      : dispatchesA(id, 'reviewer').length ? '进行中'
+      : '未开始'
+    return { id, wave, phase, ...(exec ? { agent: str(exec, 'agent') } : {}), reds, measured, review }
+  }
+
+  const fixers = dispatchesA(FIX, 'fixer')
+  const fix = fixers.length ? (mergedOk(FIX) ? '已合回' : '进行中')
+    : reviewFindings(state).some(f => BLOCKING.includes(f.severity)) ? '未派' : '无需'
+  const fin = last(ofA('final'))
+  const land = last(ofA('land'))
+  const halt = last(ofA('halt'))
+  const current = waves.findIndex(w => w.some(s => !mergedOk(s) && !blockedNow(s)))
+  return {
+    change: takeoff ? str(takeoff, 'change') : '',
+    attempt: A,
+    waves: waves.length,
+    wave: current < 0 ? waves.length : current + 1,
+    slices: waves.flatMap((w, i) => w.map(s => row(s, i + 1))),
+    fix,
+    final: !fin ? '未跑' : fin.ok === true ? '绿' : '红',
+    end: land ? `已落地（${str(land, 'verdict')}）` : halt ? `已停飞（${str(halt, 'reason')}）` : '在飞',
+  }
+}
+
+export function summaryLines(s: FlightSummary): string[] {
+  return [
+    `✈ ${s.change} · attempt ${s.attempt} · W${s.wave}/${s.waves} · ${s.end}`,
+    ...s.slices.map(r => `${r.id} W${r.wave} ${r.phase} · 门禁红 ${r.reds} · 测量 ${r.measured} · 评审 ${r.review}`),
+    `修复 ${s.fix} · final ${s.final}`,
+  ]
+}
+
 type Base = { change: string; at: string; session: string }
 const make = (ev: string) => (b: Base, x: object): FlightEvent => ({
   v: 1,

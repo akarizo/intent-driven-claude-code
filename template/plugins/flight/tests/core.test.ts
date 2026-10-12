@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-state-machine（core-*），事件形状对照 spec flight-ledger-events。核心是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
-import { agentOf, closeoutLists, ev, next, reduce, stopVerdict } from '../hooks/core'
+import { agentOf, closeoutLists, ev, next, reduce, stopVerdict, summarize, summaryLines } from '../hooks/core'
 import type { FlightEvent, Plan, Role } from '../hooks/core'
 
 const AT = '2026-10-09T00:00:00Z'
@@ -449,5 +449,34 @@ test('gate-from-other-agent-not-regated', () => {
   expect(got).toEqual([
     { kind: 'dispatch', role: 'executor', slice: 'S1', continuation: { reason: '上一次飞行中断', failed: [] } },
     { kind: 'dispatch', role: 'executor', slice: 'S2' },
+  ])
+})
+
+// scenario 来源：spec flight-status-summary（flight-interaction）
+test('summary-from-ledger', () => {
+  // Given: demo 的账本：attempt 1、waves [[S1, S2], [S3]]；S1 执行体 a1 门禁绿、已合回、评审 r1 给 1 条 HIGH；
+  //   S2 执行体 a2 收口门禁红 1 次（G7 x）后仍在执行（无 ended）；S3 未派；没有测量、修复、final 事件
+  const high = { severity: 'HIGH' as const, file: 'a.ts', line: 1, summary: 's', fix: 'f' }
+  const state = reduce([
+    approve,
+    takeoff(1),
+    ...landed(1, 'S1', 'a1'),
+    dispatch(1, 'S1', 'reviewer', 'r1'),
+    ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [high] }),
+    dispatch(1, 'S2', 'executor', 'a2'),
+    gate(1, 'a2', 'S2', ['G7 x']),
+  ])
+
+  // When: 求 summaryLines(summarize(state))
+  const lines = summaryLines(summarize(state))
+
+  // Then: 恰为五行：首行 demo · attempt 1 · W1/2 · 在飞；S1 已合回且评审 1 条（CRITICAL/HIGH 1）；
+  //   S2 门禁红（1 次）、门禁红 1；S3 在 W2 待派；末行修复未派、final 未跑
+  expect(lines).toEqual([
+    '✈ demo · attempt 1 · W1/2 · 在飞',
+    'S1 W1 已合回 · 门禁红 0 · 测量 - · 评审 1 条（CRITICAL/HIGH 1）',
+    'S2 W1 门禁红（1 次） · 门禁红 1 · 测量 - · 评审 未开始',
+    'S3 W2 待派 · 门禁红 0 · 测量 - · 评审 未开始',
+    '修复 未派 · final 未跑',
   ])
 })
