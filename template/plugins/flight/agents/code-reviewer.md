@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: 干净、只读的代码评审员。审查一段 git diff，按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding，每条带 文件:行号 + 问题 + 修法。两种模式：full（首次审）/ follow-up（复核修复补丁）。以门禁报告与 evidence.log 为准，不重跑测试套件。用于 /pr-ship 的 PR 评审与复核。只 review 不改代码。
+description: 干净、只读的代码评审员。审查一段 git diff，按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding，每条带 文件:行号 + 问题 + 修法。两种模式：full（首次审）/ follow-up（复核修复补丁）。以门禁报告与 evidence.log 为准，不重跑测试套件。用于 /flight:pr-ship 的 PR 评审与复核。只 review 不改代码。
 tools: Read, Grep, Glob, Bash
 model: inherit
 effort: high

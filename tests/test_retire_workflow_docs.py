@@ -35,7 +35,7 @@ def test_git_discipline_describes_plugin_worktrees():
 
 def test_evidence_log_means_outside_flight():
     # Given: pr-ship.md 与 code-reviewer.md
-    docs = [read("template/.claude/commands/pr-ship.md"), read("template/.claude/agents/code-reviewer.md")]
+    docs = [read("template/plugins/flight/commands/pr-ship.md"), read("template/plugins/flight/agents/code-reviewer.md")]
 
     # When: 逐份找 evidence.log 的定位
     ok = [("evidence.log" in d and "飞行外" in d and "Workflow 回退" not in d) for d in docs]
