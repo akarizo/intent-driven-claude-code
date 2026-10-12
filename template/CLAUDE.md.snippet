@@ -13,7 +13,7 @@
 
 - **Worktree 隔离**：每 change 一间 `.worktrees/<change>/` + `worktree-<change>` 分支。
 - 5 工件 + `spec.html` + 实现**全落 worktree 内**，主仓库根随时干净。详 `.claude/skills/openspec-git-discipline/`
-- **飞行流程**：tasks 阶段生成 `slices.json`（切片 owns/deps/verify/scenarios）+ 切片包；`/opsx-apply` 按 wave 并行派 `slice-executor`，`slice-gate.py` 机械门禁；评审离关键路径 + 一次批量修复；收口打印飞行记录。legacy 逐 task 守门用 `--gate=per-task` 显式选。
+- **飞行流程**：tasks 阶段生成 `slices.json`（切片 owns/deps/verify/scenarios）+ 切片包；飞行由 flight 插件执行，`/opsx-apply` 按 wave 并行派 `flight:executor`，`slice-gate.py` 机械门禁；`flight:reviewer` 评审 + `flight:fixer` 批量修复；收口打印飞行记录；插件缺席即停飞。legacy 逐 task 守门用 `--gate=per-task` 显式选。
 - **Git 授权边界**：建 worktree 可自动做；**merge / push / 删 worktree / commit 一律交你授权**，不代劳
 - **ADR 不可改**：入 `openspec/adr/` 后需变更则 supersede 旧版，禁原地改
 - **TDD**：写实现前先写失败测试，红→验红→绿→验绿→重构；单测先写 `# Given: / # When: / # Then:` 三段中文注释（详见 `.claude/skills/test-driven-development/`）
@@ -23,15 +23,15 @@
 ## 铁律（零容忍）
 1. 先意图后代码：中级+ 无工件不写源码，门禁只加严不绕过。
 2. 规格即验收：scenario 测试骨架全部转 pass 才算 apply 完成。
-3. TDD 与留痕：先失败测试后代码；测试由可信方运行并留痕（飞行中控制面测量入账本，回退路径 hook 写 evidence.log），不接受自述。
+3. TDD 与留痕：先失败测试后代码；测试由可信方运行并留痕（飞行中控制面测量入账本，飞行外 hook 写 evidence.log），不接受自述。
 4. 独立评审必有：CRITICAL/HIGH 未闭环不得非 draft PR。
 5. 门禁红不收口：slice-gate / final gate 红时禁勾选、禁声明完成。
 6. Git 边界：一 change 一 worktree，不自动 merge / push / 删；ADR 只 supersede。
 7. 两处审批不可省：飞行计划批准与 PR review；起飞批准 = 人在 Claude Code 批准带上按「批准起飞」，flight 插件把计划指纹写入 `refs/flight/<change>/ledger`，takeoff-gate.py 比对账本指纹与当前计划指纹（模型自证无效）。
 8. 度量必打印：apply 收口打印飞行记录，无数据不称提速。
 9. 零 token 优先：能脚本 / hook 判定的不交给模型。
-10. 回退必存在：机制失效时回退路径语义一致。
-11. 模型显式路由：执行体 / 评审员 = 会话主模型 high，机械角色 = sonnet low；派发不留空 `model`；收口打印各角色实际模型。
+10. 失效即停飞：飞行控制面缺席或失效即不起飞或停飞，不回退到第二套实现；与飞行无关的机制按约定降级。
+11. 模型显式路由：执行体 / 评审员 = 会话主模型 high，机械角色 = sonnet low；派发不留空 `model`；收口从账本对账并打印各角色实际模型。
 
 ## 记忆分流（写 CLAUDE.md 前必读）
 权威全文 `.claude/claudemd-standard.md`；`/claudemd-commit` 沉淀、`/claudemd-distill` 重排、`claudemd-lint` 拦截。
@@ -48,7 +48,7 @@
 ## Model 路由（按角色显式声明）
 > Claude Code v2.1.251 起 subagent 模型解析顺序 = 调用时 `model` 参数 > agent frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` env > 主会话（来源：code.claude.com/docs/en/sub-agents "Choose a model"，2026-09-10 核实）。env 只是**默认值**；需强制统一才设 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（模板不设）。fork 恒随主会话模型。
 
-- **飞行角色**：slice-executor / code-reviewer = 会话主模型 + effort high；integrator 等机械角色 = sonnet + effort low。`/opsx-apply` 以 `args.models` 显式传入，脚本缺参即拒绝起飞。
+- **飞行角色**：飞行由 flight 插件执行；`flight:executor` / `flight:reviewer` / `flight:fixer` = 会话主模型 + effort high；合回、门禁、记账等机械动作由插件代码执行，零 token。
 - **主模型判定禁自述**：`<main>` 由 `.claude/hooks/session-model.py` 读会话转录判定；判定不出停飞，人工 `--model=<alias>`。
 - **任何 Agent 派发不得省略 `model`**：留空就落到 env 默认，这正是 2026-09-10 实测「实现 / 评审 / 修复全在 Sonnet」的成因。
 - **确需主模型级子任务**（复杂重构 · 架构决策 · 难 bug 根因）：主会话直接做，或派发时显式 `model: <主模型别名>`。
