@@ -1,0 +1,185 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 62,
+      "summary": "识别已暂存删除时，解析的是不带 -z 的 porcelain 输出，再用 slice(3) 取路径。路径含空格或非 ASCII 字符时（core.quotePath 默认开启），git 会给路径加引号并转义，这些行与 paths[i] 对不上，又走回 git add，报 pathspec 不匹配的老错误。上游 classifyDirty 也是 slice(3) 解析，属于既有约定，而 openspec 工件名多为 ASCII kebab-case，实际触发概率低。",
+      "fix": "可选：改用 `git status --porcelain -z -- ...`，按 \\0 切分后取 XY==='D ' 的条目；或在注释里写明只支持不需加引号的路径。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/land.test.ts",
+      "line": 487,
+      "summary": "切片包写明的另外两种情形没有测试覆盖：所有路径都是已暂存删除时不调用 git add；git status 失败时照旧全部 add。它们不是 spec scenario，代码分支也简单（`if (toAdd.length)` 与 `st.exitCode === 0 ? … : []`），但以后回归时没有用例兜底。",
+      "fix": "可选：在 land.test.ts 补两条小用例。一条是 status 只答 `D  ` 时，calls 里没有 add，commit 带全部路径；另一条是 status 返回 exitCode 1 时，add 带全部路径。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/armed.test.ts",
+      "line": 51,
+      "summary": "预算场景的 Arm 是手工把 tries / transientAgain 填好再喂给 nextStep，真正负责记账的 beforeRetry（只有 transient / model 才加一、并把 awaitingModel 置假）和 refusedAgain（由新旧 cls 推出 transientAgain）在本片没有任何断言；armOf、armedLine（剩余分钟向上取整）、giveUpText、humanText 也没有测到。S1 的三个 scenario 不强制覆盖这些，但 S4 接线时一旦记账出错，会表现成集成测试里的预算或重试次数不对，排查成本更高。",
+      "fix": "在 armed.test.ts 里补一条小用例（可以不挂 scenario）：armOf 之后 tries=0、两个布尔都为假；对 wait-baseline 调 beforeRetry，tries 不变；对 model 调 beforeRetry，tries+1 且 awaitingModel=false；transient 经 refusedAgain 再遇 transient 文本时 transientAgain=true，遇 model 文本时为 false；armedLine 在 now=since+1ms 时显示「剩 30 分钟」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/armed.ts",
+      "line": 125,
+      "summary": "relaunch 在 resume 为真时只给出 `/flight resume <change>`，把 args 里的其余参数（例如 --takeover）丢了；按这条做法重发，可能又因为跨会话被拒。/opsx-apply 分支则保留了 args 原样，两条分支不一致。",
+      "fix": "resume 分支也带上 args 里除 change 名以外的参数，例如 `/flight resume ${arm.change}${rest.length ? ' ' + rest.join(' ') : ''}`；或者在 S4 接线时确认 resume 待命的 args 不会含 --takeover，并在注释里写明。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 899,
+      "summary": "inFlight 对诊断员只认已写入 dispatch 的 Owner（'role' in o）。登记中的返回值 { pending: true, change } 不带 role，而停飞后 change 已移出 active，所以诊断员在 spawn 返回、dispatch 写入之前发出的模型请求不会计时。本函数注释自己也写了「新 agent 的首个模型请求几乎都落在这段窗口里」。诊断员的首个请求一旦卡死，看门狗永远不会停它，spec watchdog-stops-stalled-diagnostician 要堵的口子仍然留着这一段。",
+      "fix": "在 inFlight 里，对 'pending' in o 且 diagnosing.has(o.change) 的情况也返回 true。后续 watchTick 遇到 pending 会照常留到下一次 tick；dispatch 写入后由 watchOne 判 role 为 diagnostician，只停不记。再补一个用例覆盖：诊断员 dispatch 被扣住时发出的请求超时后被 TaskStop。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 817,
+      "summary": "watchTick 在 await ownership 之后只复查 startedAt.has(id)，没有复查这次请求是否仍然超时。如果卡住期间旧请求已结束、同一 agent 又开始了新请求，startedAt 已被重设，就会按陈旧快照停掉一个刚开始请求的 agent，并记一条 heal。这个竞态改动前就有，本片把复查加了一半。",
+      "fix": "await 之后改为复查本次快照的起点：先在 await 之前记下 const t0 = startedAt.get(id)，await 之后要求 startedAt.get(id) === t0 才继续处理，否则 continue。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2311,
+      "summary": "ticker-not-duplicated 的 Then 断言的是 agent-2「恰一条 heal、恰一次 TaskStop」，spec 写的是 a1。按世界设计，被两个计时器都拿到的确实是 agent-2，语义上能测到重复处理，但与 scenario 字面不一致，审阅时容易误读；另外这个用例没有断言 agent-1 也只被处理一次。",
+      "fix": "在 Given 注释里写明「被两个计时器都拿到的是 agent-2」，或补一条断言：agent-1 的 heal 和 TaskStop 也各恰一次，让用例覆盖 spec 的「同一超时 agent 只处理一次」对两者都成立。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 852,
+      "summary": "重试回来后只要 since 变了就直接 return，连起飞成功的结果也一起丢掉。(1) 重试进行中人发了 /flight abort：人收到「已取消起飞待命」，飞行却已经静默起飞，没有任何通知。(2) 重试进行中人重新起飞并被拒：新待命保留，可这次重试其实已经起飞成功，于是新待命会在下一个 tick 对一个已在飞的 change 再发起起飞（同会话、未落地时 takeoff 不拦，可能再写一个 takeoff）。",
+      "fix": "先判断 isAirborne(text)：起飞成功时不管 since 是否变化，都 dropArm 并通知「<change> 已起飞」；since 被取消时在通知里注明「取消到达时已起飞，如需停飞用 /flight abort」。只有被拒的分支才用 since 判断是否丢弃这次结果。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 844,
+      "summary": "awaitingModel 在安排 clock.after(0) 时就置真，而不是在修复请求真正交给模型之后。如果当时主会话正好在跑一轮（例如 tick 触发重试时人正在对话，重试被 lint 拒成 model 类），这一轮结束就会触发 main-turn 重试：模型还没看到修复请求，就白白消耗一次重试预算。重试又被拒后还会再提交一次，模型会排到两份重复的修复请求。需进一步确认引擎在有进行中轮次时 prompt.submit 是排队还是另起一轮。",
+      "fix": "把 awaitingModel 置真挪到 clock.after(0) 回调里、prompt.submit 解析之后再做（回调里用 update 写 armedAtom）；或者记下提交时间或 turnId，main-turn 只认此后开始的轮次。补一条用例：提交后先完成一个提交前就已开始的主会话轮次，断言不重试。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 815,
+      "summary": "人再次起飞、被拒为 human / human-key 类时，该 change 的旧待命没有清除。旧待命会继续按 tick 重试，被拒后才放弃，多跑一次起飞检查、多发一条放弃通知，也和切片包第 2.4 条「新的覆盖旧的」的意图不一致。",
+      "fix": "在 human / human-key 分支里，change 已知时先 dropArm($, change)，再通知并返回。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 840,
+      "summary": "放弃、/flight abort 取消待命时都直接 $.ui.status('') 清空状态行；noteRefusal 也直接覆盖状态行。本进程里另有 change 在飞，或还有别的待命时，会把它们的状态行清掉或盖掉。",
+      "fix": "清状态行之前先看还有没有别的待命或在飞的 change：有就改为显示剩余待命的 armedLine，或者交给 panel 刷新；都没有才清空。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 376,
+      "summary": "按键直接起飞后，同一 change 没有「起飞进行中」的互斥。startTakeoff 和 startResume 都经 clock.after(0) 在后台调用 takeoffNow，按键处理立刻返回，批准带也不禁用该项。按「批准起飞」后，refresh 会把该项改显示为「起飞」，在 takeoff 事件写入之前（中间要跑 lint、preflight、plan_fp，需数秒）人再按一次，就会并发出第二次 takeoffNow。orchestrator 的 takeoff 没有串行锁：attempt 由各自读到的账本算出，appendEvent 冲突时会重读链尾再追加，两次都可能写入 takeoff 事件并各自 drive；commitArtifacts 也会并发。旧的预填路径靠人手动回车，天然串行，所以这是本片新引入的暴露面。账本是否因此被判损坏、是否会重复派发，需进一步确认。",
+      "fix": "在 register.tsx 加模块级 `const lifting = new Set<string>()`。startTakeoff 和 startResume 入口先查：已在其中就 toast「flight：<change> 正在起飞，请稍候」并直接返回；否则 add，然后在后台回调的 finally 里 delete。补一个用例：连按两次 takeoff:demo:<F>，推进时钟后断言 log.gates 恰为 ['demo']。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 166,
+      "summary": "evaluate 判停飞时，stoppedNow 和 lastHaltKind 各跑一次 ledger.py show，同一份账本读了两遍；same 分支的 isAlreadyApproved 还要再读第三遍。每次刷新、每个候选都要多起两个 python 进程。",
+      "fix": "在 evaluate 里只调一次 readLedger(ioOf($), f)，在内存里同时算出 stoppedNow 的结论（可把判定拆成纯函数，接收 events）、最后一条 halt 的 kind，以及「最近 takeoff 之后最后一条 approve 的 fp」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 174,
+      "summary": "scenarioFilesOf 与 orchestrator.tsx 的 scenarioFiles 逐行重复（注释也写明「口径同 orchestrator」）。以后有一处改了口径，批准带显示的工件数 N 就会和起飞时实际提交的数目不一致。",
+      "fix": "从 orchestrator.tsx 导出 scenarioFiles(io, path)。它收的是 Io 不是 $，register.tsx 已经用同样方式把 ioOf($) 传给 io.ts 的 readLedger。register.tsx 直接 import 复用，删掉 scenarioFilesOf。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 487,
+      "summary": "去重分支先 toast「已批准（指纹相同），无需重复按」，紧接着又按「起飞」处理并后台起飞。提示与实际行为相矛盾，人会以为这次按下没有效果。",
+      "fix": "把提示改为「flight：<change> 已批准（指纹相同），直接起飞」，或者去掉这条 toast，由起飞回复首行的 toast 告诉人结果。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 831,
+      "summary": "新旧用例都只用 log.gates 断言「以该 change 起飞」，没有断言参数里带「授权提交」：如果实现只传 [change]，所有用例照样绿（守卫以 exit 3 拦在前面）。另外 stopLive 新加的 isError 分支（TaskStop 回 isError 时不计入已停）也没有用例覆盖。",
+      "fix": "在测试世界里把 takeoff-gate.py 收到的完整 argv 记下来，或者在守卫之前记录 takeoffNow 的 args；至少一个用例断言参数含「授权提交」。再加一个用例：TaskStop 应答 { isError: true }，断言续飞通知或 stopLive 的返回里不含 d1。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-propose.md",
+      "line": 5,
+      "summary": "同文件开头概述仍写「起飞由人类在批准带按『批准起飞』后自己发出 `/opsx-apply`」，与本片改后的第 84、91 行「按下即起飞、不再回车」自相矛盾；同名 skill `template/.claude/skills/openspec-propose/SKILL.md:12` 也一样。模型读到概述会继续让人手发 /opsx-apply。",
+      "fix": "两处概述同改为「起飞由人类在批准带按『批准起飞』即起飞（计划指纹写入账本后插件直接起飞，`takeoff-gate.py` 机械比对账本指纹）」，命令与 skill 保持逐字一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 34,
+      "summary": "「批准指纹」条仍让人「在批准带按『批准起飞』后重新发出 `/opsx-apply <name>`」。按下即起飞之后这一步多余，人照做还会撞上已在飞或重复起飞的拒绝；同名 skill `template/.claude/skills/openspec-apply-change/SKILL.md:43` 也一样。这和同文件第 84–96 行新写的批准带说明对不上。",
+      "fix": "两处同改为「请人核对 `spec.html` 顶部的计划指纹后在批准带按『批准起飞』（已批准未起飞时按『起飞』），按下即起飞，不必再发 `/opsx-apply`」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "README.md",
+      "line": 215,
+      "summary": "流程图仍是「在批准带按『批准起飞』…→ 人发 /opsx-apply <name>」，与本片第 244 行新增的「按下即起飞，不再回车」矛盾；`docs/WORKFLOW_zh.md:168` 的同一流程图也一样。",
+      "fix": "两处流程图改为「人审 spec.html → 在批准带按『批准起飞』（插件把计划指纹写入账本并直接起飞）」，删掉「→ 人发 /opsx-apply <name>」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1092,
+      "summary": "/flight abort 取消待命时不看 armBusy。如果这时 advanceArm 正在跑自动重试（takeoffSafe 还没返回），abort 先 dropArm，并回复「已取消起飞待命」。这次重试要是成功起飞，runStep 第 864 行附近的 since 核对发现待命已被删，直接 return：既不通知「已起飞」，也不撤销起飞。人收到的回复是已取消，飞行却已经起飞、在派 agent。这是已修 HIGH（人工起飞和自动重试互斥）的同一类窗口，出在兄弟入口 abort 上。",
+      "fix": "二选一：(a) abort 分支先判 armBusy.has(given)，命中就回复「flight：<given> 正在自动重试起飞，稍后再 /flight abort」，不删待命；(b) 给待命加一个 cancelled 标记，abort 只置标记；runStep 的 retry 返回后若已起飞但标记为 cancelled，就接着调 abortCommand 停飞，并通知「取消时起飞已在进行，已中止」。补用例：重试读账本时卡住（同现有 armBusy 用例的做法），这时发 /flight abort demo，放行后断言账本没有未中止的 takeoff，或者人收到了已起飞的通知。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 857,
+      "summary": "model 类的 main-turn 推进没有和插件提交的那一轮对上。awaitingModel 在 runStep 的 submit 分支里先置真，prompt.submit 在 clock.after(0) 之后才发。重试链（tick、agent-ended）里出现 refused→submit 时，主会话可能正在跑一轮跟修复无关的对话。那一轮的 turn.complete 会立刻触发重试：模型还没修，重试必然再次被拒，tries 加一，并再提交一轮修复。结果是预算白白耗掉，几条修复请求叠在一起。prompt.submit 失败时只记日志，awaitingModel 留在真，之后人自己的任意一轮都会触发重试。引擎在有轮次进行时调 prompt.submit 是排队还是拒绝，需进一步确认。",
+      "fix": "awaitingModel 只在 clock.after 回调里 prompt.submit 成功之后置真（失败就 give-up 或回到 wait），同时记下提交时刻 submittedAt；main-turn hook 只在该轮开始时刻（或 turnId）晚于 submittedAt 时推进。引擎给不出轮次起点的话，至少在提交时记下当前主会话是否正有轮次在跑，有就忽略下一次 main-turn。补用例：提交之前先有一次无关的主会话 turn.complete，断言不重试、tries 不增加。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 827,
+      "summary": "人再次起飞被拒为 human / human-key 时只发通知，不删同一 change 的旧待命。spec 要求「同一 change 再次由人发出起飞时以新待命替换旧的」，现在旧待命仍留着，状态行还显示「起飞待命」。下一次 tick 或 main-turn 时，旧待命重试，被拒为 human 类后放弃，再通知一次，同一原因人会收到两次。",
+      "fix": "human / human-key 分支里 change 有定义时先 dropArm($, change)，如果状态行正显示该 change 的待命也一并清掉；补一个断言：已有 wait-baseline 待命时人发起飞被拒为「计划已变」，之后 items 里没有 demo。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 852,
+      "summary": "runStep 的 give-up 分支和 /flight abort 取消待命（第 1091 行）都无条件调 $.ui.status('')。同一会话里另一个 change 正在飞时，这会把它的状态行清空，要等那个 change 的下一轮 drive 跑 showStatus 才恢复。",
+      "fix": "只在当前没有在飞的 change（active.size === 0）时清空；否则调一次在飞 change 的 refreshFromLedger 或 showStatus 重画状态行。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2514,
+      "summary": "新加的两条测试（以及上一轮的 human-takeoff-skipped-while-arm-retrying）在 change 的 specs 里都没有对应的 scenario。拒飞出口这条新行为只写在命令文档里，没进入规格，验收映射有缺口。",
+      "fix": "在 template/openspec/changes/flight-armed-takeoff/specs 对应的 capability 下补一条 scenario，写明本会话在飞时的起飞拒绝（不进入待命）以及进程重启后的续飞，名字与测试名对齐。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 665,
+      "summary": "上一轮的 HIGH 已闭环：拒飞条件加了 active.has(name)，进程重启后回到原会话（active 为空）会照常走活 agent 检查和续飞，新测试 same-session-unfinished-resumes-after-restart 覆盖了这条路径。遗留一个窄口子（需进一步确认实际发生频率）：active 只在写入 land / halt 时移除，但 driveNow 有几条路径会直接 return 且不写终态，例如 509 行的防空转、530 行 actions 为空、MAX_ROUNDS 耗尽。如果派出的 agent 都已结束、没有 SubagentStop 再触发 drive（比如 agent 未正常返回），本进程里的飞行就卡住了，但 active 仍然登记着。这时 /flight resume 或 /opsx-apply 会回复「正在飞」，和事实不符。人只能先 /flight abort 再 /flight resume，而回复只提了 abort，没说中止后可以续飞。",
+      "fix": "把「正在驱动」判得更准：除了 active.has(name)，还要求 drive 队列正在运行这个 change，或者本 attempt 已派发的 agent 在 $.agent.list() 里至少有一个处于 LIVE 状态；两者都不满足就视为卡住，不拒飞，继续走续飞。也可以退一步：保持现在的判据，但在拒飞文案末尾补一句「已中止的可用 /flight resume <name> 续飞」。另补一条测试：active 已登记、agent.list 为空，断言回复里有可执行的下一步。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "32240d405092ed8ed41c64e5d93524125bf87c0d"
+  }
+}
