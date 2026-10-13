@@ -119,23 +119,26 @@ Feature: 用户定：停飞后改完计划按一次键就续飞；首次起飞�
 - **AND** 乙显示按钮「续飞」
 - **AND** 丙显示按钮「批准起飞」
 
-### Requirement: 按下续飞按钮即按序续飞
-按下「批准修订并续飞」时，SHALL 先核对指纹与绘制时一致，再追加 approve，然后在后台启动 `resumeFlight(…, {replan: true})`，且 SHALL NOT 预填 `/opsx-apply`。按下「续飞」时，SHALL NOT 追加 approve，在后台启动 `resumeFlight(…, {replan: false})`。
-Feature: 铁律 7：批准只由按键写入；续飞由同一次按键触发，模型侧没有入口。
+### Requirement: 按下续飞按钮即按序准备续飞
+按下「批准修订并续飞」时，SHALL 先核对指纹与绘制时一致，再追加 approve，然后在后台启动 `resumeFlight(…, {replan: true})`。按下「续飞」时，SHALL NOT 追加 approve，在后台启动 `resumeFlight(…, {replan: false})`。
+Feature: 铁律 7：批准只由按键写入；续飞命令仍由人回车发出，模型侧没有入口。按下即直接起飞，需要 `orchestrator.tsx` 在自己的 hook 里交出起飞闭包（插件里 `$` 不能跨文件传），留给后续 change「起飞待命」（2026-10-13 attempt 2 后修订）。
 
 `resumeFlight` 的步骤：
 1. 停掉该 change 仍在跑的诊断员；
 2. replan 时运行 `slice-gate.py baseline --change-dir <D>`：
-   - 退出 0 → 调用 `takeoff(['<change>', '授权提交'], {resume: true})`；
-   - 非 0 → 通知「基线红，未续飞」与 reasons 首行，SHALL NOT 起飞；
+   - 退出 0 → 调用依赖 `takeoff(['<change>', '授权提交'], {resume: true})`；
+   - 非 0 → 通知「基线红，未续飞」与 reasons 首行，SHALL NOT 调用 takeoff；
 3. 不 replan 时跳过基线，直接以同样参数调用 takeoff；
 4. 把 takeoff 回复的首行通知出去。
 
+批准带接线时，`takeoff` 依赖 SHALL 把 `/opsx-apply <change> 授权提交` 预填进输入框，由人回车续飞，并回复「已预填 /opsx-apply <change> 授权提交，回车续飞」。预填不成时，回复提示人手动输入该命令。
+
 #### Scenario: press-approves-then-resumes
-- **GIVEN** 批准带正显示已停飞的甲（计划改过，指纹 F2）与乙（计划未改）；`resumeFlight` 由测试替身记录调用
-- **WHEN** 按下甲的「批准修订并续飞」，再按下乙的「续飞」
-- **THEN** 甲的账本追加 approve，fp 为 F2，替身收到 `{change: 甲, replan: true}`；输入框没有被预填
-- **AND** 乙的账本没有追加 approve，替身收到 `{change: 乙, replan: false}`
+- **GIVEN** 批准带正显示已停飞的甲（计划改过，指纹 F2，基线退出 0）与乙（计划未改）
+- **WHEN** 按下甲的「批准修订并续飞」，再按下乙的「续飞」，等后台续飞跑完
+- **THEN** 甲的账本追加 approve，fp 为 F2；甲跑过基线；输入框被预填为 `/opsx-apply 甲 授权提交`
+- **AND** 乙的账本没有追加 approve，乙没有跑基线；输入框被预填为 `/opsx-apply 乙 授权提交`
+- **AND** 通知含「回车续飞」
 
 #### Scenario: resume-flight-sequence
 - **GIVEN** 三组注入的依赖：

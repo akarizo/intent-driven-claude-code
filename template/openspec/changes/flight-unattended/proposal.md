@@ -54,8 +54,9 @@
     - 除 abort、fingerprint 外，停飞后派只读诊断员 `flight:diagnostician`（主模型 high）。
     - 它的最终回答记为 `triage` 事件：根因、该谁动、改计划时附草案。只供展示，不参与任何判定，也不落盘。
   - **B3 一键续飞**：批准带对已停飞的 change 换成两种按钮：
-    - 计划改过：「批准修订并续飞」。按下 = 写 approve（新指纹）→ 停掉仍在跑的诊断员 → 后台重跑 `slice-gate.py baseline` → 绿则以「授权提交」续飞（只提交本 change 工件，只重派未合回的切片）；红则通知原因、不起飞。
-    - 计划未改：「续飞」，等同 `/flight resume`。
+    - 计划改过：「批准修订并续飞」。按下 = 写 approve（新指纹）→ 停掉仍在跑的诊断员 → 后台重跑 `slice-gate.py baseline` → 绿则预填 `/opsx-apply <change> 授权提交`，人回车即续飞（只提交本 change 工件，只重派未合回的切片）；红则通知原因、不预填。
+    - 计划未改：「续飞」，直接预填同一条命令。
+    - 按下即直接起飞（不用回车）需要 `orchestrator.tsx` 交出起飞闭包，留给后续 change「起飞待命」（2026-10-13 attempt 2 后修订）。
     - 首次起飞仍是「批准起飞」+ 人回车 `/opsx-apply`，不变。
 - **记录与核对**：
   - 账本新增 `heal`、`triage` 事件，dispatch 认 `diagnostician` 角色，halt 可带 `kind`；

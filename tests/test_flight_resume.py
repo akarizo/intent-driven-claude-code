@@ -15,9 +15,9 @@ def test_band_offers_resume_for_halted():
 
 @pytest.mark.xfail(strict=True, reason="flight-unattended S6 未实现")
 def test_press_approves_then_resumes():
-    # Given: 批准带显示已停飞的甲（计划改过，F2）与乙（计划未改）；resumeFlight 由替身记录
-    # When: 按下甲的「批准修订并续飞」与乙的「续飞」
-    # Then: 甲追加 approve fp F2、替身收到 replan true、未预填；乙没有 approve、替身收到 replan false
+    # Given: 批准带显示已停飞的甲（计划改过，F2，基线退出 0）与乙（计划未改）
+    # When: 按下甲的「批准修订并续飞」与乙的「续飞」，等后台续飞跑完
+    # Then: 甲追加 approve fp F2、跑过基线、预填 /opsx-apply 甲 授权提交；乙没有 approve、没跑基线、预填 /opsx-apply 乙 授权提交；通知含「回车续飞」
     assert_ts_passed("press-approves-then-resumes")
 
 

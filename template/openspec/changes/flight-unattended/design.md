@@ -277,17 +277,21 @@ sequenceDiagram
   2. `replan` 时运行 `slice-gate.py baseline --change-dir <D>`（cwd 为 change worktree，超时 600 s）。
      - 退出非 0 → 通知「基线红，未续飞：<reasons 首行>」并返回，不起飞；
      - 计划未改时跳过基线（等同 `/flight resume`）。
-  3. `takeoff(['<change>', '授权提交'], { resume: true })`，即 `orchestrator.tsx` 现有 `takeoff`，改为 export：
+  3. 调用依赖 `takeoff(['<change>', '授权提交'], { resume: true })`。本 change 里批准带把它接为**预填** `/opsx-apply <change> 授权提交`，人回车后：
      - 工作区只脏在本 change 工件时，由现有逻辑只提交工件；
      - 起飞检查照旧全跑：守卫、版本、跨会话、lint、preflight。
-  4. 把 takeoff 的回复首行通知出去；被拒时同样通知原因。
+  4. 把 takeoff 依赖的回复首行通知出去（「已预填 …，回车续飞」）。
 - **触发方式**：`ui.press` 处理里以 `$.clock.after(0, …)` 启动，不阻塞按键处理。实测 1 已证明 hook 返回后计时器回调仍可用 `$`。
+- **修订（2026-10-13 attempt 2 后）**：原计划是按下即直接调用 `orchestrator.tsx` 的 `takeoff`，S6 两个执行体都做不到：
+  - `register.tsx` import `takeoff` 并把 `$` 传进去，`claude plugin validate` 拒绝（「$ is followed only into a function declared in this same file」）；
+  - 插件自己 `$.command.run('flight')` 的 origin 是 plugin，会被 `/flight` 的 `HOST_ORIGINS` 拒（D8）；
+  - 可行的做法是让 `orchestrator.tsx` 在自己的 hook 里交出一个起飞闭包（闭包可以跨文件传）。但 `orchestrator.tsx` 归同 wave 的 S5b，新开一片只能排第 4 层，超过 lint 的深度上限 3；
+  - 用户定：本 change 降级为预填，直接起飞并入后续 change「起飞待命」。那个 change 的「按批准起飞直接起飞」需要的正是同一个起飞闭包。
 - **铁律 7**：
-  - 写 approve 的仍只有按键；续飞由同一次按键触发；
+  - 写 approve 的仍只有按键；续飞命令由人回车发出；
   - 模型侧没有任何新入口：不注册新命令、新工具，`resumeFlight` 只被 `ui.press` 调用；
   - 这一条与 `DRAFT-flight-orchestrator-state-machine` 第 1 条「人照旧发 `/opsx-apply`」相悖，由新 ADR `DRAFT-flight-resume-from-band` 部分取代。自愈的边界另记 `DRAFT-flight-bounded-self-heal`。
 - **否决**：
-  - 按下后预填 `/opsx-apply <c> 授权提交`，让人再回车：多一步，且基线还得手动跑；
   - 用 `$.command.run('opsx-apply')` 从插件内发命令：来源为 plugin，会被自己的 `HOST_ORIGINS` 拒；为它开口子，等于给任意插件开了续飞入口。
 
 ### D8 · 判定器与核对
