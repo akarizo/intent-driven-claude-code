@@ -1,7 +1,5 @@
 """flight 合回与收口过程（scenario: flight-integration#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -141,10 +139,11 @@ def test_commit_artifacts_handles_staged_deletion():
 
 # ---------------------------------------------------------------- flight-armed-followups S1（骨架：实现后去掉 xfail 标记）
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S1 未实现")
 def test_staged_deletion_edge_cases():
     # Given: 甲：切片/S5.md 的删除已暂存、a.md 已修改（porcelain -z）；乙：两个路径都是已暂存删除；丙：git status 以 1 退出
     # When: 分别调用 commitArtifacts
     # Then: 甲只 add a.md、commit 含两个路径；乙不调用 git add、commit 含两个路径；丙对全部路径 add
-    assert_ts_passed("staged-deletion-edge-cases")
+    assert_ts_passed("staged-deletion-edge-cases/quoted-path")
+    assert_ts_passed("staged-deletion-edge-cases/all-deleted")
+    assert_ts_passed("staged-deletion-edge-cases/status-fails")
 
