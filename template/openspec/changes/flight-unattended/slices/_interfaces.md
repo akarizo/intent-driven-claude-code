@@ -244,17 +244,21 @@ export const flights: Map<string, Flight> = new Map()
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
 ```
 
-## S5a · 编排（一）
+## S5a
 
-attempt 1 之后由 S5 拆出（两个执行体都撞 maxTurns 40）。
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function registerOrchestrator(on: On): void {
+```
 
-- `perform` 处理 `heal`：只追加 heal 事件并返回 true（下一轮 next 给出派发）。
-- `export async function takeoff($: Engine, args: string[], opts?: { resume?: boolean }): Promise<string>`：签名不变，只改为 export，供 S6 使用。
-- 看门狗：
-  - `turn.step`（async generator，`{ agentId: /./ }`）驱动 `StepTracker`；
-  - `session.start` 起 `$.clock.every(60000, …)`，计时器结束后在下次 `turn.step` 重起。
-- `/flight abort` 的 halt 带 `haltKind: 'abort'`；driveNow `terminal()` 的 halt 带 `haltKind: 'control'`。
-- `versions.ts` 的 `REQUIRED_FEATURES` 加 `integ-guard`。
+### template/plugins/flight/hooks/versions.ts
+```
+export type VersionCheck = { ok: true; line: string } | { ok: false; reason: string }
+export const REQUIRED_FEATURES = ['evidence-ledger-only', 'g5-per-target', 'guards', 'ship-ledger', 'ledger-records', 'integ-guard'] as const
+export async function checkPluginCopy(io: Io, x: { pluginRoot: string; configDir: string; mainTree: string }): Promise<VersionCheck> {
+export async function checkJudges(io: Io, x: { hooksDir: string; required: readonly string[] }): Promise<VersionCheck> {
+```
 
 ## S5b · 编排（二）
 
