@@ -15,9 +15,33 @@ export type FlightItem = {
   fp: string
   /** 非空 = 该项无法批准的原因（如「找不到 plan_fp.py」「账本损坏」），此时不出按钮。 */
   problem: string
-  /** approve = 首次（或落地后）批准；replan = 已停飞且计划改过（批准修订并续飞）；resume = 已停飞且计划未改（续飞）。 */
-  mode: 'approve' | 'replan' | 'resume'
+  /** approve = 首次（或落地后）批准；takeoff = 已批准、尚未起飞（按下即起飞）；replan = 已停飞且计划改过（批准修订并续飞）；resume = 已停飞且计划未改（续飞）。 */
+  mode: 'approve' | 'takeoff' | 'replan' | 'resume'
 }
+
+/** 一次起飞待命（字段与 hooks/armed.ts 的 Arm 一一对应）。 */
+export type FlightArmedItem = {
+  change: string
+  /** 起飞参数原样（含「授权提交」等）。 */
+  args: string[]
+  /** 来自 /flight resume 或续飞按钮。 */
+  resume: boolean
+  /** 拒绝分类（armed.ts 的 ArmClass）。 */
+  cls: string
+  /** 最近一次拒绝的原文。 */
+  reason: string
+  /** 首次被拒的时刻（毫秒）。 */
+  since: number
+  /** 已计入预算的自动重试次数。 */
+  tries: number
+  /** 已提交「交模型」的一轮、尚未结束。 */
+  awaitingModel: boolean
+  /** 上一次自动重试的结果也是 transient。 */
+  transientAgain: boolean
+}
+
+/** 会话里的起飞待命：按 change 索引。 */
+export type FlightArmed = { items: Record<string, FlightArmedItem> }
 
 export type FlightBand = {
   /** 版本低于下限时为真：批准带不显示、按压不写账本。 */
@@ -33,6 +57,6 @@ export type FlightPanel = {
 
 declare module 'claude-code' {
   interface PluginState {
-    flight: { band: FlightBand; panel: FlightPanel }
+    flight: { band: FlightBand; panel: FlightPanel; armed: FlightArmed }
   }
 }

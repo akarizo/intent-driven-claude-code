@@ -52,11 +52,19 @@ export function classifyDirty(paths: readonly string[], x: { changeDir: string; 
   return out
 }
 
-/** 只 add 并提交所列工件（相对 change worktree 根，pathspec 限定）；返回错误信息，无错为 undefined。 */
+/**
+ * 只 add 并提交所列工件（相对 change worktree 根，pathspec 限定）；返回错误信息，无错为 undefined。
+ * 已暂存的删除（porcelain XY 为 `D `）不交给 git add（会报 pathspec 不匹配），commit 仍带全部路径；status 失败时照旧全部 add。
+ */
 export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
   const abs = paths.map(p => `${f.changeTree}/${p}`)
-  const add = await git(io, f.changeTree, 'add', '--', ...abs)
-  if (add.exitCode !== 0) return `git add 失败：${firstLine(add)}`
+  const st = await git(io, f.changeTree, 'status', '--porcelain', '--', ...abs)
+  const staged = new Set(st.exitCode === 0 ? st.stdout.split('\n').filter(l => l.startsWith('D  ')).map(l => l.slice(3)) : [])
+  const toAdd = abs.filter((_, i) => !staged.has(paths[i]))
+  if (toAdd.length) {
+    const add = await git(io, f.changeTree, 'add', '--', ...toAdd)
+    if (add.exitCode !== 0) return `git add 失败：${firstLine(add)}`
+  }
   const commit = await git(io, f.changeTree, 'commit', '-m', `docs(openspec): ${f.change} 工件（起飞时经「授权提交」提交）`, '--', ...abs)
   if (commit.exitCode !== 0) return `git commit 失败：${firstLine(commit)}`
   return undefined
@@ -176,7 +184,7 @@ export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJso
   return r.ok ? r : { ...r, conflicts: [] }
 }
 
-/** 解冲突 worktree 按 io.freshWorktree 的规则命名：<S>-resolve 被占用（worktree 或分支已存在）则另起 <S>-resolve-a<attempt>，都被占用则报错；不传 attempt 时只认原名。 */
+/** 解冲突 worktree 的命名：<S>-resolve 被占用（worktree 或分支已存在）则另起 <S>-resolve-a<attempt>，都被占用则报错；不传 attempt 时只认原名。 */
 async function freshResolve(io: Io, f: Flight, slice: string, attempt?: number): Promise<{ path: string; branch: string } | { error: string }> {
   const names = [`${slice}-resolve`, ...(attempt === undefined ? [] : [`${slice}-resolve-a${attempt}`])]
   let why = ''

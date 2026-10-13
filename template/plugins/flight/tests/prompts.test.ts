@@ -139,6 +139,18 @@ test('integ-prompts-state-guards', async () => {
   for (const s of ['git diff c9 c10', '改弱测试', 'submit_findings']) expect(review).toContain(s)
 })
 
+// 护栏（flight-armed-takeoff：flight-integ-fix#integ-prompts-spec-given）：按 spec 原样的多行失败项
+test('integ-prompts-state-guards/spec-given', async () => {
+  // Given: change demo；failed 为 spec 原样的多行项「G2 test: exit 1（新增 1 条失败）\ntests/test_x.py::test_y」；整合修复起点 base c9
+  const failed = ['G2 test: exit 1（新增 1 条失败）\ntests/test_x.py::test_y']
+
+  // When: 生成整合修复体提示词
+  const fix = integFixerPrompt({ change: 'demo', changeDir: CHANGE_DIR, failed, base: 'c9' })
+
+  // Then: 多行项首行与第二行都在，并含 scenario、xfail、owns、先有失败测试
+  for (const s of ['G2 test: exit 1（新增 1 条失败）', 'tests/test_x.py::test_y', 'scenario', 'xfail', 'owns', '先有失败测试']) expect(fix).toContain(s)
+})
+
 test('triage-prompt-and-agent', async () => {
   // Given: change demo、hooksDir /r/.claude/hooks、停飞原因「切片 blocked：S4（G1 verify: exit 1）」、kind blocked
   const x = { change: 'demo', changeDir: CHANGE_DIR, hooksDir: '/r/.claude/hooks', reason: '切片 blocked：S4（G1 verify: exit 1）', kind: 'blocked' }

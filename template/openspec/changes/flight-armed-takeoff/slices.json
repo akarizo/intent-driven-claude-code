@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "change": "flight-armed-takeoff",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 132.9
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "纯模块 armed.ts：起飞拒绝分类、待命的预算与推进",
+      "packet": "slices/S1.md",
+      "owns": [
+        "template/plugins/flight/hooks/armed.ts",
+        "template/plugins/flight/tests/armed.test.ts",
+        "tests/test_flight_armed.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_armed.py",
+      "scenarios": [
+        "flight-armed-takeoff#refusals-classified",
+        "flight-armed-takeoff#armed-budget-and-expiry",
+        "flight-armed-takeoff#armed-decides-next-step"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S2",
+      "title": "小修：提交工件对已暂存的删除成立；integ 提示词按 spec 原样的护栏用例",
+      "packet": "slices/S2.md",
+      "owns": [
+        "template/plugins/flight/hooks/land.ts",
+        "template/plugins/flight/tests/land.test.ts",
+        "tests/test_flight_land.py",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "tests/test_flight_agents.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_land.py tests/test_flight_agents.py tests/test_flight_takeoff_commit.py",
+      "scenarios": [
+        "flight-takeoff-commit#commit-artifacts-handles-staged-deletion",
+        "flight-integ-fix#integ-prompts-spec-given"
+      ],
+      "guards": [
+        "flight-integ-fix#integ-prompts-spec-given"
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "orchestrator 加固：诊断员包络与计时、看门狗停飞补停、计时器去重；起飞闭包 takeoffNow 与类型",
+      "packet": "slices/S3.md",
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py",
+        "template/plugins/flight/types/index.d.ts"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_abort.py tests/test_flight_watchdog.py tests/test_flight_plugin.py",
+      "scenarios": [
+        "flight-watchdog-hardening#diagnostician-reads-auto-allowed",
+        "flight-watchdog-hardening#watchdog-stops-stalled-diagnostician",
+        "flight-watchdog-hardening#watchdog-halt-drains-queue",
+        "flight-watchdog-hardening#ticker-not-duplicated"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S4",
+      "title": "orchestrator 待命接线：被拒即待命、按事件自动重试、交模型、放弃与取消",
+      "packet": "slices/S4.md",
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_orchestrator.py"
+      ],
+      "deps": [
+        "S1",
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_takeoff_commit.py tests/test_flight_versions.py tests/test_flight_abort.py",
+      "scenarios": [
+        "flight-armed-takeoff#refused-takeoff-arms",
+        "flight-armed-takeoff#wait-retries-takeoff",
+        "flight-armed-takeoff#model-fix-submits-then-retries",
+        "flight-armed-takeoff#transient-retries-once-with-diag",
+        "flight-armed-takeoff#armed-gives-up-and-cancels"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S5",
+      "title": "批准带：三个按钮按下即起飞、「起飞」按钮、停飞判定修正、续飞前停诊断员",
+      "packet": "slices/S5.md",
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_resume.py",
+        "tests/test_flight_plugin.py",
+        "tests/test_approval_gate.py",
+        "tests/test_flight_io.py"
+      ],
+      "deps": [
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py tests/test_flight_io.py",
+      "scenarios": [
+        "flight-band-takeoff#band-offers-takeoff-for-approved",
+        "flight-band-takeoff#band-ignores-landed-and-aborted",
+        "flight-band-takeoff#band-approve-takes-off",
+        "flight-band-takeoff#band-resume-takes-off",
+        "flight-band-takeoff#band-resume-stops-diagnostician",
+        "flight-fresh-worktrees#fresh-worktree-candidates",
+        "flight-fresh-worktrees#fresh-worktree-branch-left"
+      ],
+      "guards": [
+        "flight-fresh-worktrees#fresh-worktree-candidates",
+        "flight-fresh-worktrees#fresh-worktree-branch-left"
+      ]
+    },
+    {
+      "id": "S6",
+      "title": "文档与发布：命令、skill、README、WORKFLOW、propose 交接写清起飞待命与按下即起飞，插件 0.10.0",
+      "packet": "slices/S6.md",
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "tests/test_armed_docs.py",
+        "tests/test_unattended_docs.py"
+      ],
+      "deps": [
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py",
+      "scenarios": [
+        "flight-armed-docs#docs-describe-armed-takeoff",
+        "flight-armed-docs#plugin-version-0-10-0"
+      ],
+      "guards": []
+    }
+  ],
+  "scenario_tests": {
+    "flight-armed-takeoff#refusals-classified": "tests/test_flight_armed.py::test_refusals_classified",
+    "flight-armed-takeoff#armed-budget-and-expiry": "tests/test_flight_armed.py::test_armed_budget_and_expiry",
+    "flight-armed-takeoff#armed-decides-next-step": "tests/test_flight_armed.py::test_armed_decides_next_step",
+    "flight-armed-takeoff#refused-takeoff-arms": "tests/test_flight_orchestrator.py::test_refused_takeoff_arms",
+    "flight-armed-takeoff#wait-retries-takeoff": "tests/test_flight_orchestrator.py::test_wait_retries_takeoff",
+    "flight-armed-takeoff#model-fix-submits-then-retries": "tests/test_flight_orchestrator.py::test_model_fix_submits_then_retries",
+    "flight-armed-takeoff#transient-retries-once-with-diag": "tests/test_flight_orchestrator.py::test_transient_retries_once_with_diag",
+    "flight-armed-takeoff#armed-gives-up-and-cancels": "tests/test_flight_orchestrator.py::test_armed_gives_up_and_cancels",
+    "flight-band-takeoff#band-offers-takeoff-for-approved": "tests/test_flight_resume.py::test_band_offers_takeoff_for_approved",
+    "flight-band-takeoff#band-ignores-landed-and-aborted": "tests/test_flight_resume.py::test_band_ignores_landed_and_aborted",
+    "flight-band-takeoff#band-approve-takes-off": "tests/test_flight_resume.py::test_band_approve_takes_off",
+    "flight-band-takeoff#band-resume-takes-off": "tests/test_flight_resume.py::test_band_resume_takes_off",
+    "flight-band-takeoff#band-resume-stops-diagnostician": "tests/test_flight_resume.py::test_band_resume_stops_diagnostician",
+    "flight-watchdog-hardening#diagnostician-reads-auto-allowed": "tests/test_flight_orchestrator.py::test_diagnostician_reads_auto_allowed",
+    "flight-watchdog-hardening#watchdog-stops-stalled-diagnostician": "tests/test_flight_orchestrator.py::test_watchdog_stops_stalled_diagnostician",
+    "flight-watchdog-hardening#watchdog-halt-drains-queue": "tests/test_flight_orchestrator.py::test_watchdog_halt_drains_queue",
+    "flight-watchdog-hardening#ticker-not-duplicated": "tests/test_flight_orchestrator.py::test_ticker_not_duplicated",
+    "flight-takeoff-commit#commit-artifacts-handles-staged-deletion": "tests/test_flight_land.py::test_commit_artifacts_handles_staged_deletion",
+    "flight-integ-fix#integ-prompts-spec-given": "tests/test_flight_agents.py::test_integ_prompts_spec_given",
+    "flight-fresh-worktrees#fresh-worktree-candidates": "tests/test_flight_io.py::test_fresh_worktree_never_reuses_old",
+    "flight-fresh-worktrees#fresh-worktree-branch-left": "tests/test_flight_io.py::test_fresh_worktree_branch_left",
+    "flight-armed-docs#docs-describe-armed-takeoff": "tests/test_armed_docs.py::test_docs_describe_armed_takeoff",
+    "flight-armed-docs#plugin-version-0-10-0": "tests/test_armed_docs.py::test_plugin_version_0_10_0"
+  }
+}
