@@ -134,7 +134,7 @@ DEFAULT_SRC = "def add(a, b):\n    return a + b\n"
 
 
 def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None, src_body=DEFAULT_SRC, extra_owned=None):
-    """构造：已 start 的切片 S1 + 一个含源码与配对测试的 commit。返回 change 目录。
+    """构造：切片 S1 的工件 commit（打 tag slice-base 作区间起点）+ 一个含源码与配对测试的 commit。返回 change 目录。
 
     src_body 换源码正文；extra_owned 是 {相对路径: 正文}，既写文件也一并进 owns。
     """
@@ -147,8 +147,7 @@ def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None, src_body=DEFAULT_S
     write_plan(change, data)
     write(change / "tasks.md", "- [ ] S1 x\n")
     commit_all(git_repo, "artifacts")
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-    assert p.returncode == 0, p.stderr
+    git(git_repo, "tag", "slice-base")
     write(git_repo / "src" / "mod.py", src_body)
     write(git_repo / "tests" / "test_mod.py", test_body)
     for rel, text in extra_owned.items():
@@ -160,9 +159,14 @@ def gate_repo(git_repo, test_body=GOOD_TEST, extra_file=None, src_body=DEFAULT_S
     return change
 
 
+def _base(repo):
+    """gate_repo 记下的区间起点（tag slice-base 指向的 commit）。"""
+    return git(repo, "rev-parse", "slice-base")
+
+
 def _measured(repo, target="tests/test_mod.py::test_mod_adds"):
-    """给已 start 的切片 S1 在账本补起点测量（XFAIL）与 source 为空的见红测量（FAILED），让 G5 绿。"""
-    base = json.loads((repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+    """给 gate_repo 构造的切片 S1 在账本补起点测量（XFAIL）与 source 为空的见红测量（FAILED），让 G5 绿。"""
+    base = _base(repo)
     ledger_append(repo, "c", _measure_ev(base, [(target, "XFAIL")], agent="dispatch"))
     ledger_append(repo, "c", _measure_ev(base, [(target, "FAILED")], changed=["tests/test_mod.py"]))
 
@@ -173,15 +177,13 @@ def test_gate_pass_json(git_repo):
     _measured(git_repo)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
-    # Then: stdout 是 JSON 且 ok 为 true、failed 为空、commit 为 HEAD；gate-report.md 追加含 S1 的一行；.openspec-slice 标记被移除
+    # Then: stdout 是 JSON 且 ok 为 true、failed 为空、commit 为 HEAD
     out = json.loads(p.stdout)
     assert out["ok"] is True, out
     assert out["failed"] == []
     assert out["commit"] == git(git_repo, "rev-parse", "HEAD")
-    assert "S1" in (change / "gate-report.md").read_text(encoding="utf-8")
-    assert not (git_repo / ".openspec-slice").exists()
 
 
 def test_gate_ownership_violation(git_repo):
@@ -189,7 +191,7 @@ def test_gate_ownership_violation(git_repo):
     change = gate_repo(git_repo, extra_file="src/other.py")
 
     # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: ok 为 false，failed 含一项以 G6 开头并点名 src/other.py
     out = json.loads(p.stdout)
@@ -202,7 +204,7 @@ def test_gate_missing_gwt(git_repo):
     change = gate_repo(git_repo, test_body=BAD_TEST)
 
     # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: ok 为 false，failed 含一项以 G4 开头并点名 test_mod_adds
     out = json.loads(p.stdout)
@@ -217,7 +219,7 @@ def test_gate_warns_uncommitted_with_full_path(git_repo):
     (git_repo / "src" / "mod.py").write_text("def add(a, b):\n    return a + b  # touched\n", encoding="utf-8")
 
     # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: 仍通过（文件在 owns 内），且 warnings 里的路径是完整的 src/mod.py 而不是被截断的
     out = json.loads(p.stdout)
@@ -225,20 +227,6 @@ def test_gate_warns_uncommitted_with_full_path(git_repo):
     assert any("src/mod.py" in w and "rc/mod.py" not in w.replace("src/mod.py", "") for w in out["warnings"]), out["warnings"]
 
 
-def test_record_appends_gate_row_idempotently(git_repo):
-    # Given: 一份切片门禁 JSON（S1 ok，commit 为某 SHA）
-    change = gate_repo(git_repo)
-    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [], "summary": "通过"})
-
-    # When: 用 slice-gate.py record --json 记录两次
-    run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0，gate-report.md 里该 slice+commit 只有一行（幂等），timeline 记了 gate 事件
-    assert p.returncode == 0, p.stderr
-    rows = [l for l in (change / "gate-report.md").read_text(encoding="utf-8").splitlines() if "abc1234def" in l]
-    assert len(rows) == 1
-    assert "gate\tS1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
 
 
 def test_gate_flags_committed_flight_records(git_repo):
@@ -248,7 +236,7 @@ def test_gate_flags_committed_flight_records(git_repo):
     commit_all(git_repo, "S1 with flight record")
 
     # When: 运行 gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: ok 为 false，failed 含一项以 G6 开头并点名 timeline.md 属飞行记录
     out = json.loads(p.stdout)
@@ -320,14 +308,14 @@ def test_gate_g8_accepts_complete_ceiling(git_repo):
     change = gate_repo(git_repo, src_body=GOOD_CEILING_SRC)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
-    # Then: failed 里没有以 G8 开头的项；gate-report.md 的天花板表里半角箭头那条有一行含 src/mod.py:2 与限制、升级路径两段文本；全角箭头那条有一行含 src/mod.py:7 与两段文本
+    # Then: failed 里没有以 G8 开头的项；JSON 的 ceilings 里半角箭头那条为 src/mod.py 第 2 行并含限制、升级路径两段文本；全角箭头那条为第 7 行并含两段文本
     out = json.loads(p.stdout)
-    rows = (change / "gate-report.md").read_text(encoding="utf-8").splitlines()
+    rows = out.get("ceilings") or []
     assert [f for f in out["failed"] if f.startswith("G8")] == [], out["failed"]
-    assert any("src/mod.py:2" in r and "只支持两个整数相加" in r and "需要小数精度时换 Decimal" in r for r in rows), rows
-    assert any("src/mod.py:7" in r and "不做溢出检查" in r and "出现越界时接入 checked 运算" in r for r in rows), rows
+    assert ["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"] in rows, rows
+    assert ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"] in rows, rows
 
 
 def test_gate_g8_flags_missing_upgrade_path(git_repo):
@@ -335,7 +323,7 @@ def test_gate_g8_flags_missing_upgrade_path(git_repo):
     change = gate_repo(git_repo, src_body=MISSING_UPGRADE_SRC)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: ok 为 false；failed 含一项以 G8 ceiling: 开头、点名 src/mod.py:2 并说明缺升级路径、给出期望形状
     out = json.loads(p.stdout)
@@ -348,7 +336,7 @@ def test_gate_g8_flags_missing_limit(git_repo):
     change = gate_repo(git_repo, src_body=MISSING_LIMIT_SRC)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: ok 为 false；failed 含一项以 G8 ceiling: 开头并点名 src/mod.py:2 说明缺限制段
     out = json.loads(p.stdout)
@@ -361,7 +349,7 @@ def test_gate_json_carries_ceilings(git_repo):
     change = gate_repo(git_repo, src_body=GOOD_CEILING_SRC)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: JSON 的 ceilings 字段是两条行，分别为 ["src/mod.py", 2, 限制, 升级路径] 与 ["src/mod.py", 7, ...]
     out = json.loads(p.stdout)
@@ -371,57 +359,10 @@ def test_gate_json_carries_ceilings(git_repo):
     ], out.get("ceilings")
 
 
-def test_record_writes_ceilings_from_gate_json(git_repo):
-    # Given: 一份带 ceilings 的切片门禁 JSON（S1 ok、commit abc1234def、天花板行 src/mod.py:2），change 分支上还没有它的门禁行
-    change = gate_repo(git_repo)
-    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
-                            "ceilings": [["src/mod.py", 2, "只支持两个整数相加", "需要小数精度时换 Decimal"]],
-                            "summary": "通过"}, ensure_ascii=False)
-
-    # When: 用 slice-gate.py record --json 记录两次
-    run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0；gate-report.md 有天花板表头；含 src/mod.py:2 与限制、升级路径两段的行恰好一条（幂等）
-    assert p.returncode == 0, p.stderr
-    text = (change / "gate-report.md").read_text(encoding="utf-8")
-    rows = [l for l in text.splitlines() if "src/mod.py:2" in l and "只支持两个整数相加" in l and "需要小数精度时换 Decimal" in l]
-    assert "## 天花板" in text, text
-    assert len(rows) == 1, rows
 
 
-def test_record_survives_bad_ceiling_lineno(git_repo):
-    # Given: ceilings 的行号不是整数（执行体结构化输出可以给出任意形状，GATE schema 的内层元素无类型约束）
-    change = gate_repo(git_repo)
-    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
-                            "ceilings": [["src/mod.py", "第二行", "只支持两个整数相加", "需要小数精度时换 Decimal"],
-                                         ["src/mod.py", 7, "不做溢出检查", "出现越界时接入 checked 运算"]],
-                            "summary": "通过"}, ensure_ascii=False)
-
-    # When: 用 slice-gate.py record --json 记录
-    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0 不抛异常；timeline 的 gate 行已写（不停在 append_report 之后的半写态）；坏行号降级为 :0 仍留下天花板文本，好行照常
-    assert p.returncode == 0, p.stderr
-    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
-    text = (change / "gate-report.md").read_text(encoding="utf-8")
-    assert any("src/mod.py:0" in l and "只支持两个整数相加" in l for l in text.splitlines()), text
-    assert any("src/mod.py:7" in l and "不做溢出检查" in l for l in text.splitlines()), text
 
 
-def test_record_survives_non_iterable_ceilings(git_repo):
-    # Given: ceilings 被转写成真值非可迭代标量（由控制面（flight 插件）经 record --json 转写，没有 JS schema 拦这层）
-    change = gate_repo(git_repo)
-    gate_json = json.dumps({"slice": "S1", "ok": True, "commit": "abc1234def", "failed": [], "warnings": [],
-                            "ceilings": 5, "summary": "通过"}, ensure_ascii=False)
-
-    # When: 用 slice-gate.py record --json 记录
-    p = run_hook("slice-gate", "record", "--json", gate_json, "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0 不抛 TypeError；门禁行与 timeline 行都写全，不停在半写态
-    assert p.returncode == 0, p.stderr
-    assert "S1 ok" in (change / "timeline.md").read_text(encoding="utf-8")
-    assert "abc1234def" in (change / "gate-report.md").read_text(encoding="utf-8")
 
 
 def test_gate_g8_silent_without_marker(git_repo):
@@ -430,7 +371,7 @@ def test_gate_g8_silent_without_marker(git_repo):
     _measured(git_repo)
 
     # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
 
     # Then: failed 与 warnings 里都没有以 G8 开头的项；门禁结论与判据引入前一致（ok 仍为 true）
     out = json.loads(p.stdout)
@@ -567,7 +508,7 @@ def test_gate_lint_excludes_baseline_lines(git_repo):
     _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
 
     # When: 运行切片门禁
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
     res = json.loads(p.stdout)
 
     # Then: failed 无 G2 lint；warnings 有 G2 lint 且含「已按基线排除」
@@ -582,7 +523,7 @@ def test_gate_lint_flags_new_lines_only(git_repo):
     _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x", "b.ts(3,1): error TS2304 y"]))
 
     # When: 运行切片门禁
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
     res = json.loads(p.stdout)
 
     # Then: ok 为 false；failed 有 G2 lint 项含「新增」与 b.ts，且不含基线里的 a.ts 行
@@ -597,7 +538,7 @@ def test_gate_lint_red_without_baseline(git_repo):  # 既有行为守卫：判�
     _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
 
     # When: 运行切片门禁
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
     res = json.loads(p.stdout)
 
     # Then: failed 有以 G2 lint: exit 1 开头的项（现行为）；warnings 无「已按基线排除」
@@ -615,7 +556,7 @@ def test_gate_lint_red_when_baseline_was_green(git_repo):
     _set_gate(change, "lint", _lint_cmd(["a.ts(190,41): error TS2339 x"]))
 
     # When: 运行切片门禁
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
     res = json.loads(p.stdout)
 
     # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「基线为绿」的项；warnings 无「已按基线排除」
@@ -631,7 +572,7 @@ def test_gate_lint_red_when_output_empty_with_red_baseline(git_repo):
     _set_gate(change, "lint", "sh -c 'exit 1'")
 
     # When: 运行切片门禁
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
+    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo)
     res = json.loads(p.stdout)
 
     # Then: ok 为 false；failed 有以 G2 lint: exit 1 开头且含「无输出可与基线比对」的项；warnings 无「已按基线排除」
@@ -670,54 +611,17 @@ def test_final_typecheck_excludes_baseline_lines(git_repo):
     assert any(f.startswith("G2 typecheck") and "新增" in f for f in r2["failed"]), r2["failed"]
 
 
-def test_start_keeps_marker_for_same_slice(git_repo):
-    # Given: 标记为 S1、base 为 X、red_count 为 1；之后又有一个新 commit
-    change = gate_repo(git_repo)
-    marker_path = git_repo / ".openspec-slice"
-    marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    base_x = marker["base"]
-    marker["red_count"] = 1
-    marker_path.write_text(json.dumps(marker), encoding="utf-8")
-    write(git_repo / "src" / "more.py", "y = 2\n")
-    commit_all(git_repo, "more")
-
-    # When: 再次 start S1
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 退出 0；base 与 red_count 不变；timeline 最后一行是 slice-start 且备注含 S1 与 resume
-    assert p.returncode == 0, p.stderr
-    after = json.loads(marker_path.read_text(encoding="utf-8"))
-    assert after["base"] == base_x and after["red_count"] == 1
-    last = (change / "timeline.md").read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert "\tslice-start\t" in last and "S1" in last and "resume" in last
 
 
-def test_start_accepts_base_flag(git_repo):
-    # Given: 没有标记；X 是 HEAD 的父 commit
-    change = gate_repo(git_repo)
-    (git_repo / ".openspec-slice").unlink()
-    parent = git(git_repo, "rev-parse", "HEAD~1")
-
-    # When: start S1 --base X；删标记后再不带 --base start 一次
-    p1 = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--base", parent, cwd=git_repo)
-    m1 = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
-    (git_repo / ".openspec-slice").unlink()
-    run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-    m2 = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
-
-    # Then: 带 --base 时 base 为 X；不带时仍为 HEAD
-    assert p1.returncode == 0, p1.stderr
-    assert m1["base"] == parent
-    assert m2["base"] == git(git_repo, "rev-parse", "HEAD")
 
 
 def test_gate_json_carries_base(git_repo):
-    # Given: 已 start 的切片，标记 base 为 X
+    # Given: 切片 S1 的区间起点为 X（工件 commit），其后还有一个实现 commit
     change = gate_repo(git_repo)
-    base_x = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+    base_x = _base(git_repo)
 
-    # When: 运行切片门禁
-    res = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+    # When: 以 --base X 运行切片门禁
+    res = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", base_x, cwd=git_repo).stdout)
 
     # Then: JSON 含 base 等于 X；commit 仍为 HEAD
     assert res["base"] == base_x
@@ -725,7 +629,7 @@ def test_gate_json_carries_base(git_repo):
 
 
 # ---------------------------------------------------------------- flight-wave-fixes（scenario: slice-base-check#start-*）
-# S1 已实现 start --expect-branch。
+# 基点校验原在 start --expect-branch，start 退役后由只读的 base --expect-branch 承担。
 
 
 def _branch_repo(git_repo):
@@ -736,23 +640,6 @@ def _branch_repo(git_repo):
     return change
 
 
-def _marker(git_repo):
-    return json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
-
-
-def test_start_expect_branch_accepts_tip(git_repo):
-    # Given: worktree 的 HEAD 正是 change 分支 worktree-c 的最新 commit（临时 worktree 从最新 tip 分叉）
-    change = _branch_repo(git_repo)
-
-    # When: start S1 --expect-branch worktree-c
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--expect-branch", "worktree-c", cwd=git_repo)
-
-    # Then: 退出 0；标记的 slice 为 S1、base 为 HEAD
-    assert p.returncode == 0, p.stderr
-    marker = _marker(git_repo)
-    assert marker["slice"] == "S1" and marker["base"] == git(git_repo, "rev-parse", "HEAD")
-
-
 def test_start_expect_branch_accepts_descendant(git_repo):
     # Given: 分支 worktree-c 指向 T；HEAD 在 T 之上多一个 commit（重试时 cherry-pick 了上一轮的 commit）
     change = _branch_repo(git_repo)
@@ -760,13 +647,13 @@ def test_start_expect_branch_accepts_descendant(git_repo):
     write(git_repo / "src" / "mod.py", "x = 1\n")
     commit_all(git_repo, "previous round")
 
-    # When: start S1 --base T --expect-branch worktree-c
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--base", tip,
+    # When: base S1 --base T --expect-branch worktree-c
+    p = run_hook("slice-gate", "base", "S1", "--change-dir", str(change), "--base", tip,
                  "--expect-branch", "worktree-c", cwd=git_repo)
 
-    # Then: 退出 0；标记的 base 为 T（祖先关系成立即放行，不要求 HEAD 等于 tip）
+    # Then: 退出 0；打印的 base 为 T（祖先关系成立即放行，不要求 HEAD 等于 tip）
     assert p.returncode == 0, p.stderr
-    assert _marker(git_repo)["base"] == tip
+    assert json.loads(p.stdout)["base"] == tip
 
 
 def test_start_expect_branch_refuses_stale_base(git_repo):
@@ -777,17 +664,17 @@ def test_start_expect_branch_refuses_stale_base(git_repo):
     commit_all(git_repo, "integrate wave 1")
     git(git_repo, "checkout", "-q", "main")
 
-    # When: 分别以 --expect-branch worktree-c 与 --expect-branch no-such-branch 运行 start S1
-    runs = [(name, run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--expect-branch", name, cwd=git_repo))
+    # When: 分别以 --expect-branch worktree-c 与 --expect-branch no-such-branch 运行 base S1
+    runs = [(name, run_hook("slice-gate", "base", "S1", "--change-dir", str(change), "--expect-branch", name, cwd=git_repo))
             for name in ("worktree-c", "no-such-branch")]
 
-    # Then: 两次都退出非 0，stdout 是 G0 JSON（slice S1 · ok false · commit 空串 · failed 首项以 G0 base 开头并点名分支）；不写标记；随后 gate 因无 base 退出非 0
+    # Then: 两次都退出非 0，stdout 是 G0 JSON（slice S1 · ok false · commit 空串 · failed 首项以 G0 base 开头并点名分支）；工作区没有新文件；随后不带 --base 的 gate 退出非 0
     for name, p in runs:
         assert p.returncode != 0 and p.stdout.strip().startswith("{"), (name, p.returncode, p.stdout, p.stderr)
         res = json.loads(p.stdout)
         assert res["slice"] == "S1" and res["ok"] is False and res["commit"] == "", res
         assert res["failed"][0].startswith("G0 base") and name in res["failed"][0], res["failed"]
-    assert not (git_repo / ".openspec-slice").exists()
+    assert git(git_repo, "status", "--porcelain") == ""
     assert run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).returncode != 0
 
 
@@ -795,7 +682,7 @@ def test_start_expect_branch_refuses_stale_base(git_repo):
 
 
 def _gate(change, repo):
-    return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=repo).stdout)
+    return json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(repo), cwd=repo).stdout)
 
 
 ALIASED_XFAIL_TEST = '''
@@ -1001,31 +888,6 @@ def test_g7_reports_collection_failure_detail(git_repo):
     assert any(f.startswith("G7") and "未被收集运行" in f and "rc=" in f and "RuntimeError" in f
                for f in out["failed"]), out["failed"]
 
-# ---------------------------------------------------------------- flight-envelope S1
-# flight-envelope S1 的 scenario 测试。
-
-
-def test_gate_pairing_ignores_marker(git_repo):
-    # Given: 切片 S1 已 start，区间内没有任何提交，工作树里只有未提交的 .openspec-slice 标记
-    change = git_repo / "openspec" / "changes" / "c"
-    data = plan(
-        [slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="true", scenarios=["cap#adds"])],
-        scenario_tests={"cap#adds": "tests/test_mod.py::test_mod_adds"},
-    )
-    write_plan(change, data)
-    write(change / "tasks.md", "- [ ] S1 x\n")
-    write(git_repo / "src" / "mod.py", DEFAULT_SRC)
-    write(git_repo / "tests" / "test_mod.py", GOOD_TEST)
-    commit_all(git_repo, "artifacts")
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-    assert p.returncode == 0, p.stderr
-
-    # When: 运行 slice-gate.py gate S1
-    p = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
-
-    # Then: 输出 JSON 的 failed 里没有以「G3」开头的项
-    out = json.loads(p.stdout)
-    assert not any(f.startswith("G3") for f in out["failed"]), out["failed"]
 
 # ---------------------------------------------------------------- flight-measure
 # 骨架：S1（measure）、S2（G5 账本判据） 实现后去掉 xfail 标记。
@@ -1065,17 +927,14 @@ def _measure_ev(base, outcomes, changed=(), source=(), agent="a1"):
 
 
 def _g5_repo(git_repo):
-    # 切片 S1 映射两个目标 T1、T2；已 start；src/mod.py 与两个测试都已实现并提交。返回 (change, base)。
+    # 切片 S1 映射两个目标 T1、T2；base 为工件 commit；src/mod.py 与两个测试都已实现并提交。返回 (change, base)。
     change = git_repo / "openspec" / "changes" / "c"
     data = plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="python3 -m pytest -q tests/test_mod.py",
                         scenarios=["cap#one", "cap#two"])],
                 scenario_tests={"cap#one": T1, "cap#two": T2})
     write_plan(change, data)
     write(change / "tasks.md", "- [ ] S1 x\n")
-    commit_all(git_repo, "artifacts")
-    p = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo)
-    assert p.returncode == 0, p.stderr
-    base = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))["base"]
+    base = commit_all(git_repo, "artifacts")
     write(git_repo / "src" / "mod.py", DEFAULT_SRC)
     write(git_repo / "tests" / "test_mod.py", TWO_TESTS)
     git(git_repo, "add", "src", "tests")
@@ -1138,13 +997,12 @@ def test_marked():
 
 
 def test_measure_reports_strict_xpass(git_repo):
-    # Given: S1 唯一的目标用别名装饰器带 strict xfail，但测试体已能通过；切片已 start
+    # Given: S1 唯一的目标用别名装饰器带 strict xfail，但测试体已能通过；base 为工件 commit
     change = git_repo / "openspec" / "changes" / "c"
     target = "tests/test_a.py::test_x"
     write_plan(change, plan([slice_("S1", ["tests/test_a.py"], scenarios=["cap#x"])], scenario_tests={"cap#x": target}))
     write(change / "tasks.md", "- [ ] S1 x\n")
-    commit_all(git_repo, "artifacts")
-    assert run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo).returncode == 0
+    base = commit_all(git_repo, "artifacts")
     write(git_repo / "tests" / "test_a.py", '''
 import pytest
 
@@ -1164,8 +1022,8 @@ def test_x():
     git(git_repo, "commit", "-q", "-m", "S1")
 
     # When: 运行 measure，再运行 gate
-    m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), cwd=git_repo)
-    g = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+    m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
+    g = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo).stdout)
 
     # Then: measure 记 XPASS；gate 的 G7 仍判它未通过
     assert m.returncode == 0, m.stdout + m.stderr
@@ -1259,38 +1117,19 @@ def test_g5_ledger_uses_measure_base(git_repo):
     assert _g5(with_mb) == [], with_mb["failed"]
 
 
-def test_start_tags_ledger_evidence(git_repo):
-    # Given: 一个没有 evidence.log 的切片 S1（scenario cap#adds → test_mod_adds）
-    change = git_repo / "openspec" / "changes" / "c"
-    target = "tests/test_mod.py::test_mod_adds"
-    write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], verify="python3 -m pytest -q tests/test_mod.py",
-                                    scenarios=["cap#adds"])], scenario_tests={"cap#adds": target}))
-    write(change / "tasks.md", "- [ ] S1 x\n")
-    commit_all(git_repo, "artifacts")
-
-    # When: 以 --evidence ledger 起跑
-    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
-
-    # Then: 退出 0；标记含 evidence=ledger
-    assert s.returncode == 0, s.stderr
-    marker = json.loads((git_repo / ".openspec-slice").read_text(encoding="utf-8"))
-    assert marker.get("evidence") == "ledger", marker
 
 # ---------------------------------------------------------------- flight-measure S9
 # S9 已实现：骨架标记已去。
 
 
 def test_measure_right_after_start_is_start_measure(git_repo):
-    # Given: 切片 S1 的工件已提交，以 --evidence ledger 起跑后工作树没有其他改动
+    # Given: 切片 S1 的工件已提交，base 取该 commit，工作树没有其他改动
     change = git_repo / "openspec" / "changes" / "c"
     target = "tests/test_mod.py::test_mod_adds"
     write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_mod.py"], scenarios=["cap#adds"])],
                             scenario_tests={"cap#adds": target}))
     write(change / "tasks.md", "- [ ] S1 x\n")
-    commit_all(git_repo, "artifacts")
-    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
-    assert s.returncode == 0, s.stderr
-    base = json.loads(s.stdout)["base"]
+    base = commit_all(git_repo, "artifacts")
 
     # When: 立即 measure，把输出写成一条 measure 事件，再以账本模式运行 gate
     m = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
@@ -1306,7 +1145,7 @@ def test_measure_right_after_start_is_start_measure(git_repo):
 
 
 def test_measure_ignores_bytecode_and_disables_it(git_repo):
-    # Given: S1 的目标测试在 base 就存在、断言 pytest 进程关了字节码写入；起跑后工作树里有 Python 写出的未跟踪 __pycache__
+    # Given: S1 的目标测试在 base 就存在、断言 pytest 进程关了字节码写入；base 之后工作树里有 Python 写出的未跟踪 __pycache__
     change = git_repo / "openspec" / "changes" / "c"
     target = "tests/test_env.py::test_no_bytecode"
     write_plan(change, plan([slice_("S1", ["src/mod.py", "tests/test_env.py"], scenarios=["cap#env"])],
@@ -1324,9 +1163,7 @@ def test_no_bytecode():
     assert value == "1"
 ''')
     write(git_repo / "src" / "mod.py", DEFAULT_SRC)
-    commit_all(git_repo, "artifacts")
-    s = run_hook("slice-gate", "start", "S1", "--change-dir", str(change), "--evidence", "ledger", cwd=git_repo)
-    base = json.loads(s.stdout)["base"]
+    base = commit_all(git_repo, "artifacts")
     write(git_repo / "src" / "__pycache__" / "mod.cpython-39.pyc", "x")
     write(git_repo / "tests" / "__pycache__" / "test_env.cpython-39-pytest-8.4.2.pyc", "x")
 
@@ -1347,7 +1184,7 @@ def test_gate_flags_committed_bytecode(git_repo):
     git(git_repo, "commit", "-q", "-m", "pyc")
 
     # When: 运行 gate S1
-    out = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo).stdout)
+    out = json.loads(run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", _base(git_repo), cwd=git_repo).stdout)
 
     # Then: G6 点名这个已提交的字节码（只有未提交的副产物才被忽略）
     assert any(f.startswith("G6") and "__pycache__" in f for f in out["failed"]), out["failed"]
@@ -1457,12 +1294,12 @@ def test_lint_checks_guards(git_repo):
 
 
 def test_measure_lists_guard_targets(git_repo):
-    # Given: S1 映射 T1、T2，guards 为 [cap#one]（T1），已 start
-    change, _ = _g5_repo(git_repo)
+    # Given: S1 映射 T1、T2，guards 为 [cap#one]（T1），base 为工件 commit
+    change, base = _g5_repo(git_repo)
     _set_guards(change, git_repo, ["cap#one"])
 
-    # When: 运行 slice-gate measure S1
-    p = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), cwd=git_repo)
+    # When: 运行 slice-gate measure S1 --base base
+    p = run_hook("slice-gate", "measure", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
 
     # Then: 输出 JSON 的 guards 为 [T1]
     assert json.loads(p.stdout)["guards"] == [T1], p.stdout + p.stderr
@@ -1476,11 +1313,10 @@ def _refs(repo, prefix):
 
 
 def test_checkpoint_is_noop(git_repo):
-    # Given: change c 的切片 S1（owns src/**）已 start；工作区里已跟踪的 src/mod.py 被改、另新建未跟踪的 src/new.py，都未提交
-    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    # Given: change c 的切片 S1（owns src/**）工件已提交；工作区里已跟踪的 src/mod.py 被改、另新建未跟踪的 src/new.py，都未提交
+    write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
     write(git_repo / "src" / "mod.py", "def add(a, b):\n    return 0\n")
     commit_all(git_repo, "artifacts")
-    assert run_hook("slice-gate", "start", "S1", "--change-dir", str(change), cwd=git_repo).returncode == 0
     write(git_repo / "src" / "mod.py", "def add(a, b):\n    return a + b\n")
     write(git_repo / "src" / "new.py", "X = 1\n")
     payload = json.dumps({"hook_event_name": "PostToolUse", "cwd": str(git_repo)})
@@ -1495,12 +1331,12 @@ def test_checkpoint_is_noop(git_repo):
 
 
 def test_g5_ledger_only(git_repo):
-    # Given: 切片 S1 映射 T1、T2，已 start，两者已实现、提交并通过；账本里没有 S1 的任何测量
+    # Given: 切片 S1 映射 T1、T2，base 为工件 commit，两者已实现、提交并通过；账本里没有 S1 的任何测量
     change, base = _g5_repo(git_repo)
 
     # When: 先不带 --evidence 运行 gate S1，再带 --evidence log 运行一次
-    plain = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), cwd=git_repo)
-    as_log = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--evidence", "log", cwd=git_repo)
+    plain = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", base, cwd=git_repo)
+    as_log = run_hook("slice-gate", "gate", "S1", "--change-dir", str(change), "--base", base, "--evidence", "log", cwd=git_repo)
 
     # Then: 前者 G5 失败项含「缺少本片起点测量」，门禁 JSON 没有 hooks_missing 键；后者以非 0 退出，stdout 没有门禁 JSON
     out = json.loads(plain.stdout)
@@ -1543,28 +1379,66 @@ def test_judges_declare_features(tmp_path):
         assert f in feats, feats
 
 # ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S1 实现后去掉 xfail 标记。
+# scenario: flight-ledger-records#judges-write-no-records / base-replaces-start / gate-requires-explicit-base
 
 
-@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
-def test_judges_write_no_records(tmp_path):
-    # Given: 单片计划（S1）的仓库，change 目录没有 timeline.md 与 gate-report.md
-    # When: 依次运行 baseline、gate S1 --base <HEAD>、final
-    # Then: 三次都打印 JSON；两份记录都没出现；仓库根没有 .openspec-slice
-    pytest.fail("骨架：S1 写实断言")
+def test_judges_write_no_records(git_repo):
+    # Given: 单片计划（S1，verify 与 gate.test 都是 true）已提交；change 目录没有 timeline.md 与 gate-report.md；H 为 HEAD
+    change = write_plan(git_repo / "openspec" / "changes" / "c",
+                        plan([slice_("S1", ["src/**"])], gate={"test": "true", "lint": None, "typecheck": None, "full_suite_sec": None}))
+    head = commit_all(git_repo, "plan")
+    runs = [("baseline", "--change-dir", str(change)), ("gate", "S1", "--change-dir", str(change), "--base", head),
+            ("final", "--change-dir", str(change))]
+
+    # When: 依次运行 baseline、gate S1 --base H、final
+    procs = [run_hook("slice-gate", *args, cwd=git_repo) for args in runs]
+
+    # Then: 三次的 stdout 都是 JSON 对象；change 目录没有 timeline.md 与 gate-report.md；仓库根没有 .openspec-slice
+    assert all(isinstance(json.loads(p.stdout), dict) for p in procs), [(p.stdout, p.stderr) for p in procs]
+    assert [n for n in ("timeline.md", "gate-report.md") if (change / n).exists()] == []
+    assert not (git_repo / ".openspec-slice").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
-def test_base_replaces_start(tmp_path):
-    # Given: 仓库在 worktree-demo，HEAD 为 H；分支 ahead 的 tip 不是 H 的祖先
-    # When: 运行 base（--expect-branch worktree-demo / --base X1 / --expect-branch ahead）、start、record、features
-    # Then: 依次为 base H、base X1、退出 1 含 G0 base；start 与 record 退出 2；features 含 ledger-records；工作区干净
-    pytest.fail("骨架：S1 写实断言")
+def test_base_replaces_start(git_repo):
+    # Given: 计划已提交，仓库在分支 worktree-demo、HEAD 为 H、X1 为初始 commit；分支 ahead 比 H 多一个 commit（tip 不是 H 的祖先）
+    change = write_plan(git_repo / "openspec" / "changes" / "c", plan([slice_("S1", ["src/**"])]))
+    x1 = git(git_repo, "rev-parse", "HEAD")
+    head = commit_all(git_repo, "plan")
+    git(git_repo, "checkout", "-q", "-b", "ahead")
+    write(git_repo / "src" / "ahead.py", "A = 1\n")
+    commit_all(git_repo, "ahead")
+    git(git_repo, "checkout", "-q", "-b", "worktree-demo", head)
+    d = ("--change-dir", str(change))
+
+    # When: 依次运行 base --expect-branch worktree-demo、base --base X1、base --expect-branch ahead、start S1、record --json {}、features
+    p_tip, p_x1, p_ahead, p_start, p_record, p_feat = [run_hook("slice-gate", *args, cwd=git_repo) for args in (
+        ("base", "S1", *d, "--expect-branch", "worktree-demo"), ("base", "S1", *d, "--base", x1),
+        ("base", "S1", *d, "--expect-branch", "ahead"), ("start", "S1", *d), ("record", "--json", "{}", *d), ("features",))]
+
+    # Then: 第一次退出 0 且 stdout 恰为 {"slice": "S1", "base": H}；第二次 base 为 X1；第三次退出 1 且 failed 含 G0 base；start 与 record 都退出 2；features 含 ledger-records；工作区 git status --porcelain 为空
+    assert (p_tip.returncode, json.loads(p_tip.stdout)) == (0, {"slice": "S1", "base": head}), (p_tip.stdout, p_tip.stderr)
+    assert json.loads(p_x1.stdout) == {"slice": "S1", "base": x1}, (p_x1.stdout, p_x1.stderr)
+    assert p_ahead.returncode == 1 and any("G0 base" in f for f in json.loads(p_ahead.stdout)["failed"]), (p_ahead.stdout, p_ahead.stderr)
+    assert (p_start.returncode, p_record.returncode) == (2, 2), (p_start.stdout, p_record.stdout)
+    assert "ledger-records" in p_feat.stdout.split(), p_feat.stdout
+    assert git(git_repo, "status", "--porcelain") == ""
 
 
-@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
-def test_gate_requires_explicit_base(tmp_path):
-    # Given: 仓库根有指向 S1 的遗留 .openspec-slice
+def test_gate_requires_explicit_base(git_repo):
+    # Given: S1 的 verify 会建哨兵文件 verify-ran（仓库外）；计划已提交；仓库根有遗留 .openspec-slice，内容为 {"slice": "S1", "base": HEAD, "change_dir": D}
+    sentinel = git_repo.parent / "verify-ran"
+    change = write_plan(git_repo / "openspec" / "changes" / "c",
+                        plan([slice_("S1", ["src/**"], verify="touch %s" % sentinel)]))
+    head = commit_all(git_repo, "plan")
+    marker = git_repo / ".openspec-slice"
+    marker_text = json.dumps({"slice": "S1", "base": head, "change_dir": str(change)})
+    marker.write_text(marker_text, encoding="utf-8")
+
     # When: 运行不带 --base 的 gate S1 与 measure S1
-    # Then: 两次都非 0 退出、stderr 含 --base；verify 未运行；标记原样保留
-    pytest.fail("骨架：S1 写实断言")
+    procs = [run_hook("slice-gate", cmd, "S1", "--change-dir", str(change), cwd=git_repo) for cmd in ("gate", "measure")]
+
+    # Then: 两次都以非 0 退出且 stderr 含 --base；哨兵文件不存在（verify 未运行）；.openspec-slice 内容原样
+    assert all(p.returncode != 0 and "--base" in p.stderr for p in procs), [(p.returncode, p.stdout, p.stderr) for p in procs]
+    assert not sentinel.exists()
+    assert marker.read_text(encoding="utf-8") == marker_text
+
