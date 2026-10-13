@@ -1,21 +1,6 @@
 {
   "blocked": [],
-  "blocking": [
-    {
-      "severity": "HIGH",
-      "file": "tests/test_timeline_render.py",
-      "line": 46,
-      "summary": "test_render_records_from_ledger 的断言比 scenario render-records-from-ledger 的 Then 弱很多。没有断言 timeline.md 首行是生成说明注释，也没断言 baseline 备注为 `exit 0, <sec>s ok`；门禁表只数了行数（3），没断言依次为 S1 red / S1 ok / final ok，也没断言 warnings 列（`w1`、`G2 预存红`）。测试数据本身也和 Given 不符：gate / final 都没带 warnings，measure 只有 1 个红而 Given 是 2 个红，review 的 findings 为空而 Given 是 1 条 HIGH。D2 的备注格式和 warnings 列渲染因此都没被验收。",
-      "fix": "按 spec 第 44-51 行补齐 Given 和 Then。数据：S1 gate ok 加 warnings=[\"w1\"]，final 加 warnings=[\"G2 预存红\"]，measure 的 outcomes 两个都填 FAILED，review 的 findings 放 1 条 HIGH。断言：lines[0] == \"<!-- timeline：timeline.py render 从账本生成，勿手改 -->\"；lines[1].split(\"\\t\")[2] == \"exit 0, 9.6s ok\"（或把 sec 改成 111.2，与 spec 对齐）；门禁表 3 行的第 2 列依次为 S1 / S1 / final、第 3 列依次为 red / ok / ok，第 2 行与第 3 行的 warnings 列分别为 w1 和 G2 预存红。"
-    },
-    {
-      "severity": "HIGH",
-      "file": "template/plugins/flight/hooks/envelope.ts",
-      "line": 676,
-      "summary": "collectWrites 的 cd / pushd 跟踪无条件写回 state.cwd：一是不区分子 shell。lexSegments 把 `(`、`)`、`|`、`&` 都当普通分段，于是 `( … )`、管道、后台里的 cd 也被当成对后续各段生效；二是默认 cd 一定成功，`;`、`||` 之后照样按 cd 后的目录解析。结果相对写入目标会被解析错。例：worktree 为 /repo/.worktrees/S1、owns 为 src/a/**，命令 `(cd src/a/p/q); rm -f ../../main.py` 被判成 /repo/.worktrees/S1/src/a/main.py 而放行，实际删的是主检出的 /repo/main.py；`cd src/a/p/q || echo x > ../../main.py` 同理。反方向也会误拒合法命令，如 `(cd sub && make); echo x > src/a/y.py`。这与切片要求「飞行 agent 的 Bash 写入限在 owns 内」相悖。",
-      "fix": "lexSegments 为每段记下前导分隔符，并跟踪括号层级。collectWrites 按下面规则改：(1) 进 `(` 时保存 cwd，出 `)` 时恢复；处于管道（`|`）或后台（`&`）中的段，cd 不写回 state；(2) cd 段之后的分隔符不是 `&&` 时（`;`、`||`、换行、段尾），之后的 state.cwd 置为 null（cd 可能失败），后续相对目标就进 unresolved 被拒。补两条表驱动用例：`(cd sub); touch x` 期望 targets 为 [/w/x]；`cd sub; touch ../../x` 期望 unresolved 非空。"
-    }
-  ],
+  "blocking": [],
   "deferred": [
     {
       "severity": "LOW",
