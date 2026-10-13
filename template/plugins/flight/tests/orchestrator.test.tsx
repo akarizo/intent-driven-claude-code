@@ -81,6 +81,10 @@ type World = {
   mergeFails?: number[]
   /** TaskStop 的应答为 isError 及此文本（对已结束的 agent，引擎不抛错） */
   stopError?: string
+  /** turn.complete 的最终回答：按 agentId（缺省空串） */
+  answers?: Record<string, string>
+  /** ui.notify 的应答（缺省 isSent true、channel iterm2） */
+  notify?: Record<string, unknown>
   /** 这些 agent 的 turn.step（模型请求）一直不结束 */
   stalls?: string[]
   /** slice-gate features 的输出（缺省全部能力） */
@@ -171,6 +175,8 @@ function useWorld(on: On, w: World) {
     stops: [] as { id: string; halted: boolean }[],
     /** 每次 TaskStop 时账本的事件数 */
     stopsAt: [] as number[],
+    /** ui.notify 收到的事件 */
+    notifies: [] as unknown[],
     /** mock.clock 的句柄（advance / settle） */
     clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
@@ -201,7 +207,11 @@ function useWorld(on: On, w: World) {
     return { value: undefined }
   })
   on('agent.list', () => ({ value: (w.agents ?? []) as never }))
-  on('turn.complete', () => ({ text: '' }))
+  on('turn.complete', ($, e) => ({ text: w.answers?.[String((e as { agentId?: unknown }).agentId)] ?? '' }))
+  on('ui.notify', ($, e) => {
+    log.notifies.push(e)
+    return { value: w.notify ?? { isSent: true, channel: 'iterm2' } } as never
+  })
   // 插件之下没有实现应答 turn.step：stalls 里的 agent 的请求永不结束
   on('turn.step', async function* ($, e) {
     if (w.stalls?.includes(String((e as { agentId?: unknown }).agentId))) await new Promise(() => undefined)
@@ -405,6 +415,16 @@ function useWorld(on: On, w: World) {
     throw new Error(`unexpected git: ${args.join(' ')}`)
   })
   return log
+}
+
+/** 最后一条 halt；其后只允许诊断员的 dispatch / ended / triage（停飞后派诊断员），否则为 undefined */
+function haltAtEnd(events: Record<string, unknown>[]): Record<string, unknown> | undefined {
+  const i = events.map(x => x.ev).lastIndexOf('halt')
+  if (i < 0) return undefined
+  const diag = new Set(events.filter(x => x.ev === 'dispatch' && x.role === 'diagnostician').map(x => String(x.agent)))
+  const tail = events.slice(i + 1)
+  const ok = tail.every(x => (x.ev === 'dispatch' && x.role === 'diagnostician') || ((x.ev === 'ended' || x.ev === 'triage') && diag.has(String(x.agent))))
+  return ok ? events[i] : undefined
 }
 
 const ended = (agentId: string) => ({
@@ -632,9 +652,9 @@ test('drive-halts-on-action-exception', async ($, on) => {
     (err: unknown) => `rejected: ${String(err)}`,
   )
 
-  // Then: 处理正常返回、异常不冒到引擎；账本末条为 halt，原因含「动作异常」
+  // Then: 处理正常返回、异常不冒到引擎；最后一条 halt 之后只有诊断员的事件，原因含「动作异常」
   expect(outcome).toBe('resolved')
-  expect(log.events.at(-1)).toMatchObject({ ev: 'halt', reason: expect.stringContaining('动作异常') })
+  expect(haltAtEnd(log.events)).toMatchObject({ ev: 'halt', reason: expect.stringContaining('动作异常') })
 })
 
 // PR #39 评审 HIGH（R1）：指纹算不出时写进账本的空 fp 会让整条账本判损坏、起飞被永久拒绝
@@ -678,8 +698,8 @@ test('drive-reports-fp-failure-distinctly', async ($, on) => {
   // When: 处理 A 的结束（turn.complete）
   await $.turn.complete(ended('agent-1') as never)
 
-  // Then: 账本末条为 halt，原因含「计算计划指纹失败」与「plan_fp 超时」、不含「计划指纹已变」；$.ui.log 收到含「停飞 · demo」的文本
-  const last = log.events.at(-1)
+  // Then: 最后一条 halt 之后只有诊断员的事件，原因含「计算计划指纹失败」与「plan_fp 超时」、不含「计划指纹已变」；$.ui.log 收到含「停飞 · demo」的文本
+  const last = haltAtEnd(log.events)
   expect(last).toMatchObject({ ev: 'halt', reason: expect.stringContaining('计算计划指纹失败') })
   expect(String(last?.reason)).toContain('plan_fp 超时')
   expect(String(last?.reason)).not.toContain('计划指纹已变')
@@ -974,9 +994,9 @@ test('main-session-read-only-during-flight', async ($, on) => {
   await $.turn.complete(ended('agent-1') as never)
   await $.tool.call(edit as never)
 
-  // Then: 停飞前答 deny 且理由含「只读」；账本末条为 halt；停飞后的 Edit 到达执行端
+  // Then: 停飞前答 deny 且理由含「只读」；最后一条 halt 之后只有诊断员的事件；停飞后的 Edit 到达执行端
   expect(before).toMatchObject({ deny: expect.stringContaining('只读') })
-  expect(log.events.at(-1)?.ev).toBe('halt')
+  expect(haltAtEnd(log.events)?.ev).toBe('halt')
   expect(log.reached).toEqual([`Edit ${TREE}/src/a.py`])
 })
 
@@ -1697,15 +1717,16 @@ test('dispatch-takes-base-without-start', async ($, on) => {
     const runs = log.runs.length
     const spawns = log.spawns.length
     await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-    seen.push({ events: [...log.events], runs: log.runs.slice(runs), spawns: log.spawns.length - spawns })
+    // 停飞后派的诊断员不算（halt-dispatches-diagnostician 另有用例）
+    seen.push({ events: [...log.events], runs: log.runs.slice(runs), spawns: log.spawns.slice(spawns).filter(x => x.subagent_type !== 'flight:diagnostician').length })
   }
 
   // Then: 世界一在 S1 worktree 运行了 slice-gate.py base S1 --change-dir <D> --expect-branch worktree-demo；世界一 S1 的 dispatch.base 为 b1；
-  //       两个世界都没有 argv 含 start 的 slice-gate 调用；世界二没有派发、没有 dispatch 事件，最后一条 blocked 是 S1 且原因含「G0 base」
+  //       两个世界都没有 argv 含 start 的 slice-gate 调用；世界二没有诊断员以外的派发与 dispatch 事件，最后一条 blocked 是 S1 且原因含「G0 base」
   expect(seen[0].runs.filter(isBaseS1).map(x => [x.argv, x.cwd])).toEqual([[['python3', `${HOOKS}/slice-gate.py`, 'base', 'S1', '--change-dir', CD, '--expect-branch', 'worktree-demo'], SLICE1]])
   expect(seen[0].events.find(x => x.ev === 'dispatch' && x.slice === 'S1')?.base).toBe('b1')
   expect(seen.flatMap(s => s.runs).filter(x => isSliceGate(x) && x.argv.includes('start'))).toEqual([])
-  expect([seen[1].spawns, seen[1].events.filter(x => x.ev === 'dispatch').length]).toEqual([0, 0])
+  expect([seen[1].spawns, seen[1].events.filter(x => x.ev === 'dispatch' && x.role !== 'diagnostician').length]).toEqual([0, 0])
   expect(seen[1].events.filter(x => x.ev === 'blocked').at(-1)).toMatchObject({ slice: 'S1', reason: expect.stringContaining('G0 base') })
 })
 
@@ -1853,8 +1874,8 @@ test('panel-refreshes-on-terminal', async ($, on) => {
   // When: 评审员 r-S1 结束（turn.complete），drive 跑 final 后停飞
   await $.turn.complete(ended('r-S1') as never)
 
-  // Then: 账本末条为 halt；在 terminal 上绘制 Pane flight，首行含「已停飞（final 未通过：G2 lint）」
-  expect(log.events.at(-1)?.ev).toBe('halt')
+  // Then: 最后一条 halt 之后只有诊断员的事件；在 terminal 上绘制 Pane flight，首行含「已停飞（final 未通过：G2 lint）」
+  expect(haltAtEnd(log.events)?.ev).toBe('halt')
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
   expect(await ui.find({ text: /已停飞（final 未通过：G2 lint）/ })).toBeDefined()
 })
@@ -1961,6 +1982,80 @@ test('watchdog-exhausted-halts', async ($, on) => {
   expect(String(halt?.reason)).toContain('agent-1')
   expect(log.stops.map(x => x.id)).toEqual(['agent-1', 'agent-2'])
   expect(log.events.filter(x => x.ev === 'heal').length).toBe(3)
+})
+
+// ---------------------------------------------------------------- flight-unattended S5b
+
+test('halt-dispatches-diagnostician', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1]]），S1 门禁一律红 [G7 demo#s1]；执行体逐个收口、结束直到停飞；诊断员的最终回答为「S1 的 owns 漏了 tests/test_x.py\n改 slices.json 后续飞」
+  const answer = 'S1 的 owns 漏了 tests/test_x.py\n改 slices.json 后续飞'
+  const w = demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (let i = 1; i <= 4 && !log.events.some(x => x.ev === 'halt'); i++) {
+    await $.classic.SubagentStop(subagentStop(`agent-${i}`) as never)
+    await $.turn.complete(ended(`agent-${i}`) as never)
+  }
+  const diag = log.spawns.find(x => x.subagent_type === 'flight:diagnostician')
+  const id = diag?.agentId ?? '没有诊断员'
+  w.answers = { [id]: answer }
+
+  // When: 诊断员结束（turn.complete），回答为 answer
+  await $.turn.complete(ended(id) as never)
+
+  // Then: halt 之后有 role diagnostician、slice triage 的派发；诊断员为 flight:diagnostician、model opus、cwd 为 change worktree；有该诊断员的 triage，text 首行为回答首行；ui.notify 收到含首行的通知；面板含「诊断：S1 的 owns 漏了 tests/test_x.py」
+  const halt = log.events.findIndex(x => x.ev === 'halt')
+  const d = log.events.findIndex(x => x.ev === 'dispatch' && x.role === 'diagnostician' && x.slice === 'triage')
+  expect(halt >= 0 && d > halt).toBe(true)
+  expect([diag?.subagent_type, diag?.model, diag?.cwd]).toEqual(['flight:diagnostician', 'opus', TREE])
+  expect(String(log.events.find(x => x.ev === 'triage' && x.agent === id)?.text ?? '').split('\n')[0]).toBe('S1 的 owns 漏了 tests/test_x.py')
+  expect(log.notifies.some(n => JSON.stringify(n).includes('S1 的 owns 漏了 tests/test_x.py'))).toBe(true)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
+  expect(await ui.find({ text: /诊断：S1 的 owns 漏了 tests\/test_x.py/ })).toBeDefined()
+})
+
+test('halt-dispatches-diagnostician/abort-skips', async ($, on) => {
+  // Given: demo 已起飞并派出 agent-1（S1）、agent-2（S2），两者都在跑
+  const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 人在终端发出 /flight abort demo
+  await $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+
+  // Then: 账本有原因含「人工中止」的 halt；没有派发诊断员
+  expect(String(log.events.find(x => x.ev === 'halt')?.reason ?? '没有 halt')).toContain('人工中止')
+  expect(log.spawns.filter(x => x.subagent_type === 'flight:diagnostician')).toEqual([])
+})
+
+test('notify-uses-terminal-channel', async ($, on) => {
+  // Given: demo 已起飞（agent-1 = S1）；之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」；ui.notify 应答 isSent true、channel iterm2
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.fpRun = res(1, '', 'plan_fp 超时')
+
+  // When: agent-1 结束（turn.complete），drive 停飞
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: ui.notify 收到 title flight、含停飞原因「计算计划指纹失败」的通知；最后一条 halt 之后只有诊断员的事件
+  expect(log.notifies.some(n => JSON.stringify(n).includes('"title":"flight"') && JSON.stringify(n).includes('计算计划指纹失败'))).toBe(true)
+  expect(haltAtEnd(log.events)?.ev).toBe('halt')
+})
+
+test('notify-uses-terminal-channel/not-sent', async ($, on) => {
+  // Given: demo 已起飞（agent-1 = S1）；之后 plan_fp.py 以 1 退出；ui.notify 应答 isSent false、reason no-channel
+  const w = demoWorld({ notify: { isSent: false, reason: 'no-channel' } })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.fpRun = res(1, '', 'plan_fp 超时')
+
+  // When: agent-1 结束（turn.complete），drive 停飞
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: ui.notify 收到 title flight 的通知；飞行记录（ui.log）有一行含 no-channel；最后一条 halt 之后只有诊断员的事件
+  expect(log.notifies.some(n => JSON.stringify(n).includes('"title":"flight"'))).toBe(true)
+  expect(log.logs.some(t => t.includes('no-channel'))).toBe(true)
+  expect(haltAtEnd(log.events)?.ev).toBe('halt')
 })
 
 test('takeoff-requires-integ-guard/refused', async ($, on) => {
