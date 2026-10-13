@@ -361,7 +361,6 @@ def test_ledger_knows_diag_event(tmp_path):
 # ---------------------------------------------------------------- flight-unattended S2（骨架：实现后去掉 xfail 标记）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
 def test_ledger_accepts_heal_and_triage(tmp_path):
     # Given: demo 的账本依次含合法的 takeoff、heal（watchdog review:S1）、role 为 diagnostician 的 dispatch、kind 为 final 的 halt、triage；
     #        另有三个账本各只坏一处：heal 的 kind 为 retry、triage 缺 text、halt 的 kind 为 oops

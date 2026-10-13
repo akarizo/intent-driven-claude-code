@@ -123,7 +123,6 @@ def test_report_reads_ledger(tmp_path):
 # ---------------------------------------------------------------- flight-unattended S2（骨架：实现后去掉 xfail 标记）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
 def test_report_prints_heals_and_triage(tmp_path):
     # Given: 账本有 takeoff、heal merge-retry S1、heal integ integ、halt（kind final）、triage（首行「S2 的 owns 漏了守卫测试」）
     repo = new_repo(tmp_path / "repo")
