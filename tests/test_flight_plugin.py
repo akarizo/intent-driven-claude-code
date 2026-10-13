@@ -55,7 +55,7 @@ def test_band_ignores_finished_and_foreign_copies():
 def test_approve_press_appends_ledger_event():
     # Given: 批准带显示 demo 与指纹 F，按下时重算仍是 F
     # When: 人按下「批准起飞」
-    # Then: 依次 hash-object → mktree → commit-tree → update-ref refs/flight/demo/ledger，事件 ev=approve、fp=F、by.plugin=flight；输入框预填 /opsx-apply demo
+    # Then: 依次 hash-object → mktree → commit-tree → update-ref refs/flight/demo/ledger，事件 ev=approve、fp=F、by.plugin=flight；后台以 demo 起飞、输入框不预填
     assert_ts_passed("approve-press-appends-ledger-event")
     assert_ts_passed("approve-press-approves-the-drawn-item")
 
@@ -70,7 +70,7 @@ def test_approve_press_refuses_changed_plan():
 def test_ledger_append_retries_on_conflict():
     # Given: update-ref 第一次旧值不符、第二次成功；另一情形三次都失败
     # When: 人按下「批准起飞」
-    # Then: 前者重读链尾后成功并预填；后者第三次失败后停止、提示错误、不预填
+    # Then: 前者重读链尾后成功并起飞、不预填；后者第三次失败后停止、提示错误、不预填
     assert_ts_passed("ledger-append-retries-on-conflict")
     assert_ts_passed("ledger-append-gives-up-after-three-conflicts")
 
@@ -156,7 +156,7 @@ def test_approve_press_dedupes_same_fingerprint():
 def test_approve_dedupe_prefills_command():
     # Given: demo 账本最后一条是指纹 F 的 approve 且之后没有 takeoff，当前计划指纹仍为 F
     # When: 人再按一次 demo 的「批准起飞」
-    # Then: 账本没有新增事件、toast 含「已批准」；$.prompt.fill 收到 /opsx-apply demo
+    # Then: 账本没有新增事件、toast 含「已批准」；按「起飞」处理：后台以 demo 起飞，$.prompt.fill 未被调用
     assert_ts_passed("approve-dedupe-prefills-command")
 
 # ---------------------------------------------------------------- flight-ship-ledger

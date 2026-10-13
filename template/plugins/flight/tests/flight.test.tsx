@@ -27,6 +27,10 @@ type World = {
   approved?: Record<string, string>
   /** `slice-gate.py baseline` 的退出码与 stdout（缺省 exit 0） */
   baseline?: { exitCode: number; stdout: string }
+  /** `git status --porcelain --untracked-files=all` 的输出（缺省空 = 干净） */
+  status?: string
+  /** `agent.list` 的应答（缺省空） */
+  agents?: { id: string; status: string }[]
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -47,16 +51,25 @@ function porcelain(trees: [path: string, branch: string][]): string {
   return trees.map(([path, branch]) => `worktree ${path}\nHEAD ${'1'.repeat(40)}\nbranch refs/heads/${branch}\n`).join('\n')
 }
 
+/**
+ * 主 worktree 加上 names 各自的 worktree-<name> 分支：起飞按分支 worktree-<name> 找 change 所在 worktree。
+ * 测试世界里这些分支都挂在 /repo 上（只为让起飞找得到 change，批准带按分支去重后仍是同一份）。
+ */
+function flyable(names: string[]): string {
+  return porcelain([[MAIN, 'main'], ...names.map((n): [string, string] => [MAIN, `worktree-${n}`])])
+}
+
 /** 主 worktree 里有一个待批准的 change demo（tasks 未完成、账本无批准）。 */
 function demoWorld(fp: World['fp'], extra: Partial<World> = {}): World {
   return {
-    worktrees: porcelain([[MAIN, 'main']]),
+    worktrees: flyable(['demo', 'zeta']),
     dirs: { [CHANGES]: ['demo', 'archive'] },
     files: {
       [`${DEMO}/spec.html`]: '<html></html>',
       [`${DEMO}/tasks.md`]: '- [ ] 1.1 写代码\n',
       [`${HOOKS}/plan_fp.py`]: '',
       [`${HOOKS}/ledger.py`]: '',
+      [`${HOOKS}/slice-gate.py`]: '',
     },
     fp,
     ...extra,
@@ -85,6 +98,10 @@ function useWorld(on: On, w: World) {
     notes: [] as string[],
     /** slice-gate.py baseline 的 --change-dir */
     baselines: [] as string[],
+    /** 对哪些 change 调用过 takeoff-gate.py（--change-dir 的末段）：即插件以该 change 起飞 */
+    gates: [] as string[],
+    /** 按发生顺序：`stop <task_id>`（TaskStop）与 `gate <change>`（takeoff-gate.py） */
+    order: [] as string[],
     /** mock.clock 的句柄（advance / settle） */
     clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
@@ -96,7 +113,11 @@ function useWorld(on: On, w: World) {
     log.notes.push(JSON.stringify(e))
     return { value: { isSent: true, channel: 'iterm2' } } as never
   })
-  on('agent.list', () => ({ value: [] as never }))
+  on('agent.list', () => ({ value: (w.agents ?? []) as never }))
+  on('tool.call', { tool: 'TaskStop' }, ($, e) => {
+    log.order.push(`stop ${String((e as unknown as { task_id: string }).task_id)}`)
+    return { result: {}, text: '' } as never
+  })
   on('session.version', () => {
     log.versionReads += 1
     if (w.versionFails) throw new Error('session.version 不可用')
@@ -130,7 +151,10 @@ function useWorld(on: On, w: World) {
       </Box>
     )
   })
-  on('fs.exists', ($, e) => ({ value: e.path in w.files || e.path in w.dirs }))
+  // dirs 里列出的子目录也算存在（起飞按 <worktree>/template/openspec/changes/<name> 找 change 目录）
+  on('fs.exists', ($, e) => ({
+    value: e.path in w.files || e.path in w.dirs || Object.entries(w.dirs).some(([d, names]) => names.some(n => `${d}/${n}` === e.path)),
+  }))
   on('fs.list', ($, e) => ({
     value: (w.dirs[e.path] ?? []).map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
   }))
@@ -157,7 +181,15 @@ function useWorld(on: On, w: World) {
       const b = w.baseline ?? { exitCode: 0, stdout: '{"ok": true, "reasons": []}' }
       return { value: { ...ok(b.stdout).value, exitCode: b.exitCode } }
     }
+    // 起飞守卫一律以 exit 3「未批准」作答：起飞在守卫处停下，用例只看起飞是否发生
+    if (cmd === 'python3' && args[0]?.endsWith('/takeoff-gate.py')) {
+      const name = String(args[2]).split('/').pop() ?? ''
+      log.gates.push(name)
+      log.order.push(`gate ${name}`)
+      return { value: { ...fail('takeoff-gate: 未批准：账本里没有这个 change 的批准记录。').value, exitCode: 3 } }
+    }
     if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
+    if (cmd === 'git' && args.includes('status')) return ok(w.status ?? '')
     if (cmd !== 'git') throw new Error(`unexpected argv: ${e.argv.join(' ')}`)
     log.git.push({ args, cwd: e.init?.cwd, stdin: e.init?.stdin })
     switch (args[0]) {
@@ -185,6 +217,12 @@ function useWorld(on: On, w: World) {
 /** 写账本的 git 子命令（rev-parse 只读，不算）。 */
 function writes(log: { git: GitCall[] }): string[] {
   return log.git.map(c => String(c.args[0])).filter(op => op !== 'rev-parse')
+}
+
+/** 推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完。 */
+async function background(log: { clock: { advance(ms: number): unknown; settle(): unknown } }): Promise<void> {
+  await log.clock.advance(0)
+  await log.clock.settle()
 }
 
 test('band-shows-pending-plan', async ($, on) => {
@@ -244,10 +282,11 @@ test('approve-press-appends-ledger-event', async ($, on) => {
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
-  // When: 按下「批准起飞」
+  // When: 按下「批准起飞」，推进时钟让后台起飞跑完
   await ui.press({ key: `approve:demo:${F}` })
+  await background(log)
 
-  // Then: 写命令依次为 hash-object、mktree、commit-tree、update-ref refs/flight/demo/ledger <新> 40 个 0；事件 ev=approve、fp=F、by.plugin=flight、by.surface=terminal、by.session=sess-1；输入框预填 /opsx-apply demo
+  // Then: 写命令依次为 hash-object、mktree、commit-tree、update-ref refs/flight/demo/ledger <新> 40 个 0；事件 ev=approve、fp=F、by.plugin=flight、by.surface=terminal、by.session=sess-1；插件以 demo 起飞（调用了 demo 的 takeoff-gate），输入框没有被预填
   expect(writes(log)).toEqual(['hash-object', 'mktree', 'commit-tree', 'update-ref'])
   expect(log.git.at(-1)?.args).toEqual(['update-ref', 'refs/flight/demo/ledger', 'c'.repeat(40), '0'.repeat(40)])
   expect(JSON.parse(String(log.git[0]?.stdin))).toMatchObject({
@@ -258,7 +297,8 @@ test('approve-press-appends-ledger-event', async ($, on) => {
     at: '2026-10-09T12:00:00.000Z',
     by: { plugin: 'flight', surface: 'terminal', session: 'sess-1' },
   })
-  expect(log.fills).toEqual(['/opsx-apply demo'])
+  expect(log.gates).toEqual(['demo'])
+  expect(log.fills).toEqual([])
 })
 
 test('approve-press-approves-the-drawn-item', async ($, on) => {
@@ -282,12 +322,14 @@ test('approve-press-approves-the-drawn-item', async ($, on) => {
   )
   const writesAfterStale = writes(log)
   await ui.press({ key: String((await ui.find({ type: 'Button' }))?.key) })
+  await background(log)
 
-  // Then: 旧按钮的按压没有落到 zeta 上（未写账本）；按下 zeta 自己的按钮才写入 zeta 与 G
+  // Then: 旧按钮的按压没有落到 zeta 上（未写账本）；按下 zeta 自己的按钮才写入 zeta 与 G，并只以 zeta 起飞；输入框没有被预填
   expect(stale).toBe('missed')
   expect(writesAfterStale).toEqual([])
   expect(JSON.parse(String(log.git.find(c => c.args[0] === 'hash-object')?.stdin))).toMatchObject({ change: 'zeta', fp: G })
-  expect(log.fills).toEqual(['/opsx-apply zeta'])
+  expect(log.gates).toEqual(['zeta'])
+  expect(log.fills).toEqual([])
 })
 
 test('approve-press-refuses-changed-plan', async ($, on) => {
@@ -334,13 +376,15 @@ test('approve-dedupe-prefills-command', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledger = [ledgerEvent('approve', F)]
 
-  // When: 人再按一次 demo 的「批准起飞」
+  // When: 人再按一次 demo 的「批准起飞」，推进时钟让后台起飞跑完
   await ui.press({ key: `approve:demo:${F}` })
+  await background(log)
 
-  // Then: 没有写账本的 git 命令；出现含「已批准」的提示；prompt.fill 只收到一次 /opsx-apply demo
+  // Then: 没有写账本的 git 命令；出现含「已批准」的提示；按「起飞」处理：以 demo 起飞一次；输入框没有被预填
   expect(writes(log)).toEqual([])
   expect(log.toasts.some(t => t.includes('已批准'))).toBe(true)
-  expect(log.fills).toEqual(['/opsx-apply demo'])
+  expect(log.gates).toEqual(['demo'])
+  expect(log.fills).toEqual([])
 })
 
 test('approve-press-appends-after-takeoff-with-same-fingerprint', async ($, on) => {
@@ -379,14 +423,16 @@ test('ledger-append-retries-on-conflict', async ($, on) => {
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
-  // When: 按下「批准起飞」
+  // When: 按下「批准起飞」，推进时钟让后台起飞跑完
   await ui.press({ key: `approve:demo:${F}` })
+  await background(log)
 
-  // Then: update-ref 共 2 次，第 2 次以重读到的链尾 dddd… 为旧值；输入框预填 /opsx-apply demo
+  // Then: update-ref 共 2 次，第 2 次以重读到的链尾 dddd… 为旧值；以 demo 起飞，输入框没有被预填
   const updates = log.git.filter(c => c.args[0] === 'update-ref')
   expect(updates).toHaveLength(2)
   expect(updates[1]?.args[3]).toBe('d'.repeat(40))
-  expect(log.fills).toEqual(['/opsx-apply demo'])
+  expect(log.gates).toEqual(['demo'])
+  expect(log.fills).toEqual([])
 })
 
 test('ledger-append-gives-up-after-three-conflicts', async ($, on) => {
@@ -659,7 +705,7 @@ function haltWorld(names: string[]): World {
   const fps: Record<string, string> = { alpha: G, beta: F, gamma: F }
   const approved: Record<string, string> = { alpha: F, beta: F, gamma: '' }
   const ledgers: Record<string, object[]> = { alpha: haltedLedger('alpha'), beta: haltedLedger('beta'), gamma: [] }
-  const world = demoWorld((_, dir) => fps[dir.split('/').pop() ?? ''] ?? F, { approved: {}, ledgers: {} })
+  const world = demoWorld((_, dir) => fps[dir.split('/').pop() ?? ''] ?? F, { approved: {}, ledgers: {}, worktrees: flyable(names) })
   world.dirs[CHANGES] = names
   for (const name of names) {
     world.files[`${CHANGES}/${name}/spec.html`] = '<html></html>'
@@ -717,14 +763,125 @@ test('press-approves-then-resumes', async ($, on) => {
   newestIs(world, 'beta')
   await $.turn.complete(TURN)
   await ui.press({ key: `resume:beta:${F}` })
-  await log.clock.advance(0)
-  await log.clock.settle()
-  for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 1))
+  await background(log)
 
-  // Then: 账本恰追加一条 approve（alpha、fp G），beta 没有；baseline 只为 alpha 跑过（alpha replan true、beta replan false）；输入框依次预填 alpha、beta 的续飞命令；通知里有一条含「回车续飞」
+  // Then: 账本恰追加一条 approve（alpha、fp G），beta 没有；baseline 只为 alpha 跑过（alpha replan true、beta replan false）；alpha、beta 都起飞了（不依赖先后），输入框没有被预填；通知里有一条含起飞回复首行「起飞守卫未通过」
   const approves = log.git.filter(c => c.args[0] === 'hash-object').map(c => JSON.parse(String(c.stdin)))
   expect(approves.map(a => [a.change, a.fp])).toEqual([['alpha', G]])
   expect(log.baselines).toEqual([`${CHANGES}/alpha`])
-  expect(log.fills).toEqual(['/opsx-apply alpha 授权提交', '/opsx-apply beta 授权提交'])
-  expect(log.notes.some(n => n.includes('回车续飞'))).toBe(true)
+  expect([...log.gates].sort()).toEqual(['alpha', 'beta'])
+  expect(log.fills).toEqual([])
+  expect(log.notes.some(n => n.includes('起飞守卫未通过'))).toBe(true)
+})
+
+// ---------------------------------------------------------------- flight-armed-takeoff S5：按下即起飞
+
+/** 账本事件（带 attempt 与额外字段）。 */
+function attemptEvent(change: string, ev: string, at: string, extra: object = {}) {
+  return { v: 1, ev, change, attempt: 1, at: `2026-10-09T${at}.000Z`, by: { plugin: 'flight', session: 'sess-0' }, ...extra }
+}
+
+test('band-offers-takeoff-for-approved', async ($, on) => {
+  // Given: demo 账本只有 approve F（之后从未起飞），ledger approved 输出 F，当前指纹 F；git status 列出 demo 的 proposal.md（已改）与 design.md（未跟踪）两个工件
+  const world = demoWorld(() => F, {
+    ledger: [ledgerEvent('approve', F)],
+    approved: { demo: F },
+    status: ' M template/openspec/changes/demo/proposal.md\n?? template/openspec/changes/demo/design.md\n',
+  })
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 读出批准带上 demo 的按钮与说明行，按下该按钮并推进时钟让后台起飞跑完
+  const button = await ui.find({ type: 'Button' })
+  const note = await ui.find({ text: /提交本 change 的 2 个工件/ })
+  await ui.press({ key: String(button?.key) })
+  await background(log)
+
+  // Then: 按钮为 takeoff:demo:<F>、「起飞」；说明行含「提交本 change 的 2 个工件」；没有写账本的 git 命令（没追加 approve）；以 demo 起飞；输入框没有被预填
+  expect(`${String(button?.key)}|${String(button?.props.label)}`).toBe(`takeoff:demo:${F}|起飞`)
+  expect(note).toBeDefined()
+  expect(writes(log)).toEqual([])
+  expect(log.gates).toEqual(['demo'])
+  expect(log.fills).toEqual([])
+})
+
+test('band-ignores-landed-and-aborted', async ($, on) => {
+  // Given: 计划都未改（当前与最近批准都为 F）的 alpha、beta、gamma：alpha 的 attempt 1 先 land、1 秒后又记 halt；beta 的 attempt 1 以 kind=abort 的 halt 结束；gamma 的 attempt 1 以 kind=blocked 的 halt 结束
+  const world = haltWorld(['alpha', 'beta', 'gamma'])
+  world.fp = () => F
+  world.approved = { alpha: F, beta: F, gamma: F }
+  const flown = (change: string) => [attemptEvent(change, 'approve', '10:00:00', { attempt: undefined, fp: F }), attemptEvent(change, 'takeoff', '10:01:00', { fp: F })]
+  world.ledgers = {
+    alpha: [...flown('alpha'), attemptEvent('alpha', 'land', '10:30:00', { verdict: 'ready' }), attemptEvent('alpha', 'halt', '10:30:01', { reason: '会话中断' })],
+    beta: [...flown('beta'), attemptEvent('beta', 'halt', '10:30:00', { reason: '人工中止', kind: 'abort' })],
+    gamma: [...flown('gamma'), attemptEvent('gamma', 'halt', '10:30:00', { reason: 'S2 blocked', kind: 'blocked' })],
+  }
+  useWorld(on, world)
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 只有一个按钮且为 resume:gamma:<F>；没有「另有 N 个」字样（alpha、beta 都不在带上）
+  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.key))).toEqual([`resume:gamma:${F}`])
+  expect(await ui.findAll({ text: /另有/ })).toHaveLength(0)
+})
+
+test('band-approve-takes-off', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；批准带已显示 demo 的「批准起飞」
+  const log = useWorld(on, demoWorld(() => F))
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 approve:demo:<F>，推进时钟让后台起飞跑完
+  await ui.press({ key: `approve:demo:${F}` })
+  await background(log)
+
+  // Then: 账本追加了 fp=F 的 approve；以 demo 起飞；toast 里有起飞回复首行（含「起飞守卫未通过」）；输入框没有被预填
+  expect(JSON.parse(String(log.git.find(c => c.args[0] === 'hash-object')?.stdin))).toMatchObject({ ev: 'approve', fp: F })
+  expect(log.gates).toEqual(['demo'])
+  expect(log.toasts.some(t => t.includes('起飞守卫未通过'))).toBe(true)
+  expect(log.fills).toEqual([])
+})
+
+test('band-resume-takes-off', async ($, on) => {
+  // Given: alpha（已停飞、计划改过，指纹 G）为最新一项，beta（已停飞、计划未改，指纹 F）次之；slice-gate.py baseline 以 exit 0 作答
+  const world = haltWorld(['alpha', 'beta'])
+  world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
+  newestIs(world, 'alpha')
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 alpha 的「批准修订并续飞」；beta 成为最新一项后按下它的「续飞」；推进时钟让后台续飞跑完
+  await ui.press({ key: `replan:alpha:${G}` })
+  newestIs(world, 'beta')
+  await $.turn.complete(TURN)
+  await ui.press({ key: `resume:beta:${F}` })
+  await background(log)
+
+  // Then: 只为 alpha 追加了 fp=G 的 approve；只为 alpha 跑过基线；alpha、beta 都起飞了（按名排序比较，不依赖先后）；输入框没有被预填
+  const approves = log.git.filter(c => c.args[0] === 'hash-object').map(c => JSON.parse(String(c.stdin)))
+  expect(approves.map(a => [a.change, a.fp])).toEqual([['alpha', G]])
+  expect(log.baselines).toEqual([`${CHANGES}/alpha`])
+  expect([...log.gates].sort()).toEqual(['alpha', 'beta'])
+  expect(log.fills).toEqual([])
+})
+
+test('band-resume-stops-diagnostician', async ($, on) => {
+  // Given: beta 已停飞、计划未改；账本 attempt 1 在 halt 之后有诊断员 d1 的 dispatch、没有 d1 的 ended；agent.list 里 d1 为 running
+  const world = haltWorld(['beta'])
+  world.ledgers!.beta = [...haltedLedger('beta'), attemptEvent('beta', 'dispatch', '10:31:00', { slice: 'S2', agent: 'd1', role: 'diagnostician' })]
+  world.agents = [{ id: 'd1', status: 'running' }]
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 beta 的「续飞」，推进时钟让后台续飞跑完
+  await ui.press({ key: `resume:beta:${F}` })
+  await background(log)
+
+  // Then: 按发生顺序恰为对 d1 的一次 TaskStop、随后对 beta 的起飞（takeoff-gate）
+  expect(log.order).toEqual(['stop d1', 'gate beta'])
 })

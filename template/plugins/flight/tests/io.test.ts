@@ -472,6 +472,24 @@ test('stopped-now-reads-latest-attempt', async () => {
   expect(r).toEqual([undefined, 'land', 'halt', 'unreadable'])
 })
 
+test('band-ignores-landed-and-aborted/stopped-now', async () => {
+  // Given: 旧账本：takeoff#1、land#1，1 秒后又补记了 halt#1（同一 attempt 既有 land 又有 halt）
+  const ev = (e: string, attempt: number): FlightEvent => ({ ...DISPATCH, ev: e, attempt })
+  const events = [ev('takeoff', 1), ev('land', 1), ev('halt', 1)]
+  const io: Io = {
+    run: async () => ok(events.map(e => JSON.stringify(e)).join('\n') + '\n'),
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: async () => false,
+  }
+
+  // When: 调用 stoppedNow
+  const r = await stoppedNow(io, flight(HOOKS))
+
+  // Then: 判为 land（落地优先于之后补记的 halt）
+  expect(r).toBe('land')
+})
+
 const SLICE_A2 = '/repo/.claude/worktrees/flight-demo-S1-a2'
 
 test('fresh-worktree-never-reuses-old', async () => {
