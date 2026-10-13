@@ -134,7 +134,8 @@
         "README.md",
         "docs/WORKFLOW_zh.md",
         "template/plugins/flight/.claude-plugin/plugin.json",
-        "tests/test_armed_docs.py"
+        "tests/test_armed_docs.py",
+        "tests/test_unattended_docs.py"
       ],
       "deps": [
         "S3"

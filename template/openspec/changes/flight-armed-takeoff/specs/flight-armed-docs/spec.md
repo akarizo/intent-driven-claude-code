@@ -21,7 +21,9 @@ Feature: 仓库纪律：命令与同名 skill 同改，禁漂移。修 PR #53 �
 - **AND** 后两个都含「按下即起飞」，都不含「回车发出预填」
 
 ### Requirement: 插件版本 0.10.0
-`template/plugins/flight/.claude-plugin/plugin.json` 的 version SHALL 为 `0.10.0`，description SHALL 提到起飞待命与按下即起飞。
+`template/plugins/flight/.claude-plugin/plugin.json` 的 version SHALL 为 `0.10.0`，description SHALL 提到起飞待命与按下即起飞，并保留「自愈」「看门狗」「续飞」。
+
+flight-unattended 留下的 `tests/test_unattended_docs.py::test_plugin_version_0_9_0` 写死了 `0.9.0`，SHALL 改为断言版本不低于 0.9.0（按数字逐段比较）；它对 description 的断言照旧。
 
 Feature: 新增行为随插件发布。
 
