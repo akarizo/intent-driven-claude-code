@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -597,9 +595,8 @@ def test_ticker_not_duplicated():
     assert_ts_passed("ticker-not-duplicated")
 
 
-# ---------------------------------------------------------------- flight-armed-takeoff S4（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-armed-takeoff S4
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
 def test_refused_takeoff_arms():
     # Given: demo 已批准；preflight 以 1 退出、stderr「基线仍在跑（…）：等它结束再起飞」
     # When: 发 /opsx-apply demo
@@ -607,15 +604,14 @@ def test_refused_takeoff_arms():
     assert_ts_passed("refused-takeoff-arms")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
 def test_wait_retries_takeoff():
     # Given: demo 因基线仍在跑进入待命，之后 preflight 通过；另一世界因上一次的 agent 仍在运行进入待命
     # When: 时钟推进 60 秒；另一世界该 agent 结束（turn.complete 带 agentId）
     # Then: 自动重试、账本追加 takeoff、待命清除、通知含已起飞；另一世界同样自动起飞
     assert_ts_passed("wait-retries-takeoff")
+    assert_ts_passed("wait-retries-takeoff/agents")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
 def test_model_fix_submits_then_retries():
     # Given: demo 已批准；lint 第一次以 1 退出（overlap …），之后通过
     # When: 发 /opsx-apply demo；推进时钟让 clock.after(0) 到点；主会话一轮结束
@@ -623,7 +619,6 @@ def test_model_fix_submits_then_retries():
     assert_ts_passed("model-fix-submits-then-retries")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
 def test_transient_retries_once_with_diag():
     # Given: demo 已批准；plan_fp.py 前两次以 1 退出（plan_fp 超时）
     # When: 发 /opsx-apply demo，推进 10 秒，再推进 10 秒
@@ -631,10 +626,11 @@ def test_transient_retries_once_with_diag():
     assert_ts_passed("transient-retries-once-with-diag")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
 def test_armed_gives_up_and_cancels():
     # Given: 甲跨会话起飞未落地；乙 lint 红待命、已重试 3 次；丙基线仍在跑待命
     # When: 甲发 /opsx-apply；乙第 3 次重试又被拒；对丙发 /flight abort demo 并推进 60 秒
     # Then: 甲不待命、通知含 --takeover；乙放弃、通知含重试已用尽、不再提交；丙回复含已取消起飞待命、之后不重试
     assert_ts_passed("armed-gives-up-and-cancels")
+    assert_ts_passed("armed-gives-up-and-cancels/budget")
+    assert_ts_passed("armed-gives-up-and-cancels/abort")
 
