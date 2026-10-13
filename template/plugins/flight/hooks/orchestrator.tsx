@@ -18,7 +18,7 @@ import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
 import { executorPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
 import { SHIP_TOOL, shipPr } from './ship'
 import { checkJudges, checkPluginCopy } from './versions'
-import { StepTracker } from './watchdog'
+import { StepTracker, WATCHDOG_MS } from './watchdog'
 
 type Engine = EngineInterface
 type Ev = State['events'][number]
@@ -552,11 +552,18 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
 
 // drive 经模块内单一 Promise 队列串行，避免同一时刻两次合回
 let queue: Promise<unknown> = Promise.resolve()
+/** drive 正在跑的 change（排到队首、driveNow 未结束）：起飞据此判「正在飞」（design D4） */
+const driving: Set<string> = new Set()
 function drive($: Engine, f: Flight): Promise<void> {
-  const run = queue.then(
-    () => driveNow($, f),
-    () => driveNow($, f),
-  )
+  const now = async () => {
+    driving.add(f.change)
+    try {
+      await driveNow($, f)
+    } finally {
+      driving.delete(f.change)
+    }
+  }
+  const run = queue.then(now, now)
   queue = run.catch(() => undefined)
   return run
 }
@@ -660,10 +667,10 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   if (foreign !== undefined && !args.includes(TAKEOVER)) {
     return `flight：${name} 的 attempt ${state.attempt} 由另一个会话（${foreign.slice(0, 8)}）起飞，尚未落地或停飞；到那个会话里继续，或确认它已结束后用 /opsx-apply ${name} ${TAKEOVER} 接管`
   }
-  // 本会话本进程正在驱动这次飞行（账本未结束且 active 已登记）：不在未结束的 attempt 上再写 takeoff（也不让它被归为可等待的拒绝而进入待命）。
-  // 本进程未登记的（进程重启后 --resume 回到原会话）照旧走后面的活 agent 检查与续飞
-  if (state.takeoff !== undefined && !settled && owner === session && active.has(name)) {
-    return `flight：${name} 正在飞（attempt ${state.attempt}），不起飞；需要中止用 /flight abort ${name}`
+  // 本会话本进程正在驱动这次飞行（账本未结束、active 已登记，且 drive 在跑或本 attempt 有活 agent）：不在未结束的 attempt 上再写 takeoff（也不让它被归为可等待的拒绝而进入待命）。
+  // 本进程未登记的（进程重启后 --resume 回到原会话）与卡住的（drive 不在跑、agent 都已结束）照旧走后面的活 agent 检查与续飞
+  if (state.takeoff !== undefined && !settled && owner === session && active.has(name) && (driving.has(name) || (await liveAgents($, f, state)).length > 0)) {
+    return `flight：${name} 正在飞（attempt ${state.attempt}），不起飞；需要中止用 /flight abort ${name}；中止后可用 /flight resume ${name} 续飞`
   }
   const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])
   if (st.exitCode !== 0) return `flight：工作区不干净，不起飞：\n${st.stderr.trim()}`
@@ -1025,15 +1032,19 @@ async function watchTick($: Engine, gen: number): Promise<void> {
     const now = await $.clock.now()
     if (gen !== tickerGen) return
     tickedAt = now
-    for (const id of steps.stale(now)) {
+    const stale = steps.stale(now)
+    // 快照时各请求的起点：处理前复查，其间旧请求结束、新请求开始的不按陈旧快照处理（design D5）
+    const snapshot = new Map(stale.map(id => [id, startedAt.get(id)]))
+    for (const id of stale) {
       // 本次 tick 卡住期间可能已起了新计时器，或别的 tick 已认领 / 处理过它（startedAt 已删）
       if (gen !== tickerGen || claimed.has(id) || !startedAt.has(id)) continue
       claimed.add(id)
       try {
         // 仍在登记中：dispatch 还没写入账本、找不到所属飞行，留到下一次 tick 再处理
         const o = await ownership(ioHere($), id)
-        if ((o !== undefined && 'pending' in o) || !startedAt.has(id)) continue
-        const since = startedAt.get(id) ?? now
+        if (o !== undefined && 'pending' in o) continue
+        const since = startedAt.get(id)
+        if (since === undefined || since !== snapshot.get(id) || now - since <= WATCHDOG_MS) continue
         steps.forget(id)
         startedAt.delete(id)
         await watchOne($, id, now - since).catch(err => watchDiag($, id, firstLine(err instanceof Error ? err.message : String(err))))
@@ -1118,7 +1129,9 @@ async function inFlight(io: Io, id: string): Promise<boolean> {
   const o = await ownership(io, id)
   if (o === undefined || 'unknown' in o) return false
   if (active.has(o.change)) return true
-  return 'role' in o && o.role === 'diagnostician' && diagnosing.has(o.change)
+  // 在诊断的 change 下，登记中的 agent 就是诊断员（停飞后不再派别的角色）
+  if ('pending' in o) return diagnosing.has(o.change)
+  return o.role === 'diagnostician' && diagnosing.has(o.change)
 }
 
 /** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
