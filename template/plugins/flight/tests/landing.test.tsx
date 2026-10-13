@@ -32,10 +32,12 @@ function gateJson(x: Partial<GateJson>): string {
 }
 
 type Call = { argv: string[]; cwd?: string }
-type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[]; writes: string[]; logs: string[]; seq: string[] }
+type Log = { ledger: FlightEvent[]; calls: Call[]; commands: string[]; statuses: unknown[]; toasts: string[]; writes: string[]; logs: string[]; seq: string[]; order: string[] }
 type World = {
   ledger: FlightEvent[]
   finalOut?: string
+  shipOut?: string
+  renderFails?: string
   fixFinalOut?: string
   ledgerFails?: boolean
   timelineReport?: string
@@ -62,7 +64,11 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
   if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) return ok(log.ledger.map(x => JSON.stringify(x)).join('\n') + '\n')
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'final')
     return ok(cwd === FIX_TREE ? (w.fixFinalOut ?? gateJson({})) : (w.finalOut ?? gateJson({})))
-  if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok(SHIP_READY)
+  if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') return ok(w.shipOut ?? SHIP_READY)
+  if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'render')
+    return w.renderFails !== undefined
+      ? { exitCode: 1, stdout: '', stderr: w.renderFails }
+      : ok(JSON.stringify({ timeline: `${CD}/timeline.md`, report: `${CD}/gate-report.md`, events: log.ledger.length }) + '\n')
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineThrows !== undefined) throw new Error(w.timelineThrows)
   if (cmd === 'python3' && args[0]?.endsWith('/timeline.py') && args[1] === 'report' && w.timelineFails !== undefined)
     return { exitCode: w.timelineExit ?? 1, stdout: '', stderr: w.timelineFails }
@@ -96,13 +102,25 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
   throw new Error(`unexpected git: ${args.join(' ')}`)
 }
 
-/** 假 Ctx：io 按同一个世界作答，status / toast / runCommand / log 记入 log（log 与 runCommand 的先后另记入 seq）；不派发 agent。 */
+/** 落地顺序里关心的调用：ship、render、带 -m 的 git commit、账本事件；其余为 undefined。 */
+function orderLabel(argv: string[], stdin: string | undefined): string | undefined {
+  const c = { argv }
+  if (has(c, 'slice-gate.py', 'ship')) return 'ship'
+  if (has(c, 'timeline.py', 'render')) return 'render'
+  if (argv[0] === 'git' && argv.includes('commit') && argv.includes('-m')) return `commit:${argv[argv.indexOf('-m') + 1]}`
+  if (argv[0] === 'git' && argv.includes('hash-object')) return `ev:${String((JSON.parse(String(stdin)) as FlightEvent).ev)}`
+  return undefined
+}
+
+/** 假 Ctx：io 按同一个世界作答，status / toast / runCommand / log 记入 log（log 与 runCommand 的先后另记入 seq，连同 orderLabel 认得的调用记入 order）；不派发 agent。 */
 function ctxOf(w: World): { ctx: Ctx; log: Log } {
-  const log: Log = { ledger: [...w.ledger], calls: [], commands: [], statuses: [], toasts: [], writes: [], logs: [], seq: [] }
+  const log: Log = { ledger: [...w.ledger], calls: [], commands: [], statuses: [], toasts: [], writes: [], logs: [], seq: [], order: [] }
   const ctx: Ctx = {
     io: {
       async run(argv, opts) {
         log.calls.push({ argv: [...argv], cwd: opts?.cwd })
+        const label = orderLabel([...argv], opts?.stdin)
+        if (label !== undefined) log.order.push(label)
         return answer(w, log, [...argv], opts)
       },
       read: async () => '- [ ] S1 第一片\n',
@@ -116,11 +134,13 @@ function ctxOf(w: World): { ctx: Ctx; log: Log } {
     runCommand: async (command, args) => {
       log.commands.push(`${command} ${args}`)
       log.seq.push('command')
+      log.order.push('command')
       if (w.commandThrows !== undefined) throw new Error(w.commandThrows)
     },
     log: async text => {
       log.logs.push(text)
       log.seq.push('log')
+      log.order.push('log')
     },
   }
   return { ctx, log }
@@ -459,4 +479,78 @@ test('landing-hands-off-to-flight-pr-ship', async () => {
   expect(bad.log.ledger.at(-1)).toMatchObject({ ev: 'land' })
   expect(bad.log.toasts.some(t => t.includes(`请手动运行 /flight:pr-ship ${args}`))).toBe(true)
   expect(bad.log.logs).toContain('落地完成，但接 /flight:pr-ship 失败：no command named /flight:pr-ship')
+})
+
+test('land-renders-records', async () => {
+  // Given: 两个世界，S1 都已合回且评审结果为空列表；change worktree 里 final 输出 ok true、warnings ["G2 预存红"]；全量评审员 W 以空列表返回；slice-gate ship 为 ready；
+  //        change 目录的 timeline.md 有未提交改动；世界二的 timeline.py render 以 1 退出，stderr 为「ledger: 读不出\nsecond」
+  const ledger = [TAKEOFF, DISPATCH_A, MERGED, REVIEWED]
+  const finalOut = gateJson({ warnings: ['G2 预存红'] })
+  const one = ctxOf({ ledger, finalOut })
+  const two = ctxOf({ ledger, finalOut, renderFails: 'ledger: 读不出\nsecond' })
+
+  // When: 两个世界各自推进飞行到落地
+  await Promise.all([advance(one.ctx, one.log), advance(two.ctx, two.log)])
+
+  // Then: 世界一的 final 事件带 warnings ["G2 预存红"]；从 ship 起依次为 ship → land 事件 → render → 「chore(flight): 收口」提交 → 飞行记录 → pr-ship；render 的 cwd 为 change worktree；
+  //       两个世界都没有任何含 record 的调用；世界二账本末条仍为 land，Ctx.log 含「落地记录生成失败：ledger: 读不出」，toast 含「落地记录生成失败」，仍运行了 pr-ship
+  expect(one.log.ledger.find(e => e.ev === 'final')).toMatchObject({ ok: true, warnings: ['G2 预存红'] })
+  expect(one.log.order.slice(one.log.order.indexOf('ship'))).toEqual(['ship', 'ev:land', 'render', 'commit:chore(flight): 收口', 'log', 'command'])
+  expect(one.log.calls.find(c => has(c, 'timeline.py', 'render'))?.cwd).toBe(CT)
+  expect([...one.log.calls, ...two.log.calls].filter(c => c.argv.includes('record'))).toEqual([])
+  expect(two.log.ledger.at(-1)).toMatchObject({ ev: 'land' })
+  expect(two.log.logs).toContain('落地记录生成失败：ledger: 读不出')
+  expect(two.log.toasts.some(t => t.includes('落地记录生成失败'))).toBe(true)
+  expect(two.log.commands).toEqual([`flight:pr-ship --worktree ${CT} --change-dir ${CD} --judges ${HOOKS}`])
+})
+
+test('followup-review-needs-base', async () => {
+  // Given: 两个世界，S1 都已合回且评审结果为空列表，spawn 会放行为 agent V；世界一的复核动作为 slice whole-r1、mode followup、base 空串、commit c10、prior 一条 HIGH；
+  //        世界二的复核动作相同，但 base 与 commit 都是 c10
+  const ledger = [TAKEOFF, DISPATCH_A, MERGED, REVIEWED]
+  const one = spawningCtx({ ledger }, 'V')
+  const two = spawningCtx({ ledger }, 'V')
+  const followup = (base: string) => ({ kind: 'dispatch', role: 'reviewer', slice: 'whole-r1', mode: 'followup', base, commit: 'c10', prior: [HIGH] }) as unknown as Action
+
+  // When: 两个世界各执行一次复核的派发动作
+  await Promise.all([runLandingAction(one.ctx, FLIGHT, followup('')), runLandingAction(two.ctx, FLIGHT, followup('c10'))])
+
+  // Then: 两个世界都没有派发；账本末条都是 blocked review:whole-r1（infra），原因含「复核范围缺 base」
+  expect([...one.spawned, ...two.spawned]).toEqual([])
+  const blocked = { ev: 'blocked', slice: 'review:whole-r1', kind: 'infra', reason: expect.stringContaining('复核范围缺 base') }
+  expect([one.log.ledger.at(-1), two.log.ledger.at(-1)]).toMatchObject([blocked, blocked])
+})
+
+test('draft-reasons-in-flight-record', async () => {
+  // Given: 两个世界，S1 都已合回且评审结果为空列表、final 绿、全量评审员 W 以空列表返回；
+  //        世界一 slice-gate ship 输出 ready false、reasons ["final 过期"]；世界二 ship 输出 not json
+  const ledger = [TAKEOFF, DISPATCH_A, MERGED, REVIEWED]
+  const draft = JSON.stringify({ ready: false, commit: 'h'.repeat(40), reasons: ['final 过期'], blocked: [], blocking: [], deferred: [], fix: null, review: null }) + '\n'
+  const one = ctxOf({ ledger, shipOut: draft })
+  const two = ctxOf({ ledger, shipOut: 'not json\n' })
+
+  // When: 两个世界各自推进飞行到落地
+  await Promise.all([advance(one.ctx, one.log), advance(two.ctx, two.log)])
+
+  // Then: 两个世界账本末条都是 land（verdict draft）；Ctx.log 都只收到一段文本（飞行记录），世界一的含「draft 原因：final 过期」，世界二的含「draft 原因：ship 输出无法解析：not json」
+  expect([one.log.ledger.at(-1), two.log.ledger.at(-1)]).toMatchObject([{ ev: 'land', verdict: 'draft' }, { ev: 'land', verdict: 'draft' }])
+  expect([one.log.logs.length, two.log.logs.length]).toEqual([1, 1])
+  expect(one.log.logs[0]).toContain('draft 原因：final 过期')
+  expect(two.log.logs[0]).toContain('draft 原因：ship 输出无法解析：not json')
+})
+
+test('landing-actions-skip-after-halt', async () => {
+  // Given: 账本里 S1 已合回、评审结果为空列表，之后已追加本 attempt（1）的 halt「人工停飞」，共 5 条；spawn 会放行为 agent X；
+  //        两个动作：派发修复体（slice fix-r1、1 条 HIGH）与派发全量评审员（slice whole、mode whole、commit c9）
+  const halt = event('halt', { attempt: 1, reason: '人工停飞' })
+  const { ctx, log, spawned } = spawningCtx({ ledger: [TAKEOFF, DISPATCH_A, MERGED, REVIEWED, halt] }, 'X')
+  const fixer = { kind: 'dispatch', role: 'fixer', slice: 'fix-r1', findings: [HIGH] } as unknown as Action
+  const whole = { kind: 'dispatch', role: 'reviewer', slice: 'whole', mode: 'whole', commit: 'c9', prior: [] } as unknown as Action
+
+  // When: 以这两个动作各调用一次 runLandingAction
+  await Promise.all([fixer, whole].map(a => runLandingAction(ctx, FLIGHT, a)))
+
+  // Then: 没有任何 spawn；账本仍是原来 5 条
+  expect(spawned).toEqual([])
+  expect(log.ledger).toHaveLength(5)
 })
