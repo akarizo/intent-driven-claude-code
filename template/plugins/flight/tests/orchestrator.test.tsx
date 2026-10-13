@@ -105,6 +105,8 @@ type World = {
   gateThrows?: string
   /** 每次 process.run 到达世界时先调用（用来在某条命令运行时改动账本） */
   onRun?: (argv: string[]) => void
+  /** ledger.py show 应答前调用：返回 Promise 时等它，之后按当时的账本作答（用来让一次读账本卡住） */
+  ledgerHold?: () => Promise<void> | undefined
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -180,7 +182,7 @@ function useWorld(on: On, w: World) {
     /** ui.notify 收到的事件 */
     notifies: [] as unknown[],
     /** mock.clock 的句柄（advance / settle） */
-    clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
+    clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown; set(ms: number): unknown },
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
@@ -308,7 +310,11 @@ function useWorld(on: On, w: World) {
       if (script === 'timeline.py') return wrap(res(0, ''))
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
-      if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
+      if (script === 'ledger.py') {
+        const show = () => wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
+        const held = w.ledgerHold?.()
+        return held ? (held.then(show) as never) : show()
+      }
       if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, w.features ?? 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\ninteg-guard\n'))
       if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, SHIP_READY))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, JSON.stringify(w.waves ?? [['S1', 'S2'], ['S3']]) + '\n'))
@@ -2177,4 +2183,132 @@ test('takeoff-requires-integ-guard/refused', async ($, on) => {
   // Then: 回复含 integ-guard；账本没有 takeoff
   expect(r.text).toContain('integ-guard')
   expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-armed-takeoff S3（flight-watchdog-hardening）
+
+/** 起飞后让执行体逐个收口、结束直到停飞（S1 门禁须一律红）；返回停飞后派出的诊断员 id */
+async function haltWithDiagnostician($: unknown, log: { events: Record<string, unknown>[]; spawns: Spawn[] }): Promise<string> {
+  const x = $ as { command: { run(e: unknown): Promise<unknown> }; classic: { SubagentStop(e: unknown): Promise<unknown> }; turn: { complete(e: unknown): Promise<unknown> } }
+  await x.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN })
+  for (let i = 1; i <= 4 && !log.events.some(e => e.ev === 'halt'); i++) {
+    await x.classic.SubagentStop(subagentStop(`agent-${i}`))
+    await x.turn.complete(ended(`agent-${i}`))
+  }
+  return log.spawns.find(s => s.subagent_type === 'flight:diagnostician')?.agentId ?? '没有诊断员'
+}
+
+test('diagnostician-reads-auto-allowed', async ($, on) => {
+  // Given: demo（waves [[S1]]）S1 门禁一律红，停飞后派出诊断员 d1（仍在跑）；插件之下的引擎对 d1 的工具检查一律答 ask
+  const log = useWorld(on, demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
+  const d1 = await haltWithDiagnostician($, log)
+  const calls = [
+    { tool: 'Read', input: { file_path: `${TREE}/${CD}/proposal.md` }, agentId: d1 },
+    { tool: 'Bash', input: { command: `python3 ${HOOKS}/ledger.py show --change-dir ${CD}` }, agentId: d1 },
+    { tool: 'Bash', input: { command: `git -C ${TREE} log --oneline -3` }, agentId: d1 },
+    { tool: 'Write', input: { file_path: `${TREE}/x.md`, content: 'x\n' }, agentId: d1 },
+  ]
+
+  // When: 依次对 d1 的 Read proposal.md、Bash ledger.py show、Bash git log、Write x.md 做权限判定
+  const answers: { decision?: string; reason?: string }[] = []
+  for (const c of calls) answers.push((await $.tool.check(c as never)) as { decision?: string; reason?: string })
+
+  // Then: 前三个改答 allow 且理由含「flight 包络内」；Write 仍答 ask
+  expect(answers.slice(0, 3)).toEqual([0, 1, 2].map(() => expect.objectContaining({ decision: 'allow', reason: expect.stringContaining('flight 包络内') })))
+  expect(answers[3]?.decision).toBe('ask')
+})
+
+test('watchdog-stops-stalled-diagnostician', async ($, on) => {
+  // Given: demo（waves [[S1]]）S1 门禁一律红，已停飞（恰一条 halt）并派出诊断员 d1；d1 的一个模型请求在 T0 开始、从未结束（看门狗随之起表）
+  const w = demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } })
+  const log = useWorld(on, w)
+  const d1 = await haltWithDiagnostician($, log)
+  w.stalls = [d1]
+  void step($, d1)
+  await flush()
+  const heals = log.events.filter(x => x.ev === 'heal').length
+
+  // When: 时钟推进 661s，看门狗在请求超过 10 分钟后 tick
+  await advance(log, 661000)
+
+  // Then: 对 d1 恰一次 TaskStop；账本没有追加 heal；halt 仍只有一条
+  expect(log.stops.map(x => x.id)).toEqual([d1])
+  expect(log.events.filter(x => x.ev === 'heal').length).toBe(heals)
+  expect(log.events.filter(x => x.ev === 'halt').length).toBe(1)
+})
+
+test('watchdog-halt-drains-queue', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 3 条 heal；demo 起飞（waves [[S1, S2]]），agent-1（S1）的请求在 T0 开始且不结束；
+  //        drive 派发 S2 的执行体 agent-2 时 spawn 已返回、dispatch 写入账本被扣住；agent-1、agent-2 在 agent.list 里都是 running
+  let enter = () => {}
+  let release = () => {}
+  const entered = new Promise<void>(r => (enter = r))
+  const released = new Promise<void>(r => (release = r))
+  const ledger = [
+    ev.heal(B0, { attempt: 1, kind: 'merge-retry', slice: 'S8', reason: '合回失败' }),
+    ev.heal(B0, { attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' }),
+    ev.heal(B0, { attempt: 1, kind: 'watchdog', slice: 'S9', reason: '等待 11 分钟', agent: 'x9' }),
+  ]
+  const w = demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] })
+  w.dispatchHold = async agent => {
+    if (agent !== 'agent-2') return
+    enter()
+    await released
+  }
+  const log = useWorld(on, w)
+  const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await entered
+  void step($, 'agent-1')
+  await flush()
+
+  // When: 时钟推进 661s，看门狗 tick（预算已用尽）；账本写入 halt 之后才放行 agent-2 的 dispatch
+  const tick = advance(log, 661000)
+  for (let i = 0; i < 200 && !log.events.some(x => x.ev === 'halt'); i++) await new Promise(r => setTimeout(r, 5))
+  release()
+  await Promise.all([tick, takeoff])
+  await flush()
+
+  // Then: 账本有 kind watchdog 的 halt；agent-1、agent-2 依次被 TaskStop；agent-2 是在其 dispatch 写入（drive 这一轮做完）之后补停的
+  expect(log.events.find(x => x.ev === 'halt')).toMatchObject({ kind: 'watchdog' })
+  expect(log.stops.map(x => x.id)).toEqual(['agent-1', 'agent-2'])
+  expect(log.stopsAt[1] ?? -1).toBeGreaterThan(log.events.findIndex(x => x.ev === 'dispatch' && x.agent === 'agent-2'))
+})
+
+/** 轮询到 cond 为真（至多约 1 秒） */
+async function until(cond: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !cond(); i++) await new Promise(r => setTimeout(r, 5))
+}
+
+test('ticker-not-duplicated', async ($, on) => {
+  // Given: demo（waves [[S1, S2]]）起飞，agent-1（S1）、agent-2（S2）在跑、自愈预算未用尽，两者的请求都在 T0 开始且不结束（第一个计时器随之起表）；
+  //        T0+660s 第一个计时器 tick，拿到 [agent-1, agent-2] 的快照，处理 agent-1 时读账本卡住（如机器休眠）；
+  //        时钟被拨到 T0+840s（第一个计时器两个周期没 tick），非飞行 agent x 的请求（不结束）让看门狗判它已停、又起了第二个
+  const release: (() => void)[] = []
+  const w = demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2', 'x'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'agent-1')
+  void step($, 'agent-2')
+  await flush()
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const first = advance(log, 660000)
+  await until(() => release.length > 0)
+  const jump = log.clock.set(Date.UTC(2026, 9, 9, 12, 14, 0)) as Promise<unknown>
+  await flush()
+  void step($, 'x')
+  await flush()
+
+  // When: 时钟再推进 60s，第二个计时器 tick；之后卡住的读账本放行，第一个计时器那次 tick 接着做完
+  const second = advance(log, 60000)
+  await until(() => log.stops.some(x => x.id === 'agent-2'))
+  for (const r of release) r()
+  await Promise.all([first, jump, second])
+  await flush()
+
+  // Then: 账本恰一条 agent-2 的 heal；TaskStop agent-2 恰一次
+  expect(log.events.filter(x => x.ev === 'heal' && x.agent === 'agent-2').length).toBe(1)
+  expect(log.stops.filter(x => x.id === 'agent-2').length).toBe(1)
 })

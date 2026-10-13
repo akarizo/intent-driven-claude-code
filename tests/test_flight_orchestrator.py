@@ -569,7 +569,6 @@ def test_notify_uses_terminal_channel():
 
 # ---------------------------------------------------------------- flight-armed-takeoff S3（骨架：实现后去掉 xfail 标记）
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
 def test_diagnostician_reads_auto_allowed():
     # Given: demo 停飞后派出诊断员 d1；引擎对 d1 的工具检查都答 ask
     # When: 检查 d1 的 Read proposal.md、Bash ledger.py show、Bash git log、Write x.md
@@ -577,7 +576,6 @@ def test_diagnostician_reads_auto_allowed():
     assert_ts_passed("diagnostician-reads-auto-allowed")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
 def test_watchdog_stops_stalled_diagnostician():
     # Given: demo 已停飞并派出诊断员 d1；d1 的请求已开始、从未结束
     # When: 时钟推进到请求开始后 10 分钟零 1 秒，看门狗 tick
@@ -585,7 +583,6 @@ def test_watchdog_stops_stalled_diagnostician():
     assert_ts_passed("watchdog-stops-stalled-diagnostician")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
 def test_watchdog_halt_drains_queue():
     # Given: 本 attempt 已有 3 条 heal；a1 请求等待超过 10 分钟；drive 正在派发 a2（spawn 已返回、dispatch 未写入）
     # When: 看门狗 tick
@@ -593,7 +590,6 @@ def test_watchdog_halt_drains_queue():
     assert_ts_passed("watchdog-halt-drains-queue")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
 def test_ticker_not_duplicated():
     # Given: 看门狗计时器被误判已停又起了第二个，第一个仍在；a1 请求等待超过 10 分钟，预算未用尽
     # When: 时钟推进，两个计时器各 tick 一次
