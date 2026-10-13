@@ -2510,3 +2510,39 @@ test('human-takeoff-skipped-while-arm-retrying', async ($, on) => {
   expect(String(r.text)).toContain('demo')
   expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
 })
+
+test('same-session-in-flight-takeoff-refused', async ($, on) => {
+  // Given: 本会话 /opsx-apply demo 已起飞（attempt 1 在飞、未落地也未停飞），派出的 agent-1 在 agent.list 里为 running
+  const w = demoWorld({ agents: [{ id: 'agent-1', status: 'running' }] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 人在同一会话再发 /opsx-apply demo；之后 agent-1 不再运行，agent-1 结束且时钟推进 60 秒
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.agents = []
+  await $.turn.complete(ended('agent-1') as never)
+  await advance(log, 60000)
+  await until(() => takeoffs(log).length > 1)
+
+  // Then: 回复含「正在飞」「attempt 1」「/flight abort」，不含「已进入起飞待命」；状态行从未显示「起飞待命」；账本仍只有 attempt 1 的 takeoff
+  expect(String(r.text)).toContain('正在飞')
+  expect(String(r.text)).toContain('attempt 1')
+  expect(String(r.text)).toContain('/flight abort')
+  expect(String(r.text)).not.toContain('已进入起飞待命')
+  expect(log.statuses.some(s => s.includes('起飞待命'))).toBe(false)
+  expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
+})
+
+test('same-session-in-flight-takeoff-refused/ledger', async ($, on) => {
+  // Given: 账本预置本会话 sess-1 起飞的 demo attempt 1（未落地、未停飞），本进程没有登记 demo 在飞，agent.list 为空
+  const ledger = [ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })]
+  const log = useWorld(on, demoWorld({ ledger }))
+
+  // When: 人发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复含「正在飞」与「/flight abort」；账本仍只有预置的 1 条事件
+  expect(String(r.text)).toContain('正在飞')
+  expect(String(r.text)).toContain('/flight abort')
+  expect(log.events.length).toBe(1)
+})
