@@ -2,49 +2,59 @@
 
 并行切片按这里的签名与语义写代码；先合回的一方实现，后合回的一方按约定调用。行为细节以 design.md 与 specs/ 为准。
 
-## S1 · `template/plugins/flight/hooks/core.ts`
+## S1
 
-```ts
+### template/plugins/flight/hooks/core.ts
+```
 export type Role = 'executor' | 'reviewer' | 'fixer' | 'resolver' | 'diagnostician'
 export type HealKind = 'merge-retry' | 'watchdog' | 'integ'
 export type HaltKind = 'blocked' | 'final' | 'integ' | 'fingerprint' | 'control' | 'watchdog' | 'abort'
 export const HEAL_BUDGET = 3
-export const INTEG = 'integ'            // 整合修复体与其专审评审的 slice 名
-
-// Action 的增改（其余成员不变）
-| { kind: 'heal'; heal: HealKind; slice: string; reason: string; agent?: string }
-| { kind: 'halt'; reason: string; haltKind: HaltKind }
-| { kind: 'dispatch'; role: 'fixer'; slice?: string; findings: Finding[]; failed?: string[] }        // integ 带 failed
-| { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string; mode?: 'whole' | 'followup' | 'integ'; base?: string; prior?: Finding[] }
-
-// 纯函数
-export function healVerdict(state: State, kind: HealKind, slice: string): { ok: true } | { ok: false; reason: string }
-//   reason：'自愈预算已用尽（3/3）' 或 '同一处已自愈过一次'
-
-// 事件构造（ev 增加）
-ev.heal(b, { attempt, kind: HealKind, slice, reason, agent? })
-ev.triage(b, { attempt, agent, text })
-ev.halt(b, { attempt, reason, kind?: HaltKind })      // kind 可选，有则写入事件
-
-// Ctx 增加可选成员
-notify?(text: string): Promise<void>
-
-// summarize / summaryLines：多一行「自愈 k/3：<kind> <slice> · …」（无 heal 为「自愈 0/3」）；
-// 有 triage 时多一行「诊断：<triage 首行>」
+export const INTEG = 'integ'
+export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+export type Finding = { severity: Severity; file: string; line: number; summary: string; fix: string }
+export type GateJson = { slice: string; ok: boolean; commit: string; failed: string[]; warnings?: string[]; ceilings?: unknown[]; base?: string; summary?: string }
+export type FlightEvent = { v: 1; ev: string; change: string; at: string; by: { plugin: 'flight'; session: string }; [k: string]: unknown }
+export type Plan = { waves: string[][]; deps: Record<string, string[]> }
+export type Flight = { change: string; mainTree: string; changeTree: string; changeDir: string; branch: string; hooksDir: string; model: string; session: string }
+export type RunResult = { exitCode: number; stdout: string; stderr: string }
+export interface Io {
+export type Found = { flight: Flight; events: FlightEvent[] }
+export interface Ctx {
+export type Action =
+export type State = { readonly events: readonly Ev[]; readonly attempt: number; readonly takeoff: Ev | undefined }
+export function reduce(events: readonly FlightEvent[]): State {
+export function currentAttempt(state: State): number {
+export function agentOf(state: State, agent: string): { role: Role; slice: string; worktree: string; attempt: number; branch: string; base?: string } | undefined {
+export function stopVerdict(state: State, agent: string, gate: GateJson): { kind: 'block'; text: string } | { kind: 'accept' } {
+export function healVerdict(state: State, kind: HealKind, slice: string): { ok: true } | { ok: false; reason: string } {
+export function next(state: State, plan: Plan, fpNow: string): Action[] {
+export function routingFindings(state: State): Finding[] {
+export type SliceRow = {
+export type FlightSummary = {
+export function summarize(state: State): FlightSummary {
+export function summaryLines(s: FlightSummary): string[] {
+export const ev: {
 ```
 
-watchdog heal 的 slice 写法：
-- 执行体 = 切片 id；
-- 评审员 = `review:<slice>`；
-- 修复体 = 其 slice（`fix` / `fix-r<k>` / `integ`）；
-- 解冲突 agent = `resolve:<slice>`。
-
-integ 修复体的 dispatch 事件带 `base`（S4 写入），专审评审员的 Action 取它作 `base`。
-
-## S1 · `template/plugins/flight/hooks/envelope.ts`
-
-- `ROLE_NAME.diagnostician = '诊断员'`；
-- diagnostician 与 reviewer 同规则：不可写任何文件；git 只读（REVIEWER_EXTRA 同样拒）；`bashUpgradable` 不为它升 allow。
+### template/plugins/flight/hooks/envelope.ts
+```
+export type Who = { role: Role; worktree: string; owns: readonly string[] }
+export type ActiveTree = { change: string; changeTree: string; slicePrefix: string }
+export type Deny = { deny: string }
+export function normalizePath(p: string): string {
+export function globMatch(path: string, pattern: string): boolean {
+export function writeTarget(tool: string, input: unknown): string | undefined {
+export function writeVerdict(who: Who, absPath: string): Deny | undefined {
+export function inWorktree(command: string, worktree: string): string {
+export function bashVerdict(role: Role, command: string, worktree?: string, _mainTree?: string): Deny | undefined {
+export function bashWriteTargets(command: string, cwd: string): { targets: string[]; unresolved: string[] } {
+export function bashWritesVerdict(who: Who, command: string): Deny | undefined {
+export function bashUpgradable(role: Role, command: string, commands: readonly string[], worktree?: string, mainTree?: string): boolean {
+export function readUpgradable(tool: string, input: unknown, worktree: string, mainTree: string): boolean {
+export function mainSessionVerdict(active: readonly ActiveTree[], tool: string, input: unknown): Deny | undefined {
+export function spawnVerdict(x: { subagentType: string; originPlugin: string | undefined; model: string | undefined; parentInFlight: boolean }): Deny | undefined {
+```
 
 ## S2
 
