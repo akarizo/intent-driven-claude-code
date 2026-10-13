@@ -115,6 +115,11 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR。�
      - 原因是「先推送」→ 先 `git push`，再调一次 `ship` 工具；
      - 原因是「只支持 GitHub」→ PR 保持 draft，交人决定；
      - 其他原因 → 停下报告原因。
+   - **飞行模式（GitLab）**：origin 为 GitLab 时 `ship` 工具只支持 GitHub，改用 glab 以 draft 建 MR，不调用 `ship` 工具：
+     ```bash
+     glab mr create --draft --target-branch <target> --source-branch <branch> --title "<标题>" --description "..."
+     ```
+     报告「只支持 GitHub，MR 保持 draft，交人决定」。
    - **飞行外**：
      - GitHub:
        ```bash
@@ -126,9 +131,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR。�
        不加 `--draft`。
      - GitLab: `glab mr create --target-branch <target> --source-branch <branch> --title "<标题>" --description "..."`（同样不加 `--draft`）。
 
-   两种模式都记飞行事件：
+   PR 打开时间：飞行模式由 `ship` 工具的 ship 事件记入账本；飞行外不再记录。随后照旧打印用时：
    ```bash
-   python3 <judges>/timeline.py record pr-open --change-dir <change-dir> --note "<PR URL>"
    python3 <judges>/timeline.py report --change-dir <change-dir>    # 打印批准 → PR 打开用时
    ```
 
@@ -203,7 +207,7 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR。�
 
 11. **收尾**
 
-    - 飞行模式：PR 状态取自 `ship` 工具的结果；工具返回后把第 7 步写下的飞行记录（timeline）单独提交并 `git push`。
+    - 飞行模式：PR 状态取自 `ship` 工具的结果；飞行记录（timeline）已在落地时由插件从账本生成并提交，不再另外提交。
     - 打印 Output Summary，直接结束（不再问询），并给出 `gh pr merge <num> --squash --delete-branch` / `glab mr merge <num>` 供用户自己在终端跑（不代用户合并）。
 
 **Output Summary（命令收尾时打印）**
@@ -216,8 +220,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR。�
 **PR 状态**: ready / draft（飞行模式：取自 `ship` 工具的结果，draft 时附 reasons；飞行外：非账本裁决）
 **commit 数**: N
 **review 轮数**: M（飞行模式：飞行内完成，见 ship 评论）
-**已自动修复**: X 条 CRITICAL/HIGH
-**评论中列出（未自动修）**: Y 条 MEDIUM/LOW
+**已自动修复**: X 条 CRITICAL/HIGH（飞行外填写；飞行模式：见 ship 评论）
+**评论中列出（未自动修）**: Y 条 MEDIUM/LOW（飞行外填写；飞行模式：见 ship 评论）
 
 下一步:
   - 等 human reviewer / CI

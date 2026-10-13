@@ -14,7 +14,8 @@
 8. 度量必打印：每次 apply 收口打印飞行记录；无数据不得声称提速。
 9. 零 token 优先：能用脚本 / hook 判定的不交给模型。
 10. 失效即停飞、不回退第二实现：飞行控制面（flight 插件与判定器）缺席或失效 → 不起飞，在飞即停飞并如实记录；不回退到另一套飞行实现。与飞行无关的机制按各自约定降级（脚本渲染失败 → 保留占位），与飞行无关的护栏照常。
-11. 模型按角色显式路由：执行体 / 评审员 = 会话主模型 high，机械角色 = sonnet low；派发不留空 `model`、模板禁设 `_FORCE`；`<main>` 由 `.claude/hooks/session-model.py` 判定，**禁自述**（判不出停飞，人工 `--model=`）；收口从账本机械对账各角色实际模型（不符即阻断）。
+11. 模型按角色显式路由：执行体 / 评审员 = 会话主模型 high，机械角色 = sonnet low；派发不留空 `model`、模板禁设 `_FORCE`；`<main>` 飞行中由插件经 `$.session.model()` 判定、飞行外由 `.claude/hooks/session-model.py` 判定，**禁自述**（判不出停飞，人工 `--model=`）；
+   收口从账本机械对账各角色实际模型（不符即阻断）。
 
 ## 本仓库开发纪律
 - 命令与同名 skill 同改，禁漂移；`python3 -m pytest -q tests` 全绿；`cd template && openspec schema validate intent-driven` 绿；`.claude/hooks/*.py` 可 compileall。
