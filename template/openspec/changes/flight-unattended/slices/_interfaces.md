@@ -46,23 +46,124 @@ integ 修复体的 dispatch 事件带 `base`（S4 写入），专审评审员的
 - `ROLE_NAME.diagnostician = '诊断员'`；
 - diagnostician 与 reviewer 同规则：不可写任何文件；git 只读（REVIEWER_EXTRA 同样拒）；`bashUpgradable` 不为它升 allow。
 
-## S2 · 判定器
+## S2
 
-- `slice-gate.py final --change-dir D [--reuse-fix] [--integ-base SHA]`：
-  - 带 `--integ-base` 时追加 G9 判据，失败项以 `G9 integ:` 开头；
-  - 同时传 `--reuse-fix` 也照常判 G9（G9 不依赖全量）。
-- `slice-gate.py features` 多一行 `integ-guard`。
-- `ledger.py`：
-  - EVENTS 增加：
-    - `heal`：`attempt`、`kind ∈ {merge-retry, watchdog, integ}`、`slice`（非空）、`reason`（字符串）；
-    - `triage`：`attempt`、`agent`（非空）、`text`（字符串）。
-  - dispatch 的 role 增加 `diagnostician`。
-  - halt 的 `kind` 可选，有则须属 HaltKind 集合。
-  - `ledger.py events` 的输出含 heal、triage。
-- `timeline.py report`：
-  - 有 heal 时打印「自愈：k 次」，每条一行 `<kind> <slice>`（可附 reason）；
-  - 有 triage 时打印「停飞诊断：<首行>」。
-  - `render` 的 timeline.md 记 heal、triage 行。
+### template/.claude/hooks/slice-gate.py
+```
+def pytest_runtest_logreport(report):
+def now_iso():
+def die(msg, code=2):
+def git(root, *args):
+def toplevel(cwd=None):
+def load_plan(change_dir):
+def save_plan(change_dir, data):
+def run_cmd_full(cmd, cwd):
+def _tail(out, n=6):
+def run_cmd(cmd, cwd):
+def _summary_failed(line):
+def run_test_gate(cmd, root):
+def normalize_lines(text):
+def plan_sha(data):
+def load_baseline(change_dir):
+def gate_cmd_verdict(kind, cmd, root, baseline):
+def full_suite_verdict(cmd, root, baseline):
+def glob_match(path, pattern):
+def globs_intersect(a, b):
+def compute_waves(slices):
+def lint_plan(data):
+def g5_ledger_verdict(events, slice_id, base, pairs, guards=()):
+def is_test_path(path):
+def is_doc_or_config(path):
+def source_files(files, change_rel):
+def is_bytecode(path):
+def changed_files(root, base):
+def added_lines(root, base):
+def ceiling_rows(root, base):
+def gwt_violations(root, test_files):
+def _py_test_bodies(lines):
+def _test_bodies(rel, lines):
+def ownership_violations(files, owns, change_rel, committed=()):
+def _py_decorators(source, func):
+def _g7_runner(gate):
+def _g7_timeout(gate):
+def _pytest_outcomes(root, targets, gate=None):
+def _g7_diag(text):
+def scenario_status(root, data, slice_ids=None):
+def detect_test_cmd(root):
+def guard_marker_errors(change_dir, data):
+def cmd_lint(args, print_waves=True):
+def _is_ancestor(root, anc, desc):
+def _base_check(root, branch):
+def cmd_checkpoint(args):
+def cmd_features(args):
+def cmd_base(args):
+def cmd_gate(args):
+def cmd_measure(args):
+def _reusable_fix_gate(root, change_dir):
+def _dirty_paths(root, change_dir):
+def _diff_path(p):
+def _g9_hunks(root, base):
+def _func_span(source, func):
+def _show(root, rev, rel):
+def integ_guard(root, change_dir, data, base):
+def cmd_final(args):
+def cmd_baseline(args):
+def _die_running_baseline(change_dir, bl, data):
+def cmd_preflight(args):
+def _final_fresh(root, change_dir, final_commit):
+def _is_fix_slice(s):
+def _whole_round(s):
+def _findings(reviews):
+def routing_findings(events):
+def ship_verdict(root, change_dir, data, events, head):
+def cmd_ship(args):
+def main():
+```
+
+### template/.claude/hooks/ledger.py
+```
+def _int(x):  # Python 里 True 是 int，须排除
+def _strs(x):
+def _finding(f):
+def _one_of(*opts):
+def _outcome(o):
+class LedgerInvalid(Exception):
+class LedgerUnreadable(Exception):
+def ref_for(change):
+def _git(change_dir, *args, check=True):
+def _err(p):
+def _out(p):
+def _check_event(sha, ev, change):
+def _read(change_dir):
+def read_events(change_dir):
+def latest_approval(change_dir):
+def main(argv=None):
+```
+
+### template/.claude/hooks/timeline.py
+```
+def parse_ts(s):
+def _ts(e):
+def _fmt_at(at):
+def _flat(text):
+def _cell(text):
+def _strs(x):
+def _red_count(outcomes):
+def _note(e):
+def _baseline_line(change_dir):
+def event_lines(change_dir, events):
+def ceiling_rows_from_json(raw):
+def report_text(events):
+def render(change_dir):
+def load(change_dir):
+def _first_ship_at(events):
+def minutes(a, b):
+def _span(a, b):
+def _red_lines(events):
+def report_ledger(change_dir, events):
+def report(change_dir):
+def main():
+```
 
 ## S3
 
