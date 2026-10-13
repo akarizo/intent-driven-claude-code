@@ -504,16 +504,31 @@ test('fresh-worktree-never-reuses-old/original-name', async () => {
   expect(r).toEqual({ path: '/repo/.claude/worktrees/flight-demo-S2', branch: 'flight/demo/S2' })
 })
 
+const SLICE_A2_R2 = '/repo/.claude/worktrees/flight-demo-S1-a2-r2'
+
 test('fresh-worktree-never-reuses-old/both-exist', async () => {
-  // Given: flight-demo-S1 与 flight-demo-S1-a2 两个 worktree 都已存在
+  // Given: flight-demo-S1 与 flight-demo-S1-a2 两个 worktree 都已存在（同一 attempt 内第二次另起，如合回重派）
   const { io, calls } = world({ files: [SLICE, SLICE_A2] })
 
   // When: 以 attempt 2 为 S1 另起 worktree
   const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
 
-  // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2>」
+  // Then: 改建 flight-demo-S1-a2-r2：只运行一次 worktree add -b flight/demo/S1-a2-r2；返回其路径与分支
+  expect(calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2-r2', SLICE_A2_R2, 'worktree-demo']])
+  expect(r).toEqual({ path: SLICE_A2_R2, branch: 'flight/demo/S1-a2-r2' })
+})
+
+test('fresh-worktree-never-reuses-old/all-occupied', async () => {
+  // Given: flight-demo-S1、-a2、-a2-r2、-a2-r3、-a2-r4 五个 worktree 都已存在
+  const names = ['S1', 'S1-a2', 'S1-a2-r2', 'S1-a2-r3', 'S1-a2-r4'].map(n => `/repo/.claude/worktrees/flight-demo-${n}`)
+  const { io, calls } = world({ files: names })
+
+  // When: 以 attempt 2 为 S1 另起 worktree
+  const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
+
+  // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2-r4>」
   expect(calls).toEqual([])
-  expect(r).toEqual({ error: `worktree 已存在：${SLICE_A2}` })
+  expect(r).toEqual({ error: `worktree 已存在：${names[4]}` })
 })
 
 test('fresh-worktree-never-reuses-old/branch-left', async () => {
@@ -525,11 +540,11 @@ test('fresh-worktree-never-reuses-old/branch-left', async () => {
   const r = await freshWorktree(left.io, flight(HOOKS), 'S1', 2)
   const r2 = await freshWorktree(both.io, flight(HOOKS), 'S1', 2)
 
-  // Then: 前者不按原名建（worktree add -b 会撞上已有分支），改建 flight-demo-S1-a2；后者不运行 worktree add，返回 error「分支已存在：flight/demo/S1-a2」
+  // Then: 前者不按原名建（worktree add -b 会撞上已有分支），改建 flight-demo-S1-a2；后者跳过已有分支的两个名字，改建 flight-demo-S1-a2-r2
   expect(left.calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo']])
   expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
-  expect(both.calls.filter(c => c.argv[1] === 'worktree')).toEqual([])
-  expect(r2).toEqual({ error: '分支已存在：flight/demo/S1-a2' })
+  expect(both.calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2-r2', SLICE_A2_R2, 'worktree-demo']])
+  expect(r2).toEqual({ path: SLICE_A2_R2, branch: 'flight/demo/S1-a2-r2' })
 })
 
 // scenario 来源：spec flight-self-heal（flight-unattended S4）

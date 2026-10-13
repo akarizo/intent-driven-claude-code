@@ -248,14 +248,22 @@ export async function occupied(io: Io, f: Flight, name: string): Promise<string 
   return r.exitCode === 0 ? `分支已存在：${branch}` : undefined
 }
 
-/** 续飞另起：<name> 未被占用（见 occupied）用原名，否则改用 <name>-a<attempt>，两者都被占用则报错；一律基于 change 分支尖端新建，从不复用旧树。 */
+/**
+ * 续飞另起：依次取 <name>、<name>-a<attempt>、<name>-a<attempt>-r2 … -r4 中第一个未被占用（见 occupied）的名字，
+ * 全部被占用则报错（同一 attempt 内合回重派、看门狗重派会再要一棵）；一律基于 change 分支尖端新建，从不复用旧树。
+ */
 export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
-  let picked = name
-  if (await occupied(io, f, name)) {
-    picked = `${name}-a${attempt}`
-    const why = await occupied(io, f, picked)
-    if (why) return { error: why }
+  const names = [name, `${name}-a${attempt}`, ...[2, 3, 4].map(k => `${name}-a${attempt}-r${k}`)]
+  let picked = ''
+  let why = ''
+  for (const n of names) {
+    why = (await occupied(io, f, n)) ?? ''
+    if (!why) {
+      picked = n
+      break
+    }
   }
+  if (!picked) return { error: why }
   const path = worktreePath(f, picked)
   const branch = `flight/${f.change}/${picked}`
   const r = await io.run(['git', 'worktree', 'add', '-b', branch, path, f.branch], { cwd: f.mainTree })
