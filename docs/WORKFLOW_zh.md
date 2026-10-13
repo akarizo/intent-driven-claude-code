@@ -165,7 +165,7 @@ Rule: Users can export their own data
 飞行由 `flight@intent-driven` 插件的控制面执行，这是唯一实现：**插件缺席、未加载或版本不符即停飞**，没有第二条路径。
 
 ```
-人审 spec.html → 在批准带按「批准起飞」（插件把计划指纹写入账本）→ 人发 /opsx-apply <name>
+人审 spec.html → 在批准带按「批准起飞」（插件把计划指纹写入账本，按下即起飞）
   → 插件起飞检查：takeoff-gate.py 比对账本批准指纹 / slice-gate.py lint（片数 1–9 / DAG 深度 ≤ 3 / 同 wave owns 不相交 / verify 必填）· preflight / 版本核对 / 主模型判定
   → 按 wave 派发 flight:executor（每片在自己的 worktree 里，只写 owns 内文件）
     走 test-driven-development（RED→验红→GREEN→验绿→REFACTOR + GWT 中文注释）

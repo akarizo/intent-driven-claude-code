@@ -1,8 +1,5 @@
-"""收 #54 遗留的文档与版本（scenario: flight-armed-docs#docs-say-press-takes-off-everywhere / plugin-version-0-10-1）。
-骨架：S3 改完文档与 plugin.json 后去掉 xfail 标记。"""
+"""收 #54 遗留的文档与版本（scenario: flight-armed-docs#docs-say-press-takes-off-everywhere / plugin-version-0-10-1）。"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
@@ -21,7 +18,6 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S3 未实现")
 def test_docs_say_press_takes_off_everywhere():
     # Given: opsx-propose 命令与 skill、opsx-apply 命令与 skill、README.md、docs/WORKFLOW_zh.md
     # When: 读取六个文件
@@ -33,7 +29,6 @@ def test_docs_say_press_takes_off_everywhere():
         assert "按下即起飞" in text, f"{rel} 缺少「按下即起飞」"
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S3 未实现")
 def test_plugin_version_0_10_1():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
