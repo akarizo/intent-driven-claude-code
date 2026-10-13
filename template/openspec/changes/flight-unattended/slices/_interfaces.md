@@ -244,17 +244,27 @@ export const flights: Map<string, Flight> = new Map()
 export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
 ```
 
-## S5 · 编排
+## S5a · 编排（一）
+
+attempt 1 之后由 S5 拆出（两个执行体都撞 maxTurns 40）。
 
 - `perform` 处理 `heal`：只追加 heal 事件并返回 true（下一轮 next 给出派发）。
-- `ctxOf($).notify = text => $.ui.notify(text, { title: 'flight' })`：未发出或抛错时 `ctx.log` 一行，不抛。
 - `export async function takeoff($: Engine, args: string[], opts?: { resume?: boolean }): Promise<string>`：签名不变，只改为 export，供 S6 使用。
 - 看门狗：
   - `turn.step`（async generator，`{ agentId: /./ }`）驱动 `StepTracker`；
   - `session.start` 起 `$.clock.every(60000, …)`，计时器结束后在下次 `turn.step` 重起。
-- 停飞后派诊断员：`agentType('diagnostician') = 'flight:diagnostician'`，`HIDDEN` 加入；`turn.complete` 收到诊断员结束时，追加 triage 并通知。
 - `/flight abort` 的 halt 带 `haltKind: 'abort'`；driveNow `terminal()` 的 halt 带 `haltKind: 'control'`。
 - `versions.ts` 的 `REQUIRED_FEATURES` 加 `integ-guard`。
+
+## S5b · 编排（二）
+
+依赖 S5a，与 S6、S7 并行。
+
+- `ctxOf($).notify = text => $.ui.notify(text, { title: 'flight' })`：未发出或抛错时 `ctx.log` 一行，不抛。
+- 停飞后派诊断员：
+  - subagent 类型为 `flight:diagnostician`（`io.ts` 的 `agentType` 不认识它，在 orchestrator 里单独映射），`HIDDEN` 加入；
+  - 派发写 `dispatch {role: 'diagnostician', slice: 'triage', agent, model, worktree: <change worktree>}`，S6 的 `stopLive` 按这个写法找诊断员；
+  - `turn.complete` 收到诊断员结束时，追加 triage 并通知。
 
 ## S6 · `template/plugins/flight/hooks/resume.ts`
 
