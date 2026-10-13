@@ -3,15 +3,13 @@
 #
 # 子命令：
 #   lint     --change-dir DIR                 校验 slices.json；stdout 打印 waves JSON；违规 exit 2 并在 stderr 点名规则
-#   start    S --change-dir DIR [--base REF] [--expect-branch BRANCH]
-#                                              在 git toplevel 写 .openspec-slice 标记（slice / change_dir / base / started）；
-#                                              标记已是同一切片时不改（resume），保住区间；
-#                                              给了 --expect-branch 先校验 HEAD 是该分支最新 commit 的后代，否则打印 G0 JSON、exit 1、不写标记
+#   base     S --change-dir DIR [--base REF] [--expect-branch BRANCH]
+#                                              只读：打印 {"slice": S, "base": REF 或 HEAD}；给了 --expect-branch 先校验
+#                                              HEAD 是该分支最新 commit 的后代，否则打印 G0 JSON、exit 1；不写任何文件
 #   checkpoint                                 已退役：兼容空壳（仍注册它的 settings 用），读掉 stdin、不输出、恒 exit 0
 #   features                                   打印判定器声明的能力（FEATURES），每行一项；不读 change 目录，恒 exit 0
-#   gate     S --change-dir DIR [--base REF]  跑 G1–G8（G5 只按账本）；stdout 打印 JSON（含 base）；追加 gate-report.md；ok 时删标记
-#   record   --change-dir DIR --json '<gate JSON>' | --slice S --commit SHA [--red] [--failed ...] [--warnings ...]
-#                                              控制面（flight 插件）把（临时 worktree 里跑出的）门禁结论幂等写回分支的 gate-report.md / timeline.md
+#   gate     S --change-dir DIR --base REF    跑 G1–G8（G5 只按账本）；stdout 打印 JSON（含 base）；--base 必填
+#   measure  S --change-dir DIR --base REF    只读测量：实跑本片 scenario 的 .py 目标；--base 必填
 #   final    --change-dir DIR [--reuse-fix]   先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
 #                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿、未带 dirty 且其后只有记账改动 → 复用其全量结论
 #   baseline --change-dir DIR                 起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
@@ -20,6 +18,9 @@
 #   preflight --change-dir DIR                lint_plan + 运行标记识别（仍在跑 / 已中断）+ 基线四项校验（存在 / ok / plan_sha /
 #                                              commit 在分支历史）；通过打印 waves
 #
+# gate / final / baseline 只打印 JSON，不写 gate-report.md / timeline.md（落地记录由 timeline.py 从账本生成）；
+# baseline 仍写 gate-baseline.json（计划工件）。
+#
 # G2 差分：gate / final 的 lint / typecheck 非 0 时，与 gate-baseline.json 里规范化后的输出行比对，只为新增行判红；
 #          无基线或该项基线为 null 时行为不变（直接判红）。
 #          gate.test 经 PYTEST_ADDOPTS 注入 --junitxml，可度量的 exit 1 按失败用例标识（classname::name）逐条差分：
@@ -27,7 +28,6 @@
 #
 # JSON 契约：{"slice", "ok", "commit", "failed": [...], "warnings": [...],
 #             "ceilings": [[路径, 行号, 限制, 升级路径], ...], "summary"}；failed 每项以 G<n> 开头并点名对象。
-#             ceilings 由控制面（flight 插件）经 record --json 回流，形状不可信：解析见 ceiling_rows_from_json，绝不抛异常。
 # 兼容 Python 3.8+，只用标准库。
 import argparse
 import fnmatch
@@ -46,14 +46,13 @@ from datetime import datetime, timezone
 MAX_SLICES = 9
 MAX_DEPTH = 3
 MAX_OWNS = 12
-MARKER = ".openspec-slice"
 REPORT = "gate-report.md"
 EVIDENCE = "evidence.log"
 TIMELINE = "timeline.md"
 BASELINE = "gate-baseline.json"
 # 判定器声明的能力（features 子命令逐行打印）。
 # 以后判定器新增插件依赖的能力时在这里追加；插件 versions.ts 的 REQUIRED_FEATURES 与之对应。
-FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger")
+FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger", "ledger-records")
 # verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
 VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -93,9 +92,6 @@ def pytest_runtest_logreport(report):
 CEILING_RE = re.compile(r"^\s*(?:#|//|--|\*)+\s*ceiling\s*:\s*(.*)$", re.I)
 CEILING_SPLIT = re.compile(r"->|→")
 CEILING_MIN = 4
-CEILING_HEAD = "## 天花板"
-CEILING_COLS = "| 时间 | 切片 | 位置 | 限制 | 升级路径 |"
-CEILING_SEP = "|---|---|---|---|---|"
 DIFF_HUNK_RE = re.compile(r"^@@ .*?\+(\d+)")
 
 
@@ -353,91 +349,6 @@ def lint_plan(data):
     return errors, waves
 
 
-# ---------------------------------------------------------------- 留痕
-
-def timeline_record(change_dir, event, note=""):
-    path = os.path.join(change_dir, TIMELINE)
-    try:
-        new = not os.path.isfile(path)
-        with open(path, "a", encoding="utf-8") as f:
-            if new:
-                f.write("<!-- timeline: ISO时间\\t事件\\t备注（由 hooks 自动追加） -->\n")
-            f.write("%s\t%s\t%s\n" % (now_iso(), event, note.replace("\n", " ")))
-    except OSError:
-        pass
-
-
-def append_report(change_dir, result):
-    path = os.path.join(change_dir, REPORT)
-    try:
-        new = not os.path.isfile(path)
-        with open(path, "a", encoding="utf-8") as f:
-            if new:
-                f.write("# Gate Report\n\n| 时间 | 切片 | 结论 | commit | failed | warnings |\n|---|---|---|---|---|---|\n")
-            f.write("| %s | %s | %s | %s | %s | %s |\n" % (
-                now_iso(), result["slice"], "ok" if result["ok"] else "red", result.get("commit", "")[:10],
-                "; ".join(result["failed"]).replace("|", "/").replace("\n", " ") or "-",
-                "; ".join(result["warnings"]).replace("|", "/").replace("\n", " ") or "-",
-            ))
-    except OSError:
-        pass
-
-
-def _cell(text):
-    return text.replace("|", "/").replace("\n", " ")
-
-
-def ceiling_rows_from_json(raw):
-    """门禁 JSON 的 ceilings 字段 → record_ceilings 可用的行；形状不对的整条丢掉，行号不可信降级为 0。
-
-    这个字段全程由执行体的结构化输出转写，不可信。解析绝不抛异常：留痕失败不得中断飞行。
-    """
-    if not isinstance(raw, (list, tuple)):
-        return []  # 非可迭代标量 / dict：整段丢掉，不让迭代自己抛 TypeError
-    out = []
-    for r in raw:
-        if not isinstance(r, (list, tuple)) or len(r) < 4:
-            continue
-        try:
-            ln = int(str(r[1]).strip())
-        except (TypeError, ValueError):
-            ln = 0
-        out.append((str(r[0]), ln, str(r[2]), str(r[3])))
-    return out
-
-
-def record_ceilings(change_dir, slice_id, rows):
-    """把合规天花板标记汇总进 gate-report.md 的「天花板」表。
-
-    表插在 Gate Report 表之前，这样 append_report 继续往文件尾追加的门禁行仍落在 gate 表里。
-    """
-    if not rows:
-        return
-    path = os.path.join(change_dir, REPORT)
-    new = ["| %s | %s | %s:%d | %s | %s |" % (now_iso(), slice_id, rel, ln, _cell(limit), _cell(up))
-           for rel, ln, limit, up in rows]
-    try:
-        lines = []
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.read().splitlines()
-        if CEILING_HEAD in lines:
-            at = lines.index(CEILING_HEAD) + 1
-            while at < len(lines) and not lines[at].strip():  # 表头前的空行
-                at += 1
-            while at < len(lines) and lines[at].startswith("|"):  # 表头与已有行，停在表尾空行
-                at += 1
-        else:
-            at = 1 if lines and lines[0].startswith("#") else 0
-            lines[at:at] = ["", CEILING_HEAD, "", CEILING_COLS, CEILING_SEP]
-            at += 5
-        lines[at:at] = new
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-    except OSError:
-        pass
-
-
 MEASURE_RED = ("FAILED", "ERROR")
 
 
@@ -478,18 +389,6 @@ def g5_ledger_verdict(events, slice_id, base, pairs, guards=()):
     return failed, warnings
 
 
-def report_has_row(change_dir, slice_id, commit):
-    path = os.path.join(change_dir, REPORT)
-    if not os.path.isfile(path):
-        return False
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            cols = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cols) >= 4 and cols[1] == slice_id and cols[3] == (commit or "")[:10]:
-                return True
-    return False
-
-
 # ---------------------------------------------------------------- 文件分类与检查
 
 def is_test_path(path):
@@ -507,9 +406,9 @@ def is_doc_or_config(path):
 
 
 def source_files(files, change_rel):
-    """改动里的源码：非测试、非文档 / 配置、不在 change 目录内、不是切片标记。"""
+    """改动里的源码：非测试、非文档 / 配置、不在 change 目录内。"""
     return [f for f in files if not is_test_path(f) and not is_doc_or_config(f)
-            and not f.startswith(change_rel + "/") and f != MARKER]
+            and not f.startswith(change_rel + "/")]
 
 
 def is_bytecode(path):
@@ -653,8 +552,6 @@ def ownership_violations(files, owns, change_rel, committed=()):
     out = []
     prefix = change_rel.rstrip("/") + "/"
     for f in sorted(files):
-        if f == MARKER:
-            continue
         if f.startswith(prefix):
             # 飞行记录由 hook 追加、由控制面（flight 插件）/ 主会话单独提交；执行体把它们裹进切片 commit 会在合回时冲突
             if f in committed and f[len(prefix):] in FLIGHT_RECORDS:
@@ -901,7 +798,8 @@ def cmd_features(args):
     sys.exit(0)
 
 
-def cmd_start(args):
+def cmd_base(args):
+    """只读：给出切片区间起点（--base 或 HEAD）；带 --expect-branch 时先做 G0 基点校验。不写任何文件。"""
     root = toplevel()
     data = load_plan(args.change_dir)
     if args.slice not in [s["id"] for s in data.get("slices") or []]:
@@ -912,35 +810,7 @@ def cmd_start(args):
             print(json.dumps({"slice": args.slice, "ok": False, "commit": "", "failed": [msg],
                               "warnings": [], "summary": "基点校验未通过"}, ensure_ascii=False))
             sys.exit(1)
-    existing = _read_marker(root)
-    if existing and existing.get("slice") == args.slice:
-        # 重试同一切片：区间起点要保住，标记原样不动（只补上缺的 evidence 字段）
-        if args.evidence == "ledger" and "evidence" not in existing:
-            existing["evidence"] = "ledger"
-            with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False)
-        timeline_record(args.change_dir, "slice-start", "%s (resume)" % args.slice)
-        print(json.dumps(existing, ensure_ascii=False))
-        return
-    marker ={"slice": args.slice, "change_dir": os.path.abspath(args.change_dir),
-              "base": args.base or git(root, "rev-parse", "HEAD"), "started": now_iso()}
-    if args.evidence == "ledger":
-        marker["evidence"] = "ledger"
-    with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
-        json.dump(marker, f, ensure_ascii=False)
-    timeline_record(args.change_dir, "slice-start", args.slice)
-    print(json.dumps(marker, ensure_ascii=False))
-
-
-def _read_marker(root):
-    path = os.path.join(root, MARKER)
-    if not os.path.isfile(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
+    print(json.dumps({"slice": args.slice, "base": args.base or git(root, "rev-parse", "HEAD")}, ensure_ascii=False))
 
 
 def cmd_gate(args):
@@ -950,15 +820,12 @@ def cmd_gate(args):
     if args.slice not in by_id:
         die("切片 %s 不在 slices.json 中" % args.slice)
     sl = by_id[args.slice]
-    marker = _read_marker(root)
-    base = args.base or (marker or {}).get("base")
-    if not base:
-        die("没有 base：先运行 `slice-gate.py start %s`，或传 --base" % args.slice)
+    base = args.base
     change_rel = os.path.relpath(os.path.abspath(args.change_dir), root).replace(os.sep, "/")
     failed, warnings = [], []
 
     committed, uncommitted = changed_files(root, base)
-    stray = sorted(f for f in uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
+    stray = sorted(f for f in uncommitted if not f.startswith(change_rel + "/"))
     if stray:
         warnings.append("工作树有未提交改动：%s" % ", ".join(stray[:8]))
     files = committed | uncommitted
@@ -1004,14 +871,6 @@ def cmd_gate(args):
               "failed": failed, "warnings": warnings,
               "ceilings": [[rel, ln, limit, up] for rel, ln, limit, up in ceilings],
               "summary": "%s：%d 项失败，%d 项警告；改动 %d 个文件" % ("通过" if not failed else "阻断", len(failed), len(warnings), len(files))}
-    append_report(args.change_dir, result)
-    record_ceilings(args.change_dir, args.slice, ceilings)
-    timeline_record(args.change_dir, "gate", "%s %s" % (args.slice, "ok" if result["ok"] else "red"))
-    if marker is not None and result["ok"]:
-        try:
-            os.remove(os.path.join(root, MARKER))
-        except OSError:
-            pass
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
 
@@ -1026,9 +885,7 @@ def cmd_measure(args):
     by_id = {s["id"]: s for s in data.get("slices") or []}
     if args.slice not in by_id:
         die("切片 %s 不在 slices.json 中" % args.slice)
-    base = args.base or (_read_marker(root) or {}).get("base")
-    if not base:
-        die("没有 base：先运行 `slice-gate.py start %s`，或传 --base" % args.slice)
+    base = args.base
     change_rel = os.path.relpath(os.path.abspath(args.change_dir), root).replace(os.sep, "/")
     tests = data.get("scenario_tests") or {}
     targets, unmeasurable = [], []
@@ -1050,39 +907,13 @@ def cmd_measure(args):
             outs = [o for i, o in raw if i == t or i.startswith(t + "[")]
             outcomes.append([t, max(outs, key=MEASURE_RANK.index) if outs else "MISSING"])
     committed, uncommitted = changed_files(root, base)
-    # 簿记文件（start 写的切片标记、change 目录下的 timeline 等）不算本片改动，口径与 source_files 的排除一致
-    changed = sorted(f for f in committed | uncommitted if f != MARKER and not f.startswith(change_rel + "/"))
+    # change 目录下的簿记文件（timeline 等）不算本片改动，口径与 source_files 的排除一致
+    changed = sorted(f for f in committed | uncommitted if not f.startswith(change_rel + "/"))
     guard_ids = set(by_id[args.slice].get("guards") or [])
     guards = [tests[sid] for sid in by_id[args.slice].get("scenarios") or [] if sid in guard_ids and tests.get(sid)]
     print(json.dumps({"slice": args.slice, "base": base, "commit": git(root, "rev-parse", "HEAD"),
                       "outcomes": outcomes, "unmeasurable": unmeasurable, "changed": changed, "guards": guards,
                       "source": source_files(changed, change_rel), "tail": _tail(text, 40)}, ensure_ascii=False))
-
-
-def cmd_record(args):
-    """控制面（flight 插件）把（在临时 worktree 里跑出的）切片门禁 JSON 幂等写回 change 分支的 gate-report.md / timeline.md。"""
-    if args.json:
-        try:
-            result = json.loads(args.json)
-        except ValueError as e:
-            die("--json 不是合法 JSON：%s" % e)
-    else:
-        if not (args.slice and args.commit):
-            die("record 需要 --json，或 --slice 与 --commit（可选 --ok/--red --failed --warnings）")
-        result = {"slice": args.slice, "ok": not args.red, "commit": args.commit,
-                  "failed": [x for x in (args.failed or "").split(";") if x.strip()],
-                  "warnings": [x for x in (args.warnings or "").split(";") if x.strip()]}
-    result.setdefault("failed", [])
-    result.setdefault("warnings", [])
-    if report_has_row(args.change_dir, result.get("slice", ""), result.get("commit", "")):
-        print(json.dumps({"recorded": False, "reason": "already recorded"}, ensure_ascii=False))
-        return
-    append_report(args.change_dir, result)
-    # 临时 worktree 里跑出的天花板行同样不会随 commit 进分支，随门禁结论一起写回（幂等由上面的 report_has_row 兜）
-    record_ceilings(args.change_dir, result.get("slice", ""),
-                    ceiling_rows_from_json(result.get("ceilings")))
-    timeline_record(args.change_dir, "gate", "%s %s" % (result.get("slice"), "ok" if result.get("ok") else "red"))
-    print(json.dumps({"recorded": True, "slice": result.get("slice"), "commit": result.get("commit")}, ensure_ascii=False))
 
 
 def _reusable_fix_gate(root, change_dir):
@@ -1106,9 +937,9 @@ def _reusable_fix_gate(root, change_dir):
 
 
 def _dirty_paths(root, change_dir):
-    """工作树里未提交 / 未跟踪的路径，排除本 change 的记账文件与 MARKER。"""
+    """工作树里未提交 / 未跟踪的路径，排除本 change 的记账文件。"""
     change_rel = os.path.relpath(os.path.abspath(change_dir), root).replace(os.sep, "/")
-    skip = {MARKER} | {"%s/%s" % (change_rel, b) for b in BOOKKEEPING}
+    skip = {"%s/%s" % (change_rel, b) for b in BOOKKEEPING}
     raw = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"], cwd=root,
                          capture_output=True, text=True).stdout
     paths, rename = [], False
@@ -1172,8 +1003,6 @@ def cmd_final(args):
         result["reused"] = reused
     if dirty:
         result["dirty"] = True
-    append_report(args.change_dir, result)
-    timeline_record(args.change_dir, "final", "ok" if result["ok"] else "red")
     print(json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
 
@@ -1230,7 +1059,6 @@ def cmd_baseline(args):
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump(bl, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    timeline_record(args.change_dir, "baseline", "exit %d, %ss %s" % (rc, gate["full_suite_sec"], "ok" if bl["ok"] else "red"))
     print(json.dumps(dict(bl, test_cmd=test_cmd, tail=_tail(out)), ensure_ascii=False))
     sys.exit(0 if bl["ok"] else 1)
 
@@ -1457,39 +1285,29 @@ def main():
         if name == "final":
             p.add_argument("--reuse-fix", action="store_true",
                            help="账本最后一条 fix gate 绿且其后只有记账改动 → 跳过全量 test，复用其结论")
-    p = sub.add_parser("start")
+    p = sub.add_parser("base", help="只读：打印切片区间起点 JSON；不写任何文件")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--base", help="区间起点；默认 HEAD（临时 worktree 里从分支 commit 分叉时由派发方传入）")
     p.add_argument("--expect-branch", help="基点校验：HEAD 须是该分支最新 commit 的后代，否则 G0 拒绝起跑")
-    p.add_argument("--evidence", choices=["ledger"], default="ledger",
-                   help="G5 留痕来源：只有 ledger（控制面账本里的 measure 事件），标记里记 evidence=ledger")
     sub.add_parser("checkpoint", help="已退役：兼容空壳，读掉 stdin、不输出、恒 exit 0")
     sub.add_parser("features", help="打印判定器声明的能力，每行一项，恒 exit 0")
     p = sub.add_parser("gate")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
-    p.add_argument("--base")
+    p.add_argument("--base", required=True, help="区间起点（必填）")
     p.add_argument("--evidence", choices=["ledger"], default="ledger",
                    help="G5 判据：只有 ledger（账本 measure 事件）")
     p.add_argument("--measure-base", help="账本模式下匹配 measure 事件的 base；缺省为门禁 base")
     p = sub.add_parser("measure", help="只读测量：实跑本片 scenario 的 .py 目标，打印各目标结果与改动清单 JSON")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
-    p.add_argument("--base")
-    p = sub.add_parser("record", help="把切片门禁 JSON 幂等写回 gate-report.md / timeline.md（控制面（flight 插件）合回并行切片时用）")
-    p.add_argument("--change-dir", required=True)
-    p.add_argument("--json")
-    p.add_argument("--slice")
-    p.add_argument("--commit")
-    p.add_argument("--red", action="store_true")
-    p.add_argument("--failed")
-    p.add_argument("--warnings")
+    p.add_argument("--base", required=True, help="区间起点（必填）")
     p = sub.add_parser("ship", help="draft / ready 裁决：只读账本、slices.json 与 git，打印 JSON；退出码 0 ready / 1 draft")
     p.add_argument("--change-dir", required=True)
     p.add_argument("--markdown", action="store_true", help="打印可贴入 PR 正文的段落而不是 JSON")
     args = ap.parse_args()
-    {"lint": cmd_lint, "start": cmd_start, "gate": cmd_gate, "record": cmd_record,
+    {"lint": cmd_lint, "base": cmd_base, "gate": cmd_gate,
      "final": cmd_final, "baseline": cmd_baseline, "preflight": cmd_preflight, "ship": cmd_ship,
      "checkpoint": cmd_checkpoint, "measure": cmd_measure, "features": cmd_features}[args.cmd](args)
 
