@@ -53,3 +53,14 @@ def test_judges_need_ship_ledger():
     # When: 对 /j4 运行 checkJudges
     # Then: 拒飞，原因含「缺少能力 ship-ledger」与「先把主检出更新到与插件同一版本」
     assert_ts_passed("judges-need-ship-ledger")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S7 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
+def test_judges_need_ledger_records():
+    # Given: 判定器 features 缺 ledger-records
+    # When: 起飞核对判定器
+    # Then: 核对失败且原因含 ledger-records；REQUIRED_FEATURES 含 ledger-records
+    assert_ts_passed("judges-need-ledger-records")

@@ -1,6 +1,8 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -134,3 +136,38 @@ def test_whole_review_dispatch_records_range():
     # When: 执行派发评审员（slice whole、mode whole、commit c9）；再执行修复体动作（slice fix-r1）并让它收口
     # Then: 提示词含 git diff b0 c9，dispatch 带 commit c9、base b0；另一世界记 blocked review:whole（算不出全量评审的起点）且未派发；修复体 worktree flight-demo-fix-r1、branch flight/demo/fix-r1、收口门禁 slice fix-r1
     assert_ts_passed("whole-review-dispatch-records-range")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S6 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_land_renders_records():
+    # Given: final 绿（warnings G2 预存红）、全量评审为空、ship ready；另一世界 render 以 1 退出
+    # When: 分别推进到落地
+    # Then: 顺序为 ship → land → render → 收口提交 → 飞行记录 → pr-ship；无任何 record 调用；render 失败仍落地并提示
+    assert_ts_passed("land-renders-records")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_followup_review_needs_base():
+    # Given: S1 已合回；followup 动作 base 为空或等于 commit
+    # When: 分别 runLandingAction
+    # Then: 都不派发；账本末条为 blocked review:whole-r1（infra），原因含「复核范围缺 base」
+    assert_ts_passed("followup-review-needs-base")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_draft_reasons_in_flight_record():
+    # Given: ship 输出 draft「final 过期」；另一世界 ship 输出 not json
+    # When: 分别推进到落地
+    # Then: land 为 draft；飞行记录含「draft 原因：final 过期」与「draft 原因：ship 输出无法解析：not json」
+    assert_ts_passed("draft-reasons-in-flight-record")
+
+
+@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
+def test_landing_actions_skip_after_halt():
+    # Given: 动作算出后账本已追加本 attempt 的 halt
+    # When: 以派发修复体与派发全量评审员两个动作调用 runLandingAction
+    # Then: 没有 spawn；账本没有新增事件
+    assert_ts_passed("landing-actions-skip-after-halt")

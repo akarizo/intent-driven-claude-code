@@ -330,3 +330,14 @@ def test_ledger_accepts_measure_events(git_repo):
     assert verify.returncode == 4 and "measure 的 outcomes" in verify.stderr, verify.stderr
     assert events.returncode == 0, events.stderr
     assert {"measure", "gate"} <= set(events.stdout.split())
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_ledger_knows_diag_event(tmp_path):
+    # Given: 账本已有 takeoff
+    # When: 追加合法 diag 后 show 与 events；另一账本追加缺 where 的 diag 后 show
+    # Then: show 打印 diag；events 含 diag；缺 where 的那次以非 0 退出且原因含 where
+    pytest.fail("骨架：S2 写实断言")

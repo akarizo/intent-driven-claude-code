@@ -1,5 +1,7 @@
 """test-evidence / timeline / 退役 hook（scenario: slice-gate#evidence-*, flight-apply#timeline-*, flight-retire-hooks#*）。
 test-evidence 只记飞行外：切片 worktree（有 .openspec-slice 标记）一律不写，测试结果由控制面测量入账本。"""
+import pytest
+
 import json
 
 from conftest import HOOKS, git, run_hook, write
@@ -260,3 +262,14 @@ def test_retired_hooks_unregistered():
     assert "stop-gate.py" not in commands
     assert "test-evidence.py" in commands
     assert not (HOOKS / "session-decompose.py").exists()
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def test_evidence_skips_flight_branches(tmp_path):
+    # Given: 仓库甲在 flight/demo/S1；仓库乙在 worktree-demo 且根有 evidence=ledger 的遗留标记；两边都是 pytest 1 passed 的载荷
+    # When: 分别运行 test-evidence.py
+    # Then: 甲没有 evidence.log；乙的 evidence.log 恰好新增一行
+    pytest.fail("骨架：S2 写实断言")

@@ -1541,3 +1541,30 @@ def test_judges_declare_features(tmp_path):
     feats = p.stdout.split()
     for f in ("evidence-ledger-only", "g5-per-target", "guards"):
         assert f in feats, feats
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S1 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_judges_write_no_records(tmp_path):
+    # Given: 单片计划（S1）的仓库，change 目录没有 timeline.md 与 gate-report.md
+    # When: 依次运行 baseline、gate S1 --base <HEAD>、final
+    # Then: 三次都打印 JSON；两份记录都没出现；仓库根没有 .openspec-slice
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_base_replaces_start(tmp_path):
+    # Given: 仓库在 worktree-demo，HEAD 为 H；分支 ahead 的 tip 不是 H 的祖先
+    # When: 运行 base（--expect-branch worktree-demo / --base X1 / --expect-branch ahead）、start、record、features
+    # Then: 依次为 base H、base X1、退出 1 含 G0 base；start 与 record 退出 2；features 含 ledger-records；工作区干净
+    pytest.fail("骨架：S1 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S1：尚未实现")
+def test_gate_requires_explicit_base(tmp_path):
+    # Given: 仓库根有指向 S1 的遗留 .openspec-slice
+    # When: 运行不带 --base 的 gate S1 与 measure S1
+    # Then: 两次都非 0 退出、stderr 含 --base；verify 未运行；标记原样保留
+    pytest.fail("骨架：S1 写实断言")

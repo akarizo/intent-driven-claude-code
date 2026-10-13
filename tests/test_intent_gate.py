@@ -1,4 +1,6 @@
 """intent-gate.py：worktree 定根与切片所有权（scenario: slice-gate#intent-gate-*）。"""
+import pytest
+
 import json
 
 from conftest import run_hook, write
@@ -71,3 +73,22 @@ def test_intent_gate_ownership_allows_owned_file(tmp_path):
 
     # Then: 门禁放行
     assert '"deny"' not in p.stdout, p.stdout
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S3 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
+def test_intent_check_cli(tmp_path):
+    # Given: 仓库根有 openspec/、没有任何 change、分支 main
+    # When: check src/x.py docs/a.md /tmp/elsewhere.py；classic 模式判 src/x.py；classic 模式喂非 JSON
+    # Then: check 只拒 src/x.py；classic 输出 deny；非 JSON 退出 0 无输出
+    pytest.fail("骨架：S3 写实断言")
+
+
+@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
+def test_apply_context_scoped_to_change(tmp_path):
+    # Given: change a 有未勾项、b 全勾；worktree 分支 worktree-b（另有指向 a 的遗留标记）、flight/a/S1、main、worktree-c
+    # When: 在每个 worktree 里 check src/x.py
+    # Then: worktree-b 拒（change b）；flight/a/S1 放行；main 放行；worktree-c 拒（change c）
+    pytest.fail("骨架：S3 写实断言")

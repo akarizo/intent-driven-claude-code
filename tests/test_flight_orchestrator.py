@@ -466,3 +466,66 @@ def test_per_task_guidance_when_plugin_registers():
     # When: 各自开始会话，再由人在终端发出 /opsx-apply demo --gate=per-task
     # Then: 甲回复含「本项目没有 /opsx-apply 命令文件」与 legacy skill 路径、无账本事件、未透传；乙照旧透传
     assert_ts_passed("per-task-guidance-when-plugin-registers")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S7 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
+def test_dispatch_takes_base_without_start():
+    # Given: wave 1 只有 S1；base 打印 b1；另一世界 base 以 1 退出（G0 base）
+    # When: drive 派发 S1 执行体
+    # Then: 运行 slice-gate.py base S1 … --expect-branch worktree-demo；dispatch.base 为 b1；无 start；另一世界记 blocked 含「G0 base」
+    assert_ts_passed("dispatch-takes-base-without-start")
+
+
+@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
+def test_takeoff_reads_engine_model():
+    # Given: session.model 分别应答 claude-opus-5-5、gpt-x、抛错 denied
+    # When: 分别 /opsx-apply demo，再在第二个世界带 --model=sonnet
+    # Then: 依次为 model opus、拒「判不出主模型」含 gpt-x、拒含 denied、model sonnet；全程无 session-model.py
+    assert_ts_passed("takeoff-reads-engine-model")
+
+
+@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
+def test_takeoff_writes_no_timeline():
+    # Given: change demo 已批准、从未起飞、工作区干净
+    # When: 人发 /opsx-apply demo
+    # Then: 起飞并写 takeoff；没有 timeline.py 调用，也没有 chore(flight): approve 提交
+    assert_ts_passed("takeoff-writes-no-timeline")
+
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S8 实现后去掉 xfail 标记。
+
+
+@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
+def test_main_session_writes_checked():
+    # Given: 会话 cwd 为 /repo，判定器在 template/.claude/hooks；check 拒 src/x.py 与 src/y.py；另一世界找不到判定器
+    # When: 主会话 Write / Bash 重定向 / ls，非飞行 agent Write，执行体 owns 内 Write，第二世界主会话 Write
+    # Then: 前两次与非飞行 agent 被拒；ls、执行体、第二世界放行且未跑 check
+    assert_ts_passed("main-session-writes-checked")
+
+
+@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
+def test_perform_skips_after_halt():
+    # Given: 派发 S1 期间被记 halt；另一世界合回动作算出后被记 halt
+    # When: 各自推进
+    # Then: 没有 spawn S1 执行体；没有 git merge；halt 之后无 dispatch / merge
+    assert_ts_passed("perform-skips-after-halt")
+
+
+@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
+def test_subagent_stop_error_leaves_diag():
+    # Given: 在飞执行体 a1 结束，收口门禁运行时抛出 Error「$.process.run(python3) aborted」
+    # When: 引擎发出 a1 的 SubagentStop
+    # Then: 账本末条为 diag（where SubagentStop、agent a1、kind throw、error 含 aborted、budget 为数字）；无 a1 的 gate
+    assert_ts_passed("subagent-stop-error-leaves-diag")
+
+
+@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
+def test_panel_refreshes_on_terminal():
+    # Given: 面板已打开；S1 已合回且评审为空；final 红（G2 lint）
+    # When: drive 推进到停飞
+    # Then: 面板最后一次绘制的首行含「已停飞（final 未通过：G2 lint）」
+    assert_ts_passed("panel-refreshes-on-terminal")

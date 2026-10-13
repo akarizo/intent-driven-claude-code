@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-ledger-guards · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-ledger-guards
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-intent-guard</span><span class="chip" data-state="done">specs/flight-ledger-docs</span><span class="chip" data-state="done">specs/flight-ledger-records</span><span class="chip" data-state="done">specs/flight-reliability</span><span class="chip" data-state="done">计划指纹 fa61dab6</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">大目标是「模型只做创作，门禁由插件与判定器裁决，模型不自证」。change 1（flight-ship-ledger）让收尾只认账本。下面三处还不符合这个目标：</p><p class="why-body">- <strong>记录文件仍是事实来源之一，判定器还在边跑边写状态</strong>（已核实）：
+  - 派发时插件调 <code>slice-gate.py start</code>：它在切片 worktree 写 <code>.openspec-slice</code> 标记，并往 <code>timeline.md</code> 记一行。
+  - 合回时插件调 <code>slice-gate.py record</code> 写 <code>gate-report.md</code>；修复合回、收口、首次起飞时调 <code>timeline.py record</code>。
+  - 这些写入有一半落在切片 worktree 里，从来进不了分支。例如 <code>timeline report</code> 的「切片 start → gate ok」一行，飞行模式下从未打印过。
+  - 意图门禁的切片所有权靠 <code>.openspec-slice</code> 这个文件判定，而插件包络已经按 agentId 管住了 Write / Edit，两套并存。
+- <strong>意图门禁漏得多</strong>（铁律 1）：
+  - 强制点 <code>intent-gate.py</code> 是 classic PreToolUse hook，只管 Write / Edit。<code>sed -i</code>、重定向这类经 Bash 的写法，它一律看不到。
+  - 「apply 上下文」的判法是：项目里任一 change 的 <code>tasks.md</code> 还有未勾项，就放行全部源码。本仓库的 <code>flight-hardening</code> 留着 1 个未勾任务，结果整个 <code>template/</code> 都被放开。
+- <strong>可靠性余项</strong>（#50、#51 遗留，均已核实）：
+  - <code>/flight abort</code> 要等手上的动作做完才停 agent，最长约 10 分钟（门禁）。
+  - spawn、merge 执行前不再看一眼账本有没有停飞。
+  - 自动停飞后若仍有 agent 在跑，<code>/flight abort</code> 回答「没有在飞的 attempt」，<code>/flight resume</code> 又因「agent 仍在运行」拒飞，两条路都不通。
+  - 评审或修复已阻断时，面板与 <code>/flight status</code> 仍显示「进行中」；drive 自己写下停飞或落地后，面板不刷新。
+  - 「SubagentStop hook skipped: python3 aborted」每次飞行出现一次，成因未明，也没留下任何记录。
+- <strong>判主模型</strong>：插件起飞时还在调 <code>session-model.py</code> 读转录；引擎已有 <code>$.session.model()</code>。</p><p class="why-body">2026-10-13 用户在阶段 4–5 决策页（<code>docs/flight-phase4-decisions.html</code>）上全部选推荐项：D1-A、D2-A、D3-A、D4 勾 1–5。本 change 是其中的 change 2，与 change 1 叠成一个 PR（插件 0.8.0）。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>账本为唯一事实</strong>（D1-A）：</li><li>删掉 <code>slice-gate.py start</code>、<code>slice-gate.py record</code>、<code>timeline.py record</code>。门禁的区间起点一律由插件以 <code>--base</code> 传入。</li><li><code>.openspec-slice</code> 标记退役：不再写，也没有任何判定器再读它。</li><li>判定器在飞行中不再写记录文件：<code>gate</code>、<code>final</code>、<code>baseline</code> 只输出 JSON，不写 <code>timeline.md</code> 与 <code>gate-report.md</code>。</li><li>新增两个子命令：</li><li><code>slice-gate.py base</code>：只读，输出区间起点并做 G0 基点校验，取代 <code>start</code> 里的这两项职责；</li><li><code>timeline.py render</code>：落地时从账本（加上 <code>gate-baseline.json</code>）一次生成 <code>timeline.md</code> 与 <code>gate-report.md</code>。</li><li><code>review-findings.json</code> 仍按 change 1 的做法，由 ship 的输出写入。三份记录在落地时一起提交。</li><li><code>timeline.py report</code> 改为按账本计算（账本里有 takeoff 时），飞行记录不再依赖 <code>timeline.md</code>。</li><li><code>test-evidence.py</code> 改按分支名识别飞行 worktree：<code>flight/</code> 开头的分支不写 <code>evidence.log</code>。</li><li><strong>意图门禁进插件，classic 留薄地板</strong>（D2-A）：</li><li><code>intent-gate.py</code> 抽成纯判定，新增 <code>check</code> 子命令供插件调用；classic hook 模式保留，照旧在异常时放行。</li><li>「apply 上下文」收窄到目标所在 worktree 的 change：</li><li>分支 <code>worktree-&lt;name&gt;</code> 与 <code>flight/&lt;name&gt;/…</code> 只认 change <code>&lt;name&gt;</code> 的未勾任务；</li><li>其他分支沿用原判法。</li><li>classic 与插件用同一个判定，同时变严。</li><li>插件的 <code>tool.call</code> 对主会话和非飞行 agent 的 Write、Edit、NotebookEdit 与 Bash 写法逐一取出写入目标，交给 <code>intent-gate.py check</code> 判定。Bash 写法包括重定向、<code>tee</code>、<code>sed -i</code>、<code>cp</code>、<code>mv</code>、<code>touch</code>、<code>rm</code> 等。</li><li>判定器出错时拒绝（fail closed）；</li><li>项目里找不到判定器时放行。</li><li>飞行 agent 的 Bash 写入目标同样限在本片 owns 内（包络原本只限 Write / Edit）。</li><li><strong>可靠性余项</strong>（D4 勾 1–5）：</li><li><strong>判主模型改用 <code>$.session.model()</code></strong>（已定）：</li><li>按 <code>session-model.py</code> 同一套规则取别名（opus / sonnet / haiku / fable）；取不出就拒飞，并提示 <code>--model=</code>。</li><li><code>session-model.py</code> 只留给飞行外使用（<code>/flight:pr-ship</code> 飞行外评审、legacy per-task）。</li><li><strong>change 1 遗留</strong>：</li><li>4 条 MEDIUM 全修：</li><li>复核轮缺 base 时阻断；</li><li>收口为 draft 时，飞行记录写出原因；</li><li><code>/flight:pr-ship</code> 飞行模式补上 GitLab 分支；</li><li>Output Summary 的修复计数只在飞行外填写。</li><li>12 条 LOW 中修 6 条，其余 6 条写进 design 与 PR 说明，留待以后。</li><li><strong>文档</strong>：</li><li><code>/flight:pr-ship</code>、<code>/opsx-apply</code> 命令与 skill、README、WORKFLOW 同步改写。</li><li>仓库根 <code>CLAUDE.md</code> 铁律 11 的 <code>&lt;main&gt;</code> 判定写法同步：飞行中由插件经 <code>$.session.model()</code> 判定，飞行外由 <code>session-model.py</code> 判定。⚠ 这一条改的是仓库铁律的措辞，请审批时留意。</li><li><strong>判定器能力</strong>：<code>slice-gate.py features</code> 新增 <code>ledger-records</code>，插件起飞时核对。</li><li><code>slice-gate.py start</code>、<code>slice-gate.py record</code>、<code>timeline.py record</code> 不复存在；<code>gate</code>、<code>measure</code> 缺 <code>--base</code> 时拒绝运行。合入后主检出须快进，否则 0.8.0 插件起飞会因缺 <code>ledger-records</code> 被拒（沿用 #50 的核对机制）。</li><li><code>.openspec-slice</code> 不再有任何作用。</li><li>意图门禁变严：</li><li>在 <code>worktree-&lt;name&gt;</code> / <code>flight/&lt;name&gt;/…</code> 分支上，只有 change <code>&lt;name&gt;</code> 有未勾任务时才放行源码；</li><li>分支名形如 <code>worktree-&lt;name&gt;</code>、但没有同名 change 的 worktree，写源码会被拒（mini 声明除外）；</li><li>插件在场时，经 Bash 写源码也受门禁约束。</li><li><code>/flight:pr-ship</code> 不再调用 <code>timeline.py record pr-open</code>。飞行模式的 PR 打开时间取自账本的 ship 事件；飞行外不再记录。</li></ul><div class="impact"><span class="tag"><strong>判定器</strong>：<code>template/.claude/hooks/</code> 下的 <code>slice-gate.py</code>、<code>timeline.py</code>、<code>ledger.py</code>、<code>test-evidence.py</code>、<code>intent-gate.py</code>。classic hook 的注册不变：<code>stop-gate.py</code> 与 <code>checkpoint</code> 空壳按 D3-A 留到 change 3。</span><span class="tag"><strong>插件</strong>：</span><span class="tag"><code>hooks/</code> 下的 <code>envelope.ts</code>、<code>core.ts</code>、<code>ship.ts</code>、<code>landing.tsx</code>、<code>land.ts</code>、<code>io.ts</code>、<code>orchestrator.tsx</code>、<code>abort.ts</code>、<code>versions.ts</code>；</span><span class="tag">新增 <code>intent.ts</code>；</span><span class="tag">版本仍为 0.8.0（change 1 已升）。</span><span class="tag"><strong>文档</strong>：<code>commands/pr-ship.md</code>、<code>/opsx-apply</code> 命令与 skill、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>、仓库根 <code>CLAUDE.md</code>。</span><span class="tag"><strong>测试</strong>：</span><span class="tag"><code>test_slice_gate.py</code> 里依赖 <code>start</code> 的约 47 个用例改为显式传 <code>--base</code>；</span><span class="tag">标记相关用例随标记退役改写；</span><span class="tag">插件测试世界里对 <code>start</code>、<code>timeline record</code> 的应答换成 <code>base</code>、<code>render</code>，并补上 <code>session.model</code> 与 <code>intent-gate.py check</code> 的应答。</span><span class="tag"><strong>本 change 自己的飞行</strong>：</span><span class="tag">在已装的 0.7.0 上飞，用的是主检出 ac5d051 的判定器。本 change 改的是 worktree 里的判定器，不影响这次飞行的控制面。</span><span class="tag">落地后由主会话建一个合并 PR，覆盖 change 1 与 change 2。该 PR 的收尾仍由模型按 0.7.0 的 <code>/flight:pr-ship</code> 手动走，PR 正文写明。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ledger-records</code>：判定器在飞行中不写记录；<code>base</code> 子命令取代 <code>start</code>；落地时由 <code>timeline.py render</code> 从账本生成记录；<code>report</code> 按账本计算；账本认识 <code>diag</code> 事件；飞行 worktree 不写 <code>evidence.log</code>；起飞核对 <code>ledger-records</code>。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-intent-guard</code>：<code>intent-gate.py check</code> 纯判定与收窄后的 apply 上下文；插件对主会话与非飞行 agent 的写入（含 Bash）调用判定；飞行 agent 的 Bash 写入限在 owns 内。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-reliability</code>：abort 两段停与停残留 agent；动作内查停飞；阻断态显示与面板刷新；SubagentStop 失败留 diag；<code>$.session.model()</code> 判主模型；change 1 的 MEDIUM 与部分 LOW。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ledger-docs</code>：命令、skill、README、WORKFLOW、铁律 11 的措辞与上述行为一致。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-intent-guard <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 意图判定可由插件调用</p><p><code>intent-gate.py check --cwd &lt;C&gt; &lt;PATH&gt;…</code> SHALL 对每个路径做与 classic 模式相同的判定，stdout SHALL 为 <code>{&quot;allow&quot;: bool, &quot;denied&quot;: [{&quot;path&quot;, &quot;reason&quot;}]}</code> 并退出 0；判定异常 SHALL 退出 2。classic 模式（读 stdin）SHALL 保持输出形状，异常时 SHALL 仍放行。
+Feature: 用户定（2026-10-13）：D2-A intent-gate.py 改成纯判定</p><div class="scenario"><p class="scenario-name">Scenario: intent-check-cli</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库根有 <code>openspec/</code>，没有任何 change；仓库在分支 main</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>intent-gate.py check --cwd &lt;root&gt; src/x.py docs/a.md /tmp/elsewhere.py</code>；再以 <code>{&quot;tool_input&quot;: {&quot;file_path&quot;: &quot;&lt;root&gt;/src/x.py&quot;}, &quot;cwd&quot;: &quot;&lt;root&gt;&quot;}</code> 运行 classic 模式；再以非 JSON 的 stdin 运行 classic 模式</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>check 退出 0，allow 为 false，denied 恰为一项，path 为 <code>&lt;root&gt;/src/x.py</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>classic 模式输出 <code>permissionDecision</code> 为 deny 的 PreToolUse JSON</span></li><li><span class="step-key" data-kw="AND">AND</span><span>非 JSON 的 stdin 退出 0，输出为空</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: apply 上下文只认目标所在 worktree 的 change</p><p>目标所在 git toplevel 的当前分支形如 <code>worktree-&lt;name&gt;</code> 或 <code>flight/&lt;name&gt;/…</code> 时，SHALL 只有 change <code>&lt;name&gt;</code> 的 <code>tasks.md</code> 有未勾项才放行源码，否则 SHALL 拒绝并说明原因；其他分支 SHALL 沿用「任一 change 有未勾项」。<code>.openspec-slice</code> SHALL NOT 影响判定。
+Feature: 用户定（2026-10-13）：D2-A；铁律 1「只能加严」</p><div class="scenario"><p class="scenario-name">Scenario: apply-context-scoped-to-change</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个仓库：<code>openspec/changes/a</code> 的 tasks.md 有未勾项，<code>openspec/changes/b</code> 的 tasks.md 全部勾选</span></li><li><span class="step-key" data-kw="AND">AND</span><span>四个 worktree 的分支分别为 <code>worktree-b</code>、<code>flight/a/S1</code>、<code>main</code>、<code>worktree-c</code>（没有 change c）</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>worktree-b</code> 的根目录另有遗留 <code>.openspec-slice</code>，内容指向 change a 与 owns <code>src/**</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>在每个 worktree 里 check <code>src/x.py</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span><code>worktree-b</code> 被拒，原因含「change b 没有未完成的任务」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>flight/a/S1</code> 放行</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>main</code> 放行（change a 未完成）</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>worktree-c</code> 被拒，原因含「change c」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 识别 Bash 的写入目标</p><p><code>bashWriteTargets(command, cwd)</code> SHALL 按 design D6 识别重定向、tee、sed -i、perl -i、cp / mv / install / ln、touch / rm / rmdir / mkdir / truncate、dd of= 的写入目标，SHALL 按命令内的 cd 与 cwd 解析为绝对路径，SHALL 排除 fd 复制与 /dev 下的特殊文件，SHALL 不把引号内的 <code>&gt;</code> 当重定向，SHALL 把含 <code>$</code>、反引号、通配符或以 <code>~</code> 开头的目标放进 unresolved。
+Feature: 用户定（2026-10-13）：D2-A 覆盖 Bash 的写法</p><div class="scenario"><p class="scenario-name">Scenario: bash-write-targets</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>cwd 为 <code>/w</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对下列命令求 <code>bashWriteTargets</code>：</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>1–11 的 targets 依次为：</span></li><li><span class="step-key" data-kw="AND">AND</span><span>12 的 targets 为空，unresolved 为 <code>[&quot;$OUT&quot;]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>13 的 targets 与 unresolved 都为空</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 飞行 agent 的 Bash 写入限在 owns 内</p><p><code>bashWritesVerdict(who, command)</code> SHALL 对飞行 agent 的 Bash 命令取写入目标，并按 Write / Edit 的同一口径（本 worktree、本片 owns、评审员不写）判定；unresolved 非空时 SHALL 拒绝。包络 SHALL 在 <code>bashVerdict</code> 通过后对 Bash 再走这一判定。
+Feature: 用户定（2026-10-13）：D2-A 飞行中按 agentId 套用切片 owns</p><div class="scenario"><p class="scenario-name">Scenario: flight-agent-bash-writes-within-owns</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>执行体 E（S1，owns <code>src/a/**</code>，worktree <code>/wt/S1</code>）与评审员 R</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别判定：</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>E 的第一条与第四条放行</span></li><li><span class="step-key" data-kw="AND">AND</span><span>E 的第二条被拒，原因含 <code>src/b/z.py</code> 与 owns</span></li><li><span class="step-key" data-kw="AND">AND</span><span>E 的第三条被拒，原因含「写入目标无法静态判定」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>R 的命令被拒</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 意图判定模块</p><p><code>intent.ts</code> 的 <code>toolTargets</code> SHALL 取 Write / Edit 的 <code>file_path</code>、NotebookEdit 的 <code>notebook_path</code>、Bash 的写入目标（相对路径按 cwd 解析），其他工具为空；<code>intentVerdict</code> SHALL 在目标为空时不运行任何命令，否则 SHALL 只运行一次 <code>python3 &lt;hooksDir&gt;/intent-gate.py check --cwd &lt;cwd&gt; &lt;targets…&gt;</code>，按 design D6 返回放行、逐条拒绝或「判定失败」拒绝。
+Feature: 用户定（2026-10-13）：D2-A 插件在 tool.call 调同一个 Python 判定</p><div class="scenario"><p class="scenario-name">Scenario: intent-verdict-module</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>假 Io 按 argv 应答：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求：</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三次 <code>toolTargets</code> 依次为 <code>[&#x27;/r/src/x.py&#x27;]</code>、<code>[]</code>、<code>[]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>目标为空的那次没有运行任何命令，返回 undefined</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界一运行的 argv 恰为 <code>python3 &lt;hooksDir&gt;/intent-gate.py check --cwd /r /r/src/x.py</code>，返回的 deny 含「/r/src/x.py」与「没有 apply 上下文」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界二返回的 deny 含「意图门禁判定失败」与「Traceback boom」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界三返回 undefined</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 主会话与非飞行 agent 的写入经意图判定</p><p><code>tool.call</code> SHALL 对主会话与非飞行 agent 的 Write、Edit、NotebookEdit、Bash，在现有检查通过后，以 <code>$.session.cwd()</code> 与会话所在仓库主检出的判定器目录调用 <code>intentVerdict</code>，拒绝时 SHALL deny；找不到判定器目录时 SHALL 放行且不运行判定；飞行 agent SHALL NOT 调用意图判定。
+Feature: 用户定（2026-10-13）：D2-A</p><div class="scenario"><p class="scenario-name">Scenario: main-session-writes-checked</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>会话 cwd 为主检出 <code>/repo</code>，其判定器在 <code>/repo/template/.claude/hooks</code>；check 对 <code>/repo/src/x.py</code> 与 <code>/repo/src/y.py</code> 判拒绝</span></li><li><span class="step-key" data-kw="AND">AND</span><span>另一个世界的会话 cwd 里找不到判定器</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>依次发起：</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前两次被拒，原因含对应路径，check 的 argv 分别以 <code>/repo/src/x.py</code>、<code>/repo/src/y.py</code> 结尾</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>ls</code> 放行，没有运行 check</span></li><li><span class="step-key" data-kw="AND">AND</span><span>非飞行 agent 的 Write 被拒</span></li><li><span class="step-key" data-kw="AND">AND</span><span>执行体的 Write 放行，没有运行 check</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界的 Write 放行，没有运行 check</span></li></ul></div></div></div><div class="spec-card"><h3>flight-ledger-docs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: /flight:pr-ship 与账本记录一致</p><p><code>pr-ship.md</code> SHALL NOT 出现 <code>timeline.py record</code>；飞行模式第 7 步 SHALL 写明 origin 为 GitLab 时以 <code>glab mr create --draft</code> 建 MR、不调用 ship 工具、MR 保持 draft 交人；Output Summary 的「已自动修复」「评论中列出」两行 SHALL 标明只在飞行外填写，飞行模式写「见 ship 评论」。
+Feature: change 1 评审 MEDIUM（S6 pr-ship.md:122、:219）；用户定 D1-A</p><div class="scenario"><p class="scenario-name">Scenario: pr-ship-docs-follow-ledger</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/plugins/flight/commands/pr-ship.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取全文、第 7 步与 Output Summary 段</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>全文不含 <code>timeline.py record</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第 7 步含 <code>glab mr create --draft</code> 与「只支持 GitHub」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>Output Summary 段含「见 ship 评论」，且「已自动修复」所在行含「飞行外」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: apply 文档、README、WORKFLOW 与铁律 11 一致</p><p><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code> SHALL 都不含 <code>timeline.py record</code>，SHALL 写明落地时由插件从账本生成 <code>timeline.md</code> 与 <code>gate-report.md</code>、意图门禁由插件在 Write / Edit / Bash 上执行且 classic 兜底，SHALL 都不含「起飞只接受人发出的命令」；README 与 <code>docs/WORKFLOW_zh.md</code> SHALL 写明记录从账本生成；仓库根 <code>CLAUDE.md</code> 铁律 11 SHALL 写明飞行中由插件经 <code>$.session.model()</code> 判定 <code>&lt;main&gt;</code>。
+Feature: 用户定（2026-10-13）：D1-A · D2-A；change 1 评审 LOW（S6 opsx-apply.md:25）</p><div class="scenario"><p class="scenario-name">Scenario: apply-docs-and-iron-rules</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code>、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>、<code>CLAUDE.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取全文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>命令与 skill 都不含 <code>timeline.py record</code> 与「起飞只接受人发出的命令」，都含「从账本生成」与「Bash」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>README 与 WORKFLOW 都含「从账本生成」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>CLAUDE.md</code> 铁律 11 那一行含 <code>$.session.model()</code> 与 <code>session-model.py</code></span></li></ul></div></div></div><div class="spec-card"><h3>flight-ledger-records <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 判定器在飞行中不写记录</p><p><code>slice-gate.py</code> 的 <code>gate</code>、<code>final</code>、<code>baseline</code> SHALL 只打印 JSON（<code>baseline</code> 另写 <code>gate-baseline.json</code>），SHALL NOT 创建或改动 <code>timeline.md</code>、<code>gate-report.md</code>，SHALL NOT 写 <code>.openspec-slice</code>。<code>start</code>、<code>record</code> 子命令 SHALL 不存在。<code>features</code> SHALL 含 <code>ledger-records</code>。
+Feature: 用户定（2026-10-13）：D1-A 账本为唯一事实</p><div class="scenario"><p class="scenario-name">Scenario: judges-write-no-records</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个单片计划（S1）的仓库，change 目录里没有 <code>timeline.md</code> 与 <code>gate-report.md</code>，S1 的 verify 通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>依次运行 <code>slice-gate.py baseline</code>、<code>slice-gate.py gate S1 --base &lt;HEAD&gt;</code>、<code>slice-gate.py final</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三次运行都打印 JSON</span></li><li><span class="step-key" data-kw="AND">AND</span><span>change 目录里仍没有 <code>timeline.md</code> 与 <code>gate-report.md</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>仓库根没有 <code>.openspec-slice</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: base 子命令取代 start</p><p><code>slice-gate.py base &lt;S&gt; --change-dir &lt;D&gt; [--base &lt;X&gt;] [--expect-branch &lt;B&gt;]</code> SHALL 只读：成功时 SHALL 打印 <code>{&quot;slice&quot;: S, &quot;base&quot;: &lt;X 或 HEAD&gt;}</code> 并退出 0；带 <code>--expect-branch</code> 且 G0 不过时 SHALL 打印 <code>ok</code> 为 false、<code>failed</code> 含「G0 base」的 JSON 并退出 1。它 SHALL NOT 写任何文件。
+Feature: 用户定（2026-10-13）：D1-A 门禁的区间起点由插件传参</p><div class="scenario"><p class="scenario-name">Scenario: base-replaces-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库在分支 <code>worktree-demo</code>，HEAD 为 H；另有分支 <code>ahead</code>，其 tip 不是 H 的祖先</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 <code>base S1 --expect-branch worktree-demo</code>、<code>base S1 --base X1</code>、<code>base S1 --expect-branch ahead</code>、<code>start S1</code>、<code>record --json {}</code>、<code>features</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次退出 0，打印 <code>{&quot;slice&quot;: &quot;S1&quot;, &quot;base&quot;: H}</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次打印的 base 为 X1</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三次退出 1，failed 含「G0 base」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>start</code> 与 <code>record</code> 都以 argparse 错误退出 2</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>features</code> 的输出含 <code>ledger-records</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>以上运行后，工作区的 <code>git status --porcelain</code> 为空</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 门禁的区间起点必须显式给出</p><p><code>slice-gate.py gate</code> 与 <code>slice-gate.py measure</code> SHALL 要求 <code>--base</code>，缺省时 SHALL 以非 0 退出且不运行任何检查；仓库里遗留的 <code>.openspec-slice</code> SHALL 被忽略。
+Feature: 用户定（2026-10-13）：D1-A <code>.openspec-slice</code> 标记退役</p><div class="scenario"><p class="scenario-name">Scenario: gate-requires-explicit-base</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库根有一个遗留的 <code>.openspec-slice</code>，内容为 <code>{&quot;slice&quot;: &quot;S1&quot;, &quot;base&quot;: &lt;HEAD&gt;, &quot;change_dir&quot;: &lt;D&gt;}</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行不带 <code>--base</code> 的 <code>gate S1</code> 与 <code>measure S1</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都以非 0 退出，stderr 含 <code>--base</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>S1 的 verify 命令没有被运行</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>.openspec-slice</code> 原样保留</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 落地记录从账本生成</p><p><code>timeline.py render --change-dir &lt;D&gt;</code> SHALL 从账本与 <code>gate-baseline.json</code> 整份重写 <code>timeline.md</code> 与 <code>gate-report.md</code>，格式见 design D2；SHALL 幂等；账本读不出时 SHALL 退出 1 且不写任何文件。<code>timeline.py record</code> SHALL 不存在。
+Feature: 用户定（2026-10-13）：D1-A 落地时由插件从账本一次生成记录</p><div class="scenario"><p class="scenario-name">Scenario: render-records-from-ledger</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change 目录的 <code>gate-baseline.json</code> 记 <code>at</code> 为 T0、test exit 0、111.2 秒、ok</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本依次有：approve、takeoff（attempt 1、主模型 opus）、S1 执行体派发、S1 的 measure（目标 2 个、红 2 个）、S1 gate red（failed「G1 verify: exit 1」）、S1 gate ok（warnings「w1」，ceilings 一条 <code>[&quot;src/a.py&quot;, 3, &quot;上限&quot;, &quot;升级条件&quot;]</code>）、S1 merge ok、S1 review（1 条 HIGH）、final ok（warnings「G2 预存红」）、land ready</span></li><li><span class="step-key" data-kw="AND">AND</span><span>change 目录已有一份手写的 <code>timeline.md</code>（内容为「junk」）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>连续运行两次 <code>timeline.py render</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都退出 0，stdout 的 events 为 10</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>timeline.md</code> 首行是生成说明的注释，其后第一行为 baseline（备注 <code>exit 0, 111.2s ok</code>），再往后 10 行的事件列依次为 approve、takeoff、dispatch、measure、gate、gate、merge、review、final、land，且不含「junk」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>gate-report.md</code> 的门禁表恰有 3 行，依次为 S1 red、S1 ok（warnings 列为 <code>w1</code>）、final ok（warnings 列为 <code>G2 预存红</code>）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>天花板表含 <code>src/a.py:3</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次运行后，两个文件与第一次逐字节相同</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: report-reads-ledger</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change 目录没有 <code>timeline.md</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本有：approve（10:00:00）、takeoff、S1 执行体派发（10:01:00）、S1 gate ok（10:07:00）、final red、final ok、land（10:20:00）、ship（10:30:00）、一条 diag</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>timeline.py report</code>，再运行 <code>timeline.py record approve --change-dir &lt;D&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>report 的输出含「批准 → apply 完成：20.0 min」「批准 → PR 打开：30.0 min」「切片 S1：派发 → 门禁绿 6.0 min」「门禁红次数：1（账本：切片门禁 0 · final 1）」「诊断：1 条」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>record</code> 以 argparse 错误退出 2，change 目录仍没有 <code>timeline.md</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 账本认识 diag 事件</p><p><code>ledger.py</code> SHALL 接受 <code>diag</code> 事件，必填 <code>attempt</code>（整数）、<code>where</code>（非空字符串）、<code>error</code>（字符串）；<code>ledger.py events</code> SHALL 列出 <code>diag</code>。
+Feature: 用户定（2026-10-13）：D4 第 5 项「python3 aborted」先留证据</p><div class="scenario"><p class="scenario-name">Scenario: ledger-knows-diag-event</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本已有一条 takeoff</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>追加 <code>diag {attempt: 1, where: &quot;SubagentStop&quot;, error: &quot;aborted&quot;, kind: &quot;timeout&quot;, budget: 10000}</code>，运行 <code>ledger.py show</code> 与 <code>ledger.py events</code>；再在另一个账本追加缺 <code>where</code> 的 diag 并运行 show</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次 show 退出 0，并打印那条 diag</span></li><li><span class="step-key" data-kw="AND">AND</span><span>events 含 <code>diag</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个账本的 show 以非 0 退出，原因含 <code>where</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 飞行 worktree 不写 evidence.log</p><p><code>test-evidence.py</code> SHALL 在 git toplevel 的当前分支以 <code>flight/</code> 开头时不写 <code>evidence.log</code>，SHALL NOT 读 <code>.openspec-slice</code>。
+Feature: 用户定（2026-10-13）：D1-A 标记退役后，飞行识别改看分支</p><div class="scenario"><p class="scenario-name">Scenario: evidence-skips-flight-branches</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>仓库甲在分支 <code>flight/demo/S1</code>，有 <code>openspec/changes/demo</code>（tasks.md 有未勾项）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>仓库乙在分支 <code>worktree-demo</code>，有同样的 change，根目录另有一个写明 <code>evidence: &quot;ledger&quot;</code> 的遗留 <code>.openspec-slice</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>两边都是跑 pytest、输出「1 passed」的 Bash 载荷</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 <code>test-evidence.py</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲的 change 目录没有 <code>evidence.log</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙的 <code>evidence.log</code> 恰好新增一行</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 落地时先记 land，再生成并提交记录</p><p>落地 SHALL 依次：跑 ship 并写 <code>review-findings.json</code>、勾选 <code>tasks.md</code> → 追加 land 事件 → 在 change worktree 运行 <code>timeline.py render</code> → 以 <code>chore(flight): 收口</code> 提交记录 → 打印飞行记录 → 交接 <code>/flight:pr-ship</code>。生成或提交失败 SHALL NOT 改变 verdict，SHALL 记入飞行记录并 toast。合回（切片、解冲突、修复）SHALL NOT 调用 <code>slice-gate.py record</code> 或 <code>timeline.py record</code>。final 事件 SHALL 带门禁 JSON 的 warnings。
+Feature: 用户定（2026-10-13）：D1-A</p><div class="scenario"><p class="scenario-name">Scenario: land-renders-records</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 已合回、评审为空列表；final 输出 ok true，warnings 为「G2 预存红」；全量评审员 W 以空列表返回；slice-gate ship 为 ready</span></li><li><span class="step-key" data-kw="AND">AND</span><span>另一个世界与之相同，但 <code>timeline.py render</code> 以 1 退出，stderr 为「boom」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别推进飞行到落地</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>世界一的调用顺序为：slice-gate ship → 账本追加 land → <code>timeline.py render --change-dir &lt;D&gt;</code>（cwd 为 change worktree）→ git commit <code>chore(flight): 收口</code>（提交的路径含 <code>timeline.md</code>、<code>gate-report.md</code>、<code>review-findings.json</code>、<code>tasks.md</code>）→ 打印飞行记录 → 运行 <code>/flight:pr-ship</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界一账本里的 final 事件 warnings 为 <code>[&quot;G2 预存红&quot;]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>两个世界都没有任何 <code>timeline.py record</code> 或 <code>slice-gate.py record</code> 调用</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界二的账本末条为 land（verdict ready），飞行记录含「落地记录生成失败：boom」，toast 含「落地记录生成失败」，且仍运行了 <code>/flight:pr-ship</code></span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: merges-write-no-records</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>切片 S1 的分支可干净合并；修复分支 <code>flight/demo/fix-r1</code> 可干净合并</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>合回 S1（via branch），再以 <code>mergeFix(io, f, &#x27;blocking=1&#x27;, undefined, &#x27;fix-r1&#x27;)</code> 合回修复</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都返回 ok 与 HEAD</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全程没有 <code>slice-gate.py record</code> 与 <code>timeline.py</code> 调用</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞不写 timeline</p><p>首次起飞 SHALL NOT 调用 <code>timeline.py</code>，SHALL NOT 提交 <code>chore(flight): approve</code>；takeoff 事件照常写入账本。
+Feature: 用户定（2026-10-13）：D1-A</p><div class="scenario"><p class="scenario-name">Scenario: takeoff-writes-no-timeline</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo 已批准（账本有 approve，指纹匹配），从未起飞，工作区干净</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复以「✈ 起飞 demo」开头，账本新增 takeoff（attempt 1）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有任何 <code>timeline.py</code> 调用</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有 message 为 <code>chore(flight): approve</code> 的 git commit</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞核对 ledger-records</p><p><code>REQUIRED_FEATURES</code> SHALL 含 <code>ledger-records</code>；判定器的 <code>features</code> 缺它时 SHALL 拒绝起飞并点名。
+Feature: 用户定（2026-10-13）：沿用 #50 的判定器能力核对</p><div class="scenario"><p class="scenario-name">Scenario: judges-need-ledger-records</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>判定器 <code>slice-gate.py features</code> 的输出为除 <code>ledger-records</code> 外的全部能力</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>起飞核对判定器</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>核对失败，原因含 <code>ledger-records</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>导出的 <code>REQUIRED_FEATURES</code> 含 <code>ledger-records</code></span></li></ul></div></div></div><div class="spec-card"><h3>flight-reliability <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 阻断态如实显示</p><p><code>summarize</code> 的评审列 SHALL 在没有 review、但有 <code>blocked review:&lt;S&gt;</code> 时显示 <code>阻断（&lt;kind&gt;）</code>；修复列 SHALL 取本 attempt 最新一个修复体（<code>fix</code> 或 <code>fix-r&lt;k&gt;</code>），显示 <code>已合回</code>、<code>阻断（&lt;kind&gt;）</code> 或 <code>进行中</code>，<code>fix-r&lt;k&gt;</code> SHALL 带前缀 <code>第 &lt;k&gt; 轮 </code>；没有修复体派发但有 <code>blocked fix</code> 时 SHALL 显示 <code>阻断（&lt;kind&gt;）</code>。
+Feature: 用户定（2026-10-13）：D4 第 4 项</p><div class="scenario"><p class="scenario-name">Scenario: summary-shows-blocked-review-and-fix</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>四份账本，都是 waves <code>[[S1]]</code> 且 S1 已合回：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别求 <code>summaryLines(summarize(...))</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲的 S1 行含「评审 阻断（infra）」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙的末行含「修复 阻断（gate）」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>丙的末行含「修复 第 1 轮 进行中」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>丁的末行含「修复 阻断（infra）」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: diag 事件不影响飞行推进</p><p><code>ev.diag</code> SHALL 构造 <code>{ev: &#x27;diag&#x27;, attempt, where, error, …}</code>；<code>reduce</code> / <code>next</code> / <code>summarize</code> SHALL 忽略 diag。<code>ev.final</code> SHALL 接受可选的 <code>warnings</code>。
+Feature: 用户定（2026-10-13）：D4 第 5 项只留证据，行为不变</p><div class="scenario"><p class="scenario-name">Scenario: diag-events-do-not-move-the-plan</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一份正在 wave 1 的账本 L（S1 已派执行体未结束），以及在 L 末尾追加一条 <code>ev.diag(b, {attempt: 1, where: &#x27;SubagentStop&#x27;, error: &#x27;aborted&#x27;, kind: &#x27;timeout&#x27;, agent: &#x27;a1&#x27;, budget: 10000})</code> 的账本 L2</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别求 <code>next(reduce(L))</code> 与 <code>next(reduce(L2))</code>、两者的 <code>summaryLines(summarize(...))</code>，并构造 <code>ev.final(b, {attempt: 1, ok: true, commit: &#x27;c&#x27;, failed: [], warnings: [&#x27;w&#x27;]})</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次 <code>next</code> 的结果相同，两次摘要相同</span></li><li><span class="step-key" data-kw="AND">AND</span><span>diag 事件的 ev 为 <code>diag</code>，带 where、error、kind、agent、budget</span></li><li><span class="step-key" data-kw="AND">AND</span><span>final 事件带 <code>warnings: [&#x27;w&#x27;]</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: ship 工具校验判定器输出的形状</p><p><code>shipPr</code> SHALL 在 ship JSON 缺 <code>review</code>、或 <code>review</code> 不是 null 也不是带 <code>slice</code> 字符串的对象时，按「ship 输出无法解析」拒绝，且 SHALL NOT 抛错、SHALL NOT 运行 gh；<code>git remote get-url origin</code> 失败时 SHALL 以「读取 origin 失败」拒绝。
+Feature: change 1 评审 LOW（S4 ship.ts:55、:71、ship.test.ts:157）</p><div class="scenario"><p class="scenario-name">Scenario: ship-output-shape-checked</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三个已落地（land ready）的世界：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别调用 <code>shipPr(ctx, f, state, &#x27;7&#x27;)</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲返回 deny，含「ship 输出无法解析」，没有运行任何 gh 的 comment 或 ready</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙返回 deny，含「读取 origin 失败」与「No such remote」，不含「只支持 GitHub」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>丙运行的 <code>gh pr ready</code> 的 argv 恰为 <code>[&#x27;gh&#x27;, &#x27;pr&#x27;, &#x27;ready&#x27;, &#x27;7&#x27;]</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 复核缺 base 时阻断</p><p>派发复核员（mode followup）时，base 为空或等于 commit SHALL NOT 派发，SHALL 记 <code>blocked review:&lt;slice&gt;</code>（infra），原因含「复核范围缺 base」。
+Feature: change 1 评审 MEDIUM（S3 landing.tsx:113）</p><div class="scenario"><p class="scenario-name">Scenario: followup-review-needs-base</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>S1 已合回、评审为空列表</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别以 <code>{slice: &#x27;whole-r1&#x27;, mode: &#x27;followup&#x27;, base: &#x27;&#x27;, commit: &#x27;c10&#x27;}</code> 与 <code>{… base: &#x27;c10&#x27;, commit: &#x27;c10&#x27;}</code> 两个派发动作调用 <code>runLandingAction</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都没有派发 agent</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本末条都是 <code>blocked review:whole-r1</code>（kind infra），原因含「复核范围缺 base」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: draft 原因进飞行记录</p><p>落地 verdict 为 draft 且 closeout 给出 reasons 时，飞行记录 SHALL 含一行 <code>draft 原因：&lt;reasons&gt;</code>。
+Feature: change 1 评审 MEDIUM（S3 landing.tsx:233）</p><div class="scenario"><p class="scenario-name">Scenario: draft-reasons-in-flight-record</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两个世界都已 final 绿、全量评审为空列表：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别推进飞行到落地</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲的账本末条 land 的 verdict 为 draft，飞行记录含「draft 原因：final 过期」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙的飞行记录含「draft 原因：ship 输出无法解析：not json」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 落地动作在派发前再查停飞</p><p><code>runLandingAction</code> SHALL 在派发评审员或修复体的 spawn 之前调用 <code>stoppedNow</code>；返回非 undefined 时 SHALL 不派发、不追加事件。
+Feature: 用户定（2026-10-13）：D4 第 2 项</p><div class="scenario"><p class="scenario-name">Scenario: landing-actions-skip-after-halt</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本里 S1 已合回、评审有 1 条 HIGH；但在动作算出之后、执行之前，账本本 attempt 已追加 halt「人工中止」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>以「派发修复体（1 条 HIGH）」和「派发全量评审员（commit c9）」两个动作调用 <code>runLandingAction</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>没有调用 spawn</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本没有新增事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 派发执行体改调 base</p><p><code>perform</code> 派发执行体与解冲突 agent 时 SHALL 运行 <code>slice-gate.py base</code>（全新执行体带 <code>--expect-branch &lt;change 分支&gt;</code>；续接带 <code>--base &lt;原 base&gt;</code>；解冲突不带），取其打印的 base 写入 dispatch 事件；SHALL NOT 运行 <code>slice-gate.py start</code>。base 退出非 0 时 SHALL 记 blocked，原因含其输出。
+Feature: 用户定（2026-10-13）：D1-A</p><div class="scenario"><p class="scenario-name">Scenario: dispatch-takes-base-without-start</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>起飞后 wave 1 只有 S1；<code>slice-gate.py base</code> 打印 <code>{&quot;slice&quot;: &quot;S1&quot;, &quot;base&quot;: &quot;b1&quot;}</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>另一个世界里 base 以 1 退出，stdout 含「G0 base: HEAD …」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>drive 派发 S1 执行体</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>世界一运行了 <code>python3 &lt;hooks&gt;/slice-gate.py base S1 --change-dir &lt;D&gt; --expect-branch worktree-demo</code>，cwd 为切片 worktree</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界一账本的 dispatch 事件 base 为 b1，全程没有 argv 含 <code>start</code> 的 slice-gate 调用</span></li><li><span class="step-key" data-kw="AND">AND</span><span>世界二没有派发，账本末条为 S1 的 blocked，原因含「G0 base」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞以引擎判主模型</p><p>未给 <code>--model=</code> 时，起飞 SHALL 以 <code>$.session.model()</code> 的返回值按别名规则（opus / sonnet / haiku / fable，子串、不区分大小写）定主模型；取不出或调用抛错时 SHALL 拒飞，提示 <code>--model=</code>。起飞 SHALL NOT 运行 <code>session-model.py</code>。
+Feature: 已定（2026-10-13）：插件改用 <code>$.session.model()</code></p><div class="scenario"><p class="scenario-name">Scenario: takeoff-reads-engine-model</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三个世界的 <code>session.model</code> 分别应答 <code>claude-opus-5-5</code>、<code>gpt-x</code>、抛出 Error「denied」；change 已批准、工作区干净</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别发 <code>/opsx-apply demo</code>；再在第二个世界发 <code>/opsx-apply demo --model=sonnet</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一个世界起飞，takeoff 事件的 model 为 <code>opus</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界首次拒飞，回复含「判不出主模型」与「gpt-x」与「--model=」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三个世界拒飞，回复含「判不出主模型」与「denied」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>带 <code>--model=sonnet</code> 那次起飞，takeoff 的 model 为 <code>sonnet</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>四次都没有 argv 含 <code>session-model.py</code> 的调用</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: abort 先停 agent，再等动作收尾</p><p>在飞时 <code>abortFlight</code> SHALL 依次：记 halt → 停 <code>live()</code> 列出的 agent → <code>await drain()</code> → 再求 <code>live()</code>，只停第一段没有出现过的 agent。
+Feature: 用户定（2026-10-13）：D4 第 1 项</p><div class="scenario"><p class="scenario-name">Scenario: abort-stops-agents-before-draining</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>本会话在飞的 attempt 1；<code>live()</code> 第一次返回 <code>[a1, a2]</code>，第二次返回 <code>[a1, a3]</code>；<code>drain()</code> 返回一个由测试控制何时完成的 promise</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>调用 <code>abortFlight</code>，在 drain 完成前检查调用记录，然后让 drain 完成</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>drain 完成前的调用顺序为 halt → live → stop a1 → stop a2 → drain</span></li><li><span class="step-key" data-kw="AND">AND</span><span>drain 完成后只多出 live → stop a3</span></li><li><span class="step-key" data-kw="AND">AND</span><span>回复列出 a1、a2、a3 均「已停」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 自动停飞后可停残留 agent</p><p>本 attempt 已 halt 而 <code>live()</code> 非空时，<code>abortFlight</code> SHALL 停掉这些 agent，SHALL NOT 再记 halt，回复 SHALL 含 halt 原因与 <code>/flight resume &lt;change&gt;</code>；<code>live()</code> 为空时 SHALL 回答「没有在飞的 attempt，无需中止。」；本 attempt 已 land 时行为不变。
+Feature: 用户定（2026-10-13）：D4 第 3 项</p><div class="scenario"><p class="scenario-name">Scenario: abort-stops-residual-agents</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三份账本：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别调用 <code>abortFlight</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲调用了 stop a3、没有调用 halt，回复含「已停飞（final 未通过：G2）」「a3：已停」与「/flight resume demo」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙与丙都回答「没有在飞的 attempt，无需中止。」，没有调用 halt 与 stop</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: perform 在派发与合回前再查停飞</p><p><code>perform</code> SHALL 在派发执行体或解冲突 agent 的 spawn 之前，以及合回（切片、解冲突、修复）之前调用 <code>stoppedNow</code>；返回非 undefined 时 SHALL 不派发、不合回、不追加事件。
+Feature: 用户定（2026-10-13）：D4 第 2 项</p><div class="scenario"><p class="scenario-name">Scenario: perform-skips-after-halt</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>起飞后 drive 正派发 S1：建 worktree 与起点测量期间，另一路记下 halt「人工中止」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>另一世界里 S1 门禁已绿、待合回，合回动作算出后账本被追加 halt</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>两个世界各自推进</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一个世界没有派发 S1 执行体（spawn 未被调用），账本 halt 之后没有 dispatch</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界没有运行 <code>git merge</code>，账本 halt 之后没有 merge</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: SubagentStop 失败留 diag</p><p>执行体收口的 SubagentStop hook 失败（throw 或 timeout）时，<code>.catch</code> 处理器 SHALL 往账本追加 <code>diag {attempt, where: &#x27;SubagentStop&#x27;, agent, kind, error, budget}</code>，再按 hook 缺席处理。
+Feature: 用户定（2026-10-13）：D4 第 5 项</p><div class="scenario"><p class="scenario-name">Scenario: subagent-stop-error-leaves-diag</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>在飞执行体 a1（S1）结束；收口门禁的 <code>slice-gate.py gate</code> 运行时抛出 Error「$.process.run(python3) aborted」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>引擎发出 a1 的 SubagentStop</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本末条为 diag，where 为 <code>SubagentStop</code>、agent 为 a1、kind 为 <code>throw</code>，error 含「aborted」，budget 为数字</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有为 a1 记 gate 事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: drive 写下停飞或落地后刷新面板</p><p><code>driveNow</code> 执行完 halt 或 land 动作后 SHALL 按最新账本刷新面板。
+Feature: 用户定（2026-10-13）：D4 第 4 项</p><div class="scenario"><p class="scenario-name">Scenario: panel-refreshes-on-terminal</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>面板已打开；S1 已合回、评审为空列表；final 输出 ok false、failed「G2 lint」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>drive 推进到停飞</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>面板最后一次绘制的首行含「已停飞（final 未通过：G2 lint）」</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>现状均于 2026-10-13 在 change 1 分支（<code>worktree-flight-ship-ledger</code> @ e3faae5）上核实：</p><ul><li><strong>写状态的子命令</strong>：</li><li><code>slice-gate.py start</code>（<code>cmd_start</code>）写 <code>&lt;toplevel&gt;/.openspec-slice</code> 标记 <code>{slice, change_dir, base, started, evidence}</code>，并记 timeline 的 <code>slice-start</code> 行。带 <code>--expect-branch</code> 时先做 G0 基点校验（<code>_base_check</code>）。</li><li><code>slice-gate.py record</code>（<code>cmd_record</code>）往 <code>gate-report.md</code> 追加门禁行与天花板表，再记 timeline 的 <code>gate</code> 行。</li><li><code>gate</code>、<code>final</code>、<code>baseline</code> 也会自己写 <code>gate-report.md</code> / <code>timeline.md</code>。<code>timeline.py record</code> 的事件名是自由参数。</li><li><strong>插件里的调用点</strong>：</li><li><code>orchestrator.tsx</code> <code>startSlice</code> 调 <code>start</code>，从 stdout 取 base，交给起点测量和 dispatch 事件的 <code>base</code>；之后门禁与 measure 都显式带 <code>--base</code>。</li><li><code>land.ts</code> <code>afterMerge</code> 调 <code>record</code>。</li><li><code>mergeFix</code> 调 <code>timeline record fix</code>，<code>closeout</code> 调 <code>timeline record apply-done</code>。</li><li>首次起飞调 <code>timeline record approve</code> 并提交 <code>chore(flight): approve</code>。</li><li><strong>写入落空</strong>：<code>judge</code> 的 cwd 是切片 worktree，<code>--change-dir</code> 是相对路径。所以 <code>start</code> 与切片 <code>gate</code> 写的记录都落在切片 worktree 里；G6 又禁止执行体提交记录，这些行进不了分支。<code>timeline report</code> 的「切片 start → gate ok」在飞行模式下从未打印过。</li><li><strong>记录的读者</strong>（都只是给人看，或是兼容旧数据）：</li><li><code>spec_html.py</code> 读 <code>gate-report.md</code> 判 scenario passed，并渲染 <code>timeline.md</code>；</li><li><code>/opsx-verify</code> 读 <code>gate-report.md</code>；</li><li><code>/flight:pr-ship</code> 两种模式都调 <code>timeline.py record pr-open</code> 再跑 report；</li><li><code>slice-gate.py ship</code> 已只读账本（change 1）。</li><li><strong>标记的读者</strong>：</li><li><code>intent-gate.py</code> 按标记做 owns 检查；</li><li><code>test-evidence.py</code> 有标记就不写 <code>evidence.log</code>；</li><li><code>slice-gate.py gate</code> / <code>measure</code> 缺 <code>--base</code> 时取标记的 base，门禁绿时删标记；</li><li>插件 TS 不读标记。插件包络 <code>envelope.ts</code> <code>writeVerdict</code> 已按 agentId 把 Write / Edit / NotebookEdit 限在本片 owns 内。</li><li><strong>意图门禁</strong>：</li><li><code>intent-gate.py</code> 只读 stdin 的 <code>tool_input.file_path</code> / <code>path</code>；注册在 PreToolUse，matcher 为 <code>Write|Edit</code>。</li><li>「apply 上下文」= 项目里任一 change 的 <code>tasks.md</code> 有未勾项。</li><li>stdin 解析失败、没有目标、任何异常都放行。</li><li>包络没有解析 Bash 写入目标的代码。</li><li><strong>abort</strong>：</li><li><code>abortCommand</code> 先经 <code>runLandingAction</code> 记 halt。<code>live()</code> 里 <code>await queue</code> 等整条 drive 串行队列做完，再求在飞 agent，用 <code>$.tool.call({tool:&#x27;TaskStop&#x27;})</code> 停。</li><li><code>abortFlight</code> 见本 attempt 已有 land / halt 就回答「没有在飞的 attempt，无需中止。」。</li><li><strong>动作内不查停飞</strong>：<code>perform</code> 与 <code>runLandingAction</code> 执行前都不看账本；只有 <code>driveNow</code> 在每轮开头和动作之间查。</li><li><strong>显示</strong>：</li><li><code>summarize</code> 的评审列不看 <code>blocked review:&lt;S&gt;</code>；修复列不看 <code>blocked fix</code>，<code>fix-r&lt;k&gt;</code> 不进摘要。</li><li>面板只在 drive 每轮开头、abort 后、<code>/flight panel</code> 时刷新，drive 写下 halt / land 后不刷新。</li><li><strong>python3 aborted</strong>：</li><li>执行体收口的 <code>on(&#x27;classic.SubagentStop&#x27;)</code> hook 没有 <code>.catch</code>。memory 记有 5 次「<code>classic.SubagentStop hook skipped: threw flight: $.process.run(python3) aborted</code>」，都在门禁或评审记账后约 100ms、ended 之前；账本完整，成因未明。</li><li>引擎的 <code>.catch</code> 处理器能拿到 <code>next.error: { kind: &#x27;throw&#x27; | &#x27;timeout&#x27; | &#x27;re-entry&#x27;, message?, budget }</code>（2.1.295 类型定义 <code>HookFailure</code>）。</li><li><strong>判主模型</strong>：</li><li>起飞时 <code>io.run([&#x27;python3&#x27;, &lt;hooks&gt;/session-model.py])</code>，它按子串匹配取别名 opus / sonnet / haiku / fable。</li><li>引擎有 <code>$.session.model(): Promise&lt;string&gt;</code>（「与 /model 显示一致」）。<code>docs/flight-control-plane.html</code> 记有实测返回 <code>claude-opus-5-5</code>。</li><li>插件测试可用 <code>on(&#x27;session.model&#x27;, …)</code> 在插件之下作答，与现有的 <code>session.cwd</code> / <code>session.id</code> 写法相同。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong></p><ul><li>飞行中判定器只读、只判；记录文件在落地时从账本一次生成。</li><li>意图门禁覆盖 Bash 写法，「apply 上下文」只认目标所在 worktree 的 change。</li><li>D4 的 1–5 项：abort 不必等动作做完；停飞后不再派发或合回；残留 agent 停得掉；阻断态显示如实；SubagentStop 失败留证据。</li><li>插件判主模型改用引擎 API。</li><li>收掉 change 1 的 4 条 MEDIUM 与 6 条 LOW。</li></ul><p><strong>Non-Goals</strong></p><ul><li><code>stop-gate.py</code> 与 <code>slice-gate.py checkpoint</code> 两个空壳不删，旧注册不清，留给 change 3（D3-A）。</li><li>解释器脚本内部的写文件（例如 <code>python3 x.py</code> 里 <code>open(...).write</code>）不做静态分析。飞行中由 G6 的改动清单兜底，飞行外由 PR 评审兜底。</li><li>包络「整串兜底」（D4 第 6 项）不做。</li><li>不查明「python3 aborted」的成因，只留证据。</li></ul></div><div class="design-block"><h3>Decisions</h3><details><summary>删除 <code>start</code>、<code>record</code> 两个子命令，以及只为它们服务的函数。新增只读子命令</summary></details><details><summary><strong>cwd</strong></summary><p>切片 worktree。</p></details><details><summary><strong>S 不在计划里</strong></summary><p>die，退出 2。</p></details><details><summary><strong>带 <code>--expect-branch</code> 且 G0 不过</strong></summary><p>打印 <code>{&quot;slice&quot;: S, &quot;ok&quot;: false, &quot;commit&quot;: &quot;&quot;, &quot;failed&quot;: [&quot;G0 base: …&quot;], &quot;warnings&quot;: [], &quot;summary&quot;: &quot;基点校验未通过&quot;}</code>，退出 1。</p></details><details><summary><strong>否则</strong></summary><p>打印 <code>{&quot;slice&quot;: S, &quot;base&quot;: &lt;X 或 git rev-parse HEAD&gt;}</code>，退出 0。</p></details><details><summary><strong>不写任何文件</strong></summary><p>不写标记，不写 timeline。</p></details><details><summary><code>gate</code>、<code>measure</code> 的 <code>--base</code> 改为必填。标记回退与「门禁绿时删标记」一并去掉。</summary></details><details><summary><code>gate</code>、<code>final</code>、<code>baseline</code> 不再写 <code>gate-report.md</code>、<code>timeline.md</code>，也不再写天花板表，只打印 JSON。<code>baseline</code> 仍写 <code>gate-baseline.json</code>，它是计划工件。</summary></details><details><summary>标记退役</summary><p>删掉 <code>.openspec-slice</code> 的常量、读写函数与改动清单里的排除项。<code>BOOKKEEPING</code> / <code>FLIGHT_RECORDS</code> 里的 <code>timeline.md</code>、<code>gate-report.md</code> 保留，它们仍是落地时提交的记录。</p></details><details><summary><code>FEATURES</code> 增加 <code>ledger-records</code>。</summary></details><details><summary>删除 <code>record</code> 子命令。</summary></details><details><summary>新增</summary></details><details><summary><strong>输入</strong></summary><p>读账本（<code>ledger.read_events</code>）与 <code>&lt;D&gt;/gate-baseline.json</code>。</p></details><details><summary><strong>输出文件</strong></summary><p>整份重写 <code>&lt;D&gt;/timeline.md</code> 与 <code>&lt;D&gt;/gate-report.md</code>。</p></details><details><summary><strong>stdout</strong></summary><p>打印 <code>{&quot;timeline&quot;: &lt;路径&gt;, &quot;report&quot;: &lt;路径&gt;, &quot;events&quot;: &lt;账本事件数&gt;}</code>，退出 0。</p></details><details><summary><strong>账本读不出</strong></summary><p>stderr 写原因，退出 1，不写任何文件。</p></details><details><summary><strong>幂等</strong></summary><p>账本不变时，两次运行的输出逐字节相同。</p></details><details><summary><strong><code>timeline.md</code> 的格式</strong></summary></details><details><summary>第一行 `&lt;!-- timeline</summary><p>timeline.py render 从账本生成，勿手改 --&gt;`；</p></details><details><summary>其后每行 <code>&lt;ISO 时间&gt;\t&lt;事件&gt;\t&lt;备注&gt;</code>，时间统一为 <code>%Y-%m-%dT%H:%M:%SZ</code>；</summary></details><details><summary><code>gate-baseline.json</code> 有 <code>at</code> 时，首行是 <code>baseline</code>，备注 <code>exit &lt;n&gt;, &lt;sec&gt;s ok|red</code>；</summary></details><details><summary>之后每条账本事件一行（含 measure），按账本顺序，事件列即账本的 <code>ev</code>；</summary></details><details><summary>备注按下表；所有备注取首行，<code>\t</code> 与换行替换为空格。</summary></details><details><summary><strong><code>gate-report.md</code> 的格式</strong></summary></details><details><summary>表头与现有格式相同</summary><p><code># Gate Report</code> 与 <code>| 时间 | 切片 | 结论 | commit | failed | warnings |</code>；</p></details><details><summary>账本里每条 gate 与 final 事件一行，按账本顺序，含红的与各 attempt 的；final 行的「切片」列为 <code>final</code>；</summary></details><details><summary>failed / warnings 用 <code>; </code> 连接，<code>|</code> 换成 <code>/</code>，空写 <code>-</code>；commit 取前 10 位；</summary></details><details><summary>天花板表照搬现有 <code>record_ceilings</code> 的表头与行格式，数据取自 gate 事件的 <code>ceilings</code> 字段，按 <code>ceiling_rows_from_json</code> 的口径容错；</summary></details><details><summary>写法从 <code>slice-gate.py</code> 移入 <code>timeline.py</code>。</summary></details><details><summary><code>spec_html.py</code> 与 <code>/opsx-verify</code> 读这张表的口径（第三列 ok / red、每片取最后一行）不变。</summary></details><details><summary><strong><code>report</code></strong></summary></details><details><summary><strong>账本模式</strong>（账本里有 takeoff）</summary></details><details><summary>先打印与 render 相同的事件行，<code>timeline.md</code> 不存在也照常输出；</summary></details><details><summary>再打印</summary></details><details><summary>`批准 → apply 完成</summary><p>&lt;min&gt;`：第一条 approve 到最后一条 land；</p></details><details><summary>`批准 → PR 打开</summary><p>&lt;min&gt;`：第一条 approve 到第一条 ship；</p></details><details><summary>每片 `切片 &lt;S&gt;</summary><p>派发 → 门禁绿 &lt;min&gt;`：该片第一条 executor dispatch 到其后第一条 ok 的 gate；</p></details><details><summary>门禁红次数、测量统计</summary><p>口径同现在；</p></details><details><summary>diag 事件数大于 0 时，加一行 `诊断</summary><p>&lt;n&gt; 条`。</p></details><details><summary><strong>兼容模式</strong>（账本里没有 takeoff，或账本读不出）</summary><p>沿用现有的 <code>timeline.md</code> 口径，供旧 change 的记录使用。</p></details><details><summary><strong><code>ledger.py</code></strong></summary><p>事件表增加 <code>diag</code>，必填 <code>attempt</code>（整数）、<code>where</code>（非空字符串）、<code>error</code>（字符串）；<code>kind</code>、<code>agent</code>、<code>budget</code> 可选。</p></details><details><summary>跑 <code>slice-gate.py ship</code>，按其 JSON 写 <code>review-findings.json</code>，勾选 <code>tasks.md</code>；</summary></details><details><summary>返回 <code>{verdict, reasons}</code>，不再记 <code>timeline record apply-done</code>，也不提交；</summary></details><details><summary>ship 输出无法解析时，返回 draft，reasons 为「ship 输出无法解析</summary><p>&lt;首行&gt;」。</p></details><details><summary>跑 <code>timeline.py render --change-dir &lt;D&gt;</code>，cwd 为 change worktree；</summary></details><details><summary>再以 <code>chore(flight): 收口</code> 提交 <code>review-findings.json</code>、<code>tasks.md</code>、<code>timeline.md</code>、<code>gate-report.md</code>。</summary></details><details><summary>这一步失败不改裁决</summary><p>记录只给人看，裁决以账本为准。失败时 <code>ctx.log</code> 写「落地记录生成失败：&lt;原因&gt;」并 toast，照常交接 pr-ship。</p></details><details><summary><strong>合回不写记录</strong></summary><p><code>afterMerge</code> 不再调 <code>record</code>；<code>mergeFix</code> 不再调 <code>timeline record fix</code>。<code>mergeFix</code> 的 <code>note</code> 形参保留不用，改名 <code>_note</code>，因为并行的 S7 还按原位置传参。</p></details><details><summary><strong>final 事件带 warnings</strong></summary><p><code>final</code> 事件写入 <code>warnings</code>（门禁 JSON 的 warnings），供 render 填 gate-report。</p></details><details><summary><strong>切片所有权</strong></summary><p>由插件包络按 agentId 执行（已有，D6 补上 Bash）。classic <code>intent-gate.py</code> 删掉标记逻辑。插件缺席时不会有飞行，不需要 classic 管 owns。</p></details><details><summary><strong>飞行中不写 <code>evidence.log</code></strong></summary><p><code>test-evidence.py</code> 改看 git toplevel 的当前分支，以 <code>flight/</code> 开头即飞行 worktree，不写。切片、修复、解冲突 worktree 的分支都在 <code>flight/&lt;change&gt;/…</code> 下。标记不再被读取。</p></details><details><summary><strong>纯判定</strong></summary><p>抽出 <code>judge(target_abs, cwd) -&gt; (allow: bool, reason: str)</code>。豁免目录、mini 声明、「根下无 openspec/ 放行」「目标在根外放行」都不变。</p></details><details><summary><strong>apply 上下文收窄</strong></summary></details><details><summary>判法</summary><p>取目标最近的已存在祖先目录，在其中求 <code>git rev-parse --show-toplevel</code> 与当前分支 <code>git symbolic-ref --short -q HEAD</code>。</p></details><details><summary>分支名形如 <code>worktree-&lt;name&gt;</code> 或 <code>flight/&lt;name&gt;/&lt;…&gt;</code> 时，只有 <code>&lt;root&gt;/openspec/changes/&lt;name&gt;/tasks.md</code> 有未勾项才算 apply 上下文（root 为最近的含 <code>openspec/</code> 的目录）。</summary></details><details><summary>不满足时拒绝，原因</summary><p>「change &lt;name&gt; 没有未完成的任务（tasks.md 不存在或已全部勾选）：先补工件；收口后的修改须经用户授权在 tasks.md 追加任务」。</p></details><details><summary>其他分支（main、未按约定命名的分支、detached）沿用原判法</summary><p>任一 change 有未勾项即可。</p></details><details><summary>收窄只会多拒、不会多放，符合铁律 1「只能加严」。</summary></details><details><summary><strong>classic 模式</strong>（无参数，读 stdin）</summary></details><details><summary>只用 <code>judge</code>，输出形状不变；</summary></details><details><summary>异常仍放行</summary><p>薄地板，不因判定器自身的故障挡住人；</p></details><details><summary>标记逻辑删掉。</summary></details><details><summary><strong>check 模式</strong></summary></details><details><summary><strong>路径</strong></summary><p>相对路径相对 <code>--cwd</code>。</p></details><details><summary><strong>判完</strong></summary><p>stdout 打印 <code>{&quot;allow&quot;: &lt;全部放行&gt;, &quot;denied&quot;: [{&quot;path&quot;: &lt;绝对路径&gt;, &quot;reason&quot;: &lt;原因&gt;}]}</code>，退出 0。</p></details><details><summary><strong>任何异常</strong></summary><p>stderr 写原因，退出 2。</p></details><details><summary><strong>targets</strong></summary><p>取出命令的写入目标，解析为绝对路径。</p></details><details><summary><strong>识别的写法</strong></summary></details><details><summary>重定向 <code>&gt;</code>、<code>&gt;&gt;</code>、<code>&gt;|</code>、<code>&amp;&gt;</code>、<code>&amp;&gt;&gt;</code>、<code>&lt;n&gt;&gt;</code>、<code>&lt;n&gt;&gt;&gt;</code>（目标可紧贴，也可为下一个词）；</summary></details><details><summary><code>tee</code>（<code>-a</code> 等选项之后的文件）；</summary></details><details><summary><code>sed -i[后缀]</code> / <code>--in-place[=后缀]</code>，以及 <code>perl -i</code>（脚本之后的文件；用了 <code>-e</code> / <code>-f</code> 时，所有非选项参数都是文件）；</summary></details><details><summary><code>cp</code>、<code>mv</code>、<code>install</code>、<code>ln</code> 的最后一个非选项参数（<code>-t &lt;DIR&gt;</code> 时取该目录）；</summary></details><details><summary><code>touch</code>、<code>rm</code>、<code>rmdir</code>、<code>mkdir</code>、<code>truncate</code> 的文件参数；</summary></details><details><summary><code>dd of=&lt;FILE&gt;</code>。</summary></details><details><summary><strong>排除</strong></summary><p>fd 复制（<code>&gt;&amp;2</code>、<code>2&gt;&amp;1</code>），以及 <code>/dev/null</code>、<code>/dev/stdout</code>、<code>/dev/stderr</code>、<code>/dev/tty</code>。</p></details><details><summary><strong>引号与 heredoc</strong></summary><p>引号里的 <code>&gt;</code> 不算重定向；heredoc 的正文不解析。</p></details><details><summary><strong>相对路径</strong></summary><p>按命令里的 <code>cd</code> / <code>pushd</code> 跟踪（复用现有 <code>cdArg</code> 口径），最终相对 <code>cwd</code> 解析。</p></details><details><summary><strong>unresolved</strong></summary><p>含 <code>$</code>、反引号、<code>*</code>、<code>?</code>、<code>[</code>、或以 <code>~</code> 开头的目标词，原样放进 unresolved。</p></details><details><summary><strong>管道与组合</strong></summary><p>逐段解析，复用 <code>denySegments</code> / <code>words</code> 的切分。</p></details><details><summary><code>envelope.ts</code> 新增纯函数 <code>bashWritesVerdict(who, command): Deny | undefined</code>（S4）。它取 <code>bashWriteTargets(command, who.worktree)</code></summary></details><details><summary>每个 target 交给 <code>writeVerdict(who, target)</code>，与 Write / Edit 同一口径</summary><p>评审员一律拒写，其余角色须在本 worktree 且匹配 owns；</p></details><details><summary>unresolved 非空时拒绝</summary><p>「写入目标无法静态判定：&lt;词&gt;」。</p></details><details><summary>接线（S8）</summary><p><code>orchestrator.tsx</code> 的 <code>envelopeVerdict</code> 对 Bash 先走现有的 <code>bashVerdict</code>，通过后再走 <code>bashWritesVerdict</code>。</p></details><details><summary><code>toolTargets(tool, e, cwd): string[]</code></summary></details><details><summary>Write / Edit 取 <code>file_path</code>，NotebookEdit 取 <code>notebook_path</code>，相对路径按 cwd 解析；</summary></details><details><summary>Bash 取 <code>bashWriteTargets(command, cwd).targets</code>；</summary></details><details><summary>其他工具返回空数组。</summary></details><details><summary>主会话的 unresolved 不判</summary><p>已知局限，见 Non-Goals。</p></details><details><summary><code>intentVerdict(io, hooksDir, cwd, targets): Promise&lt;{deny: string} | undefined&gt;</code></summary></details><details><summary>targets 为空</summary><p>不运行任何命令，返回 undefined；</p></details><details><summary>否则只运行一次 <code>python3 &lt;hooksDir&gt;/intent-gate.py check --cwd &lt;cwd&gt; &lt;targets…&gt;</code>；</summary></details><details><summary>退出 0 且 allow</summary><p>返回 undefined；</p></details><details><summary>有 denied</summary><p>返回 <code>{deny: &#x27;flight：意图门禁拒绝写入 &lt;path&gt;：&lt;reason&gt;&#x27;}</code>，多条时逐条换行；</p></details><details><summary>退出非 0、或 stdout 不是期望的 JSON</summary><p>返回 <code>{deny: &#x27;flight：意图门禁判定失败（&lt;首行&gt;），写入一律拒绝&#x27;}</code>。这是 fail closed。</p></details><details><summary><strong>作用范围</strong></summary><p>工具为 Write / Edit / NotebookEdit / Bash，且调用方是主会话（没有 agentId）或非飞行 agent（<code>flyingWho</code> 为 undefined）。</p></details><details><summary><strong>顺序</strong></summary><p>先走现有的主会话 / 包络检查，通过后再做意图判定。</p></details><details><summary><strong>参数</strong></summary></details><details><summary>cwd 取 <code>$.session.cwd()</code>；</summary></details><details><summary>hooksDir 取会话所在仓库主检出的判定器目录</summary><p><code>git -C &lt;cwd&gt; rev-parse --path-format=absolute --git-common-dir</code> 的父目录，交给 <code>judgesDir</code>。</p></details><details><summary>按会话缓存；求不出（不是 git 仓库或没有判定器）时放行，与「项目没装意图门禁」同义。</summary></details><details><summary><strong>飞行 agent</strong></summary><p>只走包络，不调意图判定，因为 owns 比 apply 上下文更严。</p></details><details><summary><code>live()</code> 为空</summary><p>回答「没有在飞的 attempt，无需中止。」；</p></details><details><summary>否则逐个 <code>stop</code>，不另记 halt，回答「&lt;change&gt; attempt &lt;n&gt; 已停飞（&lt;halt 原因首行&gt;）；停掉残留 agent</summary><p>」，再列出各 agent，最后附 <code>/flight resume &lt;change&gt;</code> 提示。</p></details><details><summary><code>halt</code> 失败时，回答同现在；</summary></details><details><summary>否则第一段</summary><p><code>live()</code> 后逐个 <code>stop</code>；</p></details><details><summary><code>await drain()</code>；</summary></details><details><summary>第二段</summary><p>再求一次 <code>live()</code>，只停第一段没有出现过的 agent；</p></details><details><summary>回答列出两段的结果。</summary></details><details><summary><strong><code>io.ts</code> 新增 <code>stoppedNow(io, f): Promise&lt;string | undefined&gt;</code></strong></summary></details><details><summary>读账本，按最新 takeoff 的 attempt 查找；</summary></details><details><summary>有 halt 返回 <code>&#x27;halt&#x27;</code>，有 land 返回 <code>&#x27;land&#x27;</code>；</summary></details><details><summary>账本读不出返回 <code>&#x27;unreadable&#x27;</code>；</summary></details><details><summary>都没有返回 undefined。</summary></details><details><summary><strong>调用点</strong></summary></details><details><summary><code>runLandingAction</code>（S6）在派发评审员 / 修复体的 <code>ctx.spawn</code> 之前调用；</summary></details><details><summary><code>perform</code>（S8）在派发执行体 / 解冲突 agent 的 <code>ctx.spawn</code> 之前，以及合回（切片、解冲突、修复）之前调用。</summary></details><details><summary>非 undefined 时直接返回</summary><p>不派发、不合回、不追加事件。</p></details><details><summary><strong><code>summarize</code></strong>（S5）</summary></details><details><summary>评审列</summary><p>已有 review 照旧显示条数；没有 review 但有 <code>blocked review:&lt;S&gt;</code> 时显示 <code>阻断（&lt;kind&gt;）</code>；其余照旧。</p></details><details><summary>修复列</summary></details><details><summary>取本 attempt 最新一个修复体 dispatch，slice 为 <code>fix</code> 或 <code>fix-r&lt;k&gt;</code>；</summary></details><details><summary>已合回显示 <code>已合回</code>，有 blocked 显示 <code>阻断（&lt;kind&gt;）</code>，否则显示 <code>进行中</code>；</summary></details><details><summary><code>fix-r&lt;k&gt;</code> 前缀 <code>第 &lt;k&gt; 轮 </code>；</summary></details><details><summary>没有修复体 dispatch、但有 <code>blocked fix</code> 时显示 <code>阻断（&lt;kind&gt;）</code>；</summary></details><details><summary>其余照旧（<code>未派</code> / <code>无需</code>）。</summary></details><details><summary><strong>面板刷新</strong>（S8）</summary><p><code>driveNow</code> 在执行完 halt 或 land 动作后，按最新账本刷新面板，状态行照旧清空。</p></details><details><summary><strong>核心层</strong>（S5）</summary><p><code>core.ts</code> 的 <code>ev</code> 增加 <code>diag(b, {attempt, where, error, kind?, agent?, budget?})</code>。<code>reduce</code> / <code>next</code> / <code>summarize</code> 忽略 diag：账本里多一条 diag，下一批动作不变。</p></details><details><summary><strong>接线</strong>（S8）</summary></details><details><summary><code>orchestrator.tsx</code> 给 <code>on(&#x27;classic.SubagentStop&#x27;, …)</code> 加 <code>.catch(handler)</code>；</summary></details><details><summary>handler 用 <code>next.error</code> 追加 <code>diag {attempt, where: &#x27;SubagentStop&#x27;, agent: e.agent_id, kind, error: message ?? &#x27;&#x27;, budget}</code>，再 <code>return next(e)</code>；</summary></details><details><summary>对引擎而言等同 hook 缺席，与现在一致；追加失败时吞掉。</summary></details><details><summary><code>io.ts</code> 的 <code>EVENTS</code> 增加 <code>diag</code>。</summary></details><details><summary><strong>判定器</strong>（S2）</summary><p><code>ledger.py</code> 认识 diag；<code>timeline report</code> 统计 diag 条数。</p></details><details><summary><strong>未给 <code>--model=</code></strong></summary></details><details><summary>调 <code>$.session.model()</code>，按 <code>session-model.py</code> 的 <code>ALIASES</code> 子串规则取别名（不区分大小写）；</summary></details><details><summary>取不出、或调用抛错</summary><p>拒飞，提示「flight：判不出主模型（&lt;原值或错误首行&gt;），用 --model= 指定」。</p></details><details><summary><strong>给了 <code>--model=</code></strong></summary><p>不调。</p></details><details><summary><strong>不再调用 <code>session-model.py</code></strong>；它只留给飞行外使用。</summary></details><details><summary><strong>S1</strong></summary><p><code>test_slice_gate_reuse_preflight.py</code> 的孤立 <code>import pytest</code> 与过时的骨架注释。</p></details><details><summary><strong>S4 ship</strong></summary></details><details><summary><code>parseShip</code> 校验 <code>review</code> 的形状；</summary></details><details><summary><code>git remote get-url origin</code> 失败时单独报「读取 origin 失败」；</summary></details><details><summary><code>ship.test.ts</code> 的 ready 断言写全 argv，不含 <code>--undo</code>。</summary></details><details><summary>以上三条归 S5。</summary></details><details><summary><strong>S6</strong></summary><p><code>opsx-apply.md</code> 与 SKILL 里「起飞只接受人发出的命令」改为指向「飞行中的交互」，归 S9。</p></details><details><summary><strong>S2</strong></summary></details><details><summary><code>core.ts:245</code> 复核 base 取不到时退化为空串，下游已由 S6 的阻断兜住；</summary></details><details><summary>修复轮各分支缺快照用例。</summary></details><details><summary><strong>S3</strong></summary></details><details><summary>全量评审起点取主 worktree HEAD 与 commit 的 merge-base；是否改为 main 或起飞时记下的基线，需要另议；</summary></details><details><summary><code>wholeBase</code> 的另两条失败分支缺用例。</summary></details><details><summary><strong>S5</strong></summary></details><details><summary><code>tools-and-commands-invariant</code> 的输入与 spec 不一致；</summary></details><details><summary><code>ship-tool-main-session-only</code> 没有用「另一个在飞 change 的执行体」造世界。</summary></details><details><summary><strong><code>pr-ship.md</code></strong></summary></details><details><summary>删掉 <code>timeline.py record pr-open</code></summary><p>飞行模式的 PR 时间取自 ship 事件，飞行外不再记录；</p></details><details><summary>飞行模式不再「另外提交 timeline」；</summary></details><details><summary>补上 D11 的两条。</summary></details><details><summary><strong><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code>（同改）</strong></summary></details><details><summary>删掉「首次起飞记 <code>timeline.py record approve</code> 并提交 approve」；</summary></details><details><summary>写明落地时由插件从账本生成 <code>timeline.md</code> / <code>gate-report.md</code>；</summary></details><details><summary>写明意图门禁由插件在 Write / Edit / Bash 上执行，classic 兜底；</summary></details><details><summary>来源规则半句按 D11 改。</summary></details><details><summary><strong>README、WORKFLOW</strong></summary><p>同步记录生成方式与意图门禁范围。</p></details><details><summary><strong>仓库根 <code>CLAUDE.md</code> 铁律 11</strong></summary><p>把「<code>&lt;main&gt;</code> 由 <code>.claude/hooks/session-model.py</code> 判定」改为「<code>&lt;main&gt;</code> 飞行中由插件经 <code>$.session.model()</code> 判定、飞行外由 <code>.claude/hooks/session-model.py</code> 判定」。其余措辞不动。</p></details></div><div class="design-block"><h3>切片与 wave</h3><p>| 片 | wave | deps | 要点 | |---|---|---|---| | S1 | 1 | – | <code>slice-gate.py</code>：删 start / record，新增只读 <code>base</code>；<code>--base</code> 必填；不写记录；标记退役；<code>ledger-records</code> | | S2 | 1 | – | <code>timeline.py render</code> / <code>report</code> 按账本；删 record；<code>ledger.py</code> 认 diag；<code>test-evidence.py</code> 按分支识别飞行 | | S3 | 1 | – | <code>intent-gate.py</code> 纯判定、<code>check</code> 子命令、apply 上下文收窄、去标记 | | S4 | 1 | – | <code>envelope.ts</code> <code>bashWriteTargets</code> 与飞行 agent 的 Bash 写入限 owns；新模块 <code>intent.ts</code> | | S5 | 1 | – | <code>core.ts</code> 阻断态显示、<code>ev.diag</code>、<code>ev.final</code> 带 warnings；<code>ship.ts</code> 3 条 LOW | | S6 | 2 | S2, S5 | <code>landing.tsx</code> / <code>land.ts</code> 落地顺序、合回不写记录、M1、M2、动作内查停飞；<code>io.ts</code> <code>stoppedNow</code> | | S7 | 2 | S1, S5 | <code>orchestrator.tsx</code>：派发改调 <code>base</code>、起飞不记 timeline、<code>$.session.model()</code>；<code>abort.ts</code> 两段停与残留；<code>REQUIRED_FEATURES</code> | | S9 | 2 | S1, S2, S3 | 文档与铁律 11 | | S8 | 3 | S4, S6, S7 | <code>orchestrator.tsx</code>：意图门禁接线、perform 查停飞、SubagentStop diag、面板刷新；<code>io.ts</code> EVENTS diag；<strong>修复因 S6 落地顺序变化而失配的 orchestrator 测试世界</strong> |</p><p><strong>分层的理由</strong>（吸取 change 1 的教训：门禁只跑本片 verify，跨片失配要到 final 才暴露）：</p><ul><li><strong>wave 1 各片互不断言对方要改的行为</strong>：</li><li>Python 判定器各片的测试文件互不相交：<code>test_evidence_timeline.py</code> 同时测 <code>test-evidence.py</code> 与 <code>timeline.py</code>，所以两者归同一片 S2；<code>test_ship_verdict.py</code> 里有 <code>timeline report</code> 的用例，也归 S2。</li><li>插件纯模块不改 <code>next()</code>，不改任何被 orchestrator 测试世界依赖的签名。</li><li><strong>orchestrator 分两层</strong>：</li><li>S7 在 wave 2，与 S6 并行。S6 改了落地顺序，orchestrator 测试世界里走到落地的用例可能因此失配；</li><li>S8 在 wave 3，依赖 S6 与 S7，拥有 <code>orchestrator.test.tsx</code>，负责把这些用例对齐，切片包里点名。</li><li><strong><code>io.ts</code> 的 EVENTS 加 diag 放在 S8</strong>：EVENT_TYPES 一变，orchestrator 测试世界里 <code>ledger.py events</code> 的应答就要跟着变，两者须在同一片。</li></ul></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>意图门禁变严，可能挡住现有工作方式</strong></summary></details><details><summary>未按约定命名的 worktree 分支，沿用原判法，不受影响；</summary></details><details><summary>形如 <code>worktree-&lt;name&gt;</code> 却没有同名 change 的 worktree 会被拒写源码，须用 mini 声明。</summary></details><details><summary>本仓库的停车位 worktree（<code>worktree-flight-envelope-followups</code>）不写源码，不受影响。</summary></details><details><summary><strong>插件意图判定 fail closed</strong></summary><p>判定器坏了，主会话的写入会全部被拒。拒绝原因写明「判定失败」与首行，便于人修；classic 地板仍是 fail open。</p></details><details><summary><strong>Bash 解析只覆盖常见写法</strong></summary><p>解释器脚本内部写文件不在范围内，见 Non-Goals。飞行 agent 的 unresolved 目标一律拒绝，可能误拒少量合法写法，例如 <code>&gt; &quot;$OUT&quot;</code>；执行体可改用字面路径。</p></details><details><summary><strong>记录从账本生成后，<code>gate-report.md</code> 行数变多</strong></summary><p>账本里的红门禁也会列出，比现在更完整。<code>spec_html</code> 与 <code>/opsx-verify</code> 都按「每片最后一行」读，不受影响。</p></details><details><summary><strong>diag 只是证据</strong></summary><p>它不改变 hook 失败后的行为。若成因是 hook 预算超时，diag 的 kind 会是 <code>timeout</code>，之后另立 change 处理。</p></details><details><summary><strong>本次飞行的控制面仍是 0.7.0 与 ac5d051 的判定器</strong></summary><p>本 change 删掉的 <code>start</code> / <code>record</code> 在这次飞行里照常被调用（主检出的版本），不受影响。合入后须快进主检出、更新插件，否则 0.8.0 起飞会因缺 <code>ledger-records</code> 被拒。</p></details></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart LR
+  subgraph W1[&quot;wave 1 · 判定器与插件纯模块&quot;]
+    S1[&quot;S1 slice-gate 不写记录 · base&quot;]
+    S2[&quot;S2 render · report · diag · evidence&quot;]
+    S3[&quot;S3 intent-gate 纯判定 · 收窄&quot;]
+    S4[&quot;S4 Bash 写入目标 · intent.ts&quot;]
+    S5[&quot;S5 显示口径 · ev.diag · ship 余项&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S6[&quot;S6 落地按账本生成记录 · 动作内查停飞&quot;]
+    S7[&quot;S7 base 接线 · $.session.model · abort&quot;]
+    S9[&quot;S9 文档&quot;]
+  end
+  subgraph W3[&quot;wave 3&quot;]
+    S8[&quot;S8 意图门禁接线 · perform 查停飞 · diag · 面板&quot;]
+  end
+  S2 --&gt; S6
+  S5 --&gt; S6
+  S1 --&gt; S7
+  S5 --&gt; S7
+  S1 --&gt; S9
+  S2 --&gt; S9
+  S3 --&gt; S9
+  S4 --&gt; S8
+  S6 --&gt; S8
+  S7 --&gt; S8</div><pre class="diagram-fallback">flowchart LR
+  subgraph W1[&quot;wave 1 · 判定器与插件纯模块&quot;]
+    S1[&quot;S1 slice-gate 不写记录 · base&quot;]
+    S2[&quot;S2 render · report · diag · evidence&quot;]
+    S3[&quot;S3 intent-gate 纯判定 · 收窄&quot;]
+    S4[&quot;S4 Bash 写入目标 · intent.ts&quot;]
+    S5[&quot;S5 显示口径 · ev.diag · ship 余项&quot;]
+  end
+  subgraph W2[&quot;wave 2&quot;]
+    S6[&quot;S6 落地按账本生成记录 · 动作内查停飞&quot;]
+    S7[&quot;S7 base 接线 · $.session.model · abort&quot;]
+    S9[&quot;S9 文档&quot;]
+  end
+  subgraph W3[&quot;wave 3&quot;]
+    S8[&quot;S8 意图门禁接线 · perform 查停飞 · diag · 面板&quot;]
+  end
+  S2 --&gt; S6
+  S5 --&gt; S6
+  S1 --&gt; S7
+  S5 --&gt; S7
+  S1 --&gt; S9
+  S2 --&gt; S9
+  S3 --&gt; S9
+  S4 --&gt; S8
+  S6 --&gt; S8
+  S7 --&gt; S8</pre><div class="caption">## 切片与 wave</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-single-implementation.md">DRAFT. 飞行只有一套实现：删除 Workflow 旧引擎，铁律 10 改为失效即停飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<style>.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }</style><h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>判定器：slice-gate 不写记录、base 取代 start、--base 必填、标记退役、ledger-records</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>tests/test_slice_gate.py<br>tests/test_slice_gate_reuse_preflight.py</td><td><code>python3 -m pytest -q tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_ship_verdict.py tests/test_plan_fp.py tests/test_spec_html.py</code></td></tr><tr><td class="mono">S2</td><td>判定器：timeline.py render 与按账本的 report、删 record、ledger.py 认 diag、test-evidence 按分支识别飞行</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/timeline.py<br>template/.claude/hooks/ledger.py<br>template/.claude/hooks/test-evidence.py<br>tests/test_timeline_render.py<br>tests/test_evidence_timeline.py<br>tests/test_ledger.py<br>tests/test_ship_verdict.py</td><td><code>python3 -m pytest -q tests/test_timeline_render.py tests/test_evidence_timeline.py tests/test_ledger.py tests/test_ship_verdict.py tests/test_spec_html.py</code></td></tr><tr><td class="mono">S3</td><td>判定器：intent-gate 纯判定、check 子命令、apply 上下文收窄、去标记</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/intent-gate.py<br>tests/test_intent_gate.py</td><td><code>python3 -m pytest -q tests/test_intent_gate.py tests/test_install.py</code></td></tr><tr><td class="mono">S4</td><td>插件纯模块：Bash 写入目标、飞行 agent 的 Bash 写入判定、新模块 intent.ts</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/envelope.ts<br>template/plugins/flight/hooks/intent.ts<br>template/plugins/flight/tests/envelope.test.ts<br>template/plugins/flight/tests/intent.test.ts<br>tests/test_flight_envelope.py<br>tests/test_flight_intent.py</td><td><code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_intent.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S5</td><td>插件纯模块：阻断态显示、ev.diag、ev.final 带 warnings；ship.ts 3 条 LOW</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/hooks/ship.ts<br>template/plugins/flight/tests/core.test.ts<br>template/plugins/flight/tests/ship.test.ts<br>tests/test_flight_core.py<br>tests/test_flight_ship.py</td><td><code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_ship.py tests/test_flight_plugin.py tests/test_flight_orchestrator.py tests/test_flight_landing.py</code></td></tr><tr><td class="mono">S6</td><td>落地：先记 land 再从账本生成并提交记录、合回不写记录、复核缺 base 阻断、draft 原因、派发前查停飞</td><td>wave 2</td><td>S2, S5</td><td>template/plugins/flight/hooks/landing.tsx<br>template/plugins/flight/hooks/land.ts<br>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/tests/landing.test.tsx<br>template/plugins/flight/tests/land.test.ts<br>template/plugins/flight/tests/io.test.ts<br>tests/test_flight_landing.py<br>tests/test_flight_land.py<br>tests/test_flight_io.py</td><td><code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_io.py tests/test_flight_agents.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S7</td><td>接线（起飞与派发、中止）：派发改调 base、起飞不写 timeline、$.session.model()、abort 两段停与停残留 agent、ledger-records</td><td>wave 2</td><td>S1, S5</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/abort.ts<br>template/plugins/flight/hooks/versions.ts<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/tests/abort.test.ts<br>template/plugins/flight/tests/versions.test.ts<br>tests/test_flight_orchestrator.py<br>tests/test_flight_abort.py<br>tests/test_flight_versions.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_abort.py tests/test_flight_versions.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py tests/test_flight_core.py</code></td></tr><tr><td class="mono">S8</td><td>接线（守卫与可靠性）：意图门禁接线、飞行 agent 的 Bash 写入判定、perform 查停飞、SubagentStop diag、面板刷新、EVENTS 加 diag；对齐 orchestrator 测试世界</td><td>wave 3</td><td>S4, S6, S7</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/tests/flight.test.tsx<br>template/plugins/flight/tests/io.test.ts<br>template/plugins/flight/tests/versions.test.ts<br>tests/test_flight_orchestrator.py<br>tests/test_flight_plugin.py<br>tests/test_flight_io.py<br>tests/test_flight_versions.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_abort.py tests/test_flight_envelope.py tests/test_flight_intent.py tests/test_flight_core.py tests/test_flight_takeoff_commit.py</code></td></tr><tr><td class="mono">S9</td><td>文档：/flight:pr-ship、/opsx-apply 命令与 skill、README、WORKFLOW、铁律 11</td><td>wave 2</td><td>S1, S2, S3</td><td>template/plugins/flight/commands/pr-ship.md<br>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>README.md<br>docs/WORKFLOW_zh.md<br>CLAUDE.md<br>tests/test_ledger_guards_docs.py<br>tests/test_template_docs.py<br>tests/test_docs_iron_rules.py<br>tests/test_flight_entry_docs.py<br>tests/test_ship_ledger_docs.py</td><td><code>python3 -m pytest -q tests/test_ledger_guards_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_session_model.py tests/test_code_reviewer_agent.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-ledger-records#judges-write-no-records</td><td><code>tests/test_slice_gate.py::test_judges_write_no_records</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#base-replaces-start</td><td><code>tests/test_slice_gate.py::test_base_replaces_start</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#gate-requires-explicit-base</td><td><code>tests/test_slice_gate.py::test_gate_requires_explicit_base</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#render-records-from-ledger</td><td><code>tests/test_timeline_render.py::test_render_records_from_ledger</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#report-reads-ledger</td><td><code>tests/test_timeline_render.py::test_report_reads_ledger</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#ledger-knows-diag-event</td><td><code>tests/test_ledger.py::test_ledger_knows_diag_event</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#evidence-skips-flight-branches</td><td><code>tests/test_evidence_timeline.py::test_evidence_skips_flight_branches</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#intent-check-cli</td><td><code>tests/test_intent_gate.py::test_intent_check_cli</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#apply-context-scoped-to-change</td><td><code>tests/test_intent_gate.py::test_apply_context_scoped_to_change</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#bash-write-targets</td><td><code>tests/test_flight_envelope.py::test_bash_write_targets</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#flight-agent-bash-writes-within-owns</td><td><code>tests/test_flight_envelope.py::test_flight_agent_bash_writes_within_owns</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#intent-verdict-module</td><td><code>tests/test_flight_intent.py::test_intent_verdict_module</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#summary-shows-blocked-review-and-fix</td><td><code>tests/test_flight_core.py::test_summary_shows_blocked_review_and_fix</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#diag-events-do-not-move-the-plan</td><td><code>tests/test_flight_core.py::test_diag_events_do_not_move_the_plan</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#ship-output-shape-checked</td><td><code>tests/test_flight_ship.py::test_ship_output_shape_checked</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#land-renders-records</td><td><code>tests/test_flight_landing.py::test_land_renders_records</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#followup-review-needs-base</td><td><code>tests/test_flight_landing.py::test_followup_review_needs_base</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#draft-reasons-in-flight-record</td><td><code>tests/test_flight_landing.py::test_draft_reasons_in_flight_record</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#landing-actions-skip-after-halt</td><td><code>tests/test_flight_landing.py::test_landing_actions_skip_after_halt</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#merges-write-no-records</td><td><code>tests/test_flight_land.py::test_merges_write_no_records</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#dispatch-takes-base-without-start</td><td><code>tests/test_flight_orchestrator.py::test_dispatch_takes_base_without_start</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#takeoff-reads-engine-model</td><td><code>tests/test_flight_orchestrator.py::test_takeoff_reads_engine_model</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#takeoff-writes-no-timeline</td><td><code>tests/test_flight_orchestrator.py::test_takeoff_writes_no_timeline</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#abort-stops-agents-before-draining</td><td><code>tests/test_flight_abort.py::test_abort_stops_agents_before_draining</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#abort-stops-residual-agents</td><td><code>tests/test_flight_abort.py::test_abort_stops_residual_agents</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-records#judges-need-ledger-records</td><td><code>tests/test_flight_versions.py::test_judges_need_ledger_records</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-intent-guard#main-session-writes-checked</td><td><code>tests/test_flight_orchestrator.py::test_main_session_writes_checked</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#perform-skips-after-halt</td><td><code>tests/test_flight_orchestrator.py::test_perform_skips_after_halt</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#subagent-stop-error-leaves-diag</td><td><code>tests/test_flight_orchestrator.py::test_subagent_stop_error_leaves_diag</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-reliability#panel-refreshes-on-terminal</td><td><code>tests/test_flight_orchestrator.py::test_panel_refreshes_on_terminal</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-docs#pr-ship-docs-follow-ledger</td><td><code>tests/test_ledger_guards_docs.py::test_pr_ship_docs_follow_ledger</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ledger-docs#apply-docs-and-iron-rules</td><td><code>tests/test_ledger_guards_docs.py::test_apply_docs_and_iron_rules</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-10-13T01:09:14Z</td><td>baseline</td><td>exit 0, 195.5s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 判定器：slice-gate 不写记录、base 取代 start、--base 必填、标记退役、ledger-records （deps: - · verify: <code>python3 -m pytest -q tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_ship_verdict.py tests/test_plan_fp.py tests/test_spec_html.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 判定器：timeline.py render 与按账本的 report、删 record、ledger.py 认 diag、test-evidence 按分支识别飞行 （deps: - · verify: <code>python3 -m pytest -q tests/test_timeline_render.py tests/test_evidence_timeline.py tests/test_ledger.py tests/test_ship_verdict.py tests/test_spec_html.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 判定器：intent-gate 纯判定、check 子命令、apply 上下文收窄、去标记 （deps: - · verify: <code>python3 -m pytest -q tests/test_intent_gate.py tests/test_install.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 插件纯模块：Bash 写入目标、飞行 agent 的 Bash 写入判定、新模块 intent.ts （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_envelope.py tests/test_flight_intent.py tests/test_flight_orchestrator.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S5 插件纯模块：阻断态显示、ev.diag、ev.final 带 warnings；ship.ts 3 条 LOW （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_ship.py tests/test_flight_plugin.py tests/test_flight_orchestrator.py tests/test_flight_landing.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S6 落地：先记 land 再从账本生成并提交记录、合回不写记录、复核缺 base 阻断、draft 原因、派发前查停飞 （deps: S2, S5 · verify: <code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_io.py tests/test_flight_agents.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S7 接线（起飞与派发、中止）：派发改调 base、起飞不写 timeline、$.session.model()、abort 两段停与停残留 agent、ledger-records （deps: S1, S5 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_abort.py tests/test_flight_versions.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py tests/test_flight_core.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S8 接线（守卫与可靠性）：意图门禁接线、飞行 agent 的 Bash 写入判定、perform 查停飞、SubagentStop diag、面板刷新、EVENTS 加 diag；对齐 orchestrator 测试世界 （deps: S4, S6, S7 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_plugin.py tests/test_flight_io.py tests/test_flight_versions.py tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_abort.py tests/test_flight_envelope.py tests/test_flight_intent.py tests/test_flight_core.py tests/test_flight_takeoff_commit.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S9 文档：/flight:pr-ship、/opsx-apply 命令与 skill、README、WORKFLOW、铁律 11 （deps: S1, S2, S3 · verify: <code>python3 -m pytest -q tests/test_ledger_guards_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_session_model.py tests/test_code_reviewer_agent.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-13 01:09 · 章节 9 · 图示 1 · 任务 9
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>
