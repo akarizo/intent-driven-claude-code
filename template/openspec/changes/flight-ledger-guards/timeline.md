@@ -11,3 +11,5 @@
 2026-10-13T02:04:21Z	gate	S8 ok
 2026-10-13T02:17:38Z	gate	S9 ok
 2026-10-13T02:29:39Z	fix	blocking=2
+2026-10-13T02:29:58Z	final	ok
+2026-10-13T02:30:03Z	apply-done	blocked=0 blocking=2

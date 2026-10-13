@@ -1,0 +1,200 @@
+{
+  "blocked": [],
+  "blocking": [
+    {
+      "severity": "HIGH",
+      "file": "tests/test_timeline_render.py",
+      "line": 46,
+      "summary": "test_render_records_from_ledger 的断言比 scenario render-records-from-ledger 的 Then 弱很多。没有断言 timeline.md 首行是生成说明注释，也没断言 baseline 备注为 `exit 0, <sec>s ok`；门禁表只数了行数（3），没断言依次为 S1 red / S1 ok / final ok，也没断言 warnings 列（`w1`、`G2 预存红`）。测试数据本身也和 Given 不符：gate / final 都没带 warnings，measure 只有 1 个红而 Given 是 2 个红，review 的 findings 为空而 Given 是 1 条 HIGH。D2 的备注格式和 warnings 列渲染因此都没被验收。",
+      "fix": "按 spec 第 44-51 行补齐 Given 和 Then。数据：S1 gate ok 加 warnings=[\"w1\"]，final 加 warnings=[\"G2 预存红\"]，measure 的 outcomes 两个都填 FAILED，review 的 findings 放 1 条 HIGH。断言：lines[0] == \"<!-- timeline：timeline.py render 从账本生成，勿手改 -->\"；lines[1].split(\"\\t\")[2] == \"exit 0, 9.6s ok\"（或把 sec 改成 111.2，与 spec 对齐）；门禁表 3 行的第 2 列依次为 S1 / S1 / final、第 3 列依次为 red / ok / ok，第 2 行与第 3 行的 warnings 列分别为 w1 和 G2 预存红。"
+    },
+    {
+      "severity": "HIGH",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 676,
+      "summary": "collectWrites 的 cd / pushd 跟踪无条件写回 state.cwd：一是不区分子 shell。lexSegments 把 `(`、`)`、`|`、`&` 都当普通分段，于是 `( … )`、管道、后台里的 cd 也被当成对后续各段生效；二是默认 cd 一定成功，`;`、`||` 之后照样按 cd 后的目录解析。结果相对写入目标会被解析错。例：worktree 为 /repo/.worktrees/S1、owns 为 src/a/**，命令 `(cd src/a/p/q); rm -f ../../main.py` 被判成 /repo/.worktrees/S1/src/a/main.py 而放行，实际删的是主检出的 /repo/main.py；`cd src/a/p/q || echo x > ../../main.py` 同理。反方向也会误拒合法命令，如 `(cd sub && make); echo x > src/a/y.py`。这与切片要求「飞行 agent 的 Bash 写入限在 owns 内」相悖。",
+      "fix": "lexSegments 为每段记下前导分隔符，并跟踪括号层级。collectWrites 按下面规则改：(1) 进 `(` 时保存 cwd，出 `)` 时恢复；处于管道（`|`）或后台（`&`）中的段，cd 不写回 state；(2) cd 段之后的分隔符不是 `&&` 时（`;`、`||`、换行、段尾），之后的 state.cwd 置为 null（cd 可能失败），后续相对目标就进 unresolved 被拒。补两条表驱动用例：`(cd sub); touch x` 期望 targets 为 [/w/x]；`cd sub; touch ../../x` 期望 unresolved 非空。"
+    }
+  ],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 604,
+      "summary": "summary-shows-blocked-review-and-fix 没覆盖修复列里「fix-r<k> 已派且 blocked fix-r<k>」这个组合，也就是期望显示「第 k 轮 阻断（kind）」的分支（core.ts:355 的前缀加阻断路径）。fix-r1 已合回由 summary-shows-whole-review 覆盖，fix-r1 进行中由丙覆盖，唯独前缀和阻断叠加的这条没有用例。",
+      "fix": "在该测试加一份账本戊：r1 给 1 条 HIGH，dispatch(1,'fix-r1','fixer','X1')、ended(1,'X1')、ev.blocked(B,{attempt:1,slice:'fix-r1',kind:'gate',reason:'x'})，断言末行含「修复 第 1 轮 阻断（gate）」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/intent-gate.py",
+      "line": 131,
+      "summary": "change_of_branch 对 name 不做约束：分支 worktree-archive/<x> 或 flight/archive/... 会让收窄判法去看 openspec/changes/archive/<x>/tasks.md（或 changes/archive/tasks.md），而原判法明确跳过 archive。归档 change 若留有未勾项，收窄后反而放行，原判法下会拒，这与文件头和 design D5 写的「收窄只会多拒、不会多放」不符。场景很偏（要求分支名恰好撞上 archive），需进一步确认是否值得处理。",
+      "fix": "在 change_of_branch（或 judge 的收窄分支）里拒收 name == 'archive' 和含 '/' 的 name：遇到这类 name 直接判 apply 上下文不成立（走 scoped_deny_reason），或者退回原判法；再补一条分支 worktree-archive 的用例。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/timeline.py",
+      "line": 171,
+      "summary": "render 在账本引用不存在时，ledger.read_events 返回 []，不会走「账本读不出」分支。结果是照样整份重写 timeline.md 和 gate-report.md：前者只剩注释头（可能再加一行 baseline），后者是空表。change-dir 指错，或对没有账本的旧 change 运行 render 时，手写或旧版的飞行记录会被悄悄清空，而且退出 0。",
+      "fix": "events 为空（或其中没有 takeoff）时，stderr 写「账本无事件」并 return 1、不写文件；也可以单独加一个退出码。再补一条用例：无账本时运行 render，原有 timeline.md 保持不变。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_timeline_render.py",
+      "line": 108,
+      "summary": "report-reads-ledger 的 Then 要求输出含「门禁红次数：1（账本：切片门禁 0 · final 1）」，测试只断言子串「门禁红次数：1」。这个子串在红次数为 10 到 19 时也能匹配，而且不检查切片门禁与 final 的拆分口径。",
+      "fix": "改成 assert \"门禁红次数：1（账本：切片门禁 0 · final 1）\" in out。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_ledger.py",
+      "line": 338,
+      "summary": "test_ledger_knows_diag_event 的 diag 数据与 scenario 不一致：scenario 是 error=aborted、kind=timeout、budget=10000，测试用的是 boom / throw / agent=a1、没有 budget，可选字段 budget 没覆盖到。另外第 335 行「骨架：S2 实现后去掉 xfail 标记。」这条注释已经过时。",
+      "fix": "diag 改成 {attempt:1, where:\"SubagentStop\", error:\"aborted\", kind:\"timeout\", budget:10000}，并删掉第 335 行的过时注释。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_evidence_timeline.py",
+      "line": 3,
+      "summary": "骨架的 xfail 标记去掉后，import pytest 已经没有引用了，是 orphan import。",
+      "fix": "删掉 import pytest；如果 conftest 风格要求保留，就忽略这条。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 667,
+      "summary": "大括号展开没有归入 unresolved。normalizePath 把 `{q,..}` 当成普通的一级目录，而 bash 会把它展开成 `..`。例：`rm -f src/a/{q,..}/{q,..}/../../main.py` 被判为 /w/src/a/main.py（在 owns 内，放行），其中一个展开是 src/a/../../../../main.py，在 worktree 为 /repo/.worktrees/S1 时就是 /repo/main.py。design D6 列的 unresolved 字符里没有 `{`，属于设计缺口，实现照搬了这个缺口。",
+      "fix": "在 add() 的判定里加上大括号：`/[*?[{]/.test(u)`，或者只在出现 `{…,…}` / `{…..…}` 形式时才判为 unresolved；同时在 design D6 的 unresolved 字符表补 `{`，并补一条用例 `touch src/a/{x,..}/y` 期望进入 unresolved。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 627,
+      "summary": "dd 分支判断前缀时用去引号后的词，截取路径却在原词上用 indexOf('of=') 取位置。`\"o\"f=../../src/a/x` 去引号后是 of=…，但原词里找不到 `of=`，`slice(-1+3)` 得到 `f=../../src/a/x`。normalizePath 时，第一个 `..` 弹掉 `f=..`，判定结果 /w/src/a/x 落在 owns 内；实际 dd 写的是 /w/../../src/a/x，也就是主检出里的同名文件。",
+      "fix": "对每个参数先算 `const u = shellWord(a)`：u 为 null 时把原词放进 unresolved；u 以 'of=' 开头时取 u.slice(3) 作为目标（这里已经去过引号，不要再交给 add 对原词做 shellWord），或者先把去引号后的词交给 add。补用例 `dd if=a \"o\"f=k.bin` 期望 targets 为 [/w/k.bin]。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 469,
+      "summary": "lexSegments 把任何 `<<` 运算符后面的词都当作 heredoc 定界符，到下一个换行就开始跳过后面的所有行，直到遇到等于定界符的那一行。可是算术 `$((1<<2))`、`((x<<=1))` 里的 `<<` 是移位，`true # <<EOF` 里的 `<<` 在注释中，都不是 heredoc。这时后续行里的写入整段漏掉，比如 `echo $((1<<2))` 换行再 `echo x > src/foo.py`，toolTargets 返回空，意图门禁根本不会被调用。飞行 agent 不受影响，因为 bashVerdict 遇到 `<<` 就整体拒绝；受影响的是主会话或非飞行 agent 经 intent.ts 走的那条路径。",
+      "fix": "在 lexSegments 里跟踪 `$((` / `((` 的算术上下文，在这个上下文里 `<<` 不进入 pending；遇到不在引号里、位于词首的 `#` 时，忽略到行尾的内容（或者把这种情况判为 unresolved）。另外，pending 的定界符一直找不到时，不应该静默吞掉剩下的行，应返回一个让调用方拒绝的标志。补用例 `echo $((1<<2))\\necho x > a` 期望 targets 为 [/w/a]。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/envelope.ts",
+      "line": 618,
+      "summary": "mv 只把目的地算作写入目标，源文件不算（注释已标为 ceiling，与 design D6 一致）。于是 `mv /repo/main.py src/a/` 能把主检出的文件搬走并被放行，效果等同于 rm 一个 owns 外的文件，而 `rm /repo/main.py` 会被拒。",
+      "fix": "mv 的全部非选项参数（源和目的地）都算写入目标；用了 -t 时就是 -t 的目录加上全部 operands。同时更新 design D6 的口径和这条 ceiling 注释。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/intent.ts",
+      "line": 33,
+      "summary": "intentVerdict 调用 io.run 时没传 timeoutMs。intent-gate.py check 一旦卡住（比如 git 等锁），这次工具调用会无限期挂起，无法走到 fail closed 的拒绝分支。",
+      "fix": "传 `{ timeoutMs: <合理上限，如 10000> }`，超时由现有的「退出非 0」分支拒绝；在假 Io 用例里断言传了 opts.timeoutMs。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 263,
+      "summary": "按切片包删掉了 gate / measure / source_files / ownership_violations / _dirty_paths 里对 `.openspec-slice` 的排除，但没有清理旧标记的迁移路径。.openspec-slice 不在 .gitignore 里；旧版插件起跑过的 worktree 根下如果还留着这个标记（续飞，或跨版本升级时在飞的切片 worktree），它会作为未跟踪文件进入 changed_files 的 uncommitted。结果是 gate 报 G6「不在 owns 内」（还可能被 source_files 当成源码触发 G3），final 的 _dirty_paths 也会把它当 dirty，导致 --reuse-fix 失效。这是由一个与本片改动无关的遗留文件造成的假红。test_gate_requires_explicit_base 只测了留着旧标记时缺 --base 的情况，没测带 --base 时 gate 的结论。需进一步确认 design 是否已接受这个行为。",
+      "fix": "二选一。(a) 保留一条最小的兼容排除：在 changed_files 返回之前去掉根目录下的 `.openspec-slice`，可写成常量 LEGACY_MARKER 并注明「已退役，只为兼容旧 worktree 而忽略」。(b) 在 S7 起飞或 preflight 阶段删除 worktree 根下遗留的 .openspec-slice，并补一个用例：根下有遗留标记时，带 --base 运行 gate，结论仍为 ok。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 232,
+      "summary": "删掉用例后留下多处连续空行（合回版本的第 232 行前 4 行、第 368 行前 8 行、第 387 行前 3 行、第 618 行前 6 行、第 1121 行前 3 行），是删除时遗留的空白。",
+      "fix": "把这几处连续空行压到 PEP 8 规定的两行。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate.py",
+      "line": 424,
+      "summary": "被删的 test_gate_pairing_ignores_marker、test_start_tags_ledger_evidence、test_start_keeps_marker_for_same_slice、test_start_accepts_base_flag，在历史 change 的 slices.json 里仍有 scenario_tests 映射（flight-envelope:127、flight-measure:211、flight-preflight-and-retry:102-103）。将来对这些 change 重跑 final / ship 时，G7 会报「未被收集运行」。",
+      "fix": "本片 owns 之外，不要求本片修改。建议在本 change 的 design 或 tasks 中登记一条 backlog：在这几个历史 change 的 slices.json 里把相应 scenario 标为退役，或改指向新用例（test_base_replaces_start / test_judges_write_no_records）。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 185,
+      "summary": "修复体分支的 stoppedNow 检查放在 commitRecords 与 freshWorktree 之后：动作算出后若已停飞或已落地，仍会提交一次「chore(flight): 记录」、并新建 flight-<change>-<slice> worktree 与 flight/<change>/<slice> 分支，随后直接 return，留下孤立的 worktree 和分支（下一个 attempt 会因占用改用 -a<attempt>）。另外，commitRecords 或 freshWorktree 失败时会在停飞后追加 blocked 事件，违反 D8「非 undefined 时不追加事件」。字面上满足「ctx.spawn 之前」，但停飞后仍有副作用。测试 landing-actions-skip-after-halt 只断言没有 spawn、账本条数不变，覆盖不到这些副作用。",
+      "fix": "在 fixer 分支开头（commitRecords 之前）加 `if ((await stoppedNow(io, f)) !== undefined) return`；spawn 前那次检查可保留，用来收窄竞态窗口。在 landing-actions-skip-after-halt 里补断言：fixer 动作下没有 `git worktree add` 调用，也没有带 -m 的 commit 调用。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 136,
+      "summary": "stoppedNow 返回 'unreadable'（账本读不出）时，评审员和修复体派发都静默 return：没有 toast，也没有 log。同一函数开头读账本失败时会 toast「账本读取失败，未执行 …」，两处处理不一致，人看不到派发被跳过的原因。",
+      "fix": "结果为 'unreadable' 时沿用函数开头的写法，先 `ctx.toast(`flight：${f.change} 账本读取失败，未执行 ${action.kind}`)` 再 return；'halt' / 'land' 照旧静默。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 10,
+      "summary": "Python 包装里的 GWT 注释没跟着改：第 10 行仍写「session-model.py 输出 opus」，第 141 行仍写「slice-gate start S1 带 --base B」。同名 TS 测试的注释已改成 session.model 与 slice-gate base，两边注释现在对不上。",
+      "fix": "第 10 行改为「session.model 应答 claude-opus-5-5」，第 141 行改为「派发前的 slice-gate base S1 带 --base B」，与 TS 测试注释一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/abort.test.ts",
+      "line": 1,
+      "summary": "首行注释仍写「副作用经三个回调」，本片已给 abortFlight 加了 drain，实际是四个回调（abort.ts 的头注释已改成四个）。",
+      "fix": "改为「副作用经四个回调（halt / live / stop / drain）」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 376,
+      "summary": "执行体派发分支只在 ctx.spawn 前查停飞；之前的 commitRecords、freshWorktree、sliceBase、startMeasure 仍会在停飞后照做。startMeasure 经 measureSlice 用 appendEvent 追加 measure 事件，所以停飞之后账本仍可能多出 measure 事件，并留下孤立的切片 worktree 和分支，违背 D8「停了就不做、不追加事件」的本意。perform-skips-after-halt 世界一的 halt 正好在 slice-gate base 时注入，但 afterHalt 只过滤 dispatch 和 merge，把这一问题掩盖了。",
+      "fix": "在执行体分支（commitRecords 之前）和解冲突分支（prepareResolve 之前）开头先 `if (await stopped()) return false`，spawn 前那次检查保留。测试里 afterHalt 改为断言 halt 之后没有任何新事件（至少要包含 measure），或单独断言没有新建切片 worktree。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 189,
+      "summary": "envelopeVerdict 对 Bash 新接了 `?? bashWritesVerdict(who, command)`（spec flight-intent-guard 第 64 行要求「包络 SHALL 在 bashVerdict 通过后对 Bash 再走这一判定」），但 orchestrator 层没有任何测试覆盖这条接线：bashWritesVerdict 只在 envelope.test.ts 里做了单元测试。把这段接线删掉，现有测试也不会变红。",
+      "fix": "在 orchestrator.test.tsx 加一个用例：在飞执行体 agent-1 发 `tool.call` Bash `echo x > src/other.py`（owns 之外）以及 `echo x > $F`（unresolved），断言被拒、未到达世界；`echo x > src/s1.py`（owns 之内）放行，且到达世界的命令已做 inWorktree 改写。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 893,
+      "summary": "新加的 SubagentStop `.catch` 没有像同文件其他 catch 处理器那样先判 `next.called`。如果异常发生在 next(e) 之后（例如 `{ ...(await next(e)), block }` 里下游 next 抛错），会把与收口门禁无关的下游错误也记成 diag，并再调一次 next。需进一步确认引擎在 next 已调用后再抛错时的语义。",
+      "fix": "处理器开头加 `if (next.called) return next(e)`，只为 next 尚未调用时的失败写 diag，与 tool.call、agent.spawn 两个 catch 的口径保持一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 1794,
+      "summary": "perform-skips-after-halt 世界二直接 push 字面量 `spawns: 0`，这个字段什么都没测，属于同义反复，会让读者误以为测了世界二没有派发。",
+      "fix": "改为记录世界二 halt 注入前后 log.spawns.length 的差值再断言，或者在世界二的 seen 里去掉 spawns 字段。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 205,
+      "summary": "intentHooksDir 求不出判定器时不缓存：在没装判定器的仓库里，主会话或非飞行 agent 每次写入都会重跑一次 git rev-parse，外加 HOOK_DIRS 的多次 exists 探测，热路径上有多余开销。",
+      "fix": "可按会话缓存空串结果（例如 Map 记录 '' 并以 has 判断命中）；如果是有意不缓存，以便 git 暂时失败后能恢复，就在注释里写明这个取舍。"
+    },
+    {
+      "severity": "LOW",
+      "file": "CLAUDE.md",
+      "line": 17,
+      "summary": "切片包要求铁律 11 只改「<main> 由 session-model.py 判定」半句、其余字一律不动，实际却额外把「收口从账本机械对账…」折成缩进续行。为此 tests/test_docs_iron_rules.py 的 _rule 也被改成拼接所有缩进续行，影响到所有 _rule 调用方（第 3、10、11 条），属于未要求的扩散改动。",
+      "fix": "铁律 11 恢复单行，只替换点名的那半句；_rule 回退为原来的单行版本。如果确实需要换行（比如受行宽限制），在收口回答里写明原因，并只让第 11 条的断言适配续行，不要改通用 helper。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/commands/pr-ship.md",
+      "line": 208,
+      "summary": "第 7 步新增了「飞行模式（GitLab）」分支，这条路径不调用 ship 工具。但第 11 步收尾仍写「飞行模式：PR 状态取自 ship 工具的结果」，Output Summary 的「PR 状态」行也只写了「飞行模式：取自 ship 工具的结果」，GitLab 飞行路径下该填什么没有说明。另外第 7 步原来的「飞行模式」条目没有标「GitHub」，两条飞行分支的适用条件要靠读后一条才分得清。",
+      "fix": "第 7 步原条目改名为「飞行模式（GitHub）」；第 11 步和 Output Summary 的「PR 状态」行补一句：飞行模式（GitLab）为 draft，原因写「只支持 GitHub，交人决定」。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "c02fb7dae783a25bda75a87c10946800c0c271a7"
+  }
+}
