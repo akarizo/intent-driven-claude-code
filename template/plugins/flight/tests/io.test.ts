@@ -440,13 +440,13 @@ test('measure-event-checked-before-write/bad-outcome', () => {
 })
 
 test('event-types-exported', () => {
-  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship 与 diag）
+  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship、diag、heal 与 triage）
 
   // When: 读取导出的 EVENT_TYPES 并排序
   const types = [...EVENT_TYPES].sort()
 
-  // Then: 恰为这 14 种事件类型
-  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff'])
+  // Then: 恰为这 16 种事件类型
+  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'heal', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff', 'triage'])
 })
 
 test('stopped-now-reads-latest-attempt', async () => {
@@ -530,4 +530,26 @@ test('fresh-worktree-never-reuses-old/branch-left', async () => {
   expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
   expect(both.calls.filter(c => c.argv[1] === 'worktree')).toEqual([])
   expect(r2).toEqual({ error: '分支已存在：flight/demo/S1-a2' })
+})
+
+// scenario 来源：spec flight-self-heal（flight-unattended S4）
+test('io-knows-new-events', () => {
+  // Given: 五条事件——heal（attempt 1、kind integ、slice integ、reason「final 红」）、triage（attempt 1、agent d1、text「根因」）、
+  //        role 为 diagnostician 的 dispatch、kind 为 watchdog 的 halt、kind 为 oops 的 halt（两条 halt 都是 attempt 1、reason「停」）
+  const common = { v: 1, change: 'demo', at: '2026-10-13T00:00:00Z', by: { plugin: 'flight', session: 'sess' } }
+  const events = [
+    { ...common, ev: 'heal', attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' },
+    { ...common, ev: 'triage', attempt: 1, agent: 'd1', text: '根因' },
+    { ...DISPATCH, role: 'diagnostician' },
+    { ...common, ev: 'halt', attempt: 1, reason: '停', kind: 'watchdog' },
+    { ...common, ev: 'halt', attempt: 1, reason: '停', kind: 'oops' },
+  ] as FlightEvent[]
+
+  // When: 逐条求不合规原因
+  const why = events.map(e => eventProblem(e, 'demo'))
+
+  // Then: EVENT_TYPES 含 heal 与 triage；前四条无问题；kind 为 oops 的 halt 返回含 kind 的原因
+  expect(['heal', 'triage'].every(t => EVENT_TYPES.includes(t))).toBe(true)
+  expect(why.slice(0, 4)).toEqual([undefined, undefined, undefined, undefined])
+  expect(why[4]).toContain('kind')
 })

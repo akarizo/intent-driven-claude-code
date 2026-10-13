@@ -39,10 +39,9 @@ def test_ship_output_shape_checked():
     assert_ts_passed("ship-output-shape-checked")
 
 
-# ---------------------------------------------------------------- flight-unattended S4（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-unattended S4（已实现：骨架的 xfail 标记已去）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
 def test_pr_open_notifies():
     # Given: 已落地（ready）的 ship 世界，PR 7、blocking 0；另一落地世界的 runCommand(flight:pr-ship) 抛错
     # When: 调用 shipPr(ctx, f, state, 7)；对另一世界执行 land

@@ -105,6 +105,12 @@ export async function shipPr(ctx: Ctx, f: Flight, state: State, pr: string): Pro
     attempt, pr: view.url, verdict, commit: h,
   })
   if (!written) return deny('账本写入失败')
+  // 终端通知（design D5）：缺席或抛错都不改返回值
+  try {
+    await ctx.notify?.(`${f.change}：PR #${n} 已开出（${view.url}），裁决 ${verdict}，blocking ${j.blocking.length}`)
+  } catch {
+    // 通知失败不影响 ship
+  }
 
   const moved = toggle === undefined ? 'PR 状态保持不变' : toggle.length === 0 ? 'PR 转 ready' : 'PR 退回 draft'
   const why = j.ready ? '' : `；未满足：${j.reasons.join('；')}`
