@@ -676,7 +676,6 @@ def test_status_line_kept_for_others():
 
 # ---------------------------------------------------------------- flight-armed-followups S4（骨架：实现后去掉 xfail 标记）
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
 def test_driving_flight_refused():
     # Given: demo 由本会话起飞、attempt 1 未结束、在在飞集合里；agent a1 在引擎里仍在运行
     # When: 分别发 /opsx-apply demo 与 /flight resume demo
@@ -684,7 +683,6 @@ def test_driving_flight_refused():
     assert_ts_passed("driving-flight-refused")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
 def test_stuck_flight_resumes():
     # Given: demo 由本会话起飞、attempt 1 未结束、在在飞集合里；drive 不在跑；派出的 agent 都已结束
     # When: 发 /flight resume demo
@@ -692,7 +690,6 @@ def test_stuck_flight_resumes():
     assert_ts_passed("stuck-flight-resumes")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
 def test_diagnostician_pending_timed():
     # Given: demo 已停飞，诊断员 d1 已派发、dispatch 未写入；d1 在此期间发出的请求一直不结束
     # When: dispatch 写入；时钟推进到请求开始后 10 分钟零 1 秒，看门狗 tick
@@ -700,7 +697,6 @@ def test_diagnostician_pending_timed():
     assert_ts_passed("diagnostician-pending-timed")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
 def test_tick_rechecks_staleness():
     # Given: a1 的请求已超时被 tick 取进快照；tick 查归属时卡住，其间 a1 旧请求结束、新请求开始
     # When: 放行 tick

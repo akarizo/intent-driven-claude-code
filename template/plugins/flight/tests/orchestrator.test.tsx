@@ -89,6 +89,8 @@ type World = {
   notify?: Record<string, unknown>
   /** 这些 agent 的 turn.step（模型请求）一直不结束 */
   stalls?: string[]
+  /** 每次 turn.step（模型请求）到达世界时调用：返回 Promise 时等它结束再应答（用来让一个请求在测试指定的时刻结束） */
+  stepHold?: (agentId: string) => Promise<void> | undefined
   /** slice-gate features 的输出（缺省全部能力） */
   features?: string
   /** command.register 拒绝的命令名（模拟引擎拒绝与项目命令文件同名的注册） */
@@ -239,6 +241,11 @@ function useWorld(on: On, w: World) {
   // 插件之下没有实现应答 turn.step：stalls 里的 agent 的请求永不结束
   on('turn.step', async function* ($, e) {
     if (w.stalls?.includes(String((e as { agentId?: unknown }).agentId))) await new Promise(() => undefined)
+    const held = w.stepHold?.(String((e as { agentId?: unknown }).agentId))
+    if (held) {
+      await held
+      return { answer: '', toolUses: [] } as never
+    }
     return {} as never
   } as never)
   on('classic.SubagentStop', () => ({}))
@@ -2714,4 +2721,108 @@ test('same-session-unfinished-resumes-after-restart', async ($, on) => {
   expect(String(r.text)).toContain('✈ 起飞')
   expect(String(r.text)).not.toContain('正在飞')
   expect(log.events.slice(1).map(x => `${x.ev}:${x.attempt ?? ''}`)[0]).toBe('takeoff:2')
+})
+
+// ---------------------------------------------------------------- flight-armed-followups S4（「正在飞」判据、诊断员登记窗口计时、tick 复查）
+
+test('diagnostician-pending-timed', async ($, on) => {
+  // Given: demo（waves [[S1]]）S1 门禁一律红直到停飞，停飞后派出诊断员 d1；d1 的 dispatch 写入账本被扣住（登记中），其间 d1 在 T0 发出一个模型请求且永不结束（看门狗随之起表）
+  let enter = () => {}
+  let release = () => {}
+  const entered = new Promise<void>(r => (enter = r))
+  const released = new Promise<void>(r => (release = r))
+  const w = demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } })
+  const log = useWorld(on, w)
+  w.dispatchHold = async agent => {
+    if (log.spawns.find(s => s.agentId === agent)?.subagent_type !== 'flight:diagnostician') return
+    w.stalls = [agent]
+    void step($, agent).catch(() => undefined)
+    await flush()
+    enter()
+    await released
+  }
+  const halting = haltWithDiagnostician($, log)
+  await entered
+
+  // When: 放行 d1 的 dispatch 写入；时钟推进 661s（请求开始后超过 10 分钟的第一次 tick）
+  release()
+  const d1 = await halting
+  await advance(log, 661000)
+
+  // Then: 对 d1 恰一次 TaskStop
+  expect(log.stops.map(x => x.id)).toEqual([d1])
+})
+
+test('tick-rechecks-staleness', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 takeoff、S1 执行体 x9 的 dispatch、halt；/opsx-apply demo 续飞 attempt 2 并派出执行体 agent-1；
+  //        x9 的请求在 T0 开始永不结束，agent-1 的请求在 T0+1s 开始、结束时刻由测试放行；T0+660s 的 tick 取到快照 [x9, agent-1]，
+  //        处理 x9 时读账本卡住，其间 agent-1 的旧请求结束、又开始一个永不结束的新请求
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'x9', model: 'opus', worktree: SLICE1 }),
+    ev.halt(B0, { attempt: 1, reason: '会话中断' }),
+  ]
+  let endOld = () => {}
+  const old = new Promise<void>(r => (endOld = r))
+  let requests = 0
+  const held: (() => void)[] = []
+  const w = demoWorld({ ledger, stalls: ['x9'] })
+  w.stepHold = id => (id !== 'agent-1' ? undefined : ++requests === 1 ? old : new Promise<void>(() => undefined))
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'x9').catch(() => undefined)
+  await flush()
+  await advance(log, 1000)
+  void step($, 'agent-1').catch(() => undefined)
+  await flush()
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => held.push(r))
+  }
+  const tick = advance(log, 659000)
+  await until(() => held.length > 0)
+  endOld()
+  await flush()
+  void step($, 'agent-1').catch(() => undefined)
+  await flush()
+
+  // When: 放行卡住的读账本，这次 tick 接着做完
+  for (const r of held) r()
+  await tick
+  await flush()
+
+  // Then: 没有对 agent-1 调用 TaskStop；账本没有 heal
+  expect(log.stops.map(x => x.id)).not.toContain('agent-1')
+  expect(log.events.filter(x => x.ev === 'heal')).toEqual([])
+})
+
+test('driving-flight-refused', async ($, on) => {
+  // Given: 本会话 /opsx-apply demo 已起飞（attempt 1 未落地也未停飞，demo 在本进程在飞集合里），派出的 agent-1 在 agent.list 里为 running
+  const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 人在同一会话依次发 /opsx-apply demo 与 /flight resume demo
+  const replies: string[] = []
+  for (const c of [{ command: 'opsx-apply', args: 'demo' }, { command: 'flight', args: 'resume demo' }]) {
+    replies.push(String((await $.command.run({ ...c, ...HUMAN } as never)).text))
+  }
+
+  // Then: 两次回复都含「正在飞」「/flight abort demo」「/flight resume demo」；账本仍只有 attempt 1 的 takeoff
+  for (const r of replies) {
+    expect([r.includes('正在飞'), r.includes('/flight abort demo'), r.includes('/flight resume demo')]).toEqual([true, true, true])
+  }
+  expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
+})
+
+test('stuck-flight-resumes', async ($, on) => {
+  // Given: 本会话 /opsx-apply demo 已起飞（attempt 1 未落地也未停飞，demo 在本进程在飞集合里），drive 已返回不在跑；派出的 agent-1、agent-2 在 agent.list 里都是 completed
+  const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'completed' }, { id: 'agent-2', status: 'completed' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 人发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复不含「正在飞」；账本的 takeoff 依次为 attempt 1、attempt 2
+  expect(String(r.text)).not.toContain('正在飞')
+  expect(takeoffs(log).map(x => x.attempt)).toEqual([1, 2])
 })
