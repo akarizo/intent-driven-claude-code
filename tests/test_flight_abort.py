@@ -1,7 +1,5 @@
 """人工中止（scenario: flight-abort#*）。abort.ts 是纯逻辑，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
 
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -22,7 +20,6 @@ def test_abort_refuses_without_own_flight():
 # 骨架：S7 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_abort_stops_agents_before_draining():
     # Given: 在飞 attempt 1；live 先后返回 [a1, a2] 与 [a1, a3]；drain 由测试控制
     # When: abortFlight，drain 完成前后各检查一次调用记录
@@ -30,7 +27,6 @@ def test_abort_stops_agents_before_draining():
     assert_ts_passed("abort-stops-agents-before-draining")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_abort_stops_residual_agents():
     # Given: 甲：已 halt 且 live 为 [a3]；乙：已 halt 且 live 为空；丙：已 land
     # When: 分别 abortFlight

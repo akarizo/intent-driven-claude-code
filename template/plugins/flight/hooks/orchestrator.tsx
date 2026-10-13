@@ -30,6 +30,8 @@ const LIVE = ['pending', 'running', 'waiting']
 const GATE_TIMEOUT_MS = 600000
 /** 合回用 git merge-tree --write-tree，需要 git 2.38+ */
 const GIT_FLOOR = [2, 38]
+/** 主模型别名：模型 id 按子串（不区分大小写）归入其一，同 session-model.py 的 ALIASES */
+const MODEL_ALIASES = ['opus', 'sonnet', 'haiku', 'fable']
 const MAX_ROUNDS = 50
 /** 起飞时授权插件提交本 change 工件的词（design D1） */
 const AUTHORIZE = '授权提交'
@@ -272,17 +274,17 @@ function refreshPanel($: Engine, f: Flight, state: State): void {
   void update($, panel, () => ({ change: f.change, lines: summaryLines(summarize(state)) }))
 }
 
-/** slice-gate start（账本证据模式），从打印的标记 JSON 取 base；失败或取不到 base 返回原因。 */
-async function startSlice(io: Io, f: Flight, slice: string, extra: string[], cwd: string): Promise<{ base: string } | { error: string }> {
-  const st = await judge(io, f, 'slice-gate', ['start', slice, '--change-dir', f.changeDir, '--evidence', 'ledger', ...extra], cwd)
-  if (st.exitCode !== 0) return { error: `slice-gate start 失败：${st.stdout.trim() || firstLine(st.stderr)}` }
+/** slice-gate base（基点校验，不写任何文件），从打印的 JSON 取 base；失败或取不到 base 返回原因。 */
+async function sliceBase(io: Io, f: Flight, slice: string, extra: string[], cwd: string): Promise<{ base: string } | { error: string }> {
+  const st = await judge(io, f, 'slice-gate', ['base', slice, '--change-dir', f.changeDir, ...extra], cwd)
+  if (st.exitCode !== 0) return { error: `slice-gate base 失败：${st.stdout.trim() || firstLine(st.stderr)}` }
   try {
     const base = (JSON.parse(st.stdout) as { base?: unknown } | null)?.base
     if (typeof base === 'string' && base !== '') return { base }
   } catch {
     // 落到下方
   }
-  return { error: `slice-gate start 没有打印 base：${firstLine(st.stdout) || '无输出'}` }
+  return { error: `slice-gate base 没有打印 base：${firstLine(st.stdout) || '无输出'}` }
 }
 
 /** 起点测量：账本里没有本片、本 base、changed 为空的 measure 时先测一次（agent 记 dispatch）；失败返回原因。 */
@@ -329,7 +331,7 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     }
     // 续接不带 --expect-branch：change 分支可能已前移
     // 续接带原 base：worktree 里已有上一 attempt 的提交，以当前 HEAD 为起点会把它们判出区间
-    const st = await startSlice(io, f, a.slice, kept ? (a.base ? ['--base', a.base] : []) : ['--expect-branch', f.branch], wt.path)
+    const st = await sliceBase(io, f, a.slice, kept ? (a.base ? ['--base', a.base] : []) : ['--expect-branch', f.branch], wt.path)
     if ('error' in st) return blocked(a.slice, st.error)
     const m = await startMeasure(ctx, f, A, a.slice, wt.path, st.base)
     if (m) return blocked(a.slice, `起点测量失败：${m}`)
@@ -342,7 +344,7 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
   if (a.kind === 'dispatch' && a.role === 'resolver') {
     const p = await prepareResolve(io, f, a.slice, { branch: sliceBranch(state, a.slice), attempt: A })
     if ('error' in p) return blocked(a.slice, p.error)
-    const st = await startSlice(io, f, a.slice, [], p.path)
+    const st = await sliceBase(io, f, a.slice, [], p.path)
     if ('error' in st) return blocked(a.slice, st.error)
     const conflicts = p.conflicts.length ? p.conflicts : a.conflicts
     const prompt = resolverPrompt({ change: f.change, changeDir: f.changeDir, slice: a.slice, conflicts })
@@ -572,9 +574,15 @@ async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {
   }
   let model = args.find(a => a.startsWith('--model='))?.slice('--model='.length) ?? ''
   if (model === '') {
-    const m = await io.run(['python3', `${hooksDir}/session-model.py`], { env: { CLAUDE_CODE_SESSION_ID: session } })
-    if (m.exitCode !== 0 || m.stdout.trim() === '') return `flight：判不出主模型，用 --model= 指定（${firstLine(m.stderr)}）`
-    model = m.stdout.trim()
+    // 主模型取自引擎（design D10），别名规则同 session-model.py 的 ALIASES
+    let raw: string
+    try {
+      raw = String((await $.session.model()) ?? '')
+    } catch (err) {
+      raw = firstLine(err instanceof Error ? err.message : String(err))
+    }
+    model = MODEL_ALIASES.find(a => raw.toLowerCase().includes(a)) ?? ''
+    if (model === '') return `flight：判不出主模型（${raw || '空'}），用 --model= 指定`
   }
   const flight: Flight = { ...f, model }
 
@@ -595,15 +603,6 @@ async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {
   flights.set(name, flight)
   envelopes.delete(name)
   const attempt = ledger.events.filter(e => e.ev === 'takeoff').length + 1
-  if (attempt === 1) {
-    const t = await judge(io, flight, 'timeline', ['record', 'approve', '--change-dir', changeDir, '--note', gate.stdout.trim()], tree.path)
-    if (t.exitCode !== 0) return `flight：timeline record approve 失败：${firstLine(t.stderr)}`
-    const timeline = `${abs}/timeline.md`
-    const add = await io.run(['git', '-C', tree.path, 'add', '--', timeline])
-    if (add.exitCode !== 0) return `flight：git add timeline.md 失败：${firstLine(add.stderr)}`
-    const commit = await io.run(['git', '-C', tree.path, 'commit', '-m', 'chore(flight): approve', '--', timeline])
-    if (commit.exitCode !== 0) return `flight：提交 approve 记录失败：${firstLine(commit.stderr || commit.stdout)}`
-  }
   const b = await base(ctx, flight)
   const event = { ...ev.takeoff(b, { attempt, fp, branch: tree.branch, waves, model }), ...(foreign !== undefined ? { takeover: foreign } : {}) }
   if (!(await appendEvent(io, flight, event))) return 'flight：写 takeoff 事件失败，不起飞'
@@ -628,9 +627,9 @@ async function abortCommand($: Engine, f: Flight, state: State): Promise<string>
       const after = await readLedger(ctx.io, f)
       return 'events' in after && after.events.some(e => e.ev === 'halt' && ofA(e))
     },
+    // 不等队列：先停在飞 agent，再由 abortFlight 调 drain 等手上这轮 drive 做完、补停中途派出的（design D7）
+    drain: () => queue.then(() => undefined),
     async live() {
-      // 等手上这轮 drive 做完（它在动作之间已看到停飞），再按最新账本求在飞 agent，免得漏掉中途派出的（PR #50 评审 HIGH）
-      await queue
       const now = await readLedger(ctx.io, f)
       const evs = 'events' in now ? now.events : state.events
       const ended = new Set(evs.filter(e => e.ev === 'ended').map(e => String(e.agent)))

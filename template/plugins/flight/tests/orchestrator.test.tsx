@@ -57,8 +57,14 @@ type World = {
   dispatchFails?: boolean
   /** `git --version` 的输出（缺省 git version 2.43.0） */
   gitVersion?: string
-  /** slice-gate start 打印的 base：按切片 worktree 路径（缺省为 --base 参数，否则 base-<目录名>） */
+  /** slice-gate base 打印的 base：按切片 worktree 路径（缺省为 --base 参数，否则 base-<目录名>） */
   bases?: Record<string, string>
+  /** slice-gate base 的整个结果（给了就覆盖 bases，用来模拟 G0 不过） */
+  baseRun?: Run
+  /** slice-gate preflight 输出的 waves（缺省 [[S1, S2], [S3]]） */
+  waves?: string[][]
+  /** session.model 的应答（缺省 claude-opus-5-5）；为 Error 时以其 message 拒绝（deny），$.session.model() 随即抛错。测试 hook 直接 throw 会被引擎跳过，到不了插件 */
+  model?: string | Error
   /** slice-gate measure 的应答：按切片（缺省一个目标 XFAIL、changed 为空） */
   measures?: Record<string, Run>
   /** ledger.py events 的输出（缺省全部 EVENT_TYPES） */
@@ -156,6 +162,10 @@ function useWorld(on: On, w: World) {
   on('session.version', () => ({ value: { version: '2.1.295' } }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.cwd', () => ({ value: TREE }))
+  on('session.model', () => {
+    if (w.model instanceof Error) return { deny: w.model.message } as never
+    return { value: w.model ?? 'claude-opus-5-5' }
+  })
   on('ui.toast', () => ({ value: undefined }))
   on('ui.status', ($, e) => {
     log.statuses.push(String(e.text ?? ''))
@@ -241,23 +251,25 @@ function useWorld(on: On, w: World) {
       const sub = argv[2]
       if (script === 'takeoff-gate.py') return wrap(w.takeoff)
       if (script === 'plan_fp.py') return wrap(w.fpRun ?? res(0, (w.fp ?? F) + '\n'))
-      if (script === 'session-model.py') return wrap(res(0, 'opus\n'))
+      // 起飞不写 timeline：见到 record approve 就报错
+      if (script === 'timeline.py' && sub === 'record' && argv[3] === 'approve') throw new Error(`unexpected argv: ${argv.join(' ')}`)
       if (script === 'timeline.py') return wrap(res(0, ''))
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
-      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\n'))
+      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n'))
       if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, SHIP_READY))
-      if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, '[["S1", "S2"], ["S3"]]\n'))
+      if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, JSON.stringify(w.waves ?? [['S1', 'S2'], ['S3']]) + '\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
         const s = String(argv[3])
         const queue = w.gates[s] ?? []
         const g = (queue.length > 1 ? queue.shift() : queue[0]) ?? { ok: true, failed: [] }
         return wrap(res(g.ok ? 0 : 1, JSON.stringify({ slice: s, ok: g.ok, commit: 'c'.repeat(40), failed: g.failed })))
       }
-      if (script === 'slice-gate.py' && sub === 'start') {
+      if (script === 'slice-gate.py' && sub === 'base') {
+        if (w.baseRun) return wrap(w.baseRun)
         const b = baseOf(argv) ?? w.bases?.[String(cwd)] ?? `base-${String(cwd).split('/').pop()}`
-        return wrap(res(0, JSON.stringify({ slice: argv[3], base: b, evidence: 'ledger' })))
+        return wrap(res(0, JSON.stringify({ slice: argv[3], base: b })))
       }
       if (script === 'slice-gate.py' && sub === 'measure') {
         const s = String(argv[3])
@@ -370,7 +382,7 @@ const subagentStop = (agentId: string) => ({
 })
 
 test('opsx-apply-taken-over', async ($, on) => {
-  // Given: demo 已批准（takeoff-gate 退出 0）、worktree 干净、lint/preflight 绿、waves [[S1, S2], [S3]]、session-model.py 输出 opus
+  // Given: demo 已批准（takeoff-gate 退出 0）、worktree 干净、lint/preflight 绿、waves [[S1, S2], [S3]]、session.model 应答 claude-opus-5-5
   const log = useWorld(on, demoWorld())
 
   // When: 人发出 /opsx-apply demo
@@ -696,7 +708,7 @@ const haltedWithGreenS1 = () => [
   ev.halt(B0, { attempt: 1, reason: '计划指纹已变' }),
 ]
 const isGateS1 = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'gate' && x.argv[3] === 'S1'
-const isStartS1 = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'start' && x.argv[3] === 'S1'
+const isBaseS1 = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'base' && x.argv[3] === 'S1'
 const baseOf = (argv: string[]) => (argv.includes('--base') ? argv[argv.indexOf('--base') + 1] : undefined)
 
 test('resume-regates-green-slice', async ($, on) => {
@@ -737,8 +749,8 @@ test('resume-red-regate-dispatches-with-original-base', async ($, on) => {
   // When: 人再次发出 /opsx-apply demo（attempt 2 起飞并 drive）
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
-  // Then: slice-gate start S1 带 --base B；在 S1 worktree 派发了一次执行体
-  expect(log.runs.filter(isStartS1).map(x => baseOf(x.argv))).toEqual([BASE_B])
+  // Then: slice-gate base S1 带 --base B；在 S1 worktree 派发了一次执行体
+  expect(log.runs.filter(isBaseS1).map(x => baseOf(x.argv))).toEqual([BASE_B])
   expect(log.spawns.filter(s => s.cwd === SLICE1).map(s => s.subagent_type)).toEqual(['flight:executor'])
 })
 
@@ -1101,9 +1113,9 @@ test('gate-runs-with-ledger-evidence', async ($, on) => {
   // When: S1 的执行体 agent-1 与解冲突 agent 依次收口
   for (const id of ['agent-1', resolver]) await $.classic.SubagentStop(subagentStop(id) as never)
 
-  // Then: S1 的 start 参数含 --evidence ledger；S1 收口门禁参数含 --evidence ledger --base B1；解冲突收口门禁参数含 --evidence ledger --base R --measure-base B2
+  // Then: S1 的 base 参数不带 --evidence；S1 收口门禁参数含 --evidence ledger --base B1；解冲突收口门禁参数含 --evidence ledger --base R --measure-base B2
   const gateAt = (cwd: string) => log.runs.find(x => isGate(x) && x.cwd === cwd)?.argv.join(' ') ?? ''
-  expect(log.runs.find(isStartS1)?.argv.join(' ')).toContain('--evidence ledger')
+  expect(log.runs.find(isBaseS1)?.argv.join(' ') ?? '--evidence 没有 base 调用').not.toContain('--evidence')
   expect(gateAt(SLICE1)).toContain(`--evidence ledger --base ${B1}`)
   expect(gateAt(RESOLVE2)).toContain(`--evidence ledger --base ${R} --measure-base ${B2}`)
 })
@@ -1620,4 +1632,78 @@ test('per-task-guidance-when-plugin-registers', async ($, on) => {
   expect(replies[1]).toBe('from-model')
   expect(reached[1]).toEqual(['opsx-apply demo --gate=per-task'])
   expect(log.events).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-ledger-guards（S7）
+
+const isSliceGate = (x: { argv: string[] }) => String(x.argv[1]).endsWith('/slice-gate.py')
+
+test('dispatch-takes-base-without-start', async ($, on) => {
+  // Given: 两个世界都只有 wave 1 = [S1]：世界一 slice-gate base 在 S1 worktree 打印 base b1；
+  //        世界二 slice-gate base 以 1 退出，stdout 为含「G0 base: HEAD 不在 worktree-demo 上」的基点校验 JSON
+  const g0 = JSON.stringify({ slice: 'S1', ok: false, commit: '', failed: ['G0 base: HEAD 不在 worktree-demo 上'], warnings: [], summary: '基点校验未通过' })
+  const worlds = [demoWorld({ waves: [['S1']], bases: { [SLICE1]: 'b1' } }), demoWorld({ waves: [['S1']], baseRun: res(1, g0) })]
+  const w = worlds[0]
+  const log = useWorld(on, w)
+  const seen: { events: Record<string, unknown>[]; runs: typeof log.runs; spawns: number }[] = []
+
+  // When: 每个世界各由人发一次 /opsx-apply demo，drive 派发 S1 执行体
+  for (const x of worlds) {
+    Object.assign(w, x)
+    log.events.splice(0)
+    const runs = log.runs.length
+    const spawns = log.spawns.length
+    await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+    seen.push({ events: [...log.events], runs: log.runs.slice(runs), spawns: log.spawns.length - spawns })
+  }
+
+  // Then: 世界一在 S1 worktree 运行了 slice-gate.py base S1 --change-dir <D> --expect-branch worktree-demo；世界一 S1 的 dispatch.base 为 b1；
+  //       两个世界都没有 argv 含 start 的 slice-gate 调用；世界二没有派发、没有 dispatch 事件，最后一条 blocked 是 S1 且原因含「G0 base」
+  expect(seen[0].runs.filter(isBaseS1).map(x => [x.argv, x.cwd])).toEqual([[['python3', `${HOOKS}/slice-gate.py`, 'base', 'S1', '--change-dir', CD, '--expect-branch', 'worktree-demo'], SLICE1]])
+  expect(seen[0].events.find(x => x.ev === 'dispatch' && x.slice === 'S1')?.base).toBe('b1')
+  expect(seen.flatMap(s => s.runs).filter(x => isSliceGate(x) && x.argv.includes('start'))).toEqual([])
+  expect([seen[1].spawns, seen[1].events.filter(x => x.ev === 'dispatch').length]).toEqual([0, 0])
+  expect(seen[1].events.filter(x => x.ev === 'blocked').at(-1)).toMatchObject({ slice: 'S1', reason: expect.stringContaining('G0 base') })
+})
+
+test('takeoff-reads-engine-model', async ($, on) => {
+  // Given: change demo 已批准、工作区干净；四次发送依次为：session.model 应答 claude-opus-5-5 / 应答 gpt-x / 以 deny「denied」拒绝（调用抛错）/ 应答 gpt-x 且命令带 --model=sonnet；每次发送前清空账本
+  const sends: { model: string | Error; args: string }[] = [
+    { model: 'claude-opus-5-5', args: 'demo' },
+    { model: 'gpt-x', args: 'demo' },
+    { model: new Error('denied'), args: 'demo' },
+    { model: 'gpt-x', args: 'demo --model=sonnet' },
+  ]
+  const w = demoWorld()
+  const log = useWorld(on, w)
+  const replies: string[] = []
+  const models: unknown[] = []
+
+  // When: 依次由人发出这四次 /opsx-apply
+  for (const s of sends) {
+    w.model = s.model
+    log.events.splice(0)
+    replies.push(String((await $.command.run({ command: 'opsx-apply', args: s.args, ...HUMAN } as never)).text))
+    models.push(log.events.find(x => x.ev === 'takeoff')?.model ?? null)
+  }
+
+  // Then: 四次的 takeoff model 依次为 opus、无、无、sonnet；第二次回复含「判不出主模型」「gpt-x」「--model=」；第三次回复含「判不出主模型」「denied」；全程没有 argv 含 session-model.py 的调用
+  expect(models).toEqual(['opus', null, null, 'sonnet'])
+  expect([replies[1].includes('判不出主模型'), replies[1].includes('gpt-x'), replies[1].includes('--model=')]).toEqual([true, true, true])
+  expect([replies[2].includes('判不出主模型'), replies[2].includes('denied')]).toEqual([true, true])
+  expect(log.runs.filter(x => x.argv.some(a => String(a).includes('session-model.py')))).toEqual([])
+})
+
+test('takeoff-writes-no-timeline', async ($, on) => {
+  // Given: change demo 已批准（takeoff-gate 退出 0）、账本为空（从未起飞）、工作区干净
+  const log = useWorld(on, demoWorld())
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // Then: 回复以「✈ 起飞 demo」开头；账本首条为 attempt 1 的 takeoff；没有任何 timeline.py 调用；没有提交信息为 chore(flight): approve 的 git commit
+  expect(String(r.text)).toMatch(/^✈ 起飞 demo/)
+  expect(log.events[0]).toMatchObject({ ev: 'takeoff', attempt: 1 })
+  expect(log.runs.filter(x => String(x.argv[1]).endsWith('timeline.py'))).toEqual([])
+  expect(log.commits.filter(c => c.message === 'chore(flight): approve')).toEqual([])
 })
