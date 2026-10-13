@@ -113,10 +113,8 @@ async function refreshInterfaces(io: Io, f: Flight, slice: string, owns: readonl
   await io.write(path, `${before}\n\n${section}${after ? `\n${after}\n` : ''}`)
 }
 
-/** record 门禁 JSON、刷新接口摘要、取 HEAD。 */
-async function afterMerge(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[]): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
-  const rec = await judge(io, f, 'slice-gate', 'record', '--change-dir', f.changeDir, '--json', JSON.stringify(gate))
-  if (rec.exitCode !== 0) return { ok: false, failed: [`slice-gate record 失败：${firstLine(rec)}`] }
+/** 刷新接口摘要、取 HEAD；门禁结果只在账本里，不写记录（design D3）。 */
+async function afterMerge(io: Io, f: Flight, slice: string, _gate: GateJson, owns: readonly string[]): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
   await refreshInterfaces(io, f, slice, owns)
   return { ok: true, commit: await head(io, f.changeTree) }
 }
@@ -160,7 +158,7 @@ async function integrated(io: Io, f: Flight, branch: string): Promise<boolean> {
   return merges.exitCode === 0 && lines(merges.stdout).some(l => l.split(' ').slice(1).includes(sha))
 }
 
-/** 在 change worktree 里：提交飞行记录 →（已合回则只补记账）→ 越界与空合回检查 → merge --no-ff → record --json → 刷新接口摘要 */
+/** 在 change worktree 里：提交飞行记录 →（已合回则只补记账）→ 越界与空合回检查 → merge --no-ff → 刷新接口摘要 */
 export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], branch = `flight/${f.change}/${slice}`):
   Promise<{ ok: true; commit: string } | { ok: false; conflicts: string[]; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
@@ -206,7 +204,7 @@ export async function prepareResolve(io: Io, f: Flight, slice: string, x: { bran
   return { path, conflicts, branch }
 }
 
-/** 解冲突完成：无未合并文件且 HEAD 有两个父 → change worktree 里 merge --ff-only flight/<change>/<S>-resolve；之后同 mergeSlice 的 record 与接口摘要 */
+/** 解冲突完成：无未合并文件且 HEAD 有两个父 → change worktree 里 merge --ff-only flight/<change>/<S>-resolve；之后同 mergeSlice 刷新接口摘要 */
 export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], resolve = { path: resolvePath(f, slice), branch: resolveBranch(f, slice) }):
   Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
   const { path } = resolve
@@ -220,14 +218,12 @@ export async function finishResolve(io: Io, f: Flight, slice: string, gate: Gate
   return afterMerge(io, f, slice, gate, owns)
 }
 
-/** 合回修复：提交飞行记录 → merge --no-ff <branch>（缺省 flight/<change>/fix）-m "integrate: fix" → timeline.py record fix */
-export async function mergeFix(io: Io, f: Flight, note: string, branch = `flight/${f.change}/fix`): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+/** 合回修复：提交飞行记录 → merge --no-ff <branch>（缺省 flight/<change>/<slice>）-m "integrate: <slice>"；不写记录（design D3）。_note 保留不用：并行的 S7 仍按原位置传参。 */
+export async function mergeFix(io: Io, f: Flight, _note: string, branch?: string, slice = 'fix'): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
   const err = await commitRecords(io, f, 'chore(flight): 记录')
   if (err) return { ok: false, failed: [err] }
-  const m = await mergeNoFf(io, f.changeTree, branch, 'integrate: fix')
+  const m = await mergeNoFf(io, f.changeTree, branch ?? `flight/${f.change}/${slice}`, `integrate: ${slice}`)
   if (!m.ok) return { ok: false, failed: m.failed }
-  const t = await judge(io, f, 'timeline', 'record', 'fix', '--change-dir', f.changeDir, '--note', note)
-  if (t.exitCode !== 0) return { ok: false, failed: [`timeline record 失败：${firstLine(t)}`] }
   return { ok: true, commit: await head(io, f.changeTree) }
 }
 
@@ -249,10 +245,25 @@ export function validateFindings(input: unknown): { ok: true; findings: Finding[
   return { ok: true, findings }
 }
 
-/** 落地收口：review-findings.json → 勾选 tasks.md → timeline apply-done → 收口提交 → slice-gate.py ship */
-export async function closeout(io: Io, f: Flight, lists: { blocked: { slice: string; kind: 'gate' | 'infra'; reason: string }[]; blocking: Finding[]; deferred: Finding[]; fix: { ok: boolean; commit: string } | null }, merged: readonly string[]):
-  Promise<{ verdict: 'ready' | 'draft'; reasons: string }> {
-  const { blocked, blocking, deferred, fix } = lists
+type ShipOut = { ready: boolean; reasons: string[]; blocked: unknown[]; blocking: unknown[]; deferred: unknown[]; fix: unknown }
+
+/** slice-gate.py ship 的 stdout；缺 ready 或几个数组字段时为 undefined。 */
+function parseShip(stdout: string): ShipOut | undefined {
+  try {
+    const j = JSON.parse(stdout) as Partial<ShipOut> | null
+    if (j && typeof j.ready === 'boolean' && [j.reasons, j.blocked, j.blocking, j.deferred].every(Array.isArray)) return { ...(j as ShipOut), fix: j.fix ?? null }
+  } catch {
+    // 落到下方按无法解析
+  }
+  return undefined
+}
+
+/** 落地收口（design D3）：slice-gate.py ship → 按其 JSON 写 review-findings.json → 勾选 tasks.md；记录生成与收口提交在落地时由 renderRecords 做 */
+export async function closeout(io: Io, f: Flight, merged: readonly string[]): Promise<{ verdict: 'ready' | 'draft'; reasons: string }> {
+  const ship = await judge(io, f, 'slice-gate', 'ship', '--change-dir', f.changeDir)
+  const j = parseShip(ship.stdout)
+  if (!j) return { verdict: 'draft', reasons: `ship 输出无法解析：${firstLine(ship)}` }
+  const { blocked, blocking, deferred, fix } = j
   await io.write(changePath(f, 'review-findings.json'), JSON.stringify({ blocked, blocking, deferred, fix }, null, 2) + '\n')
   const tasksPath = changePath(f, 'tasks.md')
   const tasks = await io.read(tasksPath)
@@ -266,10 +277,12 @@ export async function closeout(io: Io, f: Flight, lists: { blocked: { slice: str
       .join('\n')
     await io.write(tasksPath, ticked)
   }
-  const t = await judge(io, f, 'timeline', 'record', 'apply-done', '--change-dir', f.changeDir, '--note', `blocked=${blocked.length} blocking=${blocking.length}`)
-  if (t.exitCode !== 0) return { verdict: 'draft', reasons: `timeline record apply-done 失败：${firstLine(t)}` }
-  const err = await commitRecords(io, f, 'chore(flight): 收口', ['review-findings.json', 'tasks.md'])
-  if (err) return { verdict: 'draft', reasons: `收口提交失败：${err}` }
-  const ship = await judge(io, f, 'slice-gate', 'ship', '--change-dir', f.changeDir)
-  return { verdict: ship.exitCode === 0 ? 'ready' : 'draft', reasons: ship.stdout || ship.stderr }
+  return { verdict: j.ready ? 'ready' : 'draft', reasons: j.reasons.join('; ') }
+}
+
+/** 落地记录（design D3 第 3 步）：change worktree 里 timeline.py render → 以「chore(flight): 收口」提交记录与收口文件；失败返回原因首行，成功为 undefined。 */
+export async function renderRecords(io: Io, f: Flight): Promise<string | undefined> {
+  const r = await judge(io, f, 'timeline', 'render', '--change-dir', f.changeDir)
+  if (r.exitCode !== 0) return firstLine(r) || `timeline render exit ${r.exitCode}`
+  return commitRecords(io, f, 'chore(flight): 收口', ['review-findings.json', 'tasks.md'])
 }

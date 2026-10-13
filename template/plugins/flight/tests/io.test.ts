@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-io（io-*）。io 函数跑在记录调用的假 Io 上；git / python3 / 文件系统由假 Io 作答。
 // 不经 ioOf($)：测试侧 $ 只有事件面（无 fs / process），测试 hook 里的 $ 调 fs / process 会被宿主扫描规则拒绝（2.1.295 实测）。
 import { expect, test } from 'claude-code/testing'
-import { EVENT_TYPES, active, appendEvent, ensureWorktree, eventProblem, freshWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership } from '../hooks/io'
+import { EVENT_TYPES, active, appendEvent, ensureWorktree, eventProblem, freshWorktree, flightOfAgent, flights, judge, judgesDir, markPending, ownership, resetOwnership, stoppedNow } from '../hooks/io'
 import type { Flight, FlightEvent, Io, RunResult } from '../hooks/core'
 
 const MAIN = '/repo'
@@ -440,13 +440,36 @@ test('measure-event-checked-before-write/bad-outcome', () => {
 })
 
 test('event-types-exported', () => {
-  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure）
+  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship 与 diag）
 
   // When: 读取导出的 EVENT_TYPES 并排序
   const types = [...EVENT_TYPES].sort()
 
-  // Then: 恰为这 12 种事件类型
-  expect(types).toEqual(['approve', 'blocked', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'takeoff'])
+  // Then: 恰为这 14 种事件类型
+  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff'])
+})
+
+test('stopped-now-reads-latest-attempt', async () => {
+  // Given: 四份账本——甲：takeoff#1、halt#1、takeoff#2（attempt 2 未终止）；乙：takeoff#2、land#2；丙：takeoff#1、halt#1；丁：ledger.py show 以 1 退出（stderr「fatal: bad object」）
+  const ev = (e: string, attempt: number): FlightEvent => ({ ...DISPATCH, ev: e, attempt })
+  const ledgers: (FlightEvent[] | undefined)[] = [
+    [ev('takeoff', 1), ev('halt', 1), ev('takeoff', 2)],
+    [ev('takeoff', 2), ev('land', 2)],
+    [ev('takeoff', 1), ev('halt', 1)],
+    undefined,
+  ]
+  const ios = ledgers.map((events): Io => ({
+    run: async () => (events === undefined ? fail('fatal: bad object\n') : ok(events.map(e => JSON.stringify(e)).join('\n') + '\n')),
+    read: async () => undefined,
+    write: async () => undefined,
+    exists: async () => false,
+  }))
+
+  // When: 对四份账本各调用一次 stoppedNow
+  const r = await Promise.all(ios.map(io => stoppedNow(io, flight(HOOKS))))
+
+  // Then: 依次为 undefined、land、halt、unreadable
+  expect(r).toEqual([undefined, 'land', 'halt', 'unreadable'])
 })
 
 const SLICE_A2 = '/repo/.claude/worktrees/flight-demo-S1-a2'

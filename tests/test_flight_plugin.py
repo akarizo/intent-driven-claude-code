@@ -158,3 +158,13 @@ def test_approve_dedupe_prefills_command():
     # When: 人再按一次 demo 的「批准起飞」
     # Then: 账本没有新增事件、toast 含「已批准」；$.prompt.fill 收到 /opsx-apply demo
     assert_ts_passed("approve-dedupe-prefills-command")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+def test_tools_and_commands_invariant():
+    # Given: 插件已加载，仓库里有待批准的 demo，会话已启动
+    # When: 对三个工具各以主会话、非飞行 agent、伪造 approve 三种输入调用
+    # Then: 工具按名排序恰为 measure、ship、submit_findings，命令恰为 flight、opsx-apply；全部调用都没有写账本
+    assert_ts_passed("tools-and-commands-invariant")

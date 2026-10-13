@@ -7,8 +7,6 @@ import shlex
 import subprocess
 import sys
 
-import pytest
-
 from conftest import commit_all, git, ledger_append, run_hook, write
 from test_slice_gate import plan, slice_, write_plan
 
@@ -59,17 +57,16 @@ def test_final_reuses_fresh_fix_gate(git_repo):
     change = _repo(git_repo)
     x = git(git_repo, "rev-parse", "HEAD")
     _fix_gate(git_repo, x)
-    head = _bookkeeping(git_repo, change)
+    _bookkeeping(git_repo, change)
 
     # When: 运行 slice-gate.py final --reuse-fix
     out = json.loads(_final_reuse(git_repo, change).stdout)
 
-    # Then: ok 为 true、ran-g2 不存在；warnings 含 X 的前 10 位；gate-report.md 新增 final ok 行，commit 为 HEAD 前 10 位
+    # Then: ok 为 true、ran-g2 不存在；warnings 含 X 的前 10 位；final 不写 gate-report.md
     assert out["ok"] is True, out
     assert not (git_repo / "ran-g2").exists()
     assert any(x[:10] in w for w in out["warnings"]), out["warnings"]
-    report = (change / "gate-report.md").read_text(encoding="utf-8")
-    assert "| final | ok | %s |" % head[:10] in report, report
+    assert not (change / "gate-report.md").exists()
 
 
 def test_final_reuse_refused_after_code_change(git_repo):
@@ -241,3 +238,22 @@ def test_preflight_reports_interrupted_baseline(git_repo):
     # Then: 退出码非 0，stderr 含「中断」与 baseline
     assert p.returncode != 0
     assert "中断" in p.stderr and "baseline" in p.stderr, p.stderr
+
+# ---------------------------------------------------------------- flight-ship-ledger
+
+
+def test_final_reuses_fix_round_gate(git_repo):
+    # Given: 账本最后一条修复门禁是 slice fix-r1 的 gate，ok、commit F，F 之后只有记账改动；gate.test 运行时写 ran-g2
+    change = _repo(git_repo)
+    f = git(git_repo, "rev-parse", "HEAD")
+    _fix_gate(git_repo, f, extra={"slice": "fix-r1"})
+    _bookkeeping(git_repo, change)
+
+    # When: 运行 slice-gate.py final --reuse-fix
+    p = _final_reuse(git_repo, change)
+
+    # Then: 退出 0，warnings 含「复用修复门禁」与 F 的前 10 位，没有跑全量测试（ran-g2 不存在）
+    out = json.loads(p.stdout)
+    assert p.returncode == 0, out
+    assert any("复用修复门禁" in w and f[:10] in w for w in out["warnings"]), out["warnings"]
+    assert not (git_repo / "ran-g2").exists()

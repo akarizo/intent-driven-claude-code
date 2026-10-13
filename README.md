@@ -17,7 +17,8 @@ proposal → specs → design → adr → tasks   ┐
                                           │  沉淀本轮知识（预算中性：加一减一）
                                           ▼
                                        /flight:pr-ship
-                                          │  端到端送出 + 干净 subagent 自审
+                                          │  飞行模式：全量评审在飞行内完成，落地后由 ship 工具按账本裁决 draft / ready
+                                          │  飞行外：干净评审员 + 至多一次问询
                                           ▼
                                   /opsx-verify
                                           │  三维一致性 + TDD/BDD 纪律检查
@@ -39,7 +40,7 @@ proposal → specs → design → adr → tasks   ┐
 
 1. **把命令、技能、schema 适配到 Claude Code**（`.claude/commands/` 与 `.claude/skills/`）+ 一键 `install.sh`
 2. **把 [obra/superpowers](https://github.com/obra/superpowers) 的 TDD skill 中文化移植进来**，并叠加 BDD Given/When/Then 单测注释规范——见 `.claude/skills/test-driven-development/`
-3. **新增命令补齐变更全周期**：`/flight:pr-ship`（送出 + 自审）/ `/claudemd-commit`（预算中性沉淀）/ `/claudemd-distill`（蒸馏）+ `claudemd-lint`（机械门禁）
+3. **新增命令补齐变更全周期**：`/flight:pr-ship`（送出：飞行模式由 `ship` 工具按账本裁决 draft / ready，飞行外干净评审员自审）/ `/claudemd-commit`（预算中性沉淀）/ `/claudemd-distill`（蒸馏）+ `claudemd-lint`（机械门禁）
 
 ---
 
@@ -171,6 +172,8 @@ your-project/
 不是所有改动都值得 5 工件。安装器注入两个 hook（需 python3），把「该不该走工作流」从自觉变成强制：
 
 - **PreToolUse 门禁**（`intent-gate.py`）：拦 `Write|Edit`。改**源码或通用配置（`json`/`yaml`/IaC/schema）**时，除非 ① 当前有进行中的 change（`tasks.md` 仍有未勾选项），② 或先用 `/opsx-mini` 声明过 mini，否则**直接拒绝**并提示先 `/opsx-propose`。文档 / `openspec/` / `.claude/` / `docs/` / lockfile 永远放行。
+  - **范围**：flight 插件在场时，由插件对主会话与非飞行 agent 的 Write、Edit 以及 Bash 写法（重定向、`tee`、`cp`、`mv` 等的写入目标）调用 `intent-gate.py check` 判定；飞行 agent 按 owns 限写，Bash 同样适用；插件缺席时由上面的 classic hook（只拦 `Write|Edit`）兜底。
+  - **apply 上下文只认目标所在 worktree 的 change**：分支为 `worktree-<name>` 或 `flight/<name>/…` 时，只有该 change 的 `tasks.md` 有未勾项才放行。
 - **UserPromptSubmit 提醒**（`intent-reminder.py`）：每个任务开头注入分级 rubric，并强调**原生 plan mode 的 markdown plan ≠ 工作流**。
 
 | 任务 | 例子 | 走法 |
@@ -217,8 +220,12 @@ your-project/
     → 门禁绿的切片由控制面合回 change 分支
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
   → slice-gate.py final（全量测试 + 全部 scenario 转 pass）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
-  → 落地交 /flight:pr-ship
+  → final 绿后 flight:reviewer 全量评审整条 change 分支 → 有 CRITICAL/HIGH 派 flight:fixer 自动修（至多 2 轮，每轮重跑 final 并复核）
+  → 落地：插件从账本生成 timeline.md 与 gate-report.md，与 review-findings.json 一起提交
+  → 交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
 ```
+
+**飞行记录**：飞行中判定器（`slice-gate.py` 等）不写任何记录文件，起飞、测量、门禁、ship 等事件只写入账本 `refs/flight/<change>/ledger`；落地时由插件从账本生成 `timeline.md` 与 `gate-report.md` 并提交。
 
 **飞行中的交互**（flight 插件提供；起飞时自动打开飞行面板）：
 
@@ -292,11 +299,15 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 ### 阶段 4 · 送出 + 自审（PR/MR 闭环）
 
-`/flight:pr-ship` 端到端：
+`/flight:pr-ship` 端到端，分两种模式：
+
+- **飞行模式**：全量评审与修复已在飞行内完成，落地后以 draft 建 PR，由 `ship` 工具按账本裁决 draft / ready、贴裁决评论；不派评审员、零问询。
+- **飞行外**：干净评审员 + 至多一次问询，流程如下（PR 正文标「非账本裁决」）。
 
 ```
 预检 gh/glab → 梳理变更 → 必要时 commit → 预合并冲突检查
   → push → 起 PR/MR 标题正文 → 创建 PR/MR
+  → 飞行模式：调 ship 工具按账本裁决后结束；以下只用于飞行外
   → 读 gate-report.md + timeline.py report 的门禁红次数与测量统计（账本；飞行外改动读 evidence.log）作为评审输入 → 起【干净的】flight:code-reviewer subagent 评审（不重跑测试）
   → 报告作为评论入库（签名必带）
   → 与用户逐条讨论修复 → 落地补丁到同 PR → 自动修复至多 2 轮增量复核（mode=follow-up，只审修复补丁）
@@ -388,7 +399,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 | 命令 | 目的 |
 | --- | --- |
-| `/flight:pr-ship [target-branch]` | 端到端送出本次变更：commit → push → 创建 PR/MR → 干净 subagent 自审 → 评论入库 → 迭代修复 |
+| `/flight:pr-ship [target-branch]` | 端到端送出本次变更：commit → push → 创建 PR/MR。飞行模式：全量评审在飞行内完成，落地后由 `ship` 工具按账本裁决 draft / ready；飞行外：干净评审员自审 → 评论入库 → 迭代修复（至多一次问询） |
 
 ### `/spec-*`（意图可视化，1 个）
 
@@ -452,7 +463,7 @@ python3 .claude/hooks/memory-lint.py --hook   # PostToolUse 用，读 stdin payl
 
 | Agent | 职责 |
 | --- | --- |
-| `flight:code-reviewer`（插件） | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与留痕摘要为准（飞行模式看账本测量统计，飞行外看 `evidence.log`），**不重跑测试套件**，至多 1 次定向抽查。用于 `/flight:pr-ship` 的 PR 评审与复核、legacy 逐 task 守门。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
+| `flight:code-reviewer`（插件） | 干净、**物理只读**（工具集只有 Read/Grep/Glob/Bash，无 Write/Edit）的代码评审员。按 CRITICAL/HIGH/MEDIUM/LOW 分级输出 finding（每条带 `文件:行号` + 修法）。只保留 **`full` / `follow-up` 两种模式**：以门禁报告与留痕摘要为准（飞行模式看账本测量统计，飞行外看 `evidence.log`），**不重跑测试套件**，至多 1 次定向抽查。用于飞行外 `/flight:pr-ship` 的 PR 评审与复核、legacy 逐 task 守门（飞行模式的全量评审由 `flight:reviewer` 在飞行内完成）。prompt 自包含、不带主会话上下文，避免「我审我自己」的 confirmation bias。 |
 | `flight:executor`（插件） | 飞行中的切片执行体：在自己的 worktree 里按切片包做 TDD，只写 `owns` 内文件，改生产代码前调用 `measure`；收口门禁由控制面运行。 |
 | `flight:reviewer`（插件） | 飞行中的切片评审员，只读。 |
 | `flight:fixer`（插件） | 飞行中的批量修复 / 解冲突，只能写全部 `owns` 的并集。 |
@@ -511,7 +522,7 @@ openspec schema validate intent-driven
 | 插件机制 | `opencode.json` 声明 superpowers | 不需要：Claude Code 用户自行装 [Superpowers](https://github.com/obra/superpowers) |
 | TDD 纪律 | 无 | 中文化移植 superpowers test-driven-development + 叠加 GWT 单测注释规范 |
 | 飞行式 apply | 无 | 默认模式：`slices.json` 切片 + flight 插件按 wave 并行派 `flight:executor` + `slice-gate.py` 机械门禁 + `flight:reviewer` 评审；`--gate=per-task` 保留旧的逐 task 守门（`legacy/openspec-subagent-apply-change`）。**中文化自研，不依赖 obra/superpowers 插件** |
-| PR 闭环 | 无 | `/flight:pr-ship` 端到端送出 + 干净 subagent 自审（复用插件的 `flight:code-reviewer` agent） |
+| PR 闭环 | 无 | `/flight:pr-ship` 端到端送出：飞行模式全量评审在飞行内完成，由 `ship` 工具按账本裁决 draft / ready；飞行外干净评审员自审（复用插件的 `flight:code-reviewer` agent） |
 | 知识维护 | 无 | `/claudemd-commit`（预算中性，加一减一）+ `/claudemd-distill`（定期重排）+ `claudemd-lint`（机械门禁：字节预算 / 悬空指针） |
 | 安装方式 | 手动复制目录 | `install.sh` 一键：幂等安装 + `--upgrade` 升级（库文件刷新、用户数据不动） |
 | 中文文档 | 无 | README + CLAUDE.md snippet + 所有新增 skill / 命令全中文 |

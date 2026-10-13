@@ -1,0 +1,119 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 245,
+      "summary": "复核轮 base 取上一轮评审员 dispatch 事件的 commit 字段。如果该字段没记（旧事件，或 S3 派发时漏记），就退化成空串 base: ''，followup 评审员会拿到空的 diff 起点。这里不报错也不阻断，下游难以察觉。",
+      "fix": "保留 spec 口径，但在 commit 缺失时退回上一轮评审对应的 final commit：取 seq 早于上一轮评审员 dispatch 的最新 final 事件的 commit。或者在 S3 派发侧对空 base 显式 blocked infra，并补一个用例覆盖缺字段的情形。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 533,
+      "summary": "新用例覆盖了 scenario 的主路径，但 design D2 里修复轮 / 复核的几条分支没有用例：whole-r<k> 评审员结束未返回时转 blocked review:whole-r<k>；fix-r<k> 合回失败时转 blocked infra，再到 land；fix-r<k> 收口门禁红时转 blocked gate；修复轮 merge 后 final 红时停飞。这些分支以后改动时没有回归保护。",
+      "fix": "在 fix-rounds-capped-at-two 附近补 2～3 个快照断言：① whole-r1 已派、ended、无 review，期望 blocked review:whole-r1 infra「评审未返回：w1」；② fix-r1 ended 后追加 ok=false 的 merge，期望 blocked fix-r1 infra，再追加该 blocked 后期望 land；③ fix-r1 收口门禁红并结束，期望 blocked fix-r1 gate。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/ship.ts",
+      "line": 55,
+      "summary": "parseShip 只校验 ready/commit/reasons/blocking/deferred，不校验 review 与 blocking/deferred 元素的形状。判定器输出缺 review 键时（例如判定器与插件版本不一致），shipComment 里 `j.review === null` 为 false，接着读 `j.review.slice` 会抛 TypeError。shipPr 因此抛异常，没有按「ship 输出无法解析」返回 deny。",
+      "fix": "在 parseShip 中加上 `(j.review === null || (typeof j.review === 'object' && typeof j.review.slice === 'string'))` 的校验；或者 shipComment 改用 `j.review == null` 判空。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/ship.ts",
+      "line": 71,
+      "summary": "`git remote get-url origin` 失败时（没有 origin 或 git 出错），拒绝原因同样写成「只支持 GitHub」，会误导排查。另外，origin 检查只看 origin，gh 却按自己的远端解析规则选仓库：同时有 upstream 等多个远端时，可能指向另一个仓库（需进一步确认）。头分支与头 commit 的核对会兜住，结果只会是拒绝，不会误贴评论。",
+      "fix": "exitCode 非 0 时单独返回「读取 origin 失败：<首行>」。如需加固，可从 origin URL 解析出 owner/repo，并给 gh pr view、comment、ready 都加 `--repo`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/ship.test.ts",
+      "line": 157,
+      "summary": "world 1 用 `find(a.log, 'gh', 'ready', '7')` 断言运行了 gh pr ready 7，但没有断言 argv 不含 `--undo`。实现若在 ready 裁决时误带 `--undo`，这条测试仍会通过。",
+      "fix": "改成 `expect(gh(a.log, 'ready').map(c => c.argv)).toEqual([['gh', 'pr', 'ready', '7']])`，与 world 2 的写法对称。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 113,
+      "summary": "followup 分支对缺失或为空的 base 没有防御：`x.base ?? ''` 直接拼进提示词，生成的是 `git diff  c10`（等于拿工作区和 c10 比），审查范围不对。core.ts:245 在上一轮评审员的 dispatch 没记 commit 时（例如旧事件）确实会给出空串 base。评审员大概率会报一条「取 diff 失败」HIGH，触发多余的修复轮，而不是作为 infra 阻断如实暴露出来。whole 分支对同类问题做了 blocked 处理，followup 没有，两边不对称。",
+      "fix": "在 reviewPlan 的 followup 分支里，base 为空、或 base === commit 时，返回 { error: '复核范围缺 base：…' }。这样 runLandingAction 会照 whole 分支的做法记 blocked review:<slice>（infra），不再派发。另在 landing.test.tsx 加一个世界，覆盖「base 为空时不派发」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 233,
+      "summary": "closeout 新增了「ship 输出无法解析：<首行>」这条失败路径，但 land 分支只解构 verdict，reasons 被丢掉。ship 判定器出了 infra 故障时，账本和飞行记录里只看到一个 draft，看不到原因，人工无从区分是「评审未闭环」还是「判定器坏了」。",
+      "fix": "把 closeout 返回的 reasons 带进去：verdict 为 draft 且 reasons 非空时，用 ctx.log 打印 reasons（或者把它写进 land 事件的 note 字段，前提是 io.ts 的事件字段表允许）。可以复用 flightRecord 前那次 log 调用。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 92,
+      "summary": "全量评审的起点取「主 worktree 当前 HEAD」与 commit 的 merge-base。主 worktree 不一定在 main 上，比如会话根停在别的特性分支。这时分叉点可能早于 change 实际的分叉点，审查范围会混入与本 change 无关的提交。行为符合切片包写定的设计，但是否合理需进一步确认。",
+      "fix": "需进一步确认设计意图。如果目标是「相对主干的分叉点」，可以改成对 main（或起飞时记下的基线分支）求 merge-base，而不是主 worktree 的 HEAD；或者在 takeoff 事件里记下基点直接用。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/landing.test.tsx",
+      "line": 387,
+      "summary": "whole-review-dispatch-records-range 只覆盖了 merge-base 退出 1 这一种失败。wholeBase 另外两条阻断分支没有测：rev-parse HEAD 失败或输出为空，以及 base 等于 commit。全量评审派发的 description（「全量评审」）和 cwd（change worktree）也没有断言。",
+      "fix": "加两个世界：mainHead 失败（rev-parse 退出非 0）和 mergeBase 输出 c9（等于 commit），断言 spawned 为空，并且账本末条是 blocked review:whole（infra）。世界一再补两条断言：one.spawned[0].description === '全量评审'，cwd === change worktree。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate_reuse_preflight.py",
+      "line": 10,
+      "summary": "本片去掉了文件里唯一一处 @pytest.mark.xfail，之后文件中已没有任何 pytest. 引用，`import pytest` 成了本片造出的孤立 import",
+      "fix": "确认没有其他 pytest 用法后，删掉第 10 行的 `import pytest`"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_slice_gate_reuse_preflight.py",
+      "line": 246,
+      "summary": "骨架已解锁，但分节注释「# 骨架：S1 实现后去掉 xfail 标记。」还留着，已过时（test_ship_verdict.py 里同类注释已经删了，两边不一致）",
+      "fix": "删掉第 246 行的过时注释，与 test_ship_verdict.py 的处理保持一致"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 229,
+      "summary": "tools-and-commands-invariant 的 Given/When 与 spec 不一致：spec 的三种输入是主会话 {findings:[1 条 HIGH]}、非飞行 agent 带同样输入、伪造 {ev:approve, fp:F}；用例改成了 {change: demo, pr: '7'}。对 submit_findings 来说，这种输入在校验阶段就会被拒，「主会话交 HIGH 发现也不写账本」这条路径在本用例里没有覆盖（现有 only-findings-tool-registered 覆盖了它，所以不算漏测，只是规格与用例对不上）。",
+      "fix": "二选一：把三种输入改回 spec 写的 findings 形状；或者在保留 ship 输入 {change, pr} 的同时，再加上 spec 的 findings 输入（例如每个工具调用四种输入），并同步改 Given 注释，让用例与 spec 第 75 行逐字对应。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 311,
+      "summary": "ship-tool-main-session-only 的 Given 写的是「另有一个在飞 change 的执行体 X」，用例里的 agent-x 却是已落地 demo 自己账本里的执行体，并不在飞。实现对带 agentId 的调用一律拒绝，所以断言照样成立，但没有覆盖 spec 点名的场景：一个在飞 change 的执行体能否经 ship 改动另一个 change 的 PR。",
+      "fix": "给世界加一个在飞的 change（例如 other：有 takeoff 和 S1 执行体 agent-x 的 dispatch，没有 land），让 agent-x 归属于它，再以 {change: demo, pr: 7} 调用 ship，断言 deny 含「只接受主会话」，且 other 与 demo 的账本都没有新事件。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/commands/pr-ship.md",
+      "line": 122,
+      "summary": "第 7 步飞行模式只给了 `gh pr create --draft`，没有 GitLab 分支。origin 是 GitLab 时 gh 建 PR 会直接失败，「只支持 GitHub → PR 保持 draft，交人」这条拒绝处理走不到；模型也可能自行补一条 glab 命令，且不保证带 --draft。",
+      "fix": "在飞行模式下补一条 GitLab 处理：可以写 `glab mr create --draft ...` 建 MR，然后不调用 ship 工具，直接按「只支持 GitHub」处理（MR 保持 draft，交人）；也可以写明在第 1 步探测到 glab 时直接停下报告。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/commands/pr-ship.md",
+      "line": 219,
+      "summary": "Output Summary 的「已自动修复: X 条 CRITICAL/HIGH」「评论中列出（未自动修）: Y 条 MEDIUM/LOW」没有区分模式。飞行模式下主会话既不读 review-findings.json，ship 工具结果里也没有这两个计数，模型没有数据来源，容易编造数字。",
+      "fix": "给这两行加上模式区分：飞行模式写「见 ship 评论」，或者省略这两行，与「review 轮数」一行的写法保持一致；数字只在飞行外填写。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 25,
+      "summary": "替换来源规则用的半句是「起飞只接受人发出的命令」，与完整规则不一致：完整规则还接受 SDK 宿主（sdk）发出，而 sdk 不一定是人。SKILL.md 第 34 行同样如此。",
+      "fix": "把这半句改为「起飞的命令来源限制见下文「飞行中的交互」」，或改为「起飞只接受终端 / Remote Control / SDK 宿主发出，见下文「飞行中的交互」」；命令和 skill 同改。"
+    }
+  ],
+  "fix": null
+}

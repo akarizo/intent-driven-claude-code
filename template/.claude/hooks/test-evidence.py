@@ -3,9 +3,9 @@
 #
 # 命中测试运行器的 Bash 命令时，向 <change>/evidence.log 追加一行：
 #   ISO时间\t-\t<PASS|FAIL>\t<命令前 120 字符>
-# 只记飞行外的测试留痕（主会话修复、per-task 路径）；切片 worktree 的测试由控制面测量入账本：
-#   git toplevel 下存在 .openspec-slice 标记 → 一律不写（不论标记里的 evidence 模式）。
-# change 目录来源（无标记时，两级，不猜）：① 分支名 worktree-<name> 对应 openspec/changes/<name>；
+# 只记飞行外的测试留痕（主会话修复、per-task 路径）；飞行 worktree 的测试由控制面测量入账本：
+#   git toplevel 的当前分支（git symbolic-ref --short -q HEAD）以 flight/ 开头 → 一律不写；取不到分支按非飞行处理。
+# change 目录来源（两级，不猜）：① 分支名 worktree-<name> 对应 openspec/changes/<name>；
 #   ② tasks.md 仍有未勾选项的 change 恰好 1 个；否则不写。
 # 结果判定：事件为 PostToolUseFailure → FAIL；否则 stdout/stderr 命中 failed|error|FAIL → FAIL；其余 PASS。
 # fail-open：任何异常静默退出。兼容 Python 3.8+。
@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 TEST_RE = re.compile(r"\b(pytest|npm (run )?test|pnpm (run )?test|yarn test|vitest|jest|go test|cargo test|make test|tox|unittest|mocha)\b")
 FAIL_RE = re.compile(r"\b(failed|failures?|errors?|FAIL|FAILED)\b")
 UNCHECKED = re.compile(r"^\s*[-*+]\s+\[ \]", re.M)
-MARKER = ".openspec-slice"
 BRANCH_PREFIX = "worktree-"
+FLIGHT_PREFIX = "flight/"
 EVIDENCE = "evidence.log"
 
 
@@ -39,9 +39,9 @@ def toplevel(cwd):
 
 
 def current_branch(root):
-    """git branch --show-current；失败或 detached HEAD（空串）返回 None。"""
+    """git symbolic-ref --short -q HEAD；失败或 detached HEAD 返回 None。"""
     try:
-        p = subprocess.run(["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True)
+        p = subprocess.run(["git", "symbolic-ref", "--short", "-q", "HEAD"], cwd=root, capture_output=True, text=True)
         if p.returncode == 0 and p.stdout.strip():
             return p.stdout.strip()
     except OSError:
@@ -51,14 +51,14 @@ def current_branch(root):
 
 def find_change(root):
     """返回 (change_dir, slice_id)；找不到或多候选返回 (None, None)。"""
-    # 切片 worktree：测试结果由控制面测量入账本，此处一律不写
-    if os.path.isfile(os.path.join(root, MARKER)):
+    branch = current_branch(root)
+    # 飞行 worktree（切片 / 修复 / 解冲突都在 flight/<change>/… 下）：测试结果由控制面测量入账本，此处一律不写
+    if branch and branch.startswith(FLIGHT_PREFIX):
         return None, None
     changes = os.path.join(root, "openspec", "changes")
     if not os.path.isdir(changes):
         return None, None
     # 1 分支名 worktree-<name>
-    branch = current_branch(root)
     if branch and branch.startswith(BRANCH_PREFIX):
         cd = os.path.join(changes, branch[len(BRANCH_PREFIX):])
         if os.path.isdir(cd):

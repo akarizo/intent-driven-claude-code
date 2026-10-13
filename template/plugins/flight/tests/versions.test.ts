@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-version-check。versions.ts 只经 Io 读文件与跑命令，这里用假 Io：文件表 + 按 argv 返回预设结果。
 import { expect, test } from 'claude-code/testing'
-import { checkJudges, checkPluginCopy } from '../hooks/versions'
+import { REQUIRED_FEATURES, checkJudges, checkPluginCopy } from '../hooks/versions'
 import type { Io, RunResult } from '../hooks/core'
 
 const CFG = '/home/u/.claude'
@@ -10,8 +10,8 @@ const ROOT_040 = `${CACHE}/idd/flight/0.4.0`
 const ROOT_032 = `${CACHE}/idd/flight/0.3.2`
 const INSTALLED = `${CFG}/plugins/installed_plugins.json`
 const HOOKS = '/repo/template/.claude/hooks'
-/** slice-gate.py features 列全三项能力时的输出 */
-const ALL_FEATURES = 'evidence-ledger-only\ng5-per-target\nguards\n'
+/** slice-gate.py features 列出全部能力时的输出 */
+const ALL_FEATURES = 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n'
 
 function fakeIo(files: Record<string, string>, respond: (argv: string[]) => Partial<RunResult> = () => ({})): Io {
   const fs = new Map(Object.entries(files))
@@ -96,7 +96,7 @@ test('installed-unverifiable-noted', async () => {
 })
 
 test('judges-must-know-events', async () => {
-  // Given: 需要事件 approve、measure；ledger.py events 的三种应答：①输出 approve 与 measure ②只输出 approve ③退出码 2；slice-gate.py features 一律列全三项能力
+  // Given: 需要事件 approve、measure；ledger.py events 的三种应答：①输出 approve 与 measure ②只输出 approve ③退出码 2；slice-gate.py features 一律列全四项能力
   const required = ['approve', 'measure'] as const
   const answers: Array<Partial<RunResult>> = [{ stdout: 'approve\nmeasure\n' }, { stdout: 'approve\n' }, { exitCode: 2, stderr: 'invalid choice' }]
   const calls: string[][] = []
@@ -121,7 +121,7 @@ test('judges-must-know-events', async () => {
 
 test('takeoff-refuses-stale-judges', async () => {
   // Given: 三个判定器目录 /j1、/j2、/j3，ledger.py events 都输出 approve 与 measure；slice-gate.py features 的应答：
-  //        /j1 以 2 退出（invalid choice）/ /j2 只输出 evidence-ledger-only / /j3 输出全部三项
+  //        /j1 以 2 退出（invalid choice）/ /j2 只输出 evidence-ledger-only / /j3 输出全部能力
   const features: Record<string, Partial<RunResult>> = {
     '/j1': { exitCode: 2, stderr: 'invalid choice' },
     '/j2': { stdout: 'evidence-ledger-only\n' },
@@ -135,10 +135,33 @@ test('takeoff-refuses-stale-judges', async () => {
   // When: 分别对三个目录运行 checkJudges（需要事件 approve、measure）
   const rs = await Promise.all(['/j1', '/j2', '/j3'].map(hooksDir => checkJudges(io, { hooksDir, required: ['approve', 'measure'] })))
 
-  // Then: /j1 拒飞且原因说明判定器过旧并提示更新主检出；/j2 拒飞且原因列出 g5-per-target、guards 并提示更新主检出；/j3 通过
+  // Then: /j1 拒飞且原因说明判定器过旧并提示更新主检出；/j2 拒飞且原因列出 g5-per-target、guards、ship-ledger、ledger-records 并提示更新主检出；/j3 通过
   expect(rs).toEqual([
     { ok: false, reason: 'flight：判定器过旧（/j1/slice-gate.py 没有 features 子命令）：先把主检出更新到与插件同一版本' },
-    { ok: false, reason: 'flight：判定器（/j2）缺少能力 g5-per-target，guards：先把主检出更新到与插件同一版本' },
+    { ok: false, reason: 'flight：判定器（/j2）缺少能力 g5-per-target，guards，ship-ledger，ledger-records：先把主检出更新到与插件同一版本' },
     { ok: true, line: '' },
   ])
+})
+
+test('judges-need-ship-ledger', async () => {
+  // Given: 判定器目录 /j4：ledger.py events 输出所需的 approve 与 measure；slice-gate.py features 只输出 evidence-ledger-only、g5-per-target、guards
+  const io = fakeIo({}, argv => (argv[2] === 'features' ? { stdout: 'evidence-ledger-only\ng5-per-target\nguards\n' } : { stdout: 'approve\nmeasure\n' }))
+
+  // When: 对 /j4 运行 checkJudges（需要事件 approve、measure）
+  const r = await checkJudges(io, { hooksDir: '/j4', required: ['approve', 'measure'] })
+
+  // Then: 拒飞，原因含「缺少能力 ship-ledger」与「先把主检出更新到与插件同一版本」
+  expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j4）缺少能力 ship-ledger，ledger-records：先把主检出更新到与插件同一版本' })
+})
+
+test('judges-need-ledger-records', async () => {
+  // Given: 判定器目录 /j5：ledger.py events 输出所需的 approve 与 measure；slice-gate.py features 输出除 ledger-records 外的全部能力（evidence-ledger-only、g5-per-target、guards、ship-ledger）
+  const io = fakeIo({}, argv => (argv[2] === 'features' ? { stdout: 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\n' } : { stdout: 'approve\nmeasure\n' }))
+
+  // When: 对 /j5 运行 checkJudges（需要事件 approve、measure）
+  const r = await checkJudges(io, { hooksDir: '/j5', required: ['approve', 'measure'] })
+
+  // Then: 拒飞，原因恰为「缺少能力 ledger-records」并提示更新主检出；导出的 REQUIRED_FEATURES 含 ledger-records
+  expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j5）缺少能力 ledger-records：先把主检出更新到与插件同一版本' })
+  expect(REQUIRED_FEATURES).toContain('ledger-records')
 })

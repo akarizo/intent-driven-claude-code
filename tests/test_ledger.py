@@ -330,3 +330,29 @@ def test_ledger_accepts_measure_events(git_repo):
     assert verify.returncode == 4 and "measure 的 outcomes" in verify.stderr, verify.stderr
     assert events.returncode == 0, events.stderr
     assert {"measure", "gate"} <= set(events.stdout.split())
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S2 实现后去掉 xfail 标记。
+
+
+def test_ledger_knows_diag_event(tmp_path):
+    # Given: 账本已有 takeoff；demo 再追加 attempt=1、where=SubagentStop、error=boom、kind=throw 的 diag；
+    #        other 追加同样但缺 where 的 diag
+    repo = new_repo(tmp_path / "repo")
+    diag = {"ev": "diag", "attempt": 1, "where": "SubagentStop", "error": "boom", "kind": "throw", "agent": "a1"}
+    a = make_change(repo)
+    for ev in [flight_events()[1], dict(flight_events()[0], **diag)]:
+        ledger_append(repo, "demo", {k: v for k, v in ev.items() if not (ev.get("ev") == "diag" and k == "fp")})
+    b = make_change(repo, name="other")
+    bad = {k: v for k, v in diag.items() if k != "where"}
+    for ev in [flight_events("other")[1], dict(flight_events("other")[0], **bad)]:
+        ledger_append(repo, "other", {k: v for k, v in ev.items() if not (ev.get("ev") == "diag" and k == "fp")})
+
+    # When: 追加合法 diag 后 show 与 events；另一账本追加缺 where 的 diag 后 show
+    show, bad_show = ledger("show", a), ledger("show", b)
+    events = run_hook("ledger", "events")
+
+    # Then: show 打印 diag；events 含 diag；缺 where 的那次以非 0 退出且原因含 where
+    assert show.returncode == 0 and [json.loads(l)["ev"] for l in show.stdout.splitlines()] == ["takeoff", "diag"], show.stderr
+    assert "diag" in events.stdout.split(), events.stdout
+    assert bad_show.returncode != 0 and "where" in bad_show.stderr, bad_show.stderr

@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-ship-ledger · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-ship-ledger
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-ship-docs</span><span class="chip" data-state="done">specs/flight-ship-ledger</span><span class="chip" data-state="done">specs/flight-ship-tool</span><span class="chip" data-state="done">specs/flight-whole-review</span><span class="chip" data-state="done">计划指纹 eed3d34f</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">大目标是「模型只做创作，门禁由插件与判定器裁决，模型不自证」。飞行内已经做到：测量、门禁、合回、评审结论都由插件记进账本 <code>refs/flight/&lt;change&gt;/ledger</code>。<strong>收尾还没做到</strong>：</p><p class="why-body">- <strong>评审由模型派、结论由模型转述</strong>：落地后 <code>/flight:pr-ship</code> 由主会话派评审员。评审员的提示词由模型写，评审结论也由模型读完后转述。
+- <strong>闭环由模型判定、文件由模型改写</strong>：主会话自己判断 CRITICAL/HIGH 闭环没有，判完就自己改 <code>review-findings.json</code> 的 <code>blocking</code>。
+- <strong>ready 由模型执行</strong>：<code>slice-gate.py ship</code> 读 <code>review-findings.json</code> 与 <code>gate-report.md</code> 给出 ready，再由模型执行 <code>gh pr ready</code>。这两个文件模型都能改。</p><p class="why-body">PR #51 就是这样转成 ready 的：评审结论确实是通过，但从机制上看，这正是铁律 4、5 要防的自证。</p><p class="why-body">2026-10-13 用户在阶段 4–5 决策页（<code>docs/flight-phase4-decisions.html</code>）上全部选推荐项。本 change 是其中的 change 1：C1–C4 四项都选 A，并附带「已定」的两项。它与 change 2（判定器收口、intent-gate、可靠性）叠成一个 PR。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>控制面派全量评审</strong>（C1-A）：</li><li>final 绿之后、落地之前，插件派 <code>flight:reviewer</code> 审整条 change 分支：范围从与目标分支的分叉点到 final 的 commit。</li><li>提示词由插件写，并列出切片评审提过的 CRITICAL/HIGH，要评审员逐条核对。findings 经 <code>submit_findings</code> 进账本（review 事件，slice 为 <code>whole</code>）。</li><li><strong>全量评审有 CRITICAL/HIGH 时自动修，至多 2 轮</strong>（C2-A）：</li><li>每一轮：派修复体（slice <code>fix-r&lt;k&gt;</code>），它的收口门禁就是全量 final；合回后重跑 final，再派复核员（slice <code>whole-r&lt;k&gt;</code>）只审这一轮修复带来的改动。</li><li>复核仍有 CRITICAL/HIGH 且已跑满 2 轮，就落地为 draft。全程不问人。</li><li><strong>ship 只读账本</strong>（已定）：</li><li><code>slice-gate.py ship</code> 改从账本裁决，依据为：各片合回、本 attempt 的 final、全量评审最新一轮的 CRITICAL/HIGH、该轮评审的 commit 是否仍对应 HEAD、各角色的实际模型（路由对账）。</li><li><code>gate-report.md</code> 与 <code>review-findings.json</code> 只供人读：落地时由插件按 ship 的输出写入。模型改这两个文件，影响不到裁决。</li><li><strong>draft / ready 由插件执行</strong>（C3-A）：</li><li>新增模型可调用的工具 <code>ship</code>，只有主会话可用。</li><li><code>/flight:pr-ship</code> 在飞行模式下一律以 <code>--draft</code> 建 PR，建完调 <code>ship</code> 并交出 change 名与 PR 号。</li><li>插件先核对 PR 头分支与 commit，再按账本裁决，把裁决与评审结论贴成 PR 评论，需要时执行 <code>gh pr ready</code> 或 <code>gh pr ready --undo</code>，最后记 ship 事件进账本。</li><li><strong>飞行外的 PR 维持现流程</strong>（C4-A）：没有 <code>slices.json</code> 的 PR 仍由主会话派 <code>flight:code-reviewer</code>，PR 正文标明「非账本裁决」。</li><li><strong>#51 遗留</strong>（已定）：</li><li>插件自己注册了 <code>opsx-apply</code>（项目里没有同名命令文件）时，<code>--gate=per-task</code> 直接回复 legacy skill 的路径，不再透传给一个没有正文的命令；</li><li>「来源规则」在命令文档与 skill 里各只写一处。</li><li><strong>判定器要求</strong>：</li><li>账本新增 <code>ship</code> 事件；</li><li><code>slice-gate.py features</code> 新增 <code>ship-ledger</code>，起飞时核对；</li><li><code>timeline.py report</code> 的「批准 → PR 打开」改取账本里第一条 ship 事件。</li><li><strong>版本</strong>：插件 0.8.0（change 2 同 PR，不再改版本号）。</li><li><code>slice-gate.py ship</code> 不再读 <code>gate-report.md</code> 与 <code>review-findings.json</code>；没有 <code>slices.json</code> 的目录一律判 draft。</li><li><code>/flight:pr-ship</code> 飞行模式不再派评审员、不再问人、不再执行 <code>gh pr ready</code>：以上由控制面与 <code>ship</code> 工具完成。</li><li>判定器须认识 <code>ship</code> 事件并声明 <code>ship-ledger</code> 能力：合入后主检出要快进，否则起飞被拒。这一核对沿用 #50 的机制。</li></ul><div class="impact"><span class="tag"><strong>判定器</strong>：<code>template/.claude/hooks/</code> 下的 <code>slice-gate.py</code>、<code>ledger.py</code>、<code>timeline.py</code>。</span><span class="tag"><strong>插件</strong>：</span><span class="tag"><code>hooks/</code> 下的 <code>core.ts</code>、<code>landing.tsx</code>、<code>land.ts</code>、<code>prompts.ts</code>、<code>io.ts</code>、<code>orchestrator.tsx</code>、<code>versions.ts</code>，新增 <code>ship.ts</code>；</span><span class="tag"><code>agents/reviewer.md</code>、<code>commands/pr-ship.md</code>；</span><span class="tag">版本 0.8.0。</span><span class="tag"><strong>文档</strong>：<code>/opsx-apply</code> 命令与 skill、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code>。</span><span class="tag"><strong>测试</strong>：<code>test_ship_verdict.py</code> 的文件判据用例改为账本判据；插件测试世界的 <code>features</code> 应答补上 <code>ship-ledger</code>。</span><span class="tag"><strong>本 change 自己的飞行</strong>：</span><span class="tag">在已装的 0.7.0 上飞，用的是主检出 ac5d051 的判定器；全量评审、<code>ship</code> 工具都还不存在；</span><span class="tag">落地交接到 0.7.0 的 <code>/flight:pr-ship</code> 时，主会话按用户指令只提交记录、推送分支、<strong>不建 PR</strong>；</span><span class="tag">change 2 落地后，两个 change 合成一个 PR。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ship-ledger</code>：ship 只从账本裁决；判定器认识 ship 事件、声明 ship-ledger 能力；飞行记录的 PR 用时取自账本。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-whole-review</code>：final 之后控制面派全量评审，CRITICAL/HIGH 自动修至多 2 轮并复核；落地时按 ship 输出写入给人读的记录。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ship-tool</code>：主会话可调用的 <code>ship</code> 工具，按账本裁决、贴评论、切换 draft / ready、记 ship 事件；工具与命令不变量随之更新；<code>--gate=per-task</code> 在插件自己注册入口时给出指引。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-ship-docs</code>：<code>/flight:pr-ship</code> 飞行模式改用 <code>ship</code> 工具；apply 文档写明全量评审与修复轮；来源规则各写一处。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-ship-docs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: /flight:pr-ship 飞行模式交给 ship 工具</p><p><code>/flight:pr-ship</code> 第 7 步（创建 PR/MR）SHALL 写明飞行模式（有 <code>slices.json</code>）一律带 <code>--draft</code> 建 PR，建完调用 <code>ship</code> 工具交出 change 名与 PR 号，由插件裁决、贴评论、切换 draft / ready。第 7 步 SHALL NOT 出现 <code>gh pr ready</code>。第 8、9、10 步的标题 SHALL 都标明只用于飞行外。全文 SHALL 写明飞行外 PR 的正文要标「非账本裁决」，并且 SHALL NOT 再要求模型改写 <code>review-findings.json</code> 的 <code>blocking</code>。
+Feature: 用户定（2026-10-13）：C3-A · C4-A</p><div class="scenario"><p class="scenario-name">Scenario: pr-ship-flight-mode-uses-ship-tool</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/plugins/flight/commands/pr-ship.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>切出第 7 步，并取第 8、9、10 步的标题行</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第 7 步含「飞行模式」、<code>--draft</code> 与「<code>ship</code> 工具」，不含 <code>gh pr ready</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第 8、9、10 步的标题行都含「飞行外」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全文含「非账本裁决」，不含「只更新 <code>review-findings.json</code> 的 <code>blocking</code>」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: apply 文档写明全量评审与账本裁决</p><p><code>/opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill SHALL 写明三件事：final 之后控制面派全量评审；CRITICAL/HIGH 自动修，至多 2 轮并复核；落地后由 <code>ship</code> 工具按账本裁决。两份文档里「<strong>来源规则</strong>」SHALL 各只出现一次。README 与 <code>docs/WORKFLOW_zh.md</code> SHALL 写明全量评审与「按账本裁决」。
+Feature: 用户定（2026-10-13）：C1-A · C2-A · C3-A；#51 评审 LOW</p><div class="scenario"><p class="scenario-name">Scenario: apply-docs-describe-whole-review</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>opsx-apply.md</code>、<code>openspec-apply-change/SKILL.md</code>、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>逐份查找关键词</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>四份都含「全量评审」与「按账本裁决」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两份 apply 文档都含「至多 2 轮」「复核」与「<code>ship</code> 工具」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两份 apply 文档里「<strong>来源规则</strong>」都恰好出现一次</span></li></ul></div></div></div><div class="spec-card"><h3>flight-ship-ledger <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: ship 只从账本裁决</p><p><code>slice-gate.py ship --change-dir &lt;dir&gt;</code> SHALL 只读账本 <code>refs/flight/&lt;change&gt;/ledger</code>、<code>slices.json</code> 与 git，SHALL NOT 读 <code>gate-report.md</code> 与 <code>review-findings.json</code>，SHALL NOT 写 <code>timeline.md</code>。判据 SHALL 按 design D3 的表依次累积 reasons；任一条成立即判 draft（退出 1），全不成立即判 ready（退出 0）。stdout SHALL 为 JSON <code>{ready, commit, reasons, blocked, blocking, deferred, fix, review}</code>；<code>--markdown</code> SHALL 照旧打印 reasons 与 blocked 段落。
+Feature: 已定（2026-10-13）：ship 只读账本</p><div class="scenario"><p class="scenario-name">Scenario: ship-ignores-record-files</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两个仓库，账本都有 takeoff（attempt 1，model opus）、S1 的 ok merge、final ok（commit 为 HEAD）、全量评审员派发（slice whole，commit 为 HEAD）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>仓库甲的 whole review 没有 finding，但 change 目录的 <code>gate-report.md</code> 写 S1 红，<code>review-findings.json</code> 的 blocking 有 1 条 HIGH</span></li><li><span class="step-key" data-kw="AND">AND</span><span>仓库乙的 whole review 有 1 条 HIGH，两个文件都写全绿、blocking 为空</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 <code>slice-gate.py ship --change-dir</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲退出 0，JSON 的 ready 为 true、reasons 为空</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙退出 1，reasons 含「1 条 CRITICAL/HIGH 评审未闭环」，blocking 恰为那条 HIGH</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两次运行后 <code>timeline.md</code> 都没有被改动</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: blocking 取全量评审最新一轮</p><p>本 attempt 有全量评审（slice 为 <code>whole</code>、<code>whole-r1</code>、<code>whole-r2</code> 的 review 事件）时，blocking SHALL 取最新一轮 review 的 CRITICAL/HIGH，并 SHALL 加上路由对账的 HIGH。没有全量评审时，SHALL 取全部切片评审的 CRITICAL/HIGH。合回了第 j 轮修复却没有 <code>whole-r&lt;j&gt;</code> 的 review 时，SHALL 判 draft，reason 为「第 j 轮修复未经复核」；有 blocked <code>review:whole*</code> 且同轮没有 review 时，SHALL 判 draft，reason 含「全量评审未返回」。
+Feature: 用户定（2026-10-13）：C1-A · C2-A</p><div class="scenario"><p class="scenario-name">Scenario: ship-follows-latest-whole-round</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>四份账本，都有 takeoff、S1 的 ok merge，且最新 final ok 的 commit 为 HEAD：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 ship</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲 ready</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙 draft，reasons 含「1 条 CRITICAL/HIGH 评审未闭环」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>丙 draft，reasons 含「第 1 轮修复未经复核」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>丁 draft，reasons 含「全量评审未返回」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 路由对账与评审新鲜度</p><p>每条 ended 事件的实际模型 SHALL 包含该 attempt 起飞时的主模型（不区分大小写），否则 blocking SHALL 增加一条 HIGH，<code>file</code> 为 <code>routing</code>、<code>line</code> 为 0、summary 含「路由不符」。最新一轮全量评审派发时记下的 commit，既不是 HEAD、也不满足「之后只有记账改动」时，SHALL 判 draft，reason 含「全量评审过期」。
+Feature: 铁律 11 · 已定（2026-10-13）：ship 只读账本</p><div class="scenario"><p class="scenario-name">Scenario: ship-checks-routing-and-review-freshness</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两份账本，其余全绿，whole review 没有 finding：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别运行 ship</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲 draft，blocking 恰有一条 <code>file</code> 为 <code>routing</code>、<code>line</code> 为 0、summary 含「路由不符」的 HIGH</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙 draft，reasons 含「全量评审过期」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 判定器认识 ship 事件并声明能力</p><p><code>ledger.py</code> SHALL 认识 ship 事件（必需字段 attempt、pr（非空字符串）、verdict（ready / draft）、commit（字符串）），<code>ledger.py events</code> SHALL 列出 ship。<code>slice-gate.py features</code> SHALL 列出 <code>ship-ledger</code>。<code>timeline.py report</code> 的「批准 → PR 打开」SHALL 优先取账本里第一条 ship 事件的时间；没有 ship 事件时照旧取 timeline 的 pr-open 行。
+Feature: 已定（2026-10-13）：ship 事件进账本</p><div class="scenario"><p class="scenario-name">Scenario: judges-know-ship-event</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>一个 change，timeline.md 有 10:00:00 的 approve 行、没有 pr-open 行；账本有 takeoff 与一条 10:30:00 的 ship 事件（pr 为 <code>https://x/pull/7</code>、verdict 为 ready）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>ledger.py events</code>、<code>ledger.py show</code>、<code>slice-gate.py features</code> 与 <code>timeline.py report</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>events 含 ship；show 退出 0 并打印那条 ship 事件</span></li><li><span class="step-key" data-kw="AND">AND</span><span>features 含 ship-ledger</span></li><li><span class="step-key" data-kw="AND">AND</span><span>report 含「批准 → PR 打开：30.0 min」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: final 复用修复轮的门禁</p><p><code>slice-gate.py final --reuse-fix</code> SHALL 把 slice 为 <code>fix</code> 或 <code>fix-r&lt;k&gt;</code> 的 gate 事件都当作修复门禁，取其中最后一条判断能否复用。
+Feature: 用户定（2026-10-13）：C2-A 修复轮</p><div class="scenario"><p class="scenario-name">Scenario: final-reuses-fix-round-gate</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本最后一条修复门禁是 slice <code>fix-r1</code> 的 gate，ok、commit 为 F；F 之后只有记账改动</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py final --change-dir --reuse-fix</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出 0，warnings 含「复用修复门禁」与 F 的前 10 位，没有跑全量测试</span></li></ul></div></div></div><div class="spec-card"><h3>flight-ship-tool <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: ship 工具核对 PR 后才裁决</p><p><code>shipPr</code> SHALL 依次检查以下各项，任一不满足即返回 <code>{deny}</code>，并且 SHALL NOT 贴评论、SHALL NOT 切换 PR 状态、SHALL NOT 写账本：
+- 本 attempt 已落地（否则原因含「还没落地」）；
+- origin 是 GitHub（否则原因含「只支持 GitHub」）；
+- pr 为数字或以 <code>/pull/&lt;数字&gt;</code> 结尾的 URL；
+- <code>gh pr view</code> 的 <code>headRefName</code> 等于 change 分支；
+- <code>headRefOid</code> 等于 change worktree 的 HEAD（否则原因含「先推送」）。
+Feature: 用户定（2026-10-13）：C3-A draft / ready 由插件执行</p><div class="scenario"><p class="scenario-name">Scenario: ship-tool-checks-pr-head</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo 已落地，分支 <code>worktree-demo</code>，HEAD 为 h1，origin 为 github.com；五个世界：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>各调用一次 <code>shipPr</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>五次都返回 deny：</span></li><li><span class="step-key" data-kw="AND">AND</span><span>五个世界都没有运行 <code>gh pr comment</code> 与 <code>gh pr ready</code>，账本没有新事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: ship 工具按账本裁决执行</p><p>核对通过后，<code>shipPr</code> SHALL 运行 <code>slice-gate.py ship --change-dir</code>（cwd 为 change worktree）取得 JSON，并 SHALL 用 <code>gh pr comment</code> 贴出 <code>shipComment</code> 的内容。之后按裁决切换 PR 状态：
+- 裁决为 ready 且 PR 是 draft 时，SHALL 运行 <code>gh pr ready &lt;n&gt;</code>；
+- 裁决为 draft 且 PR 不是 draft 时，SHALL 运行 <code>gh pr ready &lt;n&gt; --undo</code>；
+- 其余情况 SHALL NOT 切换。
+最后 SHALL 追加 ship 事件 <code>{attempt, pr: &lt;PR url&gt;, verdict, commit: &lt;HEAD&gt;}</code>，返回的 result SHALL 写明裁决。<code>io.ts</code> 的事件字段表 SHALL 含 ship，与 <code>ledger.py</code> 一致。
+Feature: 用户定（2026-10-13）：C3-A</p><div class="scenario"><p class="scenario-name">Scenario: ship-tool-applies-ledger-verdict</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已落地，PR 7 的头与 HEAD h1 相符；三个世界：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>各调用一次 <code>shipPr</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一个世界依次运行 <code>gh pr view</code>、<code>slice-gate.py ship</code>、<code>gh pr comment 7</code>、<code>gh pr ready 7</code>，账本末条为 ship 事件（pr 为 PR url、verdict ready、commit h1），result 含 ready</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界运行了 <code>gh pr ready 7 --undo</code>，评论正文含「1 条 CRITICAL/HIGH 评审未闭环」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第三个世界没有运行 <code>gh pr ready</code>，账本末条为 verdict draft 的 ship 事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 评论内容</p><p><code>shipComment</code> SHALL 依次输出：标题 <code>## flight 裁决：&lt;ready|draft&gt;</code>、commit 前 10 位、draft 时的「未满足」reasons、全量评审的轮次与 agent 以及逐条 <code>file:line — 级别 — 摘要 — 修法：…</code>、「未自动修的 MEDIUM/LOW」逐条，末行为 <code>— flight 插件，&lt;YYYY-MM-DD&gt;</code>。
+Feature: 用户定（2026-10-13）：C3-A</p><div class="scenario"><p class="scenario-name">Scenario: ship-comment-lists-findings</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>ship JSON：ready false、reasons <code>[&quot;1 条 CRITICAL/HIGH 评审未闭环&quot;]</code>、review <code>{slice:&quot;whole-r1&quot;, agent:&quot;r9&quot;, commit:&quot;c10&quot;}</code>、blocking 一条 HIGH <code>a.ts:3 空指针 / 判空</code>、deferred 一条 MEDIUM <code>b.ts:5 命名 / 改名</code>；日期 2026-10-13</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>生成评论</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>依次含「flight 裁决：draft」「1 条 CRITICAL/HIGH 评审未闭环」「whole-r1」「a.ts:3 — HIGH — 空指针 — 修法：判空」「b.ts:5 — MEDIUM — 命名 — 修法：改名」，末行为「— flight 插件，2026-10-13」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: ship 工具只接受主会话</p><p>插件 SHALL 在会话开始时注册 <code>ship</code> 工具，失败时忽略。带 agentId 的调用 SHALL 一律被拒，原因含「只接受主会话」。主会话调用时，插件 SHALL 校验输入 <code>{change, pr}</code>，定位 change、读账本后交给 <code>shipPr</code>。修复轮的合回动作 SHALL 以动作里的 slice 调用 <code>mergeFix</code>。
+Feature: 用户定（2026-10-13）：C3-A</p><div class="scenario"><p class="scenario-name">Scenario: ship-tool-main-session-only</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已落地，PR 7 的头与 HEAD 相符，ship 裁决 ready；另有一个在飞 change 的执行体 X</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>X 以 <code>{change:&quot;demo&quot;, pr:&quot;7&quot;}</code> 调用 <code>mcp__flight__ship</code>；主会话以同样输入调用</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>X 被拒，原因含「只接受主会话」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>主会话的调用返回的 result 含 ready，demo 的账本末条为 ship 事件</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: fix-round-merges-by-slice</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 在飞，账本里 fix-r1 修复体的收口门禁绿且已结束，分支为 <code>flight/demo/fix-r1</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>drive 执行合回</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>运行了 <code>git -C &lt;change worktree&gt; merge --no-ff flight/demo/fix-r1 -m integrate: fix-r1</code>，账本末条 merge 事件的 slice 为 <code>fix-r1</code>、ok 为 true</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 不变量</p><p>没有同名命令文件时，插件注册的斜杠命令 SHALL 恰为 <code>flight</code> 与 <code>opsx-apply</code>。模型可调用的工具 SHALL 恰为 <code>submit_findings</code>、<code>measure</code> 与 <code>ship</code>。任何工具或命令在任何输入下都 SHALL NOT 追加 approve 事件；<code>ship</code> SHALL 只追加 ship 事件。本要求取代 flight-entry-handoff 中「模型可调用的工具恰为 submit_findings 与 measure」的约束。
+Feature: 用户定（2026-10-13）：C3-A；沿用 D8（#50）</p><div class="scenario"><p class="scenario-name">Scenario: tools-and-commands-invariant</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件已加载，仓库里有待批准的 demo，会话已启动</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对三个工具各以三种输入调用：主会话 <code>{findings:[1 条 HIGH]}</code>、非飞行 agent 带同样输入、伪造 <code>{ev:&quot;approve&quot;, fp:F}</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>注册的工具按名排序恰为 measure、ship、submit_findings，命令恰为 flight、opsx-apply</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全部调用都没有向账本写入任何事件</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 插件自己注册入口时 per-task 给出指引</p><p>插件在会话开始时成功注册了 <code>opsx-apply</code> 时，<code>/opsx-apply &lt;change&gt; --gate=per-task</code> SHALL 直接回复：含「本项目没有 /opsx-apply 命令文件」与 <code>.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md</code>，并且 SHALL NOT 写账本。注册被拒（项目有同名命令文件）时 SHALL 照旧透传。
+Feature: #51 评审 LOW（2026-10-13 用户定一并处理）</p><div class="scenario"><p class="scenario-name">Scenario: per-task-guidance-when-plugin-registers</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>两个世界：甲的 command.register 照常应答；乙对 opsx-apply 抛「refused: it is the user&#x27;s /opsx-apply」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>各自开始会话，再由人在终端发出 <code>/opsx-apply demo --gate=per-task</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>甲的回复含「本项目没有 /opsx-apply 命令文件」与 legacy skill 路径，账本没有新事件，没有透传</span></li><li><span class="step-key" data-kw="AND">AND</span><span>乙照旧透传：log.commands 恰为 <code>[&#x27;opsx-apply demo --gate=per-task&#x27;]</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞核对 ship-ledger 能力</p><p><code>REQUIRED_FEATURES</code> SHALL 含 <code>ship-ledger</code>。判定器的 <code>features</code> 缺少它时，起飞核对 SHALL 拒飞，原因列出 ship-ledger。
+Feature: 已定（2026-10-13）：判定器与插件同版本</p><div class="scenario"><p class="scenario-name">Scenario: judges-need-ship-ledger</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>判定器目录 /j4，<code>ledger.py events</code> 列出全部所需事件，<code>slice-gate.py features</code> 只输出 evidence-ledger-only、g5-per-target、guards</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对 /j4 运行 checkJudges</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>拒飞，原因含「缺少能力 ship-ledger」与「先把主检出更新到与插件同一版本」</span></li></ul></div></div></div><div class="spec-card"><h3>flight-whole-review <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: final 绿之后先做全量评审</p><p>状态机 SHALL 在本 attempt 的 final 绿之后、落地之前，派全量评审员（slice <code>whole</code>，<code>commit</code> 为该 final 的 commit，<code>prior</code> 为切片评审的全部 CRITICAL/HIGH）。whole 的 review 没有 CRITICAL/HIGH 时 SHALL 落地。只有 blocked <code>review:whole</code> 时 SHALL 落地。切片级修复（slice <code>fix</code>）SHALL 只看切片评审的 findings。
+Feature: 用户定（2026-10-13）：C1-A 控制面派全量评审</p><div class="scenario"><p class="scenario-name">Scenario: whole-review-before-landing</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>waves <code>[[S1]]</code>；S1 已合回，切片评审给了 1 条 HIGH H1；修复 <code>fix</code> 已合回；本 attempt final ok，commit c9</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求下一批动作；再追加 whole 的派发与一条没有 finding 的 review 后求一次；另取只追加 blocked <code>review:whole</code> 的账本求一次</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次恰为一条派发评审员动作：slice <code>whole</code>、mode <code>whole</code>、commit <code>c9</code>、prior 恰为 <code>[H1]</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次与第三次都恰为一条 land 动作</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 修复至多 2 轮并复核</p><p>全量评审或复核给出 CRITICAL/HIGH，且本 attempt 已合回的修复轮少于 2 时，状态机 SHALL 派修复体（slice <code>fix-r&lt;k+1&gt;</code>，findings 为该轮的 CRITICAL/HIGH）。修复体收口门禁绿后 SHALL 以 via <code>fix</code> 合回该 slice；合回后 SHALL 先重跑 final，再派复核员（slice <code>whole-r&lt;k&gt;</code>、mode <code>followup</code>、base 为上一轮评审的 commit、commit 为新 final 的 commit、prior 为上一轮的 CRITICAL/HIGH）。已有 2 轮修复合回时 SHALL 落地，不再派修复体。
+Feature: 用户定（2026-10-13）：C2-A 自动修，至多 2 轮</p><div class="scenario"><p class="scenario-name">Scenario: fix-rounds-capped-at-two</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同上一个 scenario 的账本，whole 的 review 有 1 条 HIGH W1</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>依次推进：</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>依次得到：</span></li><li><span class="step-key" data-kw="AND">AND</span><span>最后一次恰为一条 land 动作</span></li><li><span class="step-key" data-kw="AND">AND</span><span>全程没有派发 slice 为 <code>fix</code> 的修复体</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 面板显示全量评审</p><p><code>summarize</code> SHALL 增加全量评审的状态：未开始 / 进行中 / 未返回 / 第 n 轮 x 条（CRITICAL/HIGH y）。<code>summaryLines</code> 的末行 SHALL 为 <code>修复 &lt;fix&gt; · final &lt;final&gt; · 全量评审 &lt;状态&gt;</code>。
+Feature: 用户定（2026-10-13）：C1-A</p><div class="scenario"><p class="scenario-name">Scenario: summary-shows-whole-review</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三份账本：final 绿但还没派全量评审；whole 已派未提交；whole-r1 已提交 2 条 finding，其中 1 条 HIGH</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别求 <code>summaryLines(summarize(...))</code> 的末行</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>依次含「全量评审 未开始」「全量评审 进行中」「全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 全量评审与复核的提示词</p><p>插件 SHALL 用 <code>wholeReviewPrompt</code> 与 <code>followupReviewPrompt</code> 写提示词。两者都 SHALL 写明 <code>git diff &lt;base&gt; &lt;commit&gt;</code> 范围、逐条列出 prior 的 <code>file:line</code> 与摘要、要求经 <code>submit_findings</code> 提交，并写明取不到 diff 时报「取 diff 失败」的 HIGH。全量评审提示词 SHALL 写明 <code>timeline.py report</code> 是门禁与测量统计的依据；复核提示词 SHALL 写明轮次，并要求未闭环的照原级别再报。<code>reviewer.md</code> 正文 SHALL 写明三种范围（切片合回 commit、全量、复核），并保留「^1」「取 diff 失败」「HIGH」。
+Feature: 用户定（2026-10-13）：C1-A 提示词由插件写</p><div class="scenario"><p class="scenario-name">Scenario: whole-and-followup-prompts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo、change 目录 <code>template/openspec/changes/demo</code>、判定器目录 <code>/repo/hooks</code>；prior 为一条 HIGH <code>a.ts:3 空指针</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>生成 base <code>b0</code>、commit <code>c9</code> 的全量评审提示词，与第 1 轮、base <code>c9</code>、commit <code>c10</code> 的复核提示词；再读 <code>agents/reviewer.md</code> 的正文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>全量提示词含 <code>git diff b0 c9</code>、<code>a.ts:3</code>、<code>submit_findings</code>、「取 diff 失败」与 <code>/repo/hooks/timeline.py report</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>复核提示词含 <code>git diff c9 c10</code>、「第 1 轮」、<code>a.ts:3</code>、<code>submit_findings</code> 与「照原级别」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>reviewer.md 正文含「全量」「复核」「^1」「取 diff 失败」与「HIGH」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 派发全量评审与修复轮</p><p>派发 mode 为 <code>whole</code> 的评审员时，插件 SHALL 先算 <code>base = git merge-base &lt;commit&gt; &lt;主 worktree HEAD&gt;</code>，用全量提示词派发，并在 dispatch 事件里记 <code>commit</code> 与 <code>base</code>。算不出 base 或 base 等于 commit 时，SHALL NOT 派发，SHALL 记 blocked <code>review:whole</code>（infra），原因含「算不出全量评审的起点」。mode 为 <code>followup</code> 时，SHALL 用动作给出的 base 与 commit 派发复核员并记下二者。修复体动作带 slice 时，修复 worktree、分支、收口门禁事件与合回提交都 SHALL 用这个 slice。
+Feature: 用户定（2026-10-13）：C1-A · C2-A</p><div class="scenario"><p class="scenario-name">Scenario: whole-review-dispatch-records-range</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>主 worktree HEAD 为 m0，<code>git merge-base c9 m0</code> 输出 b0；另一个世界 merge-base 退出 1</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>执行派发评审员动作（slice <code>whole</code>、mode <code>whole</code>、commit <code>c9</code>、prior <code>[]</code>）；再执行修复体动作（slice <code>fix-r1</code>）并让它收口</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一个世界派发的提示词含 <code>git diff b0 c9</code>，账本末条 dispatch 的 slice 为 whole、commit 为 c9、base 为 b0</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界没有派发，账本末条是 blocked <code>review:whole</code>，原因含「算不出全量评审的起点」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>修复体的 worktree 为 <code>flight-demo-fix-r1</code>、dispatch 的 branch 为 <code>flight/demo/fix-r1</code>，收口门禁事件的 slice 为 <code>fix-r1</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 落地按 ship 的输出写记录</p><p>落地收口 SHALL 先运行 <code>slice-gate.py ship --change-dir</code> 并解析 JSON，用它的 <code>{blocked, blocking, deferred, fix}</code> 写 <code>review-findings.json</code>，再勾选 tasks、记 apply-done（note 中的数字取自 JSON）、提交记录；verdict SHALL 取 JSON 的 <code>ready</code>。输出无法解析时，verdict SHALL 为 draft，reasons 含「ship 输出无法解析」，SHALL NOT 写 <code>review-findings.json</code>。<code>mergeFix</code> SHALL 接受 slice，合回分支缺省为 <code>flight/&lt;change&gt;/&lt;slice&gt;</code>，提交信息为 <code>integrate: &lt;slice&gt;</code>。
+Feature: 已定（2026-10-13）：记录只供人读</p><div class="scenario"><p class="scenario-name">Scenario: closeout-writes-ship-output</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>ship 输出 <code>{ready:false, blocking:[1 条 HIGH], deferred:[1 条 LOW], blocked:[], fix:{ok:true, commit:&quot;m1&quot;}, …}</code>，退出 1；另一个世界 ship 输出 <code>oops</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>执行落地收口；再以 slice <code>fix-r1</code> 调用 <code>mergeFix</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一个世界 <code>review-findings.json</code> 的四个字段恰为 JSON 中的对应值，apply-done 的 note 为 <code>blocked=0 blocking=1</code>，verdict 为 draft</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二个世界 verdict 为 draft，reasons 含「ship 输出无法解析」，没有写 <code>review-findings.json</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>mergeFix</code> 合并的分支为 <code>flight/demo/fix-r1</code>，提交信息为 <code>integrate: fix-r1</code></span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><ul><li><strong>收尾现状</strong>（0.7.0）：</li><li>落地时 <code>landing.tsx</code> 用 <code>closeoutLists</code>（<code>core.ts</code>）从账本算出 <code>{blocked, blocking, deferred, fix}</code>，写进 <code>review-findings.json</code>，再跑 <code>slice-gate.py ship</code> 得出 land 的 verdict；然后交接 <code>/flight:pr-ship</code>。</li><li><code>/flight:pr-ship</code> 由主会话派 <code>flight:code-reviewer</code> 审 PR，读回评审文字，自己判断 CRITICAL/HIGH 是否闭环，改写 <code>review-findings.json</code> 的 <code>blocking</code>，再跑 <code>ship</code>，最后自己执行 <code>gh pr ready</code>。</li><li><strong><code>slice-gate.py ship</code> 读的是文件</strong>（<code>cmd_ship</code>）：</li><li>用 <code>gate-report.md</code> 判各片与 final；</li><li>用 <code>review-findings.json</code> 的 <code>blocking</code> 判评审；</li><li>每次运行还往 <code>timeline.md</code> 记一行。</li><li>这两个文件都在 change 目录里，主会话能改。</li><li><strong>飞行内的修复只有一轮</strong>：<code>core.ts</code> 的 <code>closing()</code> 只有在切片评审给出 CRITICAL/HIGH、且还没合回修复时，派一次修复体（slice <code>fix</code>），然后跑 final、落地。全量评审一直放在 pr-ship 里，由模型派。</li><li><strong>评审员与工具</strong>：</li><li><code>flight:reviewer</code> 的工具含 <code>mcp__flight__submit_findings</code>；</li><li><code>onFindings</code> 只认当前 attempt 里 role 为 reviewer 的 agent，校验后写 review 事件；</li><li>模型可调用的工具恰为 <code>submit_findings</code> 与 <code>measure</code>（flight-entry-handoff 的不变量）。</li><li><strong>起飞核对</strong>：</li><li>插件写入的事件类型全集是 <code>io.ts</code> 的 <code>EVENT_TYPES</code>，起飞时要求判定器 <code>ledger.py events</code> 认识它们；</li><li><code>slice-gate.py features</code> 须列出 <code>REQUIRED_FEATURES</code>（<code>versions.ts</code>）；</li><li>主检出没快进时，这两项核对拒飞。</li><li><strong>gh 实测</strong>（2026-10-13，本机 gh）：</li><li><code>gh pr view &lt;n&gt; --json number,url,headRefName,headRefOid,isDraft</code> 返回这五个字段；</li><li><code>gh pr ready --undo</code> 可以把 PR 转回 draft；</li><li><code>gh pr comment &lt;n&gt; --body &lt;text&gt;</code> 可以贴评论。</li><li>本机装有 glab，但 glab 的 JSON 字段本 change 没有核实。</li><li><strong>#51 遗留</strong>：</li><li>LOW：项目没有同名命令文件时插件会注册 <code>opsx-apply</code>，此时 <code>--gate=per-task</code> 走 <code>next(e)</code>，透传给一个没有正文的插件命令，结果未核实；</li><li>LOW：「来源规则」在 <code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code> 里各写了两遍。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong> - 收尾的正当路径上，没有一步需要模型判断： - 评审由控制面派、结论进账本； - 闭环由账本裁决； - draft 与 ready 之间的切换由插件执行。 - 记录文件降为给人读的视图：裁决不读它们，模型改它们也影响不到裁决。 - 全量评审发现 CRITICAL/HIGH 时，在飞行内自动修复并复核，不问人。</p><p><strong>Non-Goals</strong> - <strong>记录文件全部改由账本生成</strong>：<code>slice-gate start</code> / <code>record</code>、<code>timeline record</code> 的删除，属于 change 2（D1）。本 change 只让 ship 不再读文件，并且不再写 timeline。 - <strong>GitLab</strong>：<code>ship</code> 工具只支持 GitHub（gh）；GitLab 项目的 PR 保持 draft，由人决定。 - <strong>落地后的新提交</strong>：解冲突、人工追加修改都在账本之外，ship 判为过期（draft）。是否转 ready 由人决定，本 change 不自动重跑 final 或复核。 - <strong>故意绕过</strong>：拿着 gh 凭据的模型总能用 <code>gh api</code> 等方式绕过插件。目标是正当路径不需要模型判断；故意绕过会留在转录里，不在本 change 的拦截范围内。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><strong>时机</strong></summary><p><code>closing()</code> 里切片级修复（slice <code>fix</code>）与 final 都走完、final 绿之后，原来直接落地，现在先进入全量评审。</p></details><details><summary><strong>轮次按本 attempt 计</strong></summary></details><details><summary>slice 依次为 <code>whole</code>（首轮）、<code>whole-r1</code>、<code>whole-r2</code>（复核），修复轮为 <code>fix-r1</code>、<code>fix-r2</code>；</summary></details><details><summary>续飞的新 attempt 走到这里会重新评审，不沿用旧 attempt 的结论。</summary></details><details><summary><strong>首轮（<code>whole</code>）的范围与提示词</strong></summary></details><details><summary>范围是 <code>git diff &lt;base&gt; &lt;commit&gt;</code>。<code>commit</code> 取本 attempt 最新 final 事件的 commit；<code>base</code> 在派发时由插件算出，等于 <code>git merge-base &lt;commit&gt; &lt;主 worktree HEAD&gt;</code>。</summary></details><details><summary>算不出 base，或 base 等于 commit 时，记 blocked <code>review:whole</code>（infra，「算不出全量评审的起点」），随后落地，ship 判 draft。</summary></details><details><summary>提示词由插件写，列出切片评审提过的全部 CRITICAL/HIGH，要求逐条核对</summary><p>没闭环、或修得不对的，照原级别再提交。</p></details><details><summary><strong>复核（<code>whole-r&lt;k&gt;</code>）</strong></summary></details><details><summary>范围是 <code>git diff &lt;上一轮评审的 commit&gt; &lt;本轮 final 的 commit&gt;</code>；</summary></details><details><summary>提示词列出上一轮的 CRITICAL/HIGH，要求逐条核对，同时报修复补丁新引入的问题；与本次修复无关的代码不报。</summary></details><details><summary><strong>评审员</strong></summary><p>仍是 <code>flight:reviewer</code>，经 <code>submit_findings</code> 提交，记成 review 事件，slice 为本轮 id。</p></details><details><summary>派发事件额外记 <code>commit</code>（这一轮审到哪个 commit）与 <code>base</code>。账本字段表允许额外字段。</summary></details><details><summary><code>reviewer.md</code> 的正文改为「只审提示词给定的范围」，三种范围是切片合回 commit（对第一父取 diff）、全量、复核。仍保留「取 diff 失败」须报 HIGH。</summary></details><details><summary><strong>未返回</strong></summary><p>评审员结束了却没提交 → 沿用切片评审的规则，记 blocked <code>review:&lt;id&gt;</code>（infra），随后落地，ship 判 draft。</p></details><details><summary>有 blocked <code>review:R</code> → 落地；</summary></details><details><summary>没派过 → 派评审员（首轮或复核，见 D1）；</summary></details><details><summary>已派、还没结束 → 等；</summary></details><details><summary>已结束却没提交 → 记 blocked <code>review:R</code>。</summary></details><details><summary><code>F</code> 已 blocked → 落地；</summary></details><details><summary>没派过 → 派修复体，findings 为 <code>R</code> 的 CRITICAL/HIGH；</summary></details><details><summary>收口门禁绿 → 合回；</summary></details><details><summary>其余情况沿用现有修复体的判法</summary><p>记 blocked 时，下一轮判定会落地。</p></details><details><summary>修复 worktree 与分支为 <code>flight-&lt;change&gt;-fix-r&lt;k&gt;</code> 与 <code>flight/&lt;change&gt;/fix-r&lt;k&gt;</code>，已存在时另起 <code>-a&lt;attempt&gt;</code>；</summary></details><details><summary>收口门禁是全量 final，记 gate 事件，slice 为 <code>fix-r&lt;k&gt;</code>；</summary></details><details><summary>合回提交为 <code>integrate: fix-r&lt;k&gt;</code>。</summary></details><details><summary><strong>blocking</strong></summary></details><details><summary>本 attempt 有全量评审时，取最新一轮 review 的 CRITICAL/HIGH；</summary></details><details><summary>没有时（旧账本），取全部切片评审的 CRITICAL/HIGH；</summary></details><details><summary>再加上路由对账</summary><p>每条 ended 事件的实际模型，须包含该 attempt 起飞时的主模型（不区分大小写），否则生成一条 HIGH，<code>file</code> 为 <code>routing</code>，<code>line</code> 为 0，summary 含「路由不符」。逻辑与 <code>core.ts</code> 的 <code>routingFindings</code> 一致。</p></details><details><summary><strong>输出</strong></summary><p>stdout 打印 JSON <code>{ready, commit, reasons, blocked, blocking, deferred, fix, review}</code>，退出码 0 为 ready、1 为 draft。各字段：</p></details><details><summary><code>blocked</code></summary><p>本 attempt 的 blocked 事件；</p></details><details><summary><code>deferred</code></summary><p>全部 review 的 MEDIUM/LOW；</p></details><details><summary><code>fix</code></summary><p>最后一条 slice 为 <code>fix</code> 或 <code>fix-r&lt;k&gt;</code> 的 merge 事件的 <code>{ok, commit}</code>，没有时为 null；</p></details><details><summary><code>review</code></summary><p>最新一轮全量评审的 <code>{slice, agent, commit}</code>，没有时为 null。</p></details><details><summary><strong><code>--markdown</code></strong></summary><p>照旧打印 reasons 与 blocked 段落。</p></details><details><summary><strong>不再写 <code>timeline.md</code></strong></summary><p>ship 是纯判定。</p></details><details><summary><strong>能力声明</strong></summary><p><code>features</code> 增加一行 <code>ship-ledger</code>。</p></details><details><summary>标题</summary><p><code>## flight 裁决：ready</code> 或 <code>draft</code>；</p></details><details><summary>一行说明</summary><p>插件按账本裁决、commit 前 10 位；</p></details><details><summary>draft 时列出「未满足」的 reasons；</summary></details><details><summary>「全量评审」</summary><p>哪一轮、哪个 agent、CRITICAL/HIGH 条数与逐条 <code>file:line — 级别 — 摘要 — 修法：…</code>；</p></details><details><summary>「未自动修的 MEDIUM/LOW」逐条列出；</summary></details><details><summary>末行签名</summary><p><code>— flight 插件，&lt;YYYY-MM-DD&gt;</code>。</p></details><details><summary><strong>注册</strong></summary><p>session.start 时注册 <code>ship</code> 工具，失败忽略。</p></details><details><summary><strong>只认主会话</strong></summary><p><code>tool.call</code> 带 agentId 的调用一律拒绝，理由为「ship 只接受主会话调用」，飞行 agent 也包括在内。</p></details><details><summary><strong>处理流程</strong></summary><p>校验输入 <code>{change, pr}</code> 都是非空字符串 → <code>locate</code> 找到 change → 读账本 → <code>shipPr</code>。</p></details><details><summary><strong>注册成功</strong></summary><p>插件在 session.start 成功注册了 <code>opsx-apply</code>（即项目里没有同名命令文件）时，<code>--gate=per-task</code> 不再 <code>next(e)</code>，而是直接回复一段文字：含 legacy skill 的路径 <code>.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md</code>，并写明「本项目没有 /opsx-apply 命令文件」。</p></details><details><summary><strong>注册被拒</strong>（项目有命令文件）</summary><p>照旧透传。</p></details><details><summary><strong><code>/flight:pr-ship</code></strong></summary></details><details><summary>飞行模式（有 <code>slices.json</code>）</summary><p>一律以 <code>--draft</code> 建 PR，建完调 <code>ship</code> 工具，交出 change 名与 PR 号，然后打印结果并结束。不派评审员、不问人、不改 <code>review-findings.json</code>、不执行 <code>gh pr ready</code>。GitLab 项目 <code>ship</code> 会拒绝，PR 保持 draft。</p></details><details><summary>飞行外</summary><p>维持现有第 8–10 步，PR 正文须写「非账本裁决」。</p></details><details><summary><strong><code>/opsx-apply</code> 命令与 skill</strong>（同改）</summary></details><details><summary>写明全量评审、修复至多 2 轮与复核，以及落地后由 <code>ship</code> 工具裁决；</summary></details><details><summary>角色表增加「全量评审 / 复核」；</summary></details><details><summary>「来源规则」各只保留一处完整表述。</summary></details><details><summary><strong>README 与 <code>docs/WORKFLOW_zh.md</code></strong></summary><p><code>/flight:pr-ship</code> 的描述改为上面的口径。</p></details></div><div class="design-block"><h3>切片与 wave</h3><p>| wave | 切片 | 内容 | 依赖 | |---|---|---|---| | 1 | S1 | 判定器：ship 只读账本、ship 事件、ship-ledger 能力、<code>--reuse-fix</code> 认修复轮、PR 用时取账本 | - | | 1 | S2 | 状态机：全量评审、修复轮、复核；面板加全量评审 | - | | 1 | S3 | 落地执行：两种评审提示词、修复轮派发与合回、closeout 用 ship 输出、reviewer.md | - | | 1 | S4 | <code>ship.ts</code> 纯模块与 ship 事件字段表 | - | | 2 | S5 | 接线：注册 ship 工具、只认主会话、修复轮合回按 slice、per-task 指引、能力核对、不变量、删 closeoutLists、0.8.0 | S2 · S3 · S4 | | 2 | S6 | 文档：pr-ship 飞行模式、apply 文档、来源规则、README、WORKFLOW | S1 |</p><p>wave 1 的四片之间靠 <code>slices/_interfaces.md</code> 的约定对接： - Action 的形状（S2 产出，S3 消费）； - ship JSON（S1 产出，S3、S4 消费）； - <code>mergeFix</code> 的签名（S3 产出，S5 接线）。</p></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>飞行变长</strong></summary><p>全量评审替代了原先 pr-ship 里的评审，评审员调用次数不变。有 CRITICAL/HIGH 时，每轮修复多一次修复体、全量 final 与复核，至多 2 轮。</p></details><details><summary><strong>落地后的提交判过期</strong></summary><p>解冲突、人工追加修改都会让 ship 判 draft（final 或评审过期），转不转 ready 交人决定。这是有意的：账本之外的代码没有可信裁决。</p></details><details><summary><strong>GitLab 暂不支持</strong></summary><p>PR 保持 draft，交人。</p></details><details><summary><strong>ship 工具由模型调用</strong></summary><p>模型不调，PR 就停在 draft，这是安全的一侧；模型故意绕过（例如 <code>gh api</code>）会留在转录里。</p></details><details><summary><strong>叠成一个 PR</strong></summary><p>本 change 与 change 2 都在 0.7.0 上飞，这个 PR 的收尾仍由主会话按 0.7.0 的 pr-ship 手动走（模型裁决），PR 正文须写明。新收尾要等合入、更新插件之后才第一次真用。</p></details><details><summary><strong>判定器与插件须同版本</strong></summary><p>沿用起飞核对（D9）。合入后主检出不快进，起飞会被拒。</p></details></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart LR
+  F[&quot;final 绿&quot;] --&gt; W[&quot;派全量评审员&lt;br/&gt;slice whole&quot;]
+  W --&gt;|无 CRITICAL/HIGH| L[&quot;落地&quot;]
+  W --&gt;|有| X1[&quot;修复体 fix-r1&quot;]
+  X1 --&gt; F1[&quot;合回 → final&quot;] --&gt; R1[&quot;复核 whole-r1&quot;]
+  R1 --&gt;|无| L
+  R1 --&gt;|有| X2[&quot;修复体 fix-r2&quot;]
+  X2 --&gt; F2[&quot;合回 → final&quot;] --&gt; R2[&quot;复核 whole-r2&quot;]
+  R2 --&gt; L
+  W -.-&gt;|未返回| L
+  R1 -.-&gt;|未返回| L</div><pre class="diagram-fallback">flowchart LR
+  F[&quot;final 绿&quot;] --&gt; W[&quot;派全量评审员&lt;br/&gt;slice whole&quot;]
+  W --&gt;|无 CRITICAL/HIGH| L[&quot;落地&quot;]
+  W --&gt;|有| X1[&quot;修复体 fix-r1&quot;]
+  X1 --&gt; F1[&quot;合回 → final&quot;] --&gt; R1[&quot;复核 whole-r1&quot;]
+  R1 --&gt;|无| L
+  R1 --&gt;|有| X2[&quot;修复体 fix-r2&quot;]
+  X2 --&gt; F2[&quot;合回 → final&quot;] --&gt; R2[&quot;复核 whole-r2&quot;]
+  R2 --&gt; L
+  W -.-&gt;|未返回| L
+  R1 -.-&gt;|未返回| L</pre><div class="caption">### D1 · 控制面派全量评审（用户定 C1-A）</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-single-implementation.md">DRAFT. 飞行只有一套实现：删除 Workflow 旧引擎，铁律 10 改为失效即停飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<style>.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }</style><h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>判定器：ship 只读账本（全量评审最新一轮、路由对账、评审新鲜度）、ship 事件、ship-ledger 能力、--reuse-fix 认修复轮、PR 用时取账本</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/slice-gate.py<br>template/.claude/hooks/ledger.py<br>template/.claude/hooks/timeline.py<br>tests/test_ship_verdict.py<br>tests/test_slice_gate_reuse_preflight.py<br>tests/test_ledger.py<br>tests/test_evidence_timeline.py</td><td><code>python3 -m pytest -q tests/test_ship_verdict.py tests/test_slice_gate_reuse_preflight.py tests/test_ledger.py tests/test_evidence_timeline.py</code></td></tr><tr><td class="mono">S2</td><td>状态机：final 绿后全量评审、CRITICAL/HIGH 自动修至多 2 轮并复核；面板加全量评审</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/tests/core.test.ts<br>tests/test_flight_core.py</td><td><code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S3</td><td>落地执行：全量评审与复核的提示词和派发、修复轮的派发收口与合回、closeout 按 ship 输出写记录、reviewer.md</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/landing.tsx<br>template/plugins/flight/hooks/land.ts<br>template/plugins/flight/hooks/prompts.ts<br>template/plugins/flight/agents/reviewer.md<br>template/plugins/flight/tests/landing.test.tsx<br>template/plugins/flight/tests/land.test.ts<br>template/plugins/flight/tests/prompts.test.ts<br>tests/test_flight_landing.py<br>tests/test_flight_land.py<br>tests/test_flight_agents.py</td><td><code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_agents.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S4</td><td>ship 工具纯模块：核对 PR 头、按账本裁决、贴评论、切换 draft / ready、记 ship 事件；事件字段表加 ship</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/ship.ts<br>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/tests/ship.test.ts<br>template/plugins/flight/tests/io.test.ts<br>tests/test_flight_ship.py<br>tests/test_flight_io.py</td><td><code>python3 -m pytest -q tests/test_flight_ship.py tests/test_flight_io.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S5</td><td>接线：注册 ship 工具且只认主会话、修复轮按 slice 合回、per-task 指引、起飞核对 ship-ledger、不变量、删 closeoutLists、0.8.0</td><td>wave 2</td><td>S2, S3, S4</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/hooks/versions.ts<br>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/.claude-plugin/plugin.json<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/tests/flight.test.tsx<br>template/plugins/flight/tests/versions.test.ts<br>template/plugins/flight/tests/core.test.ts<br>tests/test_flight_orchestrator.py<br>tests/test_flight_plugin.py<br>tests/test_flight_versions.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_versions.py tests/test_flight_core.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py</code></td></tr><tr><td class="mono">S6</td><td>文档：/flight:pr-ship 飞行模式交给 ship 工具；apply 文档写明全量评审与账本裁决、来源规则各一处；README 与 WORKFLOW</td><td>wave 2</td><td>S1</td><td>template/plugins/flight/commands/pr-ship.md<br>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>README.md<br>docs/WORKFLOW_zh.md<br>tests/test_ship_ledger_docs.py<br>tests/test_ship_verdict.py<br>tests/test_template_docs.py<br>tests/test_flight_entry_docs.py</td><td><code>python3 -m pytest -q tests/test_ship_ledger_docs.py tests/test_ship_verdict.py tests/test_template_docs.py tests/test_flight_entry_docs.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-ship-ledger#ship-ignores-record-files</td><td><code>tests/test_ship_verdict.py::test_ship_ignores_record_files</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-ledger#ship-follows-latest-whole-round</td><td><code>tests/test_ship_verdict.py::test_ship_follows_latest_whole_round</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-ledger#ship-checks-routing-and-review-freshness</td><td><code>tests/test_ship_verdict.py::test_ship_checks_routing_and_review_freshness</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-ledger#judges-know-ship-event</td><td><code>tests/test_ship_verdict.py::test_judges_know_ship_event</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-ledger#final-reuses-fix-round-gate</td><td><code>tests/test_slice_gate_reuse_preflight.py::test_final_reuses_fix_round_gate</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#whole-review-before-landing</td><td><code>tests/test_flight_core.py::test_whole_review_before_landing</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#fix-rounds-capped-at-two</td><td><code>tests/test_flight_core.py::test_fix_rounds_capped_at_two</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#summary-shows-whole-review</td><td><code>tests/test_flight_core.py::test_summary_shows_whole_review</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#whole-and-followup-prompts</td><td><code>tests/test_flight_agents.py::test_whole_and_followup_prompts</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#whole-review-dispatch-records-range</td><td><code>tests/test_flight_landing.py::test_whole_review_dispatch_records_range</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-whole-review#closeout-writes-ship-output</td><td><code>tests/test_flight_land.py::test_closeout_writes_ship_output</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#ship-tool-checks-pr-head</td><td><code>tests/test_flight_ship.py::test_ship_tool_checks_pr_head</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#ship-tool-applies-ledger-verdict</td><td><code>tests/test_flight_ship.py::test_ship_tool_applies_ledger_verdict</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#ship-comment-lists-findings</td><td><code>tests/test_flight_ship.py::test_ship_comment_lists_findings</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#ship-tool-main-session-only</td><td><code>tests/test_flight_orchestrator.py::test_ship_tool_main_session_only</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#fix-round-merges-by-slice</td><td><code>tests/test_flight_orchestrator.py::test_fix_round_merges_by_slice</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#tools-and-commands-invariant</td><td><code>tests/test_flight_plugin.py::test_tools_and_commands_invariant</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#per-task-guidance-when-plugin-registers</td><td><code>tests/test_flight_orchestrator.py::test_per_task_guidance_when_plugin_registers</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-tool#judges-need-ship-ledger</td><td><code>tests/test_flight_versions.py::test_judges_need_ship_ledger</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-docs#pr-ship-flight-mode-uses-ship-tool</td><td><code>tests/test_ship_ledger_docs.py::test_pr_ship_flight_mode_uses_ship_tool</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-ship-docs#apply-docs-describe-whole-review</td><td><code>tests/test_ship_ledger_docs.py::test_apply_docs_describe_whole_review</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><table class="flight-table"><thead><tr><th>时间</th><th>事件</th><th>备注</th></tr></thead><tbody><tr><td class="mono">2026-10-12T16:41:05Z</td><td>baseline</td><td>exit 0, 111.2s ok</td></tr></tbody></table>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 判定器：ship 只读账本（全量评审最新一轮、路由对账、评审新鲜度）、ship 事件、ship-ledger 能力、--reuse-fix 认修复轮、PR 用时取账本 （deps: - · verify: <code>python3 -m pytest -q tests/test_ship_verdict.py tests/test_slice_gate_reuse_preflight.py tests/test_ledger.py tests/test_evidence_timeline.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 状态机：final 绿后全量评审、CRITICAL/HIGH 自动修至多 2 轮并复核；面板加全量评审 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_core.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 落地执行：全量评审与复核的提示词和派发、修复轮的派发收口与合回、closeout 按 ship 输出写记录、reviewer.md （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_land.py tests/test_flight_agents.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 ship 工具纯模块：核对 PR 头、按账本裁决、贴评论、切换 draft / ready、记 ship 事件；事件字段表加 ship （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_ship.py tests/test_flight_io.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S5 接线：注册 ship 工具且只认主会话、修复轮按 slice 合回、per-task 指引、起飞核对 ship-ledger、不变量、删 closeoutLists、0.8.0 （deps: S2, S3, S4 · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_versions.py tests/test_flight_core.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S6 文档：/flight:pr-ship 飞行模式交给 ship 工具；apply 文档写明全量评审与账本裁决、来源规则各一处；README 与 WORKFLOW （deps: S1 · verify: <code>python3 -m pytest -q tests/test_ship_ledger_docs.py tests/test_ship_verdict.py tests/test_template_docs.py tests/test_flight_entry_docs.py tests/test_docs_iron_rules.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-12 16:41 · 章节 9 · 图示 1 · 任务 6
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

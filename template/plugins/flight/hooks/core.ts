@@ -34,8 +34,8 @@ export interface Ctx {
 export type Action =
   | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] }; base?: string }
   | { kind: 'dispatch'; role: 'resolver'; slice: string; conflicts: string[] }
-  | { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string }
-  | { kind: 'dispatch'; role: 'fixer'; findings: Finding[] }
+  | { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string; mode?: 'whole' | 'followup'; base?: string; prior?: Finding[] }
+  | { kind: 'dispatch'; role: 'fixer'; slice?: string; findings: Finding[] } // slice 缺省为 'fix'；修复轮为 'fix-r<k>'
   | { kind: 'gate'; slice: string; agent: string } // 执行体未经收口结束后的补跑门禁
   | { kind: 'regate'; slice: string; base: string; worktree: string } // 续飞：上一 attempt 已绿未合回的切片，以原 base 补跑门禁
   | { kind: 'merge'; slice: string; via: 'branch' | 'resolve' | 'fix' }
@@ -52,6 +52,10 @@ const FIX = 'fix'
 const REGATE = 'regate'
 const CONFLICT = 'conflict: '
 const BLOCKING: readonly Severity[] = ['CRITICAL', 'HIGH']
+const FIX_ROUND = /^fix-r\d+$/
+const WHOLE = /^whole(-r\d+)?$/
+/** 第 k 轮全量评审的 slice：0 为 whole，之后为 whole-r<k> */
+const wholeSlice = (k: number) => (k === 0 ? 'whole' : `whole-r${k}`)
 
 const str = (e: Ev, k: string): string => String(e[k] ?? '')
 const failedOf = (e: Ev | undefined): string[] => (Array.isArray(e?.failed) ? (e.failed as string[]) : [])
@@ -197,23 +201,61 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
       const change = str(takeoff, 'change')
       return [{ kind: 'halt', reason: `切片 blocked：${list}；未派修复、未跑 final。修好后重发 /opsx-apply${change ? ` ${change}` : ''} 续飞，只重派这些切片` }]
     }
-    const findings = reviewFindings(state).filter(f => BLOCKING.includes(f.severity))
+    const sliceBlocking = blockingOf(reviewFindings(state, true))
     const fixed = evs.some(e => e.ev === 'merge' && e.slice === FIX && e.ok === true)
-    if (findings.length && !fixed && !blockedNow(FIX)) {
+    if (sliceBlocking.length && !fixed && !blockedNow(FIX)) {
       const fx = last(dispatchesA(FIX, 'fixer'))
-      if (!fx) return [{ kind: 'dispatch', role: 'fixer', findings }]
-      const { end, closing: cg } = lifecycle(state, str(fx, 'agent'))
-      if (!end) return []
-      const m = last(ofA('merge').filter(e => e.slice === FIX && e.seq > end.seq))
-      if (m) return [blocked(FIX, 'infra', `修复合回失败：${joined(m, '未知原因')}`)]
-      const g = last(cg)
-      if (g?.ok === true) return [{ kind: 'merge', slice: FIX, via: 'fix' }]
-      return [blocked(FIX, 'gate', joined(g, '修复 agent 没有收口门禁结论'))]
+      if (!fx) return [{ kind: 'dispatch', role: 'fixer', findings: sliceBlocking }]
+      return fixerOutcome(FIX, fx)
     }
     const fin = last(ofA('final'))
     if (!fin) return [{ kind: 'final' }]
-    if (fin.ok === true) return [{ kind: 'land' }]
-    return [{ kind: 'halt', reason: `final 未通过：${joined(fin, '未知原因')}` }]
+    if (fin.ok !== true) return [{ kind: 'halt', reason: `final 未通过：${joined(fin, '未知原因')}` }]
+    return wholeReview(fin)
+  }
+
+  /** 修复体结束后：合回失败、门禁绿合回、否则 blocked（切片级修复与修复轮共用）。 */
+  function fixerOutcome(s: string, fx: Ev): Action[] {
+    const { end, closing: cg } = lifecycle(state, str(fx, 'agent'))
+    if (!end) return []
+    const m = last(ofA('merge').filter(e => e.slice === s && e.seq > end.seq))
+    if (m) return [blocked(s, 'infra', `修复合回失败：${joined(m, '未知原因')}`)]
+    const g = last(cg)
+    if (g?.ok === true) return [{ kind: 'merge', slice: s, via: 'fix' }]
+    return [blocked(s, 'gate', joined(g, '修复 agent 没有收口门禁结论'))]
+  }
+
+  /** final 绿之后：全量评审 → CRITICAL/HIGH 修复轮 → 复核，修复至多 2 轮（design D2）；只看本 attempt。 */
+  function wholeReview(fin: Ev): Action[] {
+    const fixMerges = ofA('merge').filter(e => FIX_ROUND.test(str(e, 'slice')) && e.ok === true)
+    if (fixMerges.some(m => m.seq > fin.seq)) return [{ kind: 'final' }]
+    const k = new Set(fixMerges.map(m => str(m, 'slice'))).size
+    const R = wholeSlice(k)
+    const rev = last(ofA('review').filter(e => e.slice === R))
+    if (!rev) {
+      if (blockedNow(`review:${R}`)) return [{ kind: 'land' }]
+      const d = last(dispatchesA(R, 'reviewer'))
+      if (!d) {
+        const commit = str(fin, 'commit')
+        if (k === 0) return [{ kind: 'dispatch', role: 'reviewer', slice: R, mode: 'whole', commit, prior: blockingOf(reviewFindings(state, true)) }]
+        const prev = wholeSlice(k - 1)
+        const prevReview = last(ofA('review').filter(e => e.slice === prev))
+        return [{
+          kind: 'dispatch', role: 'reviewer', slice: R, mode: 'followup',
+          base: String(last(dispatchesA(prev, 'reviewer'))?.commit ?? ''), commit,
+          prior: blockingOf(findingsOf(prevReview)),
+        }]
+      }
+      if (!lifecycle(state, str(d, 'agent')).end) return []
+      return [blocked(`review:${R}`, 'infra', `评审未返回：${str(d, 'agent')}`)]
+    }
+    const findings = blockingOf(findingsOf(rev))
+    if (!findings.length || k >= 2) return [{ kind: 'land' }]
+    const F = `fix-r${k + 1}`
+    if (blockedNow(F)) return [{ kind: 'land' }]
+    const fx = last(dispatchesA(F, 'fixer'))
+    if (!fx) return [{ kind: 'dispatch', role: 'fixer', slice: F, findings }]
+    return fixerOutcome(F, fx)
   }
 
   const all = plan.waves.flat()
@@ -224,8 +266,12 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   return closing()
 }
 
-function reviewFindings(state: State): Finding[] {
-  return state.events.filter(e => e.ev === 'review').flatMap(e => (Array.isArray(e.findings) ? (e.findings as Finding[]) : []))
+const findingsOf = (e: Ev | undefined): Finding[] => (Array.isArray(e?.findings) ? (e.findings as Finding[]) : [])
+const blockingOf = (fs: readonly Finding[]): Finding[] => fs.filter(f => BLOCKING.includes(f.severity))
+
+/** 全部 review 事件的 findings；sliceOnly 时只取切片评审（不含 whole / whole-r<k>）。 */
+function reviewFindings(state: State, sliceOnly = false): Finding[] {
+  return state.events.filter(e => e.ev === 'review' && !(sliceOnly && WHOLE.test(str(e, 'slice')))).flatMap(findingsOf)
 }
 
 export function routingFindings(state: State): Finding[] {
@@ -247,24 +293,6 @@ export function routingFindings(state: State): Finding[] {
     })
 }
 
-export function closeoutLists(state: State): {
-  blocked: { slice: string; kind: 'gate' | 'infra'; reason: string }[]
-  blocking: Finding[]
-  deferred: Finding[]
-  fix: { ok: boolean; commit: string } | null
-} {
-  const findings = reviewFindings(state)
-  const fixMerge = last(state.events.filter(e => e.ev === 'merge' && e.slice === FIX))
-  return {
-    blocked: state.events
-      .filter(e => e.ev === 'blocked' && Number(e.attempt) === state.attempt)
-      .map(e => ({ slice: str(e, 'slice'), kind: e.kind as 'gate' | 'infra', reason: str(e, 'reason') })),
-    blocking: [...findings.filter(f => BLOCKING.includes(f.severity)), ...routingFindings(state)],
-    deferred: findings.filter(f => !BLOCKING.includes(f.severity)),
-    fix: fixMerge ? { ok: fixMerge.ok === true, commit: str(fixMerge, 'commit') } : null,
-  }
-}
-
 export type SliceRow = {
   id: string
   wave: number
@@ -280,8 +308,9 @@ export type FlightSummary = {
   waves: number
   wave: number // 当前 wave（1 起），已全部完成为 waves
   slices: SliceRow[]
-  fix: string // 未派 / 进行中 / 已合回 / 无需
+  fix: string // 未派 / [第 k 轮 ]进行中 / [第 k 轮 ]已合回 / [第 k 轮 ]阻断（gate|infra）/ 无需
   final: string // 未跑 / 绿 / 红
+  whole: string // 未开始 / 进行中 / 未返回 / 第 n 轮 x 条（CRITICAL/HIGH y）
   end: string // 在飞 / 已落地（ready|draft）/ 已停飞（<原因>）
 }
 
@@ -309,15 +338,31 @@ export function summarize(state: State): FlightSummary {
     const measured = !ms.length ? '-' : ms.some(m => !(Array.isArray(m.source) && m.source.length) && failing(m)) ? '先红' : '未先红'
     const reviews = evs.filter(e => e.ev === 'review' && e.slice === id)
     const findings = reviews.flatMap(e => (Array.isArray(e.findings) ? (e.findings as Finding[]) : []))
+    // 与 next 的 reviewed 同口径：blocked review:<S> 跨 attempt 计入
+    const rb = last(evs.filter(e => e.ev === 'blocked' && e.slice === `review:${id}`))
     const review = reviews.length ? `${findings.length} 条（CRITICAL/HIGH ${findings.filter(f => BLOCKING.includes(f.severity)).length}）`
+      : rb ? `阻断（${str(rb, 'kind')}）`
       : dispatchesA(id, 'reviewer').length ? '进行中'
       : '未开始'
     return { id, wave, phase, ...(exec ? { agent: str(exec, 'agent') } : {}), reds, measured, review }
   }
 
-  const fixers = dispatchesA(FIX, 'fixer')
-  const fix = fixers.length ? (mergedOk(FIX) ? '已合回' : '进行中')
-    : reviewFindings(state).some(f => BLOCKING.includes(f.severity)) ? '未派' : '无需'
+  // 修复列：本 attempt 最新一个修复体（fix 或 fix-r<k>），fix-r<k> 前缀「第 <k> 轮 」（design D8）
+  const fx = last(ofA('dispatch').filter(e => e.role === 'fixer' && (e.slice === FIX || FIX_ROUND.test(str(e, 'slice')))))
+  const fs = fx ? str(fx, 'slice') : FIX
+  const fxBlocked = blockedNow(fs)
+  const fix = fx ? `${fs === FIX ? '' : `第 ${fs.slice('fix-r'.length)} 轮 `}${mergedOk(fs) ? '已合回' : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）` : '进行中'}`
+    : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）`
+    : blockingOf(reviewFindings(state, true)).length ? '未派' : '无需'
+  // 全量评审：本 attempt 最新一轮（whole 为第 1 轮，whole-r<k> 为第 k+1 轮）
+  const wd = last(ofA('dispatch').filter(e => e.role === 'reviewer' && WHOLE.test(str(e, 'slice'))))
+  const ws = wd ? str(wd, 'slice') : ''
+  const wr = last(ofA('review').filter(e => e.slice === ws))
+  const wf = findingsOf(wr)
+  const whole = !wd ? '未开始'
+    : wr ? `第 ${ws === 'whole' ? 1 : Number(ws.slice('whole-r'.length)) + 1} 轮 ${wf.length} 条（CRITICAL/HIGH ${blockingOf(wf).length}）`
+    : blockedNow(`review:${ws}`) ? '未返回'
+    : '进行中'
   const fin = last(ofA('final'))
   const land = last(ofA('land'))
   const halt = last(ofA('halt'))
@@ -330,6 +375,7 @@ export function summarize(state: State): FlightSummary {
     slices: waves.flatMap((w, i) => w.map(s => row(s, i + 1))),
     fix,
     final: !fin ? '未跑' : fin.ok === true ? '绿' : '红',
+    whole,
     end: land ? `已落地（${str(land, 'verdict')}）` : halt ? `已停飞（${str(halt, 'reason')}）` : '在飞',
   }
 }
@@ -338,7 +384,7 @@ export function summaryLines(s: FlightSummary): string[] {
   return [
     `✈ ${s.change} · attempt ${s.attempt} · W${s.wave}/${s.waves} · ${s.end}`,
     ...s.slices.map(r => `${r.id} W${r.wave} ${r.phase} · 门禁红 ${r.reds} · 测量 ${r.measured} · 评审 ${r.review}`),
-    `修复 ${s.fix} · final ${s.final}`,
+    `修复 ${s.fix} · final ${s.final} · 全量评审 ${s.whole}`,
   ]
 }
 
@@ -355,16 +401,18 @@ const make = (ev: string) => (b: Base, x: object): FlightEvent => ({
 /** 事件构造：产出完整事件（含 v / by），字段对照 spec flight-ledger-events。本 change 不构造 approve。 */
 export const ev: {
   takeoff(b: Base, x: { attempt: number; fp: string; branch: string; waves: string[][]; model: string }): FlightEvent
-  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string; base?: string; branch?: string }): FlightEvent
+  dispatch(b: Base, x: { attempt: number; slice: string; role: Role; agent: string; model: string; worktree: string; base?: string; branch?: string; commit?: string }): FlightEvent
   gate(b: Base, x: { attempt: number; agent: string } & GateJson): FlightEvent
   ended(b: Base, x: { attempt: number; agent: string; reason: string; model: string | null }): FlightEvent
   merge(b: Base, x: { attempt: number; slice: string; ok: boolean; commit: string; failed: string[] }): FlightEvent
   review(b: Base, x: { attempt: number; slice: string; agent: string; findings: Finding[] }): FlightEvent
   blocked(b: Base, x: { attempt: number; slice: string; kind: 'gate' | 'infra'; reason: string }): FlightEvent
-  final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[] }): FlightEvent
+  final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[]; warnings?: string[] }): FlightEvent
   land(b: Base, x: { attempt: number; verdict: 'ready' | 'draft' }): FlightEvent
   halt(b: Base, x: { attempt: number; reason: string }): FlightEvent
   measure(b: Base, x: { attempt: number; slice: string; agent: string; base: string; commit: string; outcomes: [string, string][]; changed: string[]; source: string[] }): FlightEvent
+  /** 只留证据：reduce / next / summarize 都不看 diag（design D9） */
+  diag(b: Base, x: { attempt: number; where: string; error: string; kind?: string; agent?: string; budget?: number }): FlightEvent
 } = {
   takeoff: make('takeoff'),
   dispatch: make('dispatch'),
@@ -377,4 +425,5 @@ export const ev: {
   land: make('land'),
   halt: make('halt'),
   measure: make('measure'),
+  diag: make('diag'),
 }

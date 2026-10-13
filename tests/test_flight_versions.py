@@ -41,3 +41,23 @@ def test_takeoff_refuses_stale_judges():
     # When: 分别运行 checkJudges
     # Then: 前两个不通过（原因含「判定器过旧」或缺少的能力，并含「主检出」），第三个通过
     assert_ts_passed("takeoff-refuses-stale-judges")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+def test_judges_need_ship_ledger():
+    # Given: 判定器 /j4：events 列出全部所需事件，features 只输出 evidence-ledger-only、g5-per-target、guards
+    # When: 对 /j4 运行 checkJudges
+    # Then: 拒飞，原因含「缺少能力 ship-ledger」与「先把主检出更新到与插件同一版本」
+    assert_ts_passed("judges-need-ship-ledger")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S7 实现后去掉 xfail 标记。
+
+
+def test_judges_need_ledger_records():
+    # Given: 判定器 features 缺 ledger-records
+    # When: 起飞核对判定器
+    # Then: 核对失败且原因含 ledger-records；REQUIRED_FEATURES 含 ledger-records
+    assert_ts_passed("judges-need-ledger-records")

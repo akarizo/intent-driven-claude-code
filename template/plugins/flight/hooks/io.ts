@@ -44,6 +44,23 @@ export async function readLedger(io: Io, f: Flight): Promise<{ events: FlightEve
   return { events }
 }
 
+/** 按账本最新 takeoff 的 attempt 查停飞（design D8）：有 halt 为 'halt'，有 land 为 'land'，账本读不出为 'unreadable'，都没有为 undefined。 */
+export async function stoppedNow(io: Io, f: Flight): Promise<'halt' | 'land' | 'unreadable' | undefined> {
+  let ledger: Awaited<ReturnType<typeof readLedger>>
+  try {
+    ledger = await readLedger(io, f)
+  } catch {
+    return 'unreadable'
+  }
+  if ('error' in ledger) return 'unreadable'
+  const takeoff = ledger.events.filter(e => e.ev === 'takeoff').pop()
+  if (takeoff === undefined) return undefined
+  const mine = ledger.events.filter(e => e.attempt === takeoff.attempt)
+  if (mine.some(e => e.ev === 'halt')) return 'halt'
+  if (mine.some(e => e.ev === 'land')) return 'land'
+  return undefined
+}
+
 // 写入前按读取方（ledger.py 的 EVENTS）同一张表校验：链上一条坏事件就会让整条账本判损坏、起飞被永久拒绝（PR #39 评审 HIGH）
 type Check = [(x: unknown) => boolean, string]
 const isInt = (x: unknown) => typeof x === 'number' && Number.isInteger(x)
@@ -80,6 +97,9 @@ const EVENTS: Record<string, Record<string, Check>> = {
     outcomes: [x => Array.isArray(x) && x.every(isOutcome), '不是合法的 outcomes 数组'],
     changed: STRS, source: STRS,
   },
+  ship: { attempt: ATTEMPT, pr: NONEMPTY, verdict: oneOf('ready', 'draft'), commit: STR },
+  // kind / agent / budget 可选（design D9）
+  diag: { attempt: ATTEMPT, where: NONEMPTY, error: STR },
 }
 
 /** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */

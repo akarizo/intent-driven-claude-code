@@ -442,3 +442,83 @@ def test_ledger_entries_accept_host_origins():
     # When: 依次以 scheduled-trigger、不带来源、sdk 发出 /opsx-apply demo，再以 sdk 发出 /flight abort demo
     # Then: 前两次回复含「只接受人或宿主程序发出」与 scheduled-trigger / 未标明且无新事件；第三次含「✈ 起飞 demo」；第四次后账本有原因含「人工中止」的 halt
     assert_ts_passed("ledger-entries-accept-host-origins")
+
+# ---------------------------------------------------------------- flight-ship-ledger
+# 骨架：S5 实现后去掉 xfail 标记。
+
+
+def test_ship_tool_main_session_only():
+    # Given: demo 已落地、PR 7 头与 HEAD 相符、ship 裁决 ready；另有在飞 change 的执行体 X
+    # When: X 与主会话各以 {change: demo, pr: 7} 调用 mcp__flight__ship
+    # Then: X 被拒（只接受主会话）；主会话 result 含 ready，demo 账本末条为 ship 事件
+    assert_ts_passed("ship-tool-main-session-only")
+
+
+def test_fix_round_merges_by_slice():
+    # Given: demo 在飞，fix-r1 修复体收口门禁绿且已结束，分支 flight/demo/fix-r1
+    # When: drive 执行合回
+    # Then: 运行了 merge --no-ff flight/demo/fix-r1 -m integrate: fix-r1，账本末条 merge 的 slice 为 fix-r1、ok 为 true
+    assert_ts_passed("fix-round-merges-by-slice")
+
+
+def test_per_task_guidance_when_plugin_registers():
+    # Given: 两个世界：甲的 command.register 照常应答；乙对 opsx-apply 抛 refused
+    # When: 各自开始会话，再由人在终端发出 /opsx-apply demo --gate=per-task
+    # Then: 甲回复含「本项目没有 /opsx-apply 命令文件」与 legacy skill 路径、无账本事件、未透传；乙照旧透传
+    assert_ts_passed("per-task-guidance-when-plugin-registers")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S7 实现后去掉 xfail 标记。
+
+
+def test_dispatch_takes_base_without_start():
+    # Given: wave 1 只有 S1；base 打印 b1；另一世界 base 以 1 退出（G0 base）
+    # When: drive 派发 S1 执行体
+    # Then: 运行 slice-gate.py base S1 … --expect-branch worktree-demo；dispatch.base 为 b1；无 start；另一世界记 blocked 含「G0 base」
+    assert_ts_passed("dispatch-takes-base-without-start")
+
+
+def test_takeoff_reads_engine_model():
+    # Given: session.model 分别应答 claude-opus-5-5、gpt-x、抛错 denied
+    # When: 分别 /opsx-apply demo，再在第二个世界带 --model=sonnet
+    # Then: 依次为 model opus、拒「判不出主模型」含 gpt-x、拒含 denied、model sonnet；全程无 session-model.py
+    assert_ts_passed("takeoff-reads-engine-model")
+
+
+def test_takeoff_writes_no_timeline():
+    # Given: change demo 已批准、从未起飞、工作区干净
+    # When: 人发 /opsx-apply demo
+    # Then: 起飞并写 takeoff；没有 timeline.py 调用，也没有 chore(flight): approve 提交
+    assert_ts_passed("takeoff-writes-no-timeline")
+
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# 骨架：S8 实现后去掉 xfail 标记。
+
+
+def test_main_session_writes_checked():
+    # Given: 会话 cwd 为 /repo，判定器在 template/.claude/hooks；check 拒 src/x.py 与 src/y.py；另一世界找不到判定器
+    # When: 主会话 Write / Bash 重定向 / ls，非飞行 agent Write，执行体 owns 内 Write，第二世界主会话 Write
+    # Then: 前两次与非飞行 agent 被拒；ls、执行体、第二世界放行且未跑 check
+    assert_ts_passed("main-session-writes-checked")
+
+
+def test_perform_skips_after_halt():
+    # Given: 派发 S1 期间被记 halt；另一世界合回动作算出后被记 halt
+    # When: 各自推进
+    # Then: 没有 spawn S1 执行体；没有 git merge；halt 之后无 dispatch / merge
+    assert_ts_passed("perform-skips-after-halt")
+
+
+def test_subagent_stop_error_leaves_diag():
+    # Given: 在飞执行体 a1 结束，收口门禁运行时抛出 Error「$.process.run(python3) aborted」
+    # When: 引擎发出 a1 的 SubagentStop
+    # Then: 账本末条为 diag（where SubagentStop、agent a1、kind throw、error 含 aborted、budget 为数字）；无 a1 的 gate
+    assert_ts_passed("subagent-stop-error-leaves-diag")
+
+
+def test_panel_refreshes_on_terminal():
+    # Given: 面板已打开；S1 已合回且评审为空；final 红（G2 lint）
+    # When: drive 推进到停飞
+    # Then: 面板最后一次绘制的首行含「已停飞（final 未通过：G2 lint）」
+    assert_ts_passed("panel-refreshes-on-terminal")

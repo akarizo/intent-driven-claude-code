@@ -1,11 +1,11 @@
 // 评审回收与落地（spec flight-findings-intake · design D5）：submit_findings 的处理、评审员 / 修复 agent 收口、
 // 以及 drive 交来的 dispatch(reviewer|fixer) / final / land / halt。不注册 hook、不碰 $：副作用全经调用方造的 Ctx 闭包。
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
-import { agentOf, currentAttempt, closeoutLists, ev, reduce, routingFindings, stopVerdict } from './core'
-import type { Action, Ctx, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
-import { appendEvent, freshWorktree, judge, readLedger } from './io'
-import { closeout, commitRecords, validateFindings } from './land'
-import { fixerPrompt, reviewerPrompt } from './prompts'
+import { agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
+import type { Action, Ctx, Finding, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
+import { appendEvent, freshWorktree, judge, readLedger, stoppedNow } from './io'
+import { closeout, commitRecords, renderRecords, validateFindings } from './land'
+import { fixerPrompt, followupReviewPrompt, reviewerPrompt, wholeReviewPrompt } from './prompts'
 
 const FIX = 'fix'
 const firstLine = (s: string) => s.trim().split('\n')[0] ?? ''
@@ -83,6 +83,41 @@ export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: st
   return { result: `findings 已记录：${v.findings.length} 条` }
 }
 
+/** 评审员动作；mode / base / prior 是 S2 在 core.ts 的 Action 上新增的字段（_interfaces.md），这里按约定读取。 */
+type ReviewAction = { slice: string; commit: string; mode?: 'whole' | 'followup'; base?: string; prior?: Finding[] }
+type ReviewPlan = { prompt: string; description: string; range?: { commit: string; base: string } }
+
+/** 全量评审的起点：git merge-base <commit> <主 worktree HEAD>；任一步失败、输出为空或等于 commit 时返回原因。 */
+async function wholeBase(io: Io, f: Flight, commit: string): Promise<{ base: string } | { error: string }> {
+  const m = await io.run(['git', '-C', f.mainTree, 'rev-parse', 'HEAD'])
+  const head = m.stdout.trim()
+  if (m.exitCode !== 0 || head === '') return { error: `git rev-parse HEAD 失败：${firstLine(m.stderr) || `exit ${m.exitCode}`}` }
+  const mb = await io.run(['git', '-C', f.changeTree, 'merge-base', commit, head])
+  const base = mb.stdout.trim()
+  if (mb.exitCode !== 0 || base === '') return { error: `git merge-base 失败：${firstLine(mb.stderr) || `exit ${mb.exitCode}`}` }
+  if (base === commit) return { error: `分叉点就是 ${commit}，没有可审的改动` }
+  return { base }
+}
+
+/** 按 mode 选提示词：whole 先算起点，followup 用动作给的范围，不带 mode 为切片评审。 */
+async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPlan | { error: string }> {
+  const prior = x.prior ?? []
+  if (x.mode === 'whole') {
+    const wb = await wholeBase(io, f, x.commit)
+    if ('error' in wb) return { error: `算不出全量评审的起点：${wb.error}` }
+    const prompt = wholeReviewPrompt({ change: f.change, changeDir: f.changeDir, hooksDir: f.hooksDir, base: wb.base, commit: x.commit, prior })
+    return { prompt, description: '全量评审', range: { commit: x.commit, base: wb.base } }
+  }
+  if (x.mode === 'followup') {
+    const round = Number(/^whole-r(\d+)$/.exec(x.slice)?.[1] ?? 0)
+    const base = x.base ?? ''
+    if (base === '' || base === x.commit) return { error: `复核范围缺 base：base 为「${base}」，commit 为 ${x.commit}` }
+    const prompt = followupReviewPrompt({ change: f.change, changeDir: f.changeDir, round, base, commit: x.commit, prior })
+    return { prompt, description: `复核 第 ${round} 轮`, range: { commit: x.commit, base } }
+  }
+  return { prompt: reviewerPrompt({ change: f.change, changeDir: f.changeDir, slice: x.slice, commit: x.commit }), description: `评审 ${x.slice}` }
+}
+
 /** 评审员 / 修复 agent 收口；其他 role 返回 undefined（交给调用方放行） */
 export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
   const a = agentOf(reduce(found.events), agentId)
@@ -95,7 +130,7 @@ export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Pr
   }
   if (a.role !== 'fixer') return undefined
   const gate = await runFinal(ctx.io, found.flight, a.worktree)
-  const g = ev.gate(await base(ctx, found.flight), { attempt: a.attempt, agent: agentId, ...gate, slice: FIX })
+  const g = ev.gate(await base(ctx, found.flight), { attempt: a.attempt, agent: agentId, ...gate, slice: a.slice || FIX })
   await appendEvent(ctx.io, found.flight, g)
   const v = stopVerdict(reduce([...found.events, g]), agentId, gate)
   return v.kind === 'block' ? { block: v.text } : undefined
@@ -116,29 +151,41 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
   const append = (x: FlightEvent) => appendEvent(io, f, x)
 
   if (action.kind === 'dispatch' && action.role === 'reviewer') {
-    const prompt = reviewerPrompt({ change: f.change, changeDir: f.changeDir, slice: action.slice, commit: action.commit })
-    const r = await ctx.spawn({ f, role: 'reviewer', cwd: f.changeTree, prompt, description: `评审 ${action.slice}` })
-    if (r.agentId) await append(ev.dispatch(b, { attempt, slice: action.slice, role: 'reviewer', agent: r.agentId, model: f.model, worktree: f.changeTree }))
-    else await append(ev.blocked(b, { attempt, slice: `review:${action.slice}`, kind: 'infra', reason: `评审员派发被拒：${r.deny ?? '未知原因'}` }))
+    const x = action as ReviewAction
+    // 派发前查停飞（design D8）：动作算出后人可能已停飞或已落地；此时不派发、不追加事件
+    if ((await stoppedNow(io, f)) !== undefined) return
+    const plan = await reviewPlan(io, f, x)
+    if ('error' in plan) {
+      await append(ev.blocked(b, { attempt, slice: `review:${x.slice}`, kind: 'infra', reason: plan.error }))
+      return
+    }
+    const r = await ctx.spawn({ f, role: 'reviewer', cwd: f.changeTree, prompt: plan.prompt, description: plan.description })
+    // 全量评审与复核的 dispatch 另记这一轮审到的 commit 与 base（_interfaces.md）；ev.dispatch 的类型由 S2 补 commit
+    if (r.agentId) {
+      const d = { attempt, slice: x.slice, role: 'reviewer' as const, agent: r.agentId, model: f.model, worktree: f.changeTree, ...plan.range }
+      await append(ev.dispatch(b, d))
+    } else await append(ev.blocked(b, { attempt, slice: `review:${x.slice}`, kind: 'infra', reason: `评审员派发被拒：${r.deny ?? '未知原因'}` }))
     return
   }
   if (action.kind === 'dispatch' && action.role === 'fixer') {
+    const slice = (action as { slice?: string }).slice ?? FIX
     // 先提交飞行记录：修复 worktree 从分支尖端切出，未提交的记录会在合回时冲突
     const err = await commitRecords(io, f, 'chore(flight): 记录')
     if (err) {
-      await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `提交飞行记录失败：${err}` }))
+      await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `提交飞行记录失败：${err}` }))
       return
     }
-    // 每个 attempt 另起修复 worktree：flight-<change>-fix 已在则用 fix-a<attempt>，从不复用旧树
-    const wt = await freshWorktree(io, f, FIX, attempt)
+    // 每个 attempt 另起修复 worktree：flight-<change>-<slice> 已在则用 <slice>-a<attempt>，从不复用旧树
+    const wt = await freshWorktree(io, f, slice, attempt)
     if ('error' in wt) {
-      await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `修复 worktree 创建失败：${wt.error}` }))
+      await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 worktree 创建失败：${wt.error}` }))
       return
     }
     const prompt = fixerPrompt({ change: f.change, changeDir: f.changeDir, findings: action.findings })
-    const r = await ctx.spawn({ f, role: 'fixer', cwd: wt.path, prompt, description: '批量修复' })
-    if (r.agentId) await append(ev.dispatch(b, { attempt, slice: FIX, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch }))
-    else await append(ev.blocked(b, { attempt, slice: FIX, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
+    if ((await stoppedNow(io, f)) !== undefined) return
+    const r = await ctx.spawn({ f, role: 'fixer', cwd: wt.path, prompt, description: `修复 ${slice}` })
+    if (r.agentId) await append(ev.dispatch(b, { attempt, slice, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch }))
+    else await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
     return
   }
   if (action.kind === 'final') {
@@ -149,15 +196,25 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       return
     }
     const g = await runFinal(io, f, f.changeTree, { reuseFix: true })
-    await append(ev.final(b, { attempt, ok: g.ok, commit: g.commit, failed: g.failed }))
+    await append(ev.final(b, { attempt, ok: g.ok, commit: g.commit, failed: g.failed, ...(g.warnings ? { warnings: g.warnings } : {}) }))
     return
   }
   if (action.kind === 'land') {
-    const merged = [...new Set(state.events.filter(x => x.ev === 'merge' && x.ok === true && x.slice !== FIX).map(x => String(x.slice)))]
-    const { verdict } = await closeout(io, f, closeoutLists(state), merged)
+    // 修复合回（fix 与 fix-r<k>）不是 tasks.md 里的切片
+    const isFix = (s: unknown) => s === FIX || /^fix-r\d+$/.test(String(s))
+    const merged = [...new Set(state.events.filter(x => x.ev === 'merge' && x.ok === true && !isFix(x.slice)).map(x => String(x.slice)))]
+    // 落地顺序（design D3）：收口 → land 事件 → 从账本生成并提交记录 → 飞行记录 → 交接 pr-ship
+    const { verdict, reasons } = await closeout(io, f, merged)
     await append(ev.land(b, { attempt, verdict }))
+    // 记录只给人看、裁决以账本为准：生成失败不改裁决，照常交接
+    const recErr = await renderRecords(io, f)
+    if (recErr !== undefined) {
+      await ctx.log(`落地记录生成失败：${recErr}`)
+      await ctx.toast(`flight：${f.change} 落地记录生成失败：${recErr}`)
+    }
     await ctx.status(undefined)
-    await ctx.log(await flightRecord(io, f, state, `飞行记录 · ${f.change}`))
+    const record = await flightRecord(io, f, state, `飞行记录 · ${f.change}`)
+    await ctx.log(verdict === 'draft' && reasons ? `${record}\ndraft 原因：${reasons}` : record)
     // 交接给插件自带命令 /flight:pr-ship（design D4）；$.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
     // 交接失败不停飞：已落地，不向上抛（否则 drive 会补记 halt），只提示人带同样参数手动接
     const args = `--worktree ${f.changeTree} --change-dir ${f.changeDir} --judges ${f.hooksDir}`

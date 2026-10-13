@@ -252,3 +252,27 @@ def test_main_session_spawns_code_reviewer():
     # When: 判定四种派发：主会话带 model 派 flight:code-reviewer / 主会话不带 model / 在飞 agent 带 model / 主会话带 model 派 flight:reviewer
     # Then: 第一种放行；其余拒绝理由依次含「铁律 11」「飞行中的 agent 不得再派发子 agent」「只能由 flight 控制面派发」
     assert_ts_passed("main-session-spawns-code-reviewer")
+
+# ---------------------------------------------------------------- flight-ledger-guards
+# S4 已实现：骨架标记已去。
+
+
+def test_bash_write_targets():
+    # Given: cwd 为 /w；spec 列出的 13 条命令
+    # When: 逐条求 bashWriteTargets
+    # Then: 1–11 的 targets 依 spec；$OUT 进 unresolved；git status 两者皆空
+    assert_ts_passed("bash-write-targets")
+
+
+def test_bash_write_targets_cd_scope():
+    # Given: cwd 为 /w；子 shell / 管道 / 后台里的 cd，以及之后经 ;、||、换行继续的 cd
+    # When: 逐条求 bashWriteTargets
+    # Then: 子 shell / 管道 / 后台的 cd 不影响后续相对目标；cd 可能失败之后的相对目标进 unresolved
+    assert_ts_passed("bash-write-targets-cd-scope")
+
+
+def test_flight_agent_bash_writes_within_owns():
+    # Given: 执行体 E（owns src/a/**，worktree /wt/S1）与评审员 R
+    # When: 以 bashWritesVerdict 判定 E 的四条命令与 R 的一条
+    # Then: owns 内两条放行；越界被拒含路径与 owns；$OUT 拒「写入目标无法静态判定」；R 被拒
+    assert_ts_passed("flight-agent-bash-writes-within-owns")
