@@ -24,10 +24,42 @@ export type FlightArmedItem = { …; submittedAt?: number } // 交模型那一�
 - **锁**：沿用 `armBusy`。人工起飞撞锁时回复「flight：<change> 正在起飞，稍候」；`/flight abort` 撞锁时回复「flight：<change> 正在自动起飞，结束后再 /flight abort」。
 - **S4 在 S2 之上加「正在飞」判据**：drive 期间登记进程内的 `driving: Set<string>`，`drive()` 的开头加入、结束时移除。由 S4 新增，S2 不做。
 
-## S1 · `armed.ts` 与 `land.ts`
+## S1
 
-- `armed.ts` 的公开函数签名不变；只改 `relaunch`（`giveUpText` 用它）的做法文本。
-- `land.ts` 的 `commitArtifacts` 签名不变；识别已暂存删除时改读 `git status --porcelain -z`。
+### template/plugins/flight/hooks/armed.ts
+```
+export type ArmClass = 'wait-baseline' | 'wait-agents' | 'transient' | 'model' | 'human-key' | 'human'
+export const ARM_BUDGET = 3
+export const ARM_TTL_MS = 1800000
+export const TRANSIENT_DELAY_MS = 10000
+export type Arm = {
+export type ArmEvent = { kind: 'refused' } | { kind: 'agent-ended' } | { kind: 'main-turn' } | { kind: 'tick' } | { kind: 'timer' }
+export type ArmStep =
+export function classifyRefusal(text: string): ArmClass {
+export function armOf(x: { change: string; args: string[]; resume: boolean; text: string; now: number }): Arm {
+export function beforeRetry(arm: Arm): Arm {
+export function refusedAgain(arm: Arm, text: string): Arm {
+export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep {
+export function modelPrompt(arm: Arm): string {
+export function armedLine(arm: Arm, now: number): string {
+export function giveUpText(arm: Arm, why: string): string {
+export function humanText(change: string, text: string, cls: 'human' | 'human-key'): string {
+```
+
+### template/plugins/flight/hooks/land.ts
+```
+export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
+export async function commitRecords(io: Io, f: Flight, message: string, extra: readonly string[] = []): Promise<string | undefined> {
+export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
+export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
+export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], branch = `flight/${f.change}/${slice}`):
+export async function prepareResolve(io: Io, f: Flight, slice: string, x: { branch?: string; attempt?: number } = {}):
+export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], resolve = { path: resolvePath(f, slice), branch: resolveBranch(f, slice) }):
+export async function mergeFix(io: Io, f: Flight, _note: string, branch?: string, slice = 'fix'): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+export function validateFindings(input: unknown): { ok: true; findings: Finding[] } | { ok: false; error: string } {
+export async function closeout(io: Io, f: Flight, merged: readonly string[]): Promise<{ verdict: 'ready' | 'draft'; reasons: string }> {
+export async function renderRecords(io: Io, f: Flight): Promise<string | undefined> {
+```
 
 ## S4 · `orchestrator.tsx`
 
