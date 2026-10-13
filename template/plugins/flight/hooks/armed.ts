@@ -122,7 +122,7 @@ export function armedLine(arm: Arm, now: number): string {
 }
 
 function relaunch(arm: Arm): string {
-  if (arm.resume) return `/flight resume ${arm.change}`
+  if (arm.resume) return ['/flight resume', arm.change, ...arm.args.filter(a => a !== arm.change)].join(' ')
   return `/opsx-apply ${arm.args.length ? arm.args.join(' ') : arm.change}`
 }
 

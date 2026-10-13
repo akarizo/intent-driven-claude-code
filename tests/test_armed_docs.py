@@ -35,11 +35,11 @@ def test_docs_describe_armed_takeoff():
         assert "回车发出预填" not in text, f"{rel} 仍写着「回车发出预填」"
 
 
-def test_plugin_version_0_10_0():
+def test_plugin_version_not_below_0_10_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
-    # Then: version 为 0.10.0，description 提到起飞待命与按下即起飞
+    # Then: version 按数字逐段比较不低于 0.10.0，description 提到起飞待命与按下即起飞
     data = json.loads(_read("template/plugins/flight/.claude-plugin/plugin.json"))
-    assert data["version"] == "0.10.0"
+    assert tuple(int(p) for p in data["version"].split(".")) >= (0, 10, 0), data["version"]
     assert "起飞待命" in data["description"]
     assert "按下即起飞" in data["description"]

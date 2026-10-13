@@ -488,7 +488,7 @@ test('commit-artifacts-handles-staged-deletion', async () => {
   // Given: 工件 a.md 已修改未暂存；slices/S5.md 的删除已暂存，git status --porcelain 答「 M …/a.md」与「D  …/slices/S5.md」；其余 git 调用退出 0
   const a = `${CD}/a.md`
   const s5 = `${CD}/slices/S5.md`
-  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { stdout: ` M ${a}\nD  ${s5}\n` } : undefined))
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { stdout: argv.includes('-z') ? ` M ${a}\0D  ${s5}\0` : ` M ${a}\nD  ${s5}\n` } : undefined))
 
   // When: commitArtifacts(io, f, [a.md, S5.md])
   const err = await commitArtifacts(io, F, [a, s5])
@@ -496,5 +496,52 @@ test('commit-artifacts-handles-staged-deletion', async () => {
   // Then: git add 的路径只有 a.md；git commit 的路径同时含 a.md 与 S5.md；返回没有错误
   expect(calls[find(calls, 'add')].argv).toEqual(['git', '-C', CT, 'add', '--', `${CT}/${a}`])
   expect(calls[find(calls, 'commit')].argv.slice(-3)).toEqual(['--', `${CT}/${a}`, `${CT}/${s5}`])
+  expect(err).toBeUndefined()
+})
+
+// scenario 来源：spec flight-takeoff-commit#staged-deletion-edge-cases（甲、乙、丙三个世界分写成三个子用例）
+test('staged-deletion-edge-cases/quoted-path', async () => {
+  // Given: 甲：a.md 已修改未暂存；切片/S5.md 的删除已暂存；git status --porcelain -z 答「 M a.md\0D  切片/S5.md\0」，
+  //        不带 -z 时按 core.quotePath 答成八进制转义的带引号路径；其余 git 调用退出 0
+  const a = `${CD}/a.md`
+  const s5 = `${CD}/切片/S5.md`
+  const quoted = `"${CD}/\\345\\210\\207\\347\\211\\207/S5.md"`
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { stdout: argv.includes('-z') ? ` M ${a}\0D  ${s5}\0` : ` M ${a}\nD  ${quoted}\n` } : undefined))
+
+  // When: commitArtifacts(io, f, [a.md, 切片/S5.md])
+  const err = await commitArtifacts(io, F, [a, s5])
+
+  // Then: git add 的路径只有 a.md；git commit 的路径同时含 a.md 与 切片/S5.md；返回没有错误
+  expect(calls[find(calls, 'add')].argv).toEqual(['git', '-C', CT, 'add', '--', `${CT}/${a}`])
+  expect(calls[find(calls, 'commit')].argv.slice(-3)).toEqual(['--', `${CT}/${a}`, `${CT}/${s5}`])
+  expect(err).toBeUndefined()
+})
+
+test('staged-deletion-edge-cases/all-deleted', async () => {
+  // Given: 乙：b.md 与 slices/S5.md 都是已暂存删除；git status 答两条「D  」（带 -z 时以 \0 分隔，否则以换行分隔）；其余 git 调用退出 0
+  const b = `${CD}/b.md`
+  const s5 = `${CD}/slices/S5.md`
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { stdout: argv.includes('-z') ? `D  ${b}\0D  ${s5}\0` : `D  ${b}\nD  ${s5}\n` } : undefined))
+
+  // When: commitArtifacts(io, f, [b.md, S5.md])
+  const err = await commitArtifacts(io, F, [b, s5])
+
+  // Then: 没有 git add 调用；git commit 的路径同时含 b.md 与 S5.md；返回没有错误
+  expect(find(calls, 'add')).toBe(-1)
+  expect(calls[find(calls, 'commit')].argv.slice(-3)).toEqual(['--', `${CT}/${b}`, `${CT}/${s5}`])
+  expect(err).toBeUndefined()
+})
+
+test('staged-deletion-edge-cases/status-fails', async () => {
+  // Given: 丙：git status 以 1 退出（stderr 为 fatal: index file corrupt）；其余 git 调用退出 0
+  const a = `${CD}/a.md`
+  const s5 = `${CD}/slices/S5.md`
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { exitCode: 1, stderr: 'fatal: index file corrupt\n' } : undefined))
+
+  // When: commitArtifacts(io, f, [a.md, S5.md])
+  const err = await commitArtifacts(io, F, [a, s5])
+
+  // Then: git add 带全部两个路径；返回没有错误
+  expect(calls[find(calls, 'add')].argv).toEqual(['git', '-C', CT, 'add', '--', `${CT}/${a}`, `${CT}/${s5}`])
   expect(err).toBeUndefined()
 })

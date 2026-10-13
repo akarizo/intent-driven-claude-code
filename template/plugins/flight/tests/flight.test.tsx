@@ -1,6 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { EVENT_TYPES } from '../hooks/io'
+import { REQUIRED_FEATURES } from '../hooks/versions'
+
 // 测试用的「世界」：git / python3 / 文件系统 / 会话 都由测试的 hook 在插件之下作答。
 type World = {
   version?: string
@@ -31,6 +34,12 @@ type World = {
   status?: string
   /** `agent.list` 的应答（缺省空） */
   agents?: { id: string; status: string }[]
+  /** takeoff-gate.py 等它 resolve 之后才作答（让起飞「卡住」） */
+  gateWait?: Promise<unknown>
+  /** slice-gate.py baseline 等它 resolve 之后才作答（让基线「卡住」） */
+  baselineWait?: Promise<unknown>
+  /** takeoff-gate.py 以 exit 0 放行；随后的起飞检查（git --version、ledger.py events、slice-gate.py features）都过，slice-gate.py lint 以 exit 1 停下 */
+  gatePasses?: boolean
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -102,6 +111,10 @@ function useWorld(on: On, w: World) {
     gates: [] as string[],
     /** 按发生顺序：`stop <task_id>`（TaskStop）与 `gate <change>`（takeoff-gate.py） */
     order: [] as string[],
+    /** ui.status 收到的文本 */
+    statuses: [] as string[],
+    /** `git -C <tree> add|commit …` 的参数（-C <tree> 之后的部分）：起飞时提交工件 */
+    commits: [] as string[][],
     /** mock.clock 的句柄（advance / settle） */
     clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
@@ -109,6 +122,7 @@ function useWorld(on: On, w: World) {
   let updateRefCalls = 0
   let lastEvent = ''
   log.clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) }) as never
+  mock.env(on, {})
   on('ui.notify', ($, e) => {
     log.notes.push(JSON.stringify(e))
     return { value: { isSent: true, channel: 'iterm2' } } as never
@@ -129,6 +143,10 @@ function useWorld(on: On, w: World) {
   on('turn.complete', () => ({ text: '' }))
   on('ui.toast', ($, e) => {
     log.toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.status', ($, e) => {
+    log.statuses.push(String(e.text ?? ''))
     return { value: undefined }
   })
   on('prompt.fill', ($, e) => {
@@ -171,6 +189,7 @@ function useWorld(on: On, w: World) {
       return ok(w.fp(fpCalls++, String(args[2])) + '\n')
     }
     if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) {
+      if (args[1] === 'events') return ok(EVENT_TYPES.join('\n') + '\n')
       const name = String(args[3]).split('/').pop() ?? ''
       if (args[1] !== 'show') return ok((w.approved?.[name] ?? log.approved) + '\n')
       if (w.showFails) return { value: { ...fail('git 不可用').value, exitCode: 5 } }
@@ -179,14 +198,23 @@ function useWorld(on: On, w: World) {
     if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'baseline') {
       log.baselines.push(String(args[3]))
       const b = w.baseline ?? { exitCode: 0, stdout: '{"ok": true, "reasons": []}' }
-      return { value: { ...ok(b.stdout).value, exitCode: b.exitCode } }
+      const answer = { value: { ...ok(b.stdout).value, exitCode: b.exitCode } }
+      return w.baselineWait === undefined ? answer : w.baselineWait.then(() => answer)
     }
-    // 起飞守卫一律以 exit 3「未批准」作答：起飞在守卫处停下，用例只看起飞是否发生
+    if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'features') return ok(REQUIRED_FEATURES.join('\n') + '\n')
+    if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'lint') return fail('lint 红（测试世界）')
+    // 起飞守卫缺省以 exit 3「未批准」作答：起飞在守卫处停下，用例只看起飞是否发生；gatePasses 时放行
     if (cmd === 'python3' && args[0]?.endsWith('/takeoff-gate.py')) {
       const name = String(args[2]).split('/').pop() ?? ''
       log.gates.push(name)
       log.order.push(`gate ${name}`)
-      return { value: { ...fail('takeoff-gate: 未批准：账本里没有这个 change 的批准记录。').value, exitCode: 3 } }
+      const answer = w.gatePasses ? ok('') : { value: { ...fail('takeoff-gate: 未批准：账本里没有这个 change 的批准记录。').value, exitCode: 3 } }
+      return w.gateWait === undefined ? answer : w.gateWait.then(() => answer)
+    }
+    if (cmd === 'git' && args[0] === '--version') return ok('git version 2.43.0\n')
+    if (cmd === 'git' && args[0] === '-C' && (args[2] === 'add' || args[2] === 'commit')) {
+      log.commits.push(args.slice(2))
+      return ok('')
     }
     if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
     if (cmd === 'git' && args.includes('status')) return ok(w.status ?? '')
@@ -217,6 +245,11 @@ function useWorld(on: On, w: World) {
 /** 写账本的 git 子命令（rev-parse 只读，不算）。 */
 function writes(log: { git: GitCall[] }): string[] {
   return log.git.map(c => String(c.args[0])).filter(op => op !== 'rev-parse')
+}
+
+/** 每次 `git commit` 提交的路径（`--` 之后的部分）。 */
+function committed(log: { commits: string[][] }): string[][] {
+  return log.commits.filter(c => c[0] === 'commit').map(c => c.slice(c.indexOf('--') + 1))
 }
 
 /** 推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完。 */
@@ -782,11 +815,12 @@ function attemptEvent(change: string, ev: string, at: string, extra: object = {}
 }
 
 test('band-offers-takeoff-for-approved', async ($, on) => {
-  // Given: demo 账本只有 approve F（之后从未起飞），ledger approved 输出 F，当前指纹 F；git status 列出 demo 的 proposal.md（已改）与 design.md（未跟踪）两个工件
+  // Given: demo 账本只有 approve F（之后从未起飞），ledger approved 输出 F，当前指纹 F；git status 列出 demo 的 proposal.md（已改）与 design.md（未跟踪）两个工件；起飞守卫放行，起飞检查走到提交工件之后在 lint 停下
   const world = demoWorld(() => F, {
     ledger: [ledgerEvent('approve', F)],
     approved: { demo: F },
     status: ' M template/openspec/changes/demo/proposal.md\n?? template/openspec/changes/demo/design.md\n',
+    gatePasses: true,
   })
   const log = useWorld(on, world)
   await $.session.start(START)
@@ -798,12 +832,13 @@ test('band-offers-takeoff-for-approved', async ($, on) => {
   await ui.press({ key: String(button?.key) })
   await background(log)
 
-  // Then: 按钮为 takeoff:demo:<F>、「起飞」；说明行含「提交本 change 的 2 个工件」；没有写账本的 git 命令（没追加 approve）；以 demo 起飞；输入框没有被预填
+  // Then: 按钮为 takeoff:demo:<F>、「起飞」；说明行含「提交本 change 的 2 个工件」；没有写账本的 git 命令（没追加 approve）；以 demo 起飞；输入框没有被预填；起飞带了「授权提交」：恰对 proposal.md 与 design.md 做了一次 git commit
   expect(`${String(button?.key)}|${String(button?.props.label)}`).toBe(`takeoff:demo:${F}|起飞`)
   expect(note).toBeDefined()
   expect(writes(log)).toEqual([])
   expect(log.gates).toEqual(['demo'])
   expect(log.fills).toEqual([])
+  expect(committed(log)).toEqual([[`${DEMO}/proposal.md`, `${DEMO}/design.md`]])
 })
 
 test('band-ignores-landed-and-aborted', async ($, on) => {
@@ -829,8 +864,8 @@ test('band-ignores-landed-and-aborted', async ($, on) => {
 })
 
 test('band-approve-takes-off', async ($, on) => {
-  // Given: demo 未批准（账本为空），当前指纹 F；批准带已显示 demo 的「批准起飞」
-  const log = useWorld(on, demoWorld(() => F))
+  // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 demo 的 proposal.md 一个未提交工件；起飞守卫放行，起飞检查走到提交工件之后在 lint 停下；批准带已显示 demo 的「批准起飞」
+  const log = useWorld(on, demoWorld(() => F, { status: ' M template/openspec/changes/demo/proposal.md\n', gatePasses: true }))
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -838,11 +873,12 @@ test('band-approve-takes-off', async ($, on) => {
   await ui.press({ key: `approve:demo:${F}` })
   await background(log)
 
-  // Then: 账本追加了 fp=F 的 approve；以 demo 起飞；toast 里有起飞回复首行（含「起飞守卫未通过」）；输入框没有被预填
+  // Then: 账本追加了 fp=F 的 approve；以 demo 起飞；toast 里有起飞回复首行（含「slice-gate lint 未通过」）；输入框没有被预填；起飞带了「授权提交」：恰对 proposal.md 做了一次 git commit
   expect(JSON.parse(String(log.git.find(c => c.args[0] === 'hash-object')?.stdin))).toMatchObject({ ev: 'approve', fp: F })
   expect(log.gates).toEqual(['demo'])
-  expect(log.toasts.some(t => t.includes('起飞守卫未通过'))).toBe(true)
+  expect(log.toasts.some(t => t.includes('slice-gate lint 未通过'))).toBe(true)
   expect(log.fills).toEqual([])
+  expect(committed(log)).toEqual([[`${DEMO}/proposal.md`]])
 })
 
 test('band-resume-takes-off', async ($, on) => {
@@ -884,4 +920,80 @@ test('band-resume-stops-diagnostician', async ($, on) => {
 
   // Then: 按发生顺序恰为对 d1 的一次 TaskStop、随后对 beta 的起飞（takeoff-gate）
   expect(log.order).toEqual(['stop d1', 'gate beta'])
+})
+
+// ---------------------------------------------------------------- flight-armed-followups S5：进行中显示、基线进度、去重提示
+
+test('band-shows-busy-while-taking-off', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；takeoff-gate.py 要等 release() 之后才作答；批准带已显示 demo 的「批准起飞」
+  let release: () => void = () => undefined
+  const log = useWorld(on, demoWorld(() => F, { gateWait: new Promise<void>(r => (release = r)) }))
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 approve:demo:<F>，推进时钟让后台起飞开始（守卫未答）并读出重绘后的批准带；随后放行守卫，推进时钟让起飞跑完
+  await ui.press({ key: `approve:demo:${F}` })
+  await log.clock.advance(0)
+  const busy = await ui.find({ text: /起飞中…/ })
+  const buttons = await ui.findAll({ type: 'Button' })
+  release()
+  await background(log)
+
+  // Then: 起飞返回前批准带有「起飞中…」且没有按钮；放行后批准带不再有「起飞中…」；以 demo 起飞了一次
+  expect(busy).toBeDefined()
+  expect(buttons).toHaveLength(0)
+  expect(await ui.findAll({ text: /起飞中…/ })).toHaveLength(0)
+  expect(log.gates).toEqual(['demo'])
+})
+
+test('band-shows-baseline-progress', async ($, on) => {
+  // Given: alpha 已停飞、计划改过（当前 G、最近批准 F）；slice-gate.py baseline 要等 release() 之后才以 exit 0 作答；alpha 的 slices.json 里 gate.full_suite_sec 为 132；批准带显示 alpha 的「批准修订并续飞」
+  let release: () => void = () => undefined
+  const world = haltWorld(['alpha'])
+  world.baselineWait = new Promise<void>(r => (release = r))
+  world.files[`${CHANGES}/alpha/slices.json`] = JSON.stringify({ gate: { full_suite_sec: 132 } })
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  const progress = () => log.statuses.filter(s => s.includes('基线已跑'))
+
+  // When: 按下 replan:alpha:<G>，推进时钟 60 秒（基线未结束）后读出状态行与批准带；放行基线让续飞跑完，再推进 120 秒
+  await ui.press({ key: `replan:alpha:${G}` })
+  await log.clock.advance(0)
+  await log.clock.advance(60000)
+  const line = progress().at(-1)
+  const band = await ui.find({ text: /基线运行中/ })
+  const buttons = await ui.findAll({ type: 'Button' })
+  release()
+  await background(log)
+  const afterRelease = progress().length
+  await log.clock.advance(120000)
+  await log.clock.settle()
+
+  // Then: 推进后的状态行含「续飞准备中 alpha」「基线已跑 1 分钟」「上次全量约 2 分钟」；批准带含「基线运行中」且没有按钮；基线只启动了一次；放行后再推进 120 秒，基线进度状态行条数不变
+  expect(line).toContain('续飞准备中 alpha')
+  expect(line).toContain('基线已跑 1 分钟')
+  expect(line).toContain('上次全量约 2 分钟')
+  expect(band).toBeDefined()
+  expect(buttons).toHaveLength(0)
+  expect(log.baselines).toEqual([`${CHANGES}/alpha`])
+  expect(progress()).toHaveLength(afterRelease)
+})
+
+test('band-dedupe-toast-says-takeoff', async ($, on) => {
+  // Given: 批准带已显示 demo 的「批准起飞」（指纹 F）；按下前账本 show 变为 approve F（另一次按键刚写入、之后没有 takeoff）；按下时 plan_fp 仍输出 F
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.ledger = [ledgerEvent('approve', F)]
+
+  // When: 按下 approve:demo:<F>，推进时钟让后台起飞跑完
+  await ui.press({ key: `approve:demo:${F}` })
+  await background(log)
+
+  // Then: 有一条 toast 含「flight：demo 已批准（指纹相同），直接起飞」；没有含「无需重复按」的 toast；以 demo 起飞了一次
+  expect(log.toasts.some(t => t.includes('flight：demo 已批准（指纹相同），直接起飞'))).toBe(true)
+  expect(log.toasts.filter(t => t.includes('无需重复按'))).toEqual([])
+  expect(log.gates).toEqual(['demo'])
 })

@@ -31,7 +31,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 `--gate=per-task`（可选）→ 跳过飞行模式：插件不接管，把命令原样交给模型；模型转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令其余段落不适用）。
 
 **起飞检查（插件执行；任一项不过即不起飞，原样回报原因，不问询）**
-- **批准指纹**：起飞时插件以 `takeoff-gate.py --change-dir` 比对账本 `refs/flight/<name>/ledger` 里最新的批准指纹与当前计划指纹；未批准、计划已变或账本损坏 → 不起飞，交出 `openspec/changes/<name>/spec.html` 的路径，请人核对 `spec.html` 顶部的计划指纹、在批准带按「批准起飞」后重新发出 `/opsx-apply <name>`。
+- **批准指纹**：起飞时插件以 `takeoff-gate.py --change-dir` 比对账本 `refs/flight/<name>/ledger` 里最新的批准指纹与当前计划指纹；未批准、计划已变或账本损坏 → 不起飞，交出 `openspec/changes/<name>/spec.html` 的路径，请人核对 `spec.html` 顶部的计划指纹、在批准带按「批准起飞」即起飞（按下即起飞，不用再发命令）。
 - **git 与 Claude Code 版本**：git 低于 2.38（合回用 `merge-tree --write-tree`）或 Claude Code 低于插件下限 → 不起飞。
 - **版本核对**：插件副本须是已安装的版本，判定器（主检出的 `.claude/hooks/`）须认识全部账本事件；不符 → 不起飞，先把主检出更新到与插件同一版本。
 - **跨会话**：最新一次起飞来自另一个会话、尚未落地或停飞 → 拒飞，提示用 `--takeover` 接管。
@@ -102,7 +102,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
   - 本轮已发 `/opsx-apply`（且不是 `--gate=per-task`）仍读到这里，才按插件缺席处理，见下。
 - 除 `--gate=per-task` 外，插件接管时本命令不会到达模型。模型读到这里，说明 flight 插件缺席、未加载或版本不符。
 - 必须停下报告，不得改用其他方式（手工派发 agent、照本文逐步执行等）实现本 change。
-- 指引：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` → `claude plugin install flight@intent-driven -s project` → `/reload-plugins`，然后重新发出 `/opsx-apply <name>`。
+- 指引：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` → `claude plugin install flight@intent-driven -s project` → `/reload-plugins`，再发一次 `/opsx-apply <name>`。
 
 **暂停例外（仅这四种，其余一律直接往下走，不问）**
 - spec 自相矛盾

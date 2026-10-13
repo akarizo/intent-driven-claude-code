@@ -212,7 +212,7 @@ your-project/
 `/opsx-apply <name>` 默认走**飞行模式**，零执行模式问询——tasks 阶段已把实现拆成 `slices.json` 里的切片（`owns` / `deps` / `verify` / `scenarios`），apply 只是把这份计划跑起来。飞行由 `flight@intent-driven` 插件的控制面执行，这是唯一实现：**插件缺席、未加载或版本不符即停飞**，没有第二条路径。
 
 ```
-人审 spec.html → 在批准带按「批准起飞」（插件把计划指纹写入账本）→ 人发 /opsx-apply <name>
+人审 spec.html → 在批准带按「批准起飞」（插件把计划指纹写入账本，按下即起飞）
   → 插件起飞检查：takeoff-gate.py 比对账本批准指纹 / slice-gate.py lint · preflight / 版本核对 / 主模型判定
   → 按 wave 派发 flight:executor（每片在自己的 worktree 里，只写 owns 内文件）
     执行体写好测试、改生产代码前调用 measure 工具 → 控制面测量先红并写入账本

@@ -60,3 +60,26 @@ def test_band_resume_stops_diagnostician():
     # When: 按下甲「续飞」，推进时钟让后台续飞跑完
     # Then: 起飞之前对 d1 调用了一次 TaskStop
     assert_ts_passed("band-resume-stops-diagnostician")
+
+# ---------------------------------------------------------------- flight-armed-followups S5
+
+def test_band_shows_busy_while_taking_off():
+    # Given: demo 未批准；takeoff-gate.py 迟迟不答
+    # When: 按下「批准起飞」，起飞返回前重绘批准带，随后放行
+    # Then: 重绘时 demo 一项含「起飞中…」、没有按钮；放行后不再显示「起飞中…」
+    assert_ts_passed("band-shows-busy-while-taking-off")
+
+
+def test_band_shows_baseline_progress():
+    # Given: 甲已停飞、计划改过；基线迟迟不结束；gate.full_suite_sec 为 132
+    # When: 按下「批准修订并续飞」，推进 60 秒，再放行基线
+    # Then: 状态行含「基线已跑 1 分钟」「上次全量约 2 分钟」，批准带甲一项含「基线运行中」、无按钮；基线只启动一次；放行后不再更新
+    assert_ts_passed("band-shows-baseline-progress")
+
+
+def test_band_dedupe_toast_says_takeoff():
+    # Given: 批准带显示「批准起飞」，但同指纹的 approve 已在账本
+    # When: 按下「批准起飞」
+    # Then: toast 含「已批准（指纹相同），直接起飞」、不含「无需重复按」；随后起飞
+    assert_ts_passed("band-dedupe-toast-says-takeoff")
+

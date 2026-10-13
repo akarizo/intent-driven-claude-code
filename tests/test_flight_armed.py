@@ -22,3 +22,12 @@ def test_armed_decides_next_step():
     # When: wait-agents 遇 agent-ended；transient 遇 refused 与 timer；model 遇 refused、（awaitingModel 后）main-turn 与 tick
     # Then: retry；wait（10000）与 retry；submit、retry 与 wait；submit 正文含拒绝原文与三段边界文字
     assert_ts_passed("armed-decides-next-step")
+
+# ---------------------------------------------------------------- flight-armed-followups S1（骨架：实现后去掉 xfail 标记）
+
+def test_relaunch_keeps_args():
+    # Given: resume 类待命 args 为 [demo, --takeover]；非 resume 待命 args 为 [demo, 授权提交]
+    # When: 分别生成 giveUpText
+    # Then: 前者含 /flight resume demo --takeover；后者含 /opsx-apply demo 授权提交
+    assert_ts_passed("relaunch-keeps-args")
+

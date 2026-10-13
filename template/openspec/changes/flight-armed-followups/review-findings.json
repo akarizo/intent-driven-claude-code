@@ -1,0 +1,161 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-propose.md",
+      "line": 2,
+      "summary": "frontmatter 的 description 仍写着「起飞需人类自己发 /opsx-apply」，和同文件第 5 行改好的「按下即起飞」矛盾。这个 description 会显示在斜杠命令菜单里，正是 spec 要消掉的「按批准起飞后再发命令」残留。测试的 STALE 只查「后自己发出」，所以没拦下来。",
+      "fix": "把第 2 行 description 末尾的「起飞需人类自己发 /opsx-apply」改为「在批准带按『批准起飞』即起飞」之类的说法；可以考虑在 tests/test_armed_followups_docs.py 的 STALE 里加上「自己发 /opsx-apply」，防止再回退。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 68,
+      "summary": "跳过原路径条目只看 X 位（e[0] 为 R/C）。porcelain v1 里 Y 位也可能是 R/C（对 intent-to-add 文件做工作区改名检测，git 2.18 起），这时 -z 同样会在后面跟一个原路径条目。这个条目没被跳过，会被当成独立条目解析；如果原路径恰好以 R 或 C 开头（例如 README.md），下一条真实条目会被误跳过，其中的「D  」路径漏进 staged，随后 git add 一个已删除路径报 pathspec 错。触发条件很少见。",
+      "fix": "跳过条件改为 X 或 Y 任一为 R/C，即 `if ('RC'.includes(e[0]) || 'RC'.includes(e[1])) i++`；并补一个 ` R new\\0README.md\\0D  x\\0` 的用例。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/land.test.ts",
+      "line": 502,
+      "summary": "切片包明确要求改名 / 复制条目后的原路径条目要跳过，实现了，但三个 staged-deletion-edge-cases 子用例都不含 R/C 条目，这条分支没有测试覆盖；删掉 `i++` 测试照样全绿。",
+      "fix": "在 quoted-path 或新增子用例里让 -z 输出含 `R  new.md\\0D  old\\0D  切片/S5.md\\0` 这类序列（原路径故意写成像 D 条目），断言原路径不被当作已暂存删除、S5.md 仍不进 git add。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 904,
+      "summary": "submitFix 没有和安排它的那次待命绑定。它在 armBusy 之外运行，提交成功或失败后都按 change 重新读 armOfChange。如果 clock.after(0) 到点前后，人又发了 /opsx-apply，同一 change 已换成新待命（since 不同），那么成功分支会把新待命提前标为 awaitingModel 并写入旧的 T0。新待命自己的 submit 还没生效，旧那一轮的 turn.complete 就可能触发重试、多耗预算。失败分支则会放弃这个新待命，并以旧原因通知。",
+      "fix": "runStep 的 submit 分支把 arm.since 传进 submitFix(\\$, change, step.text, arm.since)。submitFix 两个分支重新读到 arm 后，先判断 arm?.since === since，不一致就直接 return：只记日志，不改待命、不通知。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1136,
+      "summary": "armBusy 不只在自动重试时持有，人工起飞（takeoffArmed）期间也持有。人工起飞进行中、而该 change 恰好还有待命时，abort 会回复「正在自动起飞」，与事实不符。spec 的场景只覆盖自动重试，这里只是措辞问题。",
+      "fix": "回复改为不区分来源的「flight：<given> 正在起飞，结束后再 /flight abort」；需要区分时，单独记录持锁来源。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1385,
+      "summary": "armed.ts 的 Arm 类型注释写着字段与 FlightArmedItem 一一对应，但 Arm 没有 submittedAt。本片因此用 `as Arm` 和内联的 `Arm & { submittedAt?: number }` 绕过类型检查，两处类型已经不一致。",
+      "fix": "由 armed.ts 的 owner（S1，或后续片）在 Arm 上加 `submittedAt?: number`，再去掉 orchestrator.tsx 里的 `as Arm` 和内联交叉类型。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 453,
+      "summary": "基线结束后状态行不清：baselineTick 停表后最后一条「flight · 续飞准备中 <change> · 基线已跑 N 分钟（上次全量约 M 分钟）」一直留着。基线红（resumeFlight 只 notify 后返回）或起飞被守卫拒时，没有任何地方覆盖它，状态行会长期显示一个已经结束的准备阶段，误导人。",
+      "fix": "在 leaveBaseline 里改相位之后调用 statusQuietly($, '') 清掉进度行（这一步在起飞之前，orchestrator 起飞后写的状态行会正常覆盖），或者在 finished() 里检查最后一次相位是 baseline 时清掉；同时在 band-shows-baseline-progress 中断言放行后最后一条 status 不再含「续飞准备中」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 427,
+      "summary": "startTakeoff 先登记 inFlight，再 `await refresh($)`（未吞错）。refresh 一旦抛错（git / fs / python 任一失败），按键处理就此中断：clock.after(0) 不会被安排，起飞不会发生，finished() 也不会执行。进行中记录永远留着，批准带会一直显示「起飞中…」且没有按钮，只能重开会话。startResume 的非 replan 分支也有同样的问题。",
+      "fix": "startTakeoff 和 startResume 里登记之后的重绘改用 refreshQuietly($)；或者用 try/finally 保证重绘失败时也删掉 inFlight 记录、照常安排后台起飞。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 523,
+      "summary": "ui.press 不检查 item.busy。进行中只是靠「不渲染 Button」来防重复按；如果引擎在重绘前交付了旧 key 的按键（连按），处理流程照样往下走：takeoff 模式会第二次调用 startTakeoff，覆盖 inFlight 记录并再起一次 takeoffNow；先返回的那次 finished() 会删掉还在跑的那次的记录。（引擎是否会交付已不渲染按钮的旧 key，需进一步确认。）",
+      "fix": "在 ui.press 里找到 item 之后加一条：`if (item.busy) { $.ui.toast(`flight：${change} 正在进行中`); return { element: e.element } }`，或者直接检查 `inFlight.has(change)` 后返回；并补一条连按断言起飞只发生一次的用例。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 552,
+      "summary": "去重分支的 toast 被一律改成「已批准（指纹相同），直接起飞」，但只有 mode === 'approve' 才真的起飞。replan 模式连按时如果命中去重（第二次按键在第一次 refresh 完成前读到旧的批准带），会提示「直接起飞」但什么都不做，提示与行为又一次矛盾。spec 只要求「批准起飞」时这样提示。",
+      "fix": "toast 文案按 mode 区分：approve 用「已批准（指纹相同），直接起飞」；replan 保留原文案或改为「已批准（指纹相同），续飞已在进行」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 243,
+      "summary": "进行中的项如果不是 topItem（另一个 change 的 spec 更新），不会显示「起飞中…/基线运行中」，只会被计入「另有 N 个待批准」，标签与实际状态不符。这是渲染只显示 top 的既有限制，但进行中的项被算作「待批准」是这次新引入的。",
+      "fix": "pending / blocked 计数时排除 busy 项；或者让 topItem 优先选 busy 项，保证进行中的项可见。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 559,
+      "summary": "`driving` 只在排到队首、driveNow 开始时才 add，已排队但还没开始跑的 drive 不算「正在飞」。turn.complete 会先写 ended 再 `await drive($, f)`（约第 1374–1386 行）。如果本进程同时飞着另一个 change，它的 drive 正占着队列跑门禁（全量测试要几分钟），B 的最后一个执行体结束后，B 的 drive 只能排队；这时 driving 里没有 B，liveAgents(B) 也为空。人发 /flight resume B 会被判成卡住，写下 attempt 2 的 takeoff，排着队的那次 drive（本该合回 attempt 1 的切片）随后按 attempt 2 的状态去跑，attempt 1 已完成、未合回的切片会在 attempt 2 被重新派发，丢掉已完成的工作。",
+      "fix": "把「drive 正在跑」改成「drive 已入队或正在跑」：drive() 被调用时就给该 change 计数加一（例如 `Map<string, number>`），在 now() 的 finally 里减一，减到 0 时删除；takeoff 判据改用计数 > 0。补一个用例：两个 change 同时在飞，A 的 drive 卡在判定器上时，B 的 /flight resume 应被拒。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2800,
+      "summary": "新判据有两个分支（`driving.has(name)` 和 liveAgents 非空），`driving-flight-refused` 与现有两个 refused 用例只覆盖活 agent 这一支；「drive 正在跑、agent 都已结束」这一支没有任何用例，删掉 `driving.has(name)` 测试照样全绿。",
+      "fix": "补一个用例：让 drive 卡在某个判定器调用上（照「卡住与放行」的写法），agent.list 全部为 completed，这时发 /flight resume demo，断言回复含「正在飞」，账本仍只有 attempt 1 的 takeoff。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1047,
+      "summary": "tick 复查用起点时刻 `since !== snapshot.get(id)` 区分新旧请求。如果旧请求结束、新请求开始都落在同一个毫秒（clock.now 精度内），起点相等，仍会按陈旧快照停掉刚开始请求的 agent。概率很低，需进一步确认实际时钟精度。",
+      "fix": "给每次 steps.start 发一个单调递增的序号（与 startedAt 一起存），快照记序号，复查时比序号，不比时刻。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 557,
+      "summary": "driving 只在 drive 排到队首、driveNow 开始时才登记。drive 经全局单一 queue 串行：change B 的 driveNow 跑全量门禁（数分钟）时，change A 的 agent 刚结束，A 的 drive 还在队里排着。这时 A 不在 driving 里，liveAgents 也为空，「正在飞」判据就把 A 当成卡住放行。人发 /flight resume A 会多写一个 attempt 2 的 takeoff，而 attempt 1 那次排着的 drive 之后仍会以旧 Flight 对象跑一遍。这偏离了 D4「drive 正在跑这个 change」的本意（排队中的 drive 也属于正在驱动）。",
+      "fix": "在 drive() 里同步登记，不要等到队首：改为 Map<string, number> 计数，进入 drive() 时 +1，driveNow 的 finally 里 -1，归零时删除；判据改成 (driving.get(name) ?? 0) > 0。再补一个用例：另一个 change 的 drive 卡在队首时，本 change 的 resume 仍被拒为「正在飞」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 409,
+      "summary": "baselineTick 写的状态行「flight · 续飞准备中 <change> · 基线已跑 N 分钟…」在基线结束后没有人清。leaveBaseline 和 finished 只删进行中记录并重绘批准带，不碰状态行。基线红时（resumeFlight 只 notify 后返回），或续飞被拒为 human 类时（不写状态行），这行过时的进度会一直留着，直到别的东西覆盖它，与 spec「基线结束后停止更新」的本意（不再显示进度）不符，会误导人以为基线还在跑。",
+      "fix": "leaveBaseline 或 finished 里，如果这次续飞写过基线进度状态行，就复位状态行：有在飞或待命的由 orchestrator 自己重画，否则 statusQuietly($, '')。也可以由 orchestrator 导出一个类似 restoreStatus 的入口供 register 调用。再在 band-shows-baseline-progress 补一条断言：基线红放行后，最后一次状态行不含「基线已跑」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-propose.md",
+      "line": 2,
+      "summary": "文档残留没清干净：opsx-propose 命令 front-matter 的 description 仍是「起飞需人类自己发 /opsx-apply」，与改过的正文「按下即起飞」矛盾，而这正是本 change flight-armed-docs 要消除的那类表述。test_armed_followups_docs 的 STALE 只列了「后自己发出」「后重新发出」「人发 /opsx-apply」，「人类自己发 /opsx-apply」漏网，所以测试是绿的。",
+      "fix": "把 description 改成「…收尾把 spec.html 交给人类审批，人在批准带按『批准起飞』即起飞」；在 tests/test_armed_followups_docs.py 的 STALE 里加上「自己发 /opsx-apply」，防止回归。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/armed.ts",
+      "line": 9,
+      "summary": "types 的 FlightArmedItem 新增了 submittedAt，armed.ts 的 Arm 没有同步，而注释写明两者「一一对应」。orchestrator 只好用 `as Arm` 和 `Arm & { submittedAt?: number }` 绕过类型检查，两份类型已经漂移。",
+      "fix": "在 Arm 上加 `submittedAt?: number`（附 JSDoc），去掉 orchestrator.tsx:925 的 `as Arm` 和 :1398 的交叉类型。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 924,
+      "summary": "submitFix 在起飞锁之外，先 armOfChange 读、再 putArm 写，不是原子操作。两次 await 之间如果 /flight abort 取消了待命（此时 armBusy 未持有，abort 会直接 dropArm 并回复「已取消」），putArm 会把待命写回来，之后 main-turn 又会自动重试，与「已取消」的回复不符。窗口很小。",
+      "fix": "改用一次 update($, armedAtom, s => …)：只在 items[change] 存在、且 since 与提交前一致时才写入 awaitingModel 和 submittedAt。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 427,
+      "summary": "startTakeoff 和 startResume 先 inFlight.set，再 await refresh($)，之后才 clock.after(0) 安排起飞。refresh 一旦抛错（例如 fs.stat 失败），进行中记录不会被删，也没有起飞来触发 finished：该项永久显示「起飞中…」且没有按钮，进程重启前都不能再按。",
+      "fix": "登记后的重绘改用 refreshQuietly，或者用 try/catch 包住登记到 clock.after 之间的代码，失败时 inFlight.delete(change) 再抛出。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1149,
+      "summary": "abort 遇锁的回复固定是「正在自动起飞」，但 armBusy 也会被人工起飞持有（/opsx-apply、批准带按键的后台起飞）。待命存在时，人按批准带起飞的同时发 /flight abort，收到的也是「正在自动起飞」，原文与事实不符（spec 只要求自动重试这一种情形）。",
+      "fix": "区分锁的持有者（例如 armBusy 记录 'retry' 或 'human'），人工起飞持锁时回复「正在起飞，结束后再 /flight abort」；或者把原文统一改成不限定「自动」的说法。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_orchestrator.py",
+      "line": 4,
+      "summary": "新增的 `import pytest` 没有被使用（文件里没有 pytest.mark 之类的引用），是遗留的 orphan。新加的几段标题仍写「骨架：实现后去掉 xfail 标记」，与现状不符；test_flight_armed.py 和 test_flight_land.py 的新段标题也一样。",
+      "fix": "删掉 `import pytest`，把这几段标题改成「flight-armed-followups S2/S4/S1」，不再提 xfail。"
+    }
+  ],
+  "fix": null
+}
