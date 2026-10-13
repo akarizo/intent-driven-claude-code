@@ -6,7 +6,7 @@ import { reduce } from './core'
 import type { Flight, Io } from './core'
 import { readLedger, stoppedNow } from './io'
 import { classifyDirty } from './land'
-import { registerOrchestrator, takeoffNow } from './orchestrator'
+import { registerOrchestrator, scenarioFiles, takeoffNow } from './orchestrator'
 import { resumeFlight } from './resume'
 import type { ResumeDeps } from './resume'
 
@@ -170,17 +170,6 @@ async function lastHaltKind($: Engine, f: Flight): Promise<string> {
   return String(ledger.events.filter(e => e.ev === 'halt' && e.attempt === attempt).pop()?.kind ?? '')
 }
 
-/** slices.json 的 scenario_tests 映射到的测试文件（`::` 之前，去重）；读不出 / 不是 JSON 时为空。口径同 orchestrator 起飞时的同名判定。 */
-async function scenarioFilesOf($: Engine, changeDir: string): Promise<string[]> {
-  try {
-    const text = await ioOf($).read(`${changeDir}/slices.json`)
-    const tests = (JSON.parse(text ?? '') as { scenario_tests?: Record<string, unknown> }).scenario_tests ?? {}
-    return [...new Set(Object.values(tests).map(t => String(t).split('::')[0] ?? ''))].filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 /** 起飞时会被「授权提交」提交的本 change 工件数（classifyDirty 口径）；git status 失败按 0。 */
 async function artifactCount($: Engine, c: Candidate, f: Flight): Promise<number> {
   try {
@@ -188,7 +177,7 @@ async function artifactCount($: Engine, c: Candidate, f: Flight): Promise<number
     if (st.exitCode !== 0) return 0
     // porcelain 的 XY 列可能以空格开头，不能先 trim
     const paths = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
-    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFilesOf($, c.changeDir) }).artifacts.length
+    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFiles(ioOf($), `${c.changeDir}/slices.json`) }).artifacts.length
   } catch {
     return 0
   }
@@ -196,6 +185,13 @@ async function artifactCount($: Engine, c: Candidate, f: Flight): Promise<number
 
 /** change → 批准带「批准起飞」「起飞」说明行里的未提交工件数；每次刷新重算。 */
 const artifacts: Map<string, number> = new Map()
+
+type InFlight = { phase: 'takeoff' | 'baseline'; since: number; item: FlightItem }
+/** 进行中表（design D6）：按下起飞 / 续飞时登记（item = 按下的那一项），起飞回复返回后删除；有记录的项只显示进行中文字。 */
+const inFlight: Map<string, InFlight> = new Map()
+const MINUTE_MS = 60000
+const minutesOf = (ms: number) => Math.floor(ms / MINUTE_MS)
+const busyText = (p: InFlight, now: number) => (p.phase === 'takeoff' ? '起飞中…' : `基线运行中（已 ${minutesOf(now - p.since)} 分钟）`)
 
 /** 显示规则（spec flight-band-takeoff 的表，自上而下取第一条命中）。 */
 async function evaluate($: Engine, c: Candidate): Promise<FlightItem | undefined> {
@@ -239,6 +235,13 @@ async function refresh($: Engine): Promise<void> {
       const item = await evaluate($, c)
       if (item !== undefined) items.push(item)
     }
+  }
+  // 进行中的项即使按规则本该不显示也要显示：取登记时按下的那一项
+  const now = await $.clock.now()
+  for (const [change, p] of inFlight) {
+    const i = items.findIndex(x => x.change === change)
+    if (i >= 0) items[i] = { ...items[i]!, busy: busyText(p, now) }
+    else items.push({ ...p.item, busy: busyText(p, now) })
   }
   await update($, band, b => ({ ...b, items }))
 }
@@ -333,7 +336,7 @@ function depsOf($: Engine, item: FlightItem): ResumeDeps {
       const r = await $.process.run(['python3', `${item.hooksDir}/slice-gate.py`, 'baseline', '--change-dir', item.changeDir], {
         cwd: item.worktree,
         timeoutMs: BASELINE_TIMEOUT_MS,
-      })
+      }).finally(() => leaveBaseline($, item.change))
       if (r.exitCode === 0) return { ok: true, reasons: [] }
       let reasons: string[] = []
       try {
@@ -372,24 +375,82 @@ function depsOf($: Engine, item: FlightItem): ResumeDeps {
   }
 }
 
-/** 按键处理里起后台起飞（不阻塞按键）：以 [change, 授权提交] 起飞，回复首行经 toast 与通知告诉人。 */
-async function startTakeoff($: Engine, change: string): Promise<void> {
+/** 状态行写入失败一律吞掉，同 notifyQuietly。 */
+async function statusQuietly($: Engine, text: string): Promise<void> {
+  try {
+    await $.ui.status(text)
+  } catch {
+    /* 状态行失败不影响续飞 */
+  }
+}
+
+/** 批准带重绘失败吞掉：只用在后台回调里，避免无人处理的拒绝。 */
+async function refreshQuietly($: Engine): Promise<void> {
+  await refresh($).catch(() => undefined)
+}
+
+/** 起飞回复返回（含异常）：删进行中记录并重绘。 */
+async function finished($: Engine, change: string): Promise<void> {
+  inFlight.delete(change)
+  await refreshQuietly($)
+}
+
+/** slices.json 的 gate.full_suite_sec 换算成分钟（四舍五入，至少 1）；读不出为 undefined。 */
+async function fullSuiteMinutes($: Engine, changeDir: string): Promise<number | undefined> {
+  try {
+    const slices = JSON.parse((await ioOf($).read(`${changeDir}/slices.json`)) ?? '') as { gate?: { full_suite_sec?: unknown } }
+    const sec = Number(slices.gate?.full_suite_sec)
+    return Number.isFinite(sec) && sec > 0 ? Math.max(1, Math.round(sec / 60)) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 基线进度：仍在这一次基线相位就写状态行、重绘批准带，60 秒后再来；相位离开 baseline 即停。 */
+async function baselineTick($: Engine, change: string, since: number, full: number | undefined): Promise<void> {
+  const p = inFlight.get(change)
+  if (p?.phase !== 'baseline' || p.since !== since) return
+  const n = minutesOf((await $.clock.now()) - since)
+  await statusQuietly($, `flight · 续飞准备中 ${change} · 基线已跑 ${n} 分钟${full === undefined ? '' : `（上次全量约 ${full} 分钟）`}`)
+  await refreshQuietly($)
+  await $.clock.after(MINUTE_MS, () => void baselineTick($, change, since, full).catch(() => undefined))
+}
+
+/** 基线结束（含异常）：相位改为 takeoff 并重绘。 */
+async function leaveBaseline($: Engine, change: string): Promise<void> {
+  const p = inFlight.get(change)
+  if (p?.phase !== 'baseline') return
+  inFlight.set(change, { ...p, phase: 'takeoff', since: await $.clock.now() })
+  await refreshQuietly($)
+}
+
+/** 按键处理里起后台起飞（不阻塞按键）：登记进行中，以 [change, 授权提交] 起飞，回复首行经 toast 与通知告诉人。 */
+async function startTakeoff($: Engine, item: FlightItem): Promise<void> {
+  const change = item.change
+  inFlight.set(change, { phase: 'takeoff', since: await $.clock.now(), item })
+  await refresh($)
   await $.clock.after(0, () =>
     void takeoffNow([change, AUTHORIZE])
       .then(async text => {
         toastQuietly($, firstLine(text))
         await notifyQuietly($, firstLine(text))
       })
-      .catch(err => notifyQuietly($, `flight：${change} 起飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`)),
+      .catch(err => notifyQuietly($, `flight：${change} 起飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`))
+      .finally(() => finished($, change)),
   )
 }
 
-/** 按键处理里起后台续飞，不阻塞按键；续飞抛错时通知原因。 */
+/** 按键处理里起后台续飞，不阻塞按键：登记进行中（replan 先进基线相位并显示进度）；续飞抛错时通知原因。 */
 async function startResume($: Engine, item: FlightItem, replan: boolean): Promise<void> {
+  const change = item.change
+  const since = await $.clock.now()
+  inFlight.set(change, { phase: replan ? 'baseline' : 'takeoff', since, item })
+  if (replan) await baselineTick($, change, since, await fullSuiteMinutes($, item.changeDir))
+  else await refresh($)
   await $.clock.after(0, () =>
-    void resumeFlight(depsOf($, item), item.change, { replan }).catch(err =>
-      notifyQuietly($, `flight：${item.change} 续飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`),
-    ),
+    void resumeFlight(depsOf($, item), change, { replan })
+      .catch(err => notifyQuietly($, `flight：${change} 续飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`))
+      .finally(() => finished($, change)),
   )
 }
 
@@ -425,6 +486,7 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const pending = b.items.filter(x => x.problem === '' && x !== top).length
     const blocked = b.items.filter(x => x.problem !== '' && x !== top).length
+    const idle = top.problem === '' && !top.busy
     return (
       <Box flexDirection="column">
         <Text>
@@ -432,16 +494,19 @@ export const register: Register = on => {
           {top.fp === '' ? '' : `  指纹 ${top.fp.slice(0, 8)}`}
         </Text>
         <Text dimColor>{top.specPath}</Text>
-        {top.problem === '' ? (
+        {top.busy ? (
+          // 进行中：Button 没有禁用属性，不渲染按钮，只显示文字
+          <Text>{top.busy}</Text>
+        ) : top.problem === '' ? (
           // 引擎要求 Button 带 onPress；真正的处理在下方 ui.press hook（拿得到 e.surface，且不调 next，此闭包不会执行）
           <Button key={pressKey(top)} label={LABEL[top.mode]} variant="primary" onPress={() => undefined} />
         ) : (
           <Text color="red">{top.problem}，无法批准</Text>
         )}
-        {top.problem === '' && top.mode === 'replan' && (
+        {idle && top.mode === 'replan' && (
           <Text dimColor>按下会提交本 change 的工件、重跑基线，续飞只重派未合回的切片</Text>
         )}
-        {top.problem === '' && (top.mode === 'approve' || top.mode === 'takeoff') && (
+        {idle && (top.mode === 'approve' || top.mode === 'takeoff') && (
           <Text dimColor>
             {(artifacts.get(top.change) ?? 0) > 0 ? `按下会提交本 change 的 ${artifacts.get(top.change)} 个工件并直接起飞` : '按下直接起飞'}
           </Text>
@@ -476,7 +541,7 @@ export const register: Register = on => {
     }
     // 已批准、尚未起飞：不写 approve，直接后台起飞
     if (mode === 'takeoff') {
-      await startTakeoff($, change)
+      await startTakeoff($, item)
       return { element: e.element }
     }
     // 去重判定与追加在同一串行段：连按时后一次能读到前一次刚写入的 approve
@@ -484,10 +549,10 @@ export const register: Register = on => {
       (await isAlreadyApproved($, { ...item, fp })) ? 'duplicate' : (await appendApprove($, { ...item, fp }, e.surface)) ? 'appended' : 'failed',
     )
     if (outcome === 'duplicate') {
-      $.ui.toast(`flight：${change} 已批准（指纹相同），无需重复按`)
+      $.ui.toast(`flight：${change} 已批准（指纹相同），直接起飞`)
       await refresh($)
       // 指纹相同的已批准项按「起飞」处理
-      if (mode === 'approve') await startTakeoff($, change)
+      if (mode === 'approve') await startTakeoff($, { ...item, fp })
       return { element: e.element }
     }
     if (outcome === 'failed') {
@@ -497,7 +562,7 @@ export const register: Register = on => {
     await refresh($)
     // 批准修订并续飞：后台续飞；批准起飞：后台起飞
     if (mode === 'replan') await startResume($, { ...item, fp }, true)
-    else await startTakeoff($, change)
+    else await startTakeoff($, { ...item, fp })
     return { element: e.element }
   })
 

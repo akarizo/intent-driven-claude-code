@@ -1,7 +1,5 @@
 """批准带续飞与 resume.ts（scenario: flight-halt-handoff#band-offers-resume-for-halted / press-approves-then-resumes / resume-flight-sequence）。
 断言插件里同名的 TS 测试通过。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -63,9 +61,8 @@ def test_band_resume_stops_diagnostician():
     # Then: 起飞之前对 d1 调用了一次 TaskStop
     assert_ts_passed("band-resume-stops-diagnostician")
 
-# ---------------------------------------------------------------- flight-armed-followups S5（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-armed-followups S5
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S5 未实现")
 def test_band_shows_busy_while_taking_off():
     # Given: demo 未批准；takeoff-gate.py 迟迟不答
     # When: 按下「批准起飞」，起飞返回前重绘批准带，随后放行
@@ -73,7 +70,6 @@ def test_band_shows_busy_while_taking_off():
     assert_ts_passed("band-shows-busy-while-taking-off")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S5 未实现")
 def test_band_shows_baseline_progress():
     # Given: 甲已停飞、计划改过；基线迟迟不结束；gate.full_suite_sec 为 132
     # When: 按下「批准修订并续飞」，推进 60 秒，再放行基线
@@ -81,7 +77,6 @@ def test_band_shows_baseline_progress():
     assert_ts_passed("band-shows-baseline-progress")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S5 未实现")
 def test_band_dedupe_toast_says_takeoff():
     # Given: 批准带显示「批准起飞」，但同指纹的 approve 已在账本
     # When: 按下「批准起飞」
