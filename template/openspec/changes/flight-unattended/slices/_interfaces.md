@@ -197,20 +197,52 @@ export const WATCHDOG_MS = 600000
 export class StepTracker {
 ```
 
-## S4 · 落地
+## S4
 
-- `io.ts` 的 EVENTS 与 ledger.py 同步（heal、triage、diagnostician、halt.kind 可选）。
-- `runLandingAction`：
-  - **派修复体**：
-    - `action.slice === 'integ'` 时用 `integFixerPrompt`，failed 取 `action.failed`、base 取派发前 change worktree 的 HEAD；
-    - dispatch 事件追加 `base`。
-  - **派评审员**：`mode: 'integ'` 时用 `integReviewPrompt`，范围取动作上的 `base` / `commit`，dispatch 事件带二者。
-  - **halt**：
-    1. 追加 `ev.halt(b, {attempt, reason, kind: action.haltKind})`；
-    2. `haltKind !== 'abort'` 时 `await ctx.notify?.(…)`，抛错吞掉。
-  - **交接 pr-ship 失败**：toast 之外再 `ctx.notify?.(…)`。
-- `onLandingStop`：slice 为 `integ` 的修复体，final 带 `--integ-base <其 dispatch 的 base>`。
-- `ship.ts` 的 `shipPr`：ship 事件写入后 `ctx.notify?.(…)`，内容含 PR 号或链接、verdict、blocking 条数。
+### template/plugins/flight/hooks/landing.tsx
+```
+export const FINDINGS_TOOL: { name: 'submit_findings'; description: string; inputSchema: Record<string, unknown> } = {
+export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
+export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
+export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
+```
+
+### template/plugins/flight/hooks/ship.ts
+```
+export const SHIP_TOOL = {
+export type ShipJson = {
+export function shipComment(j: ShipJson, x: { date: string }): string {
+export async function shipPr(ctx: Ctx, f: Flight, state: State, pr: string): Promise<{ result: string } | { deny: string }> {
+```
+
+### template/plugins/flight/hooks/io.ts
+```
+export type Tree = { path: string; branch: string }
+export async function trees(io: Io, cwd: string): Promise<Tree[]> {
+export async function judgesDir(io: Io, mainTree: string): Promise<string> {
+export function judge(io: Io, f: Flight, name: string, args: readonly string[], cwd: string, timeoutMs?: number): Promise<RunResult> {
+export async function readLedger(io: Io, f: Flight): Promise<{ events: FlightEvent[] } | { error: string }> {
+export async function stoppedNow(io: Io, f: Flight): Promise<'halt' | 'land' | 'unreadable' | undefined> {
+export const EVENT_TYPES: readonly string[] = Object.keys(EVENTS)
+export function eventProblem(event: FlightEvent, change: string): string | undefined {
+export async function appendEvent(io: Io, f: Flight, event: FlightEvent): Promise<boolean> {
+export const active: Map<string, ActiveTree> = new Map()
+export const terminals: Map<string, number> = new Map()
+export type Owner = { change: string; role: Role; slice: string; worktree: string }
+export const owners: Map<string, Owner> = new Map()
+export function markPending(agentId: string, change: string): void {
+export function resetOwnership(): void {
+export type Unknown = { unknown: true; change: string; error: string }
+export async function ownership(io: Io, agentId: string): Promise<Owner | { pending: true; change: string } | Unknown | undefined> {
+export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
+export function worktreePath(f: Flight, name: string): string {
+export async function ensureWorktree(io: Io, f: Flight, name: string): Promise<{ path: string; created: boolean } | { error: string }> {
+export async function occupied(io: Io, f: Flight, name: string): Promise<string | undefined> {
+export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
+export function agentType(role: Role): string {
+export const flights: Map<string, Flight> = new Map()
+export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
+```
 
 ## S5 · 编排
 
