@@ -55,6 +55,8 @@ type World = {
   integrated?: string[]
   /** dispatch 事件写入账本总失败（update-ref 非 0，其余事件照常）：派出的 agent 停在登记中 */
   dispatchFails?: boolean
+  /** dispatch 事件写入账本（update-ref）前等它：参数为该 dispatch 的 agent（用来让 agent 停在登记中） */
+  dispatchHold?: (agent: string) => Promise<void>
   /** `git --version` 的输出（缺省 git version 2.43.0） */
   gitVersion?: string
   /** slice-gate base 打印的 base：按切片 worktree 路径（缺省为 --base 参数，否则 base-<目录名>） */
@@ -355,6 +357,14 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, 'b'.repeat(40) + '\n'))
       case 'update-ref':
         if (w.updateRefFails || (w.dispatchFails && pending?.ev === 'dispatch')) return wrap(res(1, '', 'cannot lock ref: is at dddd but expected 0000'))
+        if (w.dispatchHold && pending?.ev === 'dispatch') {
+          const held = pending
+          pending = undefined
+          return w.dispatchHold(String(held.agent)).then(() => {
+            log.events.push(held)
+            return wrap(res(0, ''))
+          }) as never
+        }
         if (pending) log.events.push(pending)
         pending = undefined
         return wrap(res(0, ''))
@@ -1984,6 +1994,32 @@ test('watchdog-exhausted-halts', async ($, on) => {
   expect(log.events.filter(x => x.ev === 'heal').length).toBe(3)
 })
 
+test('watchdog-tracks-step-while-pending', async ($, on) => {
+  // Given: demo（waves [[S1]]）；agent-1 派发后、dispatch 写入账本前（登记中）发出首个模型请求且永不结束；dispatch 写入被扣住直到放行
+  let release = (): void => undefined
+  const held = new Promise<void>(r => { release = r })
+  const w = demoWorld({ waves: [['S1']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] })
+  w.dispatchHold = async agent => {
+    if (agent !== 'agent-1') return
+    void step($, 'agent-1')
+    await flush()
+    await held
+  }
+  const log = useWorld(on, w)
+  const run = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await flush()
+  await advance(log, 661000)
+  release()
+  await run
+
+  // When: 时钟再推进 60s，看门狗 tick（请求已等 12 分钟，dispatch 已写入）
+  await advance(log, 60000)
+
+  // Then: 有一条 heal（kind watchdog、slice S1、agent agent-1）；TaskStop 停了 agent-1
+  expect(log.events.filter(x => x.ev === 'heal')).toEqual([expect.objectContaining({ kind: 'watchdog', slice: 'S1', agent: 'agent-1' })])
+  expect(log.stops.map(x => x.id)).toEqual(['agent-1'])
+})
+
 // ---------------------------------------------------------------- flight-unattended S5b
 
 test('halt-dispatches-diagnostician', async ($, on) => {
@@ -2012,6 +2048,25 @@ test('halt-dispatches-diagnostician', async ($, on) => {
   expect(log.notifies.some(n => JSON.stringify(n).includes('S1 的 owns 漏了 tests/test_x.py'))).toBe(true)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
   expect(await ui.find({ text: /诊断：S1 的 owns 漏了 tests\/test_x.py/ })).toBeDefined()
+})
+
+test('diagnostician-envelope-read-only', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1]]），S1 门禁一律红 [G7 demo#s1]；执行体逐个收口、结束直到停飞，停飞后已派出诊断员（仍在跑）
+  const log = useWorld(on, demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (let i = 1; i <= 4 && !log.events.some(x => x.ev === 'halt'); i++) {
+    await $.classic.SubagentStop(subagentStop(`agent-${i}`) as never)
+    await $.turn.complete(ended(`agent-${i}`) as never)
+  }
+  const id = log.spawns.find(x => x.subagent_type === 'flight:diagnostician')?.agentId ?? '没有诊断员'
+
+  // When: 诊断员调用 Edit 改 change worktree 下的 slices.json，再调用 Bash 执行 git commit -m x
+  const edit = await $.tool.call({ tool: 'Edit', file_path: `${TREE}/${CD}/slices.json`, old_string: 'a', new_string: 'b', agentId: id } as never)
+  const bash = await $.tool.call({ tool: 'Bash', command: 'git commit -m x', agentId: id } as never)
+
+  // Then: 两次都答 deny，理由含「只读」或「诊断员」；都没有到达执行端
+  for (const r of [edit, bash]) expect(String((r as { deny?: unknown }).deny ?? '没有 deny')).toMatch(/只读|诊断员/)
+  expect(log.reached).toEqual([])
 })
 
 test('halt-dispatches-diagnostician/abort-skips', async ($, on) => {
