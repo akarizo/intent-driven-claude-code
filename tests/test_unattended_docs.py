@@ -1,7 +1,5 @@
-"""flight-unattended 的文档与发布（scenario: flight-unattended-docs#*）。骨架：S7 实现后去掉 xfail 标记。"""
+"""flight-unattended 的文档与发布（scenario: flight-unattended-docs#*）。"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
@@ -14,7 +12,6 @@ DOCS = (
 KEYWORDS = ("自愈", "看门狗", "10 分钟", "整合修复", "G9", "诊断员", "批准修订并续飞")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S7 未实现")
 def test_docs_describe_self_heal_and_resume():
     # Given: opsx-apply 命令文件、openspec-apply-change 的 SKILL.md、README.md、docs/WORKFLOW_zh.md
     files = {p: (ROOT / p).read_text(encoding="utf-8") for p in DOCS}
@@ -28,7 +25,6 @@ def test_docs_describe_self_heal_and_resume():
     assert all("每次飞行 3 次" in t and "只读" in t for t in cmd_skill)
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S7 未实现")
 def test_plugin_version_0_9_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     manifest = json.loads((ROOT / "template/plugins/flight/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
