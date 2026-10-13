@@ -39,3 +39,5 @@ export type FlightArmedItem = { …; submittedAt?: number } // 交模型那一�
 - import `scenarioFiles` 与 `takeoffNow`（都来自 `./orchestrator`），不把 `$` 传出本文件。
 - 进程内进行中表：`Map<string, { phase: 'takeoff' | 'baseline'; since: number }>`。刷新批准带时，按它给项填 `busy`。
 - 基线进度：用 `$.clock.after(60000, …)` 自己续表，基线结束即停；状态行文本见 spec `flight-band-progress`。
+
+## S3
