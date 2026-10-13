@@ -190,9 +190,10 @@ Rule: Users can export their own data
 
 - **自愈三种**：合回失败（非冲突）用新 worktree 重派一次 · 看门狗：模型请求等待超过 10 分钟即停下，执行体续派、评审员与修复体各重派一次 · 整合修复：final 红时派修复体 `integ`。预算每次飞行 3 次、同一处 1 次，先记 heal 再做，用尽即停飞。
 - **G9 整合护栏**（`slice-gate.py final --integ-base`）：整合修复不改工件与 ADR、不碰 scenario 测试、测试只增不减、不加 xfail / skip；专审评审有 CRITICAL/HIGH 即停飞。
-- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`），停飞与 PR 开出时经 `$.ui.notify` 发终端通知。
+- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`），停飞（人工中止除外）与 PR 开出时经 `$.ui.notify` 发终端通知。
 - **诊断员**：停飞后派只读的 `flight:diagnostician`，诊断只供展示、不参与判定；人工中止与计划变化不派。
-- **批准带**：停飞后改了计划按「批准修订并续飞」（批准 + 提交本 change 工件 + 重跑基线 + 续飞），没改按「续飞」（等同 `/flight resume`）；首次起飞仍是「批准起飞」+ 回车 `/opsx-apply`。
+- **批准带按下即起飞**：「批准起飞」（批准 + 起飞）「起飞」（已批准，直接起飞）「批准修订并续飞」（批准 + 提交本 change 工件 + 重跑基线 + 续飞）「续飞」（等同 `/flight resume`）都按下即起飞，不再回车，输入框不预填；按键起飞一并提交本 change 的工件，手打 `/opsx-apply` 仍要带「授权提交」。
+- **起飞待命**（会话内状态，不进账本）：人发出的起飞被拒后，插件按原因等待（基线仍在跑、上一次的 agent 仍在运行）、重试（偶发失败，只重试一次）或交给模型修（lint / preflight 未通过、提交工件失败）；最多 3 次（等待类不计入）、30 分钟内有效，用尽或过期即放弃并通知；`/flight abort <change>` 可取消；版本、跨会话、工件之外的未提交改动等只能人处理，直接通知。
 
 **模型路由（铁律，按角色显式声明）**：`flight:executor` / `flight:reviewer` / `flight:fixer` 用会话主模型 `<main>`（effort high）；起飞检查、门禁、合回、final、记账等机械动作由插件代码执行，零 token。`<main>` 由 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出），**禁模型自述**；判定不出不起飞（需 `--model=<alias>` 显式指定）。插件派发时显式带 `model`；收口从账本对账各角色实际模型，不符即阻断。解析顺序自 v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，派发时留空 `model` 就会落到 env 默认值。
 

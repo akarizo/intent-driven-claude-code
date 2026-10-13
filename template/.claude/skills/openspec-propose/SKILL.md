@@ -89,14 +89,14 @@ metadata:
    然后**硬交接**（五件事缺一不可）：
 
    1. 打印 `spec.html` 的**绝对路径**（`openspec/changes/<name>/spec.html`，用 `pwd` 拼成绝对路径再打印），请人类打开审阅飞行计划。
-   2. 告诉人类起飞三步：核对 `spec.html` 顶部的计划指纹与 Claude Code 输入框上方批准带显示的指纹一致 → 在批准带按「批准起飞」（flight 插件把计划指纹写入账本 `refs/flight/<name>/ledger`）→ 回车发出预填的 `/opsx-apply <name>`。批准带没出现 = 未装 flight 插件，在项目根执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
+   2. 告诉人类怎么起飞：核对 `spec.html` 顶部的计划指纹与 Claude Code 输入框上方批准带显示的指纹一致 → 在批准带按「批准起飞」即起飞（按下即起飞：flight 插件把计划指纹写入账本 `refs/flight/<name>/ledger` 后直接起飞，不再回车）。工件未提交时按键会一并提交本 change 的工件，批准带的说明行写明个数。批准带没出现 = 未装 flight 插件，在项目根执行 `claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。
    3. 明确一行：**本 skill 到此结束。不得在同一轮继续 `/opsx-apply`；`takeoff-gate.py` 比对账本指纹与当前计划指纹，模型自证无效。**
-   4. 说明 baseline 仍在后台跑：跑完前起飞会被 preflight 拒绝（报「仍在跑」），等 baseline 报告一行后再起飞。
-   5. 提示用户在 baseline 报告之后再把工件单独 commit（artifacts-only commit；baseline 结束会改写 `gate-baseline.json` 与 `slices.json` 的耗时）；也可以在 baseline 报告之后直接发 `/opsx-apply <name> 授权提交`，由插件只提交工件后起飞。
+   4. 说明 baseline 仍在后台跑：跑完前起飞会被 preflight 拒绝（报「仍在跑」）并进入起飞待命，baseline 跑完后插件自动重试起飞；也可以等 baseline 报告一行后再按。
+   5. 提示用户：按键起飞会一并提交本 change 的工件，不必先单独 commit（baseline 结束会改写 `gate-baseline.json` 与 `slices.json` 的耗时，提交以起飞时为准）；手打命令仍可发 `/opsx-apply <name> 授权提交`，由插件只提交工件后起飞。
 
 **Output**
 
-完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、下一步提示：spec.html 绝对路径 + 「核对指纹后在批准带按『批准起飞』，再回车发出预填的 `/opsx-apply <name>`」（本 skill 不代跑）。
+完成后总结：change 名与位置、生成的工件清单、切片数与 wave 数、下一步提示：spec.html 绝对路径 + 「核对指纹后在批准带按『批准起飞』即起飞」（本 skill 不代跑）。
 
 **Artifact Creation Guidelines**
 
