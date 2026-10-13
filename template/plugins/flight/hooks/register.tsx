@@ -2,7 +2,12 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { FlightBand, FlightItem } from '../types'
+import { reduce } from './core'
+import type { Flight, Io } from './core'
+import { readLedger, stoppedNow } from './io'
 import { registerOrchestrator } from './orchestrator'
+import { resumeFlight } from './resume'
+import type { ResumeDeps } from './resume'
 
 // flight 控制面：批准带（AbovePrompt）+ 按压时进程内写账本 + Bash 守卫。
 // 指纹与账本读取只经 plan_fp.py / ledger.py 的 CLI；本模块不注册任何工具或命令（无模型可调批准入口）。
@@ -65,9 +70,13 @@ function parseWorktrees(porcelain: string): Tree[] {
     .filter(t => t.path !== '')
 }
 
-// 批准按钮的地址带着绘制时显示的 change 与指纹：按下时以人看到的那一项为准
-const APPROVE_KEY = /^approve:(.+):([0-9a-f]{64})$/
-const approveKey = (item: FlightItem) => `approve:${item.change}:${item.fp}`
+// 按钮的地址带着绘制时显示的模式、change 与指纹：按下时以人看到的那一项为准
+const PRESS_KEY = /^(approve|replan|resume):(.+):([0-9a-f]{64})$/
+const pressKey = (item: FlightItem) => `${item.mode}:${item.change}:${item.fp}`
+const LABEL: Record<FlightItem['mode'], string> = { approve: '批准起飞', replan: '批准修订并续飞', resume: '续飞' }
+const BASELINE_TIMEOUT_MS = 600000
+const LIVE = ['pending', 'running', 'waiting']
+const firstLine = (s: string) => s.split('\n')[0] ?? ''
 
 function newest(items: readonly FlightItem[]): FlightItem | undefined {
   return items.reduce<FlightItem | undefined>((a, x) => (a === undefined || x.mtimeMs > a.mtimeMs ? x : a), undefined)
@@ -128,9 +137,32 @@ async function fingerprint($: Engine, hooksDir: string, changeDir: string, cwd: 
   return { fp: r.stdout.trim(), problem: '' }
 }
 
+/** 本模块经 io.ts 读账本用的 Io。 */
+function ioOf($: Engine): Io {
+  return {
+    async run(argv, opts = {}) {
+      const r = await $.process.run([...argv], opts)
+      return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
+    },
+    async read(path) {
+      if (!(await $.fs.exists(path))) return undefined
+      const text = await $.fs.read(path)
+      return typeof text === 'string' ? text : undefined
+    },
+    write: (path, text) => $.fs.write(path, text),
+    exists: path => $.fs.exists(path),
+  }
+}
+
+/** io.ts 读账本只用到 change、changeTree、changeDir（相对 changeTree）与 hooksDir。 */
+function flightOf(x: { change: string; worktree: string; changeDir: string; hooksDir: string }): Flight {
+  const changeDir = x.changeDir.startsWith(`${x.worktree}/`) ? x.changeDir.slice(x.worktree.length + 1) : x.changeDir
+  return { change: x.change, mainTree: '', changeTree: x.worktree, changeDir, branch: '', hooksDir: x.hooksDir, model: '', session: '' }
+}
+
 async function evaluate($: Engine, c: Candidate): Promise<FlightItem | undefined> {
   const { mtimeMs } = await $.fs.stat(c.specPath)
-  const base = { change: c.change, worktree: c.tree.path, changeDir: c.changeDir, specPath: c.specPath, mtimeMs }
+  const base = { change: c.change, worktree: c.tree.path, changeDir: c.changeDir, specPath: c.specPath, mtimeMs, mode: 'approve' as const }
   const hooksDir = await hooksDirOf($, c.tree)
   if (hooksDir === '') return { ...base, hooksDir, fp: '', problem: '找不到 plan_fp.py' }
   const now = await fingerprint($, hooksDir, c.changeDir, c.tree.path)
@@ -141,7 +173,11 @@ async function evaluate($: Engine, c: Candidate): Promise<FlightItem | undefined
   })
   if (r.exitCode === 4) return { ...base, hooksDir, fp: now.fp, problem: '账本损坏' }
   if (r.exitCode !== 0) return { ...base, hooksDir, fp: now.fp, problem: '账本读取失败' }
-  if (r.stdout.trim() === now.fp) return undefined
+  const same = r.stdout.trim() === now.fp
+  // 最新 attempt 以 halt 结束才给续飞；读不出账本按未停飞处理
+  const halted = (await stoppedNow(ioOf($), flightOf({ ...base, hooksDir }))) === 'halt'
+  if (halted) return { ...base, hooksDir, fp: now.fp, problem: '', mode: same ? 'resume' : 'replan' }
+  if (same) return undefined
   return { ...base, hooksDir, fp: now.fp, problem: '' }
 }
 
@@ -230,6 +266,78 @@ async function appendApprove($: Engine, item: FlightItem, surface: string): Prom
   return false
 }
 
+/** 通知失败（未发出或抛错）一律吞掉：续飞本身不因通知失败而中断。 */
+async function notifyQuietly($: Engine, text: string): Promise<void> {
+  try {
+    await $.ui.notify(text, { title: 'flight' })
+  } catch {
+    /* 通知失败不影响续飞 */
+  }
+}
+
+/** resumeFlight 的依赖：都作用于批准带上的这一项。 */
+function depsOf($: Engine, item: FlightItem): ResumeDeps {
+  const f = flightOf(item)
+  return {
+    // 引擎拒绝把 $ 跨 import 传给 orchestrator 的 takeoff（validate：$ is followed only into a function declared in this same file），
+    // 插件自发的 $.command.run('flight') 也到不了本插件的 /flight hook（no implementation for command.run）；本片不改 orchestrator.tsx
+    // ceiling: 按键后只能预填续飞命令 -> 后续 change「起飞待命」由 orchestrator 交出起飞闭包后改为直接起飞
+    async takeoff(args) {
+      const cmd = `/opsx-apply ${args.join(' ')}`
+      const filled = await $.prompt.fill({ text: cmd })
+      return filled.isFilled ? `已预填 ${cmd}，回车续飞` : `flight：请手动输入 ${cmd}`
+    },
+    async baseline() {
+      const r = await $.process.run(['python3', `${item.hooksDir}/slice-gate.py`, 'baseline', '--change-dir', item.changeDir], {
+        cwd: item.worktree,
+        timeoutMs: BASELINE_TIMEOUT_MS,
+      })
+      if (r.exitCode === 0) return { ok: true, reasons: [] }
+      let reasons: string[] = []
+      try {
+        reasons = ((JSON.parse(r.stdout) as { reasons?: unknown[] }).reasons ?? []).map(String)
+      } catch {
+        /* 非 JSON（如 die 的 stderr）：下面取原文 */
+      }
+      return { ok: false, reasons: reasons.length > 0 ? reasons : [firstLine((r.stderr || r.stdout).trim()) || `exit ${r.exitCode}`] }
+    },
+    // 本 attempt 派出、未结束、引擎里仍在跑的诊断员逐个 TaskStop；读不出账本就不停
+    async stopLive() {
+      const ledger = await readLedger(ioOf($), f).catch(() => ({ error: '' }))
+      if ('error' in ledger) return []
+      const state = reduce(ledger.events)
+      const ended = new Set(state.events.filter(e => e.ev === 'ended').map(e => String(e.agent)))
+      const diag = state.events
+        .filter(e => e.ev === 'dispatch' && e.role === 'diagnostician' && Number(e.attempt) === state.attempt)
+        .map(e => String(e.agent))
+        .filter(id => !ended.has(id))
+      if (diag.length === 0) return []
+      const running = new Set((await $.agent.list()).filter(x => LIVE.includes(String(x.status))).map(x => x.id))
+      const stopped: string[] = []
+      for (const id of diag.filter(id => running.has(id))) {
+        try {
+          await $.tool.call({ tool: 'TaskStop', task_id: id } as never)
+          stopped.push(id)
+        } catch {
+          /* 停不掉照样续飞：诊断员只读 */
+        }
+      }
+      return stopped
+    },
+    notify: text => notifyQuietly($, text),
+    toast: text => void Promise.resolve($.ui.toast(text)).catch(() => undefined),
+  }
+}
+
+/** 按键处理里起后台续飞，不阻塞按键；续飞抛错时通知原因。 */
+async function startResume($: Engine, item: FlightItem, replan: boolean): Promise<void> {
+  await $.clock.after(0, () =>
+    void resumeFlight(depsOf($, item), item.change, { replan }).catch(err =>
+      notifyQuietly($, `flight：${item.change} 续飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`),
+    ),
+  )
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // 热重载后 $.state 保留上次的值：每次启动先停用，确认版本后才启用
@@ -271,9 +379,12 @@ export const register: Register = on => {
         <Text dimColor>{top.specPath}</Text>
         {top.problem === '' ? (
           // 引擎要求 Button 带 onPress；真正的处理在下方 ui.press hook（拿得到 e.surface，且不调 next，此闭包不会执行）
-          <Button key={approveKey(top)} label="批准起飞" variant="primary" onPress={() => undefined} />
+          <Button key={pressKey(top)} label={LABEL[top.mode]} variant="primary" onPress={() => undefined} />
         ) : (
           <Text color="red">{top.problem}，无法批准</Text>
+        )}
+        {top.problem === '' && top.mode === 'replan' && (
+          <Text dimColor>按下会提交本 change 的工件、重跑基线，续飞只重派未合回的切片</Text>
         )}
         {pending > 0 && <Text dimColor>另有 {pending} 个待批准</Text>}
         {blocked > 0 && <Text dimColor>另有 {blocked} 个无法批准</Text>}
@@ -281,13 +392,13 @@ export const register: Register = on => {
     )
   })
 
-  on('ui.press', { plugin: 'flight', element: /^approve:/ }, async ($, e) => {
-    const shown = APPROVE_KEY.exec(e.element)
+  on('ui.press', { plugin: 'flight', element: /^(approve|replan|resume):/ }, async ($, e) => {
+    const shown = PRESS_KEY.exec(e.element)
     const b = await read($, band)
     if (shown === null || b.isDisabled) return { element: e.element }
-    const [, change, fp] = shown
+    const [, mode, change, fp] = shown
     const item = b.items.find(x => x.change === change)
-    if (item === undefined || item.problem !== '') {
+    if (item === undefined || item.problem !== '' || item.mode !== mode) {
       $.ui.toast(`flight：${change} 已不在可批准列表，请看批准带当前显示的项`)
       await refresh($)
       return { element: e.element }
@@ -298,6 +409,11 @@ export const register: Register = on => {
       await refresh($)
       return { element: e.element }
     }
+    // 计划未改的续飞：不写 approve（沿用已批准的指纹）
+    if (mode === 'resume') {
+      await startResume($, item, false)
+      return { element: e.element }
+    }
     // 去重判定与追加在同一串行段：连按时后一次能读到前一次刚写入的 approve
     const outcome = await serial(async () =>
       (await isAlreadyApproved($, { ...item, fp })) ? 'duplicate' : (await appendApprove($, { ...item, fp }, e.surface)) ? 'appended' : 'failed',
@@ -305,7 +421,7 @@ export const register: Register = on => {
     if (outcome === 'duplicate') {
       $.ui.toast(`flight：${change} 已批准（指纹相同），无需重复按`)
       await refresh($)
-      await prefillApply($, change)
+      if (mode === 'approve') await prefillApply($, change)
       return { element: e.element }
     }
     if (outcome === 'failed') {
@@ -313,7 +429,9 @@ export const register: Register = on => {
       return { element: e.element }
     }
     await refresh($)
-    await prefillApply($, change)
+    // 批准修订并续飞：不预填，直接后台续飞
+    if (mode === 'replan') await startResume($, { ...item, fp }, true)
+    else await prefillApply($, change)
     return { element: e.element }
   })
 
