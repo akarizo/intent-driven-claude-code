@@ -464,8 +464,21 @@ install_flight_plugin() {
 # 递归复制已覆盖 commands/ · skills/（含 legacy/）
 # · hooks/（含 slice-gate.py 等飞行门禁），--upgrade 时一并刷新；飞行调度由 flight 插件控制面负责
 copy_tree "$TEMPLATE_SRC/.claude"  "$TARGET/.claude"  "$UPGRADE" "preferences.md settings.json"
-# openspec/：用户数据 + 种子目录，绝不覆盖
-copy_tree "$TEMPLATE_SRC/openspec" "$TARGET/openspec" 0
+# openspec/：只按清单下发种子，绝不覆盖用户数据
+#   template/openspec 兼作本仓自己的 openspec 工作区，changes/ 与 adr/ 下的条目不属于模板；
+#   新增种子须显式加进下面的清单
+for rel in .gitignore config.yaml changes/.gitkeep adr/.gitkeep superpower/.gitkeep; do
+  if [[ -e "$TARGET/openspec/$rel" ]]; then
+    log_skip "openspec/$rel"
+    SKIP_COUNT=$((SKIP_COUNT+1))
+  else
+    mkdir -p "$(dirname "$TARGET/openspec/$rel")"
+    cp "$TEMPLATE_SRC/openspec/$rel" "$TARGET/openspec/$rel"
+    log_add "openspec/$rel"
+    ADD_COUNT=$((ADD_COUNT+1))
+  fi
+done
+copy_tree "$TEMPLATE_SRC/openspec/schemas" "$TARGET/openspec/schemas" 0
 # openspec/.gitignore：已装项目不会被 copy_tree 覆盖，幂等补飞行起飞记录规则（整行匹配）
 OPENSPEC_GITIGNORE="$TARGET/openspec/.gitignore"
 if grep -qxF 'changes/*/.flight' "$OPENSPEC_GITIGNORE" 2>/dev/null; then
@@ -606,6 +619,20 @@ if [[ ${#moved_found[@]} -gt 0 ]]; then
   echo
   log_info "以下文件已迁入 flight 插件（改用 /flight:pr-ship 与 flight:code-reviewer），旧副本不再更新，可手动删除（安装器不代删）："
   for rel in "${moved_found[@]}"; do
+    log_info "  $rel"
+  done
+fi
+
+# 疑似旧版安装器误拷的本库开发工件：按名字匹配，只列出、提示可手动删除，不替用户删
+suspect_found=()
+for src in "$TEMPLATE_SRC"/openspec/changes/* "$TEMPLATE_SRC"/openspec/adr/*; do
+  rel="openspec/${src#"$TEMPLATE_SRC"/openspec/}"
+  if [[ -e "$TARGET/$rel" ]]; then suspect_found+=("$rel"); fi
+done
+if [[ ${#suspect_found[@]} -gt 0 ]]; then
+  echo
+  log_info "以下条目与本库自己的开发工件同名，多半是旧版安装器误拷进来的；确认不是你的 change / ADR 后可手动删除（安装器不代删）："
+  for rel in "${suspect_found[@]}"; do
     log_info "  $rel"
   done
 fi

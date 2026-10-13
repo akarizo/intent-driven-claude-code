@@ -247,8 +247,12 @@ exit "${STUB_RC:-0}"
 
 
 def _skip_changes(info):
-    """打归档时略去 template/openspec/changes（历史 change 工件，与安装无关，只会拖慢测试）。"""
-    return None if "/template/openspec/changes" in info.name else info
+    """打归档时略去 template/openspec/changes 下的历史 change 工件（与安装无关，只会拖慢测试）；保留种子 changes/.gitkeep。"""
+    marker = "/template/openspec/changes/"
+    i = info.name.find(marker)
+    if i < 0:
+        return info
+    return info if info.name[i + len(marker):] == ".gitkeep" else None
 
 
 def make_source(tmp_path, ref, kind, files):
@@ -527,7 +531,6 @@ def _dev_artifact_names():
     return change, adr
 
 
-@pytest.mark.xfail(strict=True, reason="骨架")
 def test_fresh_install_ships_only_seeds(tmp_path):
     # Given: 一个空目录
     target = tmp_path / "proj"
@@ -541,7 +544,6 @@ def test_fresh_install_ships_only_seeds(tmp_path):
     assert _files_under(target / "openspec") == OPENSPEC_SEEDS | schemas
 
 
-@pytest.mark.xfail(strict=True, reason="骨架")
 def test_upgrade_adds_no_dev_artifacts(tmp_path):
     # Given: 用 install.sh 装好的项目；用户自己建了 change my-change（含 proposal.md）与 ADR 0001-mine.md
     target = tmp_path / "proj"
@@ -580,7 +582,6 @@ def test_upgrade_keeps_user_seed_edits(tmp_path):
     assert schema.read_bytes() == (TEMPLATE_OPENSPEC / "schemas" / "intent-driven" / "schema.yaml").read_bytes()
 
 
-@pytest.mark.xfail(strict=True, reason="骨架")
 def test_upgrade_lists_suspected_dev_artifacts(tmp_path):
     # Given: 已装项目里有与模板 change 目录同名的目录、与模板 DRAFT ADR 同名的文件（模拟旧版安装器误拷），另有用户自己的 my-change
     change, adr = _dev_artifact_names()
