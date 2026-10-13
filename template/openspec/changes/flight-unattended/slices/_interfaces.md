@@ -281,4 +281,6 @@ export type ResumeDeps = {
 export async function resumeFlight(deps: ResumeDeps, change: string, opts: { replan: boolean }): Promise<string>
 ```
 
+批准带接线时，`deps.takeoff` 是**预填**：用 `$.prompt.fill` 把 `/opsx-apply <change> 授权提交` 填进输入框，回复「已预填 /opsx-apply <change> 授权提交，回车续飞」；预填不成时回复提示手动输入。它不是 `orchestrator.tsx` 的 `takeoff`：插件里 `$` 不能跨文件传（2026-10-13 attempt 2 后修订）。
+
 ## S7
