@@ -29,24 +29,22 @@ export function giveUpText(arm: Arm, why: string): string {
 export function humanText(change: string, text: string, cls: 'human' | 'human-key'): string {
 ```
 
-## S3 · `orchestrator.tsx` 与 `types/index.d.ts`
+## S3
 
-```ts
-/** 批准带等其他文件起飞用：不收 $。entry 由本文件带 matcher 的 session.start hook 设好；未设时回复「flight：插件尚未就绪，稍后再按」 */
-export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string>
+### template/plugins/flight/hooks/orchestrator.tsx
 ```
-- S3：`entry = (args, opts) => takeoff($, args, opts)`。
-- S4：把 `entry` 换成「起飞 + 被拒即待命」的包装，签名不变。
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+export function registerOrchestrator(on: On): void {
+```
 
-`types/index.d.ts`（S3 改，S4 / S5 用）：
-```ts
-export type FlightItem = { …; mode: 'approve' | 'takeoff' | 'replan' | 'resume' }   // 新增 'takeoff'
+### template/plugins/flight/types/index.d.ts
+```
+export type FlightItem = {
 export type FlightArmedItem = {
-  change: string; args: string[]; resume: boolean; cls: string; reason: string
-  since: number; tries: number; awaitingModel: boolean; transientAgain: boolean
-}
 export type FlightArmed = { items: Record<string, FlightArmedItem> }
-// PluginState.flight 增加 armed: FlightArmed
+export type FlightBand = {
+export type FlightPanel = {
 ```
 
 ## S4 · `orchestrator.tsx`
