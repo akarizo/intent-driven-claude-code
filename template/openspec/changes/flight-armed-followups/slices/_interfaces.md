@@ -64,10 +64,15 @@ export async function closeout(io: Io, f: Flight, merged: readonly string[]): Pr
 export async function renderRecords(io: Io, f: Flight): Promise<string | undefined> {
 ```
 
-## S4 · `orchestrator.tsx`
+## S4
 
-- 拒飞条件：`state.takeoff !== undefined && !settled && owner === session && active.has(name) && (driving.has(name) || (await liveAgents($, f, state)).length > 0)`；
-- 拒绝原文：`flight：<name> 正在飞（attempt N），不起飞；需要中止用 /flight abort <name>；中止后可用 /flight resume <name> 续飞`。
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+export function registerOrchestrator(on: On): void {
+```
 
 ## S5
 
