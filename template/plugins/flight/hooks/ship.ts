@@ -52,7 +52,8 @@ function parseView(stdout: string): View | undefined {
 function parseShip(stdout: string): ShipJson | undefined {
   try {
     const j = JSON.parse(stdout) as ShipJson
-    return typeof j.ready === 'boolean' && typeof j.commit === 'string' && Array.isArray(j.reasons) && Array.isArray(j.blocking) && Array.isArray(j.deferred) ? j : undefined
+    const review = j.review === null || (typeof j.review === 'object' && typeof j.review.slice === 'string')
+    return typeof j.ready === 'boolean' && typeof j.commit === 'string' && Array.isArray(j.reasons) && Array.isArray(j.blocking) && Array.isArray(j.deferred) && review ? j : undefined
   } catch {
     return undefined
   }
@@ -67,8 +68,9 @@ export async function shipPr(ctx: Ctx, f: Flight, state: State, pr: string): Pro
   const sh = (argv: string[]) => ctx.io.run(argv, { cwd: f.changeTree })
 
   const origin = await git('remote', 'get-url', 'origin')
+  if (origin.exitCode !== 0) return deny(`读取 origin 失败：${firstLine(origin)}`)
   const url = origin.stdout.trim()
-  if (origin.exitCode !== 0 || !url.includes('github.com')) return deny(`只支持 GitHub：PR 保持 draft，由人决定（origin 为 ${url || firstLine(origin)}）`)
+  if (!url.includes('github.com')) return deny(`只支持 GitHub：PR 保持 draft，由人决定（origin 为 ${url}）`)
 
   const n = /^\d+$/.test(pr) ? pr : /\/pull\/(\d+)$/.exec(pr)?.[1]
   if (n === undefined) return deny(`PR 号不合法：${pr}（要纯数字或以 /pull/<数字> 结尾的 URL）`)

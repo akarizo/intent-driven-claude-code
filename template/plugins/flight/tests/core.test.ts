@@ -580,10 +580,65 @@ test('summary-shows-whole-review', () => {
   // When: 分别求 summaryLines(summarize(...)) 的末行
   const tails = [s1, s2, s3].map(evs => summaryLines(summarize(reduce(evs))).at(-1))
 
-  // Then: 依次为「全量评审 未开始」「全量评审 进行中」「全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）」，修复与 final 部分为已合回、绿
+  // Then: 依次为「全量评审 未开始」「全量评审 进行中」「全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）」，final 绿；
+  //   修复列取本 attempt 最新修复体：①② 为 fix 已合回，③ 为 fix-r1 已合回（design D8，flight-ledger-guards）
   expect(tails).toEqual([
     '修复 已合回 · final 绿 · 全量评审 未开始',
     '修复 已合回 · final 绿 · 全量评审 进行中',
-    '修复 已合回 · final 绿 · 全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）',
+    '修复 第 1 轮 已合回 · final 绿 · 全量评审 第 2 轮 2 条（CRITICAL/HIGH 1）',
   ])
+})
+
+// scenario 来源：spec flight-reliability（flight-ledger-guards）
+/** S1 已合回、评审员 r1 已结束；withReview 时 r1 提交 1 条 HIGH H1 */
+const reviewedS1 = (withReview: boolean): FlightEvent[] => [
+  approve,
+  takeoff(1, ONE_S1.waves),
+  ...landed(1, 'S1', 'a1'),
+  dispatch(1, 'S1', 'reviewer', 'r1'),
+  ...(withReview ? [ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [H1] })] : []),
+  ended(1, 'r1'),
+]
+
+test('summary-shows-blocked-review-and-fix', () => {
+  // Given: 四份账本，waves [[S1]]、S1 已合回：
+  //   甲：评审员 r1 已结束、没有 review，有 blocked review:S1（infra）；
+  //   乙：r1 给 1 条 HIGH，修复体 X（slice fix）已派、已结束，有 blocked fix（gate）；
+  //   丙：r1 给 1 条 HIGH，修复体 X1（slice fix-r1）已派，未合回也没有 blocked；
+  //   丁：r1 给 1 条 HIGH，没有修复体派发，有 blocked fix（infra）
+  const ledgers = [
+    [...reviewedS1(false), ev.blocked(B, { attempt: 1, slice: 'review:S1', kind: 'infra', reason: '评审未返回：r1' })],
+    [...reviewedS1(true), dispatch(1, 'fix', 'fixer', 'X'), ended(1, 'X'), ev.blocked(B, { attempt: 1, slice: 'fix', kind: 'gate', reason: 'G7 x' })],
+    [...reviewedS1(true), dispatch(1, 'fix-r1', 'fixer', 'X1')],
+    [...reviewedS1(true), ev.blocked(B, { attempt: 1, slice: 'fix', kind: 'infra', reason: '派发失败' })],
+  ]
+
+  // When: 分别求 summaryLines(summarize(...))
+  const [a, b, c, d] = ledgers.map(evs => summaryLines(summarize(reduce(evs))))
+
+  // Then: 甲的 S1 行含「评审 阻断（infra）」；乙的末行含「修复 阻断（gate）」；
+  //   丙的末行含「修复 第 1 轮 进行中」；丁的末行含「修复 阻断（infra）」
+  expect(a[1]).toContain('评审 阻断（infra）')
+  expect(b.at(-1)).toContain('修复 阻断（gate）')
+  expect(c.at(-1)).toContain('修复 第 1 轮 进行中')
+  expect(d.at(-1)).toContain('修复 阻断（infra）')
+})
+
+test('diag-events-do-not-move-the-plan', () => {
+  // Given: 账本 L：计划 PLAN、attempt 1 起飞，S1 执行体 a1 已派未结束；
+  //   L2 为 L 末尾追加 ev.diag(attempt 1、where SubagentStop、error aborted、kind timeout、agent a1、budget 10000)
+  const L = [approve, takeoff(1), dispatch(1, 'S1', 'executor', 'a1')]
+  const diag = ev.diag(B, { attempt: 1, where: 'SubagentStop', error: 'aborted', kind: 'timeout', agent: 'a1', budget: 10000 })
+  const L2 = [...L, diag]
+
+  // When: 分别求 L 与 L2 的 next 与 summaryLines(summarize(...))，并构造 attempt 1、ok、commit c、warnings [w] 的 final 事件
+  const [n1, n2] = [L, L2].map(evs => next(reduce(evs), PLAN, F))
+  const [s1, s2] = [L, L2].map(evs => summaryLines(summarize(reduce(evs))))
+  const fin = ev.final(B, { attempt: 1, ok: true, commit: 'c', failed: [], warnings: ['w'] })
+
+  // Then: 两次 next 相同；两次摘要相同；diag 事件 ev 为 diag 且带 where / error / kind / agent / budget；final 事件带 warnings [w]
+  expect(n2).toEqual(n1)
+  expect(s2).toEqual(s1)
+  expect(diag).toMatchObject({ ev: 'diag', attempt: 1, where: 'SubagentStop', error: 'aborted', kind: 'timeout', agent: 'a1', budget: 10000 })
+  expect(fin).toMatchObject({ ev: 'final', warnings: ['w'] })
 })

@@ -35,8 +35,9 @@ function shipJson(x: Partial<ShipJson>): ShipJson {
 type World = {
   ledger: FlightEvent[]
   origin?: string
+  originFail?: RunResult // git remote get-url origin 的作答（读取失败的世界）
   view?: { headRefName?: string; headRefOid?: string; isDraft?: boolean }
-  ship?: ShipJson
+  ship?: ShipJson | Record<string, unknown> // 形状不合的 ship 输出也照样打印
 }
 type Call = { argv: string[]; cwd?: string }
 type Log = { ledger: FlightEvent[]; calls: Call[] }
@@ -54,13 +55,13 @@ function answer(w: World, log: Log, argv: string[], stdin: string | undefined): 
   if (cmd === 'gh') return ok('')
   if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'ship') {
     const j = w.ship ?? shipJson({})
-    return { exitCode: j.ready ? 0 : 1, stdout: JSON.stringify(j) + '\n', stderr: '' }
+    return { exitCode: j.ready === true ? 0 : 1, stdout: JSON.stringify(j) + '\n', stderr: '' }
   }
   if (cmd !== 'git') throw new Error(`unexpected argv: ${argv.join(' ')}`)
   const op = args[0] === '-C' ? args[2] : args[0]
   switch (op) {
     case 'remote':
-      return ok(`${w.origin ?? 'git@github.com:o/r.git'}\n`)
+      return w.originFail ?? ok(`${w.origin ?? 'git@github.com:o/r.git'}\n`)
     case 'rev-parse':
       if (args.includes('HEAD')) return ok(H1 + '\n')
       return ok('d'.repeat(40) + '\n')
@@ -146,17 +147,44 @@ test('ship-tool-applies-ledger-verdict', async () => {
   const [a, b, c] = await Promise.all(worlds.map(w => ship(w, '7')))
 
   // Then: ① 依次运行 gh pr view、slice-gate.py ship（cwd 为 change worktree）、gh pr comment 7、gh pr ready 7，账本末条为 ship 事件（pr 为 URL7、verdict ready、commit H1），result 含 ready；
+  //       gh pr ready 的 argv 恰为 [gh, pr, ready, 7]；
   //       ② 运行了 gh pr ready 7 --undo，评论正文含「1 条 CRITICAL/HIGH 评审未闭环」；
   //       ③ 没有运行 gh pr ready，账本末条为 verdict draft 的 ship 事件
-  const order = [find(a.log, 'gh', 'view'), find(a.log, 'slice-gate.py', 'ship'), find(a.log, 'gh', 'comment', '7'), find(a.log, 'gh', 'ready', '7')]
+  const order = [find(a.log, 'gh', 'view'), find(a.log, 'slice-gate.py', 'ship'), find(a.log, 'gh', 'comment', '7'), find(a.log, 'gh', 'ready')]
   expect(order.every((i, k) => i >= 0 && (k === 0 || i > order[k - 1]))).toBe(true)
   expect(a.log.calls[order[1]].cwd).toBe(CT)
+  expect(gh(a.log, 'ready').map(c => c.argv)).toEqual([['gh', 'pr', 'ready', '7']])
   expect(a.log.ledger.at(-1)).toMatchObject({ ev: 'ship', attempt: 1, pr: URL7, verdict: 'ready', commit: H1, at: new Date(NOW).toISOString() })
   expect('result' in a.out && a.out.result.includes('ready')).toBe(true)
   expect(gh(b.log, 'ready').map(c => c.argv)).toEqual([['gh', 'pr', 'ready', '7', '--undo']])
   expect(gh(b.log, 'comment')[0]?.argv.join(' ')).toContain(UNCLOSED)
   expect(gh(c.log, 'ready')).toEqual([])
   expect(c.log.ledger.at(-1)).toMatchObject({ ev: 'ship', verdict: 'draft' })
+})
+
+// scenario 来源：spec flight-reliability（flight-ledger-guards）
+test('ship-output-shape-checked', async () => {
+  // Given: 三个已落地（land ready）的世界：
+  //        甲：ship 输出的 JSON 缺 review 键；乙：git remote get-url origin 以 2 退出、stderr「fatal: No such remote」；
+  //        丙：一切正常，裁决 ready，PR 7 是 draft
+  const { review: _drop, ...noReview } = shipJson({})
+  const landedReady = [TAKEOFF, event('land', { attempt: 1, verdict: 'ready' })]
+  const worlds: World[] = [
+    { ledger: landedReady, ship: noReview },
+    { ledger: landedReady, originFail: { exitCode: 2, stdout: '', stderr: "fatal: No such remote 'origin'\n" } },
+    { ledger: landedReady, view: { isDraft: true }, ship: shipJson({ ready: true }) },
+  ]
+
+  // When: 分别调用 shipPr(ctx, f, state, '7')
+  const [a, b, c] = await Promise.all(worlds.map(w => ship(w, '7')))
+
+  // Then: 甲返回 deny 含「ship 输出无法解析」，没有运行 gh pr comment 或 gh pr ready；
+  //       乙返回 deny 含「读取 origin 失败」与「No such remote」，不含「只支持 GitHub」；
+  //       丙运行的 gh pr ready 的 argv 恰为 [gh, pr, ready, 7]
+  expect(denyOf(a.out)).toContain('ship 输出无法解析')
+  expect(gh(a.log, 'comment').length + gh(a.log, 'ready').length).toBe(0)
+  expect([denyOf(b.out).includes('读取 origin 失败'), denyOf(b.out).includes('No such remote'), denyOf(b.out).includes('只支持 GitHub')]).toEqual([true, true, false])
+  expect(gh(c.log, 'ready').map(x => x.argv)).toEqual([['gh', 'pr', 'ready', '7']])
 })
 
 test('ship-comment-lists-findings', () => {
