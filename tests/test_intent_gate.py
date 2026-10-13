@@ -1,9 +1,7 @@
-"""intent-gate.py：worktree 定根与切片所有权（scenario: slice-gate#intent-gate-*）。"""
-import pytest
-
+"""intent-gate.py：worktree 定根、check 子命令、apply 上下文按分支收窄（scenario: flight-intent-guard#*）。"""
 import json
 
-from conftest import run_hook, write
+from conftest import git, run_hook, write
 
 
 def payload(file_path, cwd):
@@ -25,70 +23,67 @@ def test_intent_gate_worktree_root(tmp_path):
     assert '"deny"' not in p.stdout, p.stdout
 
 
-def ownership_root(tmp_path):
-    root = tmp_path / "root"
-    change = root / "openspec" / "changes" / "c"
-    write(change / "tasks.md", "- [ ] S1 x\n")
-    write(change / "slices.json", json.dumps({
-        "version": 1, "change": "c", "gate": {"test": "true"},
-        "slices": [{"id": "S1", "title": "S1", "scenarios": [], "owns": ["src/a.py"], "deps": [], "verify": "true"}],
-        "scenario_tests": {},
-    }))
-    write(root / ".openspec-slice", json.dumps({"slice": "S1", "change_dir": str(change), "base": "HEAD"}))
-    return root
+def init_repo(path):
+    path.mkdir(parents=True, exist_ok=True)
+    git(path, "init", "-q", "-b", "main")
+    git(path, "config", "user.email", "t@example.com")
+    git(path, "config", "user.name", "t")
+    return path
 
 
-def test_intent_gate_ownership_deny(tmp_path):
-    # Given: root 下存在 .openspec-slice 标记指向切片 S1，S1 的 owns 只有 src/a.py
-    root = ownership_root(tmp_path)
-
-    # When: 对 src/other.py 发起 Write
-    p = run_hook("intent-gate", stdin=payload(root / "src" / "other.py", root), env={"CLAUDE_PROJECT_DIR": str(root)})
-
-    # Then: 门禁返回 deny，理由点名切片 S1 与 src/other.py
-    out = json.loads(p.stdout)
-    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
-    assert "S1" in reason and "src/other.py" in reason
+def check(cwd, *paths):
+    p = run_hook("intent-gate", "check", "--cwd", str(cwd), *paths, cwd=str(cwd))
+    return p.returncode, json.loads(p.stdout)
 
 
-def test_intent_gate_stale_marker_requires_apply_context(tmp_path):
-    # Given: 存在指向 S1 的 .openspec-slice 标记，但 change 的 tasks.md 已全部勾选（apply 上下文不再成立，标记是陈旧的）
-    root = ownership_root(tmp_path)
-    write(root / "openspec" / "changes" / "c" / "tasks.md", "- [x] S1 x\n")
-
-    # When: 对 owns 内的 src/a.py 发起 Write
-    p = run_hook("intent-gate", stdin=payload(root / "src" / "a.py", root), env={"CLAUDE_PROJECT_DIR": str(root)})
-
-    # Then: 门禁不放行（陈旧标记不能成为永久旁路）
-    assert '"deny"' in p.stdout, p.stdout
-
-
-def test_intent_gate_ownership_allows_owned_file(tmp_path):
-    # Given: 同上的 .openspec-slice 标记，S1 的 owns 含 src/a.py
-    root = ownership_root(tmp_path)
-
-    # When: 对 src/a.py 发起 Write
-    p = run_hook("intent-gate", stdin=payload(root / "src" / "a.py", root), env={"CLAUDE_PROJECT_DIR": str(root)})
-
-    # Then: 门禁放行
-    assert '"deny"' not in p.stdout, p.stdout
-
-# ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S3 实现后去掉 xfail 标记。
-
-
-@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
 def test_intent_check_cli(tmp_path):
-    # Given: 仓库根有 openspec/、没有任何 change、分支 main
-    # When: check src/x.py docs/a.md /tmp/elsewhere.py；classic 模式判 src/x.py；classic 模式喂非 JSON
-    # Then: check 只拒 src/x.py；classic 输出 deny；非 JSON 退出 0 无输出
-    pytest.fail("骨架：S3 写实断言")
+    # Given: 仓库 root 在分支 main，根下有 openspec/ 但没有任何 change；CLAUDE_PROJECT_DIR 指向 root
+    root = init_repo(tmp_path / "root")
+    (root / "openspec").mkdir()
+    env = {"CLAUDE_PROJECT_DIR": str(root)}
+    x_abs = str((root / "src" / "x.py").resolve())
+
+    # When: check --cwd <root> src/x.py docs/a.md /tmp/elsewhere.py；classic 模式判 <root>/src/x.py；classic 模式喂非 JSON（scenario 规定的三次调用）
+    cli = run_hook("intent-gate", "check", "--cwd", str(root), "src/x.py", "docs/a.md", "/tmp/elsewhere.py",
+                   cwd=str(root), env=env)
+    classic = run_hook("intent-gate", stdin=payload(root / "src" / "x.py", root), env=env)
+    bad = run_hook("intent-gate", stdin="not json {", env=env)
+
+    # Then: check 退出 0、allow 为 false、denied 恰为一项且 path 为 <root>/src/x.py；classic 输出 deny；非 JSON 退出 0 且无输出
+    out = json.loads(cli.stdout)
+    assert cli.returncode == 0, cli.stderr
+    assert out["allow"] is False
+    assert [d["path"] for d in out["denied"]] == [x_abs]
+    assert json.loads(classic.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert bad.returncode == 0
+    assert bad.stdout == ""
 
 
-@pytest.mark.xfail(strict=True, reason="S3：尚未实现")
 def test_apply_context_scoped_to_change(tmp_path):
-    # Given: change a 有未勾项、b 全勾；worktree 分支 worktree-b（另有指向 a 的遗留标记）、flight/a/S1、main、worktree-c
+    # Given: 仓库在 main，change a 的 tasks.md 有未勾项、change b 全勾；另建分支 worktree-b / flight/a/S1 / worktree-c 的 worktree；
+    #        worktree-b 根下有遗留 .openspec-slice，指向 change a 与 owns src/**
+    repo = init_repo(tmp_path / "repo")
+    write(repo / "openspec" / "changes" / "a" / "tasks.md", "- [ ] 1 x\n")
+    write(repo / "openspec" / "changes" / "a" / "slices.json", json.dumps({
+        "version": 1, "change": "a", "gate": {"test": "true"},
+        "slices": [{"id": "S1", "title": "S1", "scenarios": [], "owns": ["src/**"], "deps": [], "verify": "true"}],
+        "scenario_tests": {}}))
+    write(repo / "openspec" / "changes" / "b" / "tasks.md", "- [x] 1 x\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    wts = {}
+    for branch, name in (("worktree-b", "wb"), ("flight/a/S1", "wa"), ("worktree-c", "wc")):
+        wts[branch] = tmp_path / name
+        git(repo, "worktree", "add", "-q", "-b", branch, str(wts[branch]))
+    wts["main"] = repo
+    write(wts["worktree-b"] / ".openspec-slice", json.dumps(
+        {"slice": "S1", "change_dir": str(wts["worktree-b"] / "openspec" / "changes" / "a"), "base": "HEAD"}))
+
     # When: 在每个 worktree 里 check src/x.py
-    # Then: worktree-b 拒（change b）；flight/a/S1 放行；main 放行；worktree-c 拒（change c）
-    pytest.fail("骨架：S3 写实断言")
+    res = {b: check(wt, "src/x.py") for b, wt in wts.items()}
+
+    # Then: worktree-b 被拒且原因含「change b 没有未完成的任务」；flight/a/S1 放行；main 放行；worktree-c 被拒且原因含「change c」
+    assert "change b 没有未完成的任务" in res["worktree-b"][1]["denied"][0]["reason"], res["worktree-b"]
+    assert res["flight/a/S1"] == (0, {"allow": True, "denied": []})
+    assert res["main"] == (0, {"allow": True, "denied": []})
+    assert "change c" in res["worktree-c"][1]["denied"][0]["reason"], res["worktree-c"]
