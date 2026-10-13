@@ -522,3 +522,46 @@ def test_panel_refreshes_on_terminal():
     # When: drive 推进到停飞
     # Then: 面板最后一次绘制的首行含「已停飞（final 未通过：G2 lint）」
     assert_ts_passed("panel-refreshes-on-terminal")
+
+
+# ---------------------------------------------------------------- flight-unattended S5（骨架：实现后去掉 xfail 标记）
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_heal_recorded_then_retried():
+    # Given: 单片飞行：S1 第一次合回失败（非冲突），第二次合回成功
+    # When: 起飞并让两个执行体先后收口结束
+    # Then: 账本依次有失败 merge、heal merge-retry S1、第二个执行体派发、成功 merge；两个执行体的 worktree 不同
+    assert_ts_passed("heal-recorded-then-retried")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_watchdog_stops_stalled_agent():
+    # Given: 在飞：a1 的模型请求未结束；a2 的请求才开始 9 分钟
+    # When: 时钟推进到 a1 请求开始后 10 分钟零 1 秒，看门狗 tick 两次
+    # Then: 恰一条 heal watchdog（agent a1），写在 TaskStop a1 之前；只停 a1 一次；TaskStop isError 时追加 diag where watchdog
+    assert_ts_passed("watchdog-stops-stalled-agent")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_watchdog_exhausted_halts():
+    # Given: 在飞，本 attempt 已有 3 条 heal；a1 请求等待超过 10 分钟，a2 在跑
+    # When: 看门狗 tick
+    # Then: 追加 halt kind watchdog（含 a1 与「自愈预算已用尽」）；a1、a2 都被停；没有新 heal
+    assert_ts_passed("watchdog-exhausted-halts")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_halt_dispatches_diagnostician():
+    # Given: 单片飞行 S1 两个执行体都门禁红而 blocked；另一次飞行在途中被 /flight abort
+    # When: 第一次飞行停飞；诊断员结束，回答首行「S1 的 owns 漏了 tests/test_x.py」
+    # Then: halt 之后有 diagnostician 派发（flight:diagnostician、主模型）；结束后有 triage、通知含首行、面板含「诊断：…」；abort 那次不派诊断员
+    assert_ts_passed("halt-dispatches-diagnostician")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_notify_uses_terminal_channel():
+    # Given: 两个会停飞的世界：ui.notify 分别应答 isSent true（iterm2）与 isSent false（no-channel）
+    # When: 两次飞行分别停飞
+    # Then: ui.notify 都收到 title flight、含停飞原因；第二个世界的飞行记录含 no-channel，飞行照常以 halt 结束
+    assert_ts_passed("notify-uses-terminal-channel")

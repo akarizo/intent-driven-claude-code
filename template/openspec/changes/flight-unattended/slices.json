@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "change": "flight-unattended",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 116.2
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "状态机：合回失败重派、看门狗后的重派、自愈预算、整合修复、halt 分类；诊断员只读",
+      "packet": "slices/S1.md",
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/hooks/envelope.ts",
+        "template/plugins/flight/tests/core.test.ts",
+        "template/plugins/flight/tests/envelope.test.ts",
+        "tests/test_flight_core.py",
+        "tests/test_flight_envelope.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_core.py tests/test_flight_envelope.py",
+      "scenarios": [
+        "flight-self-heal#merge-failure-retried-once",
+        "flight-self-heal#heal-budget-caps",
+        "flight-self-heal#watchdog-heal-redispatches-once",
+        "flight-self-heal#summary-shows-heals",
+        "flight-integ-fix#final-red-dispatches-integ",
+        "flight-integ-fix#integ-reviewed-before-merge",
+        "flight-integ-fix#integ-failures-halt",
+        "flight-halt-handoff#halts-carry-kind",
+        "flight-halt-handoff#diagnostician-read-only"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S2",
+      "title": "判定器：G9 整合护栏与 integ-guard、账本认 heal / triage、report 打印自愈与诊断",
+      "packet": "slices/S2.md",
+      "owns": [
+        "template/.claude/hooks/slice-gate.py",
+        "template/.claude/hooks/ledger.py",
+        "template/.claude/hooks/timeline.py",
+        "tests/test_slice_gate_final.py",
+        "tests/test_ledger.py",
+        "tests/test_timeline_render.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_slice_gate_final.py tests/test_ledger.py tests/test_timeline_render.py tests/test_slice_gate.py tests/test_evidence_timeline.py",
+      "scenarios": [
+        "flight-integ-fix#guard-rejects-artifact-and-scenario-edits",
+        "flight-integ-fix#guard-rejects-weakened-tests",
+        "flight-integ-fix#features-declare-integ-guard",
+        "flight-self-heal#ledger-accepts-heal-and-triage",
+        "flight-self-heal#report-prints-heals-and-triage"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S3",
+      "title": "纯模块：整合修复与诊断的提示词、诊断员定义、看门狗请求跟踪",
+      "packet": "slices/S3.md",
+      "owns": [
+        "template/plugins/flight/hooks/prompts.ts",
+        "template/plugins/flight/hooks/watchdog.ts",
+        "template/plugins/flight/agents/diagnostician.md",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "template/plugins/flight/tests/watchdog.test.ts",
+        "tests/test_flight_agents.py",
+        "tests/test_flight_watchdog.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_agents.py tests/test_flight_watchdog.py",
+      "scenarios": [
+        "flight-integ-fix#integ-prompts-state-guards",
+        "flight-halt-handoff#triage-prompt-and-agent",
+        "flight-self-heal#watchdog-flags-stalled-requests"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S4",
+      "title": "落地：整合修复的派发与带护栏收口、专审评审、停飞与 PR 开出通知、事件表",
+      "packet": "slices/S4.md",
+      "owns": [
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/hooks/ship.ts",
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/tests/landing.test.tsx",
+        "template/plugins/flight/tests/ship.test.ts",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_landing.py",
+        "tests/test_flight_ship.py",
+        "tests/test_flight_io.py"
+      ],
+      "deps": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_ship.py tests/test_flight_io.py tests/test_flight_land.py",
+      "scenarios": [
+        "flight-integ-fix#integ-gate-runs-guard",
+        "flight-integ-fix#integ-dispatch-records-base-and-range",
+        "flight-halt-handoff#halt-notifies",
+        "flight-halt-handoff#pr-open-notifies",
+        "flight-self-heal#io-knows-new-events"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S5",
+      "title": "编排：执行 heal、看门狗接线、停飞后派诊断员与 triage、终端通知、起飞核对 integ-guard",
+      "packet": "slices/S5.md",
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/hooks/versions.ts",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "template/plugins/flight/tests/versions.test.ts",
+        "tests/test_flight_orchestrator.py",
+        "tests/test_flight_versions.py"
+      ],
+      "deps": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_versions.py tests/test_flight_abort.py tests/test_flight_takeoff_commit.py",
+      "scenarios": [
+        "flight-self-heal#heal-recorded-then-retried",
+        "flight-self-heal#watchdog-stops-stalled-agent",
+        "flight-self-heal#watchdog-exhausted-halts",
+        "flight-halt-handoff#halt-dispatches-diagnostician",
+        "flight-halt-handoff#notify-uses-terminal-channel",
+        "flight-integ-fix#takeoff-requires-integ-guard"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S6",
+      "title": "批准带续飞：停飞态按钮、按下即批准并后台续飞、resume.ts 顺序",
+      "packet": "slices/S6.md",
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/hooks/resume.ts",
+        "template/plugins/flight/types/index.d.ts",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "template/plugins/flight/tests/resume.test.ts",
+        "tests/test_flight_resume.py"
+      ],
+      "deps": [
+        "S5"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py",
+      "scenarios": [
+        "flight-halt-handoff#band-offers-resume-for-halted",
+        "flight-halt-handoff#press-approves-then-resumes",
+        "flight-halt-handoff#resume-flight-sequence"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S7",
+      "title": "文档与发布：/opsx-apply 命令与 skill、README、WORKFLOW 写清自愈与续飞，插件 0.9.0",
+      "packet": "slices/S7.md",
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "tests/test_unattended_docs.py"
+      ],
+      "deps": [
+        "S4",
+        "S5"
+      ],
+      "verify": "python3 -m pytest -q tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py",
+      "scenarios": [
+        "flight-unattended-docs#docs-describe-self-heal-and-resume",
+        "flight-unattended-docs#plugin-version-0-9-0"
+      ],
+      "guards": []
+    }
+  ],
+  "scenario_tests": {
+    "flight-self-heal#merge-failure-retried-once": "tests/test_flight_core.py::test_merge_failure_retried_once",
+    "flight-self-heal#heal-budget-caps": "tests/test_flight_core.py::test_heal_budget_caps",
+    "flight-self-heal#watchdog-heal-redispatches-once": "tests/test_flight_core.py::test_watchdog_heal_redispatches_once",
+    "flight-self-heal#summary-shows-heals": "tests/test_flight_core.py::test_summary_shows_heals",
+    "flight-integ-fix#final-red-dispatches-integ": "tests/test_flight_core.py::test_final_red_dispatches_integ",
+    "flight-integ-fix#integ-reviewed-before-merge": "tests/test_flight_core.py::test_integ_reviewed_before_merge",
+    "flight-integ-fix#integ-failures-halt": "tests/test_flight_core.py::test_integ_failures_halt",
+    "flight-halt-handoff#halts-carry-kind": "tests/test_flight_core.py::test_halts_carry_kind",
+    "flight-halt-handoff#diagnostician-read-only": "tests/test_flight_envelope.py::test_diagnostician_read_only",
+    "flight-integ-fix#guard-rejects-artifact-and-scenario-edits": "tests/test_slice_gate_final.py::test_guard_rejects_artifact_and_scenario_edits",
+    "flight-integ-fix#guard-rejects-weakened-tests": "tests/test_slice_gate_final.py::test_guard_rejects_weakened_tests",
+    "flight-integ-fix#features-declare-integ-guard": "tests/test_slice_gate_final.py::test_features_declare_integ_guard",
+    "flight-self-heal#ledger-accepts-heal-and-triage": "tests/test_ledger.py::test_ledger_accepts_heal_and_triage",
+    "flight-self-heal#report-prints-heals-and-triage": "tests/test_timeline_render.py::test_report_prints_heals_and_triage",
+    "flight-integ-fix#integ-prompts-state-guards": "tests/test_flight_agents.py::test_integ_prompts_state_guards",
+    "flight-halt-handoff#triage-prompt-and-agent": "tests/test_flight_agents.py::test_triage_prompt_and_agent",
+    "flight-self-heal#watchdog-flags-stalled-requests": "tests/test_flight_watchdog.py::test_watchdog_flags_stalled_requests",
+    "flight-integ-fix#integ-gate-runs-guard": "tests/test_flight_landing.py::test_integ_gate_runs_guard",
+    "flight-integ-fix#integ-dispatch-records-base-and-range": "tests/test_flight_landing.py::test_integ_dispatch_records_base_and_range",
+    "flight-halt-handoff#halt-notifies": "tests/test_flight_landing.py::test_halt_notifies",
+    "flight-halt-handoff#pr-open-notifies": "tests/test_flight_ship.py::test_pr_open_notifies",
+    "flight-self-heal#io-knows-new-events": "tests/test_flight_io.py::test_io_knows_new_events",
+    "flight-self-heal#heal-recorded-then-retried": "tests/test_flight_orchestrator.py::test_heal_recorded_then_retried",
+    "flight-self-heal#watchdog-stops-stalled-agent": "tests/test_flight_orchestrator.py::test_watchdog_stops_stalled_agent",
+    "flight-self-heal#watchdog-exhausted-halts": "tests/test_flight_orchestrator.py::test_watchdog_exhausted_halts",
+    "flight-halt-handoff#halt-dispatches-diagnostician": "tests/test_flight_orchestrator.py::test_halt_dispatches_diagnostician",
+    "flight-halt-handoff#notify-uses-terminal-channel": "tests/test_flight_orchestrator.py::test_notify_uses_terminal_channel",
+    "flight-integ-fix#takeoff-requires-integ-guard": "tests/test_flight_versions.py::test_takeoff_requires_integ_guard",
+    "flight-halt-handoff#band-offers-resume-for-halted": "tests/test_flight_resume.py::test_band_offers_resume_for_halted",
+    "flight-halt-handoff#press-approves-then-resumes": "tests/test_flight_resume.py::test_press_approves_then_resumes",
+    "flight-halt-handoff#resume-flight-sequence": "tests/test_flight_resume.py::test_resume_flight_sequence",
+    "flight-unattended-docs#docs-describe-self-heal-and-resume": "tests/test_unattended_docs.py::test_docs_describe_self_heal_and_resume",
+    "flight-unattended-docs#plugin-version-0-9-0": "tests/test_unattended_docs.py::test_plugin_version_0_9_0"
+  }
+}

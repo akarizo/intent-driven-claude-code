@@ -126,3 +126,14 @@ def test_fresh_worktree_branch_left():
     # When: 以 attempt 2 为 S1 另起 worktree
     # Then: 改建 S1-a2；两个分支都在时报「分支已存在」且不运行 worktree add
     assert_ts_passed("fresh-worktree-never-reuses-old/branch-left")
+
+
+# ---------------------------------------------------------------- flight-unattended S4（骨架：实现后去掉 xfail 标记）
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
+def test_io_knows_new_events():
+    # Given: 插件 io.ts 的字段表
+    # When: 读 EVENT_TYPES，并用 eventProblem 校验合法的 heal、triage、diagnostician 派发、kind watchdog 的 halt 与 kind oops 的 halt
+    # Then: EVENT_TYPES 含 heal 与 triage；四个合法事件无问题；kind oops 的 halt 返回含 kind 的原因
+    assert_ts_passed("io-knows-new-events")

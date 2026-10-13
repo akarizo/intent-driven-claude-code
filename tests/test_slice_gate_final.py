@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from conftest import commit_all, run_hook, write
+from conftest import commit_all, git, run_hook, write
 from test_slice_gate import plan, slice_, write_plan
 
 PYTEST = "%s -m pytest -q tests" % shlex.quote(sys.executable)
@@ -164,3 +164,89 @@ def test_exit_1_without_failures_is_red(git_repo):
     # Then: ok 为 false；failed 有一项以「G2 test」开头且含「按退出码判」
     assert out["ok"] is False, out
     assert any(f.startswith("G2 test") and "按退出码判" in f for f in out["failed"]), out["failed"]
+
+
+# ---------------------------------------------------------------- flight-unattended S2（骨架：实现后去掉 xfail 标记）
+
+
+def _final_integ(git_repo, change, base):
+    """带 --integ-base 跑 final，返回 JSON。"""
+    p = run_hook("slice-gate", "final", "--change-dir", str(change), "--integ-base", base, cwd=git_repo)
+    return json.loads(p.stdout)
+
+
+def _g9(out):
+    return [f for f in out["failed"] if f.startswith("G9 integ:")]
+
+
+def _branch_from(git_repo, name, base):
+    git(git_repo, "checkout", "-q", "-b", name, base)
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
+def test_guard_rejects_artifact_and_scenario_edits(git_repo):
+    # Given: 单片计划 cap#adds → tests/test_cap.py::test_adds，gate.test 恒绿；base 之后分支甲改了 specs/cap/spec.md 与 slices.json，
+    #        分支乙改了 test_adds 函数体里的一行
+    change = _repo(git_repo, "true")
+    base = git(git_repo, "rev-parse", "HEAD")
+    _branch_from(git_repo, "jia", base)
+    write(change / "specs" / "cap" / "spec.md", "## ADDED Requirements\n")
+    data = json.loads((change / "slices.json").read_text(encoding="utf-8"))
+    data["slices"][0]["title"] = "改过的标题"
+    (change / "slices.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    commit_all(git_repo, "jia")
+
+    # When: 甲上带 --integ-base 与不带各跑一次 final；切到乙再带 --integ-base 跑一次
+    jia = _final_integ(git_repo, change, base)
+    plain = _final(git_repo, change)
+    _branch_from(git_repo, "yi", base)
+    write(git_repo / "tests" / "test_cap.py", PASSING.replace("1 + 1 == 2", "2 + 0 == 2"))
+    commit_all(git_repo, "yi")
+    yi = _final_integ(git_repo, change, base)
+
+    # Then: 甲的 G9 项点名 specs/cap/spec.md 与 slices.json；乙的 G9 项点名 test_adds；不带 --integ-base 时没有 G9 项
+    assert any("specs/cap/spec.md" in f for f in _g9(jia)), jia
+    assert any("slices.json" in f for f in _g9(jia)), jia
+    assert any("test_adds" in f for f in _g9(yi)), yi
+    assert not [f for f in plain["failed"] if f.startswith("G9")], plain
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
+def test_guard_rejects_weakened_tests(git_repo):
+    # Given: 同一单片计划，另有 tests/test_b.py（test_b1 两行 assert、test_b2 一行 assert）与 src/x.py；base 之后四个分支：
+    #        甲删两行 assert 只加一行；乙给 test_b2 加 @pytest.mark.skip；丙删掉 test_b2；丁改 src/x.py 并新增带 assert 的 test_b3
+    test_b = "import pytest\n\n\ndef test_b1():\n    assert 1\n    assert 2\n\n\ndef test_b2():\n    assert 3\n"
+    change = _repo(git_repo, "true", files={"tests/test_b.py": test_b, "src/x.py": "X = 1\n"})
+    base = git(git_repo, "rev-parse", "HEAD")
+    variants = {
+        "jia": {"tests/test_b.py": test_b.replace("    assert 1\n    assert 2\n", "    assert 1 and 2\n")},
+        "yi": {"tests/test_b.py": test_b.replace("def test_b2", "@pytest.mark.skip(reason='x')\ndef test_b2")},
+        "bing": {"tests/test_b.py": test_b.split("\n\n\ndef test_b2")[0] + "\n"},
+        "ding": {"src/x.py": "X = 2\n", "tests/test_b.py": test_b + "\n\ndef test_b3():\n    assert 4\n"},
+    }
+
+    # When: 每个分支从 base 切出、提交后带 --integ-base 跑 final
+    outs = {}
+    for name, files in variants.items():
+        _branch_from(git_repo, name, base)
+        for rel, text in files.items():
+            write(git_repo / rel, text)
+        commit_all(git_repo, name)
+        outs[name] = _final_integ(git_repo, change, base)
+
+    # Then: 甲、乙、丙各有 G9 项，分别点出 assert、skip、测试函数；丁没有 G9 项
+    assert any("assert" in f for f in _g9(outs["jia"])), outs["jia"]
+    assert any("skip" in f for f in _g9(outs["yi"])), outs["yi"]
+    assert any("测试函数" in f for f in _g9(outs["bing"])), outs["bing"]
+    assert not _g9(outs["ding"]), outs["ding"]
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
+def test_features_declare_integ_guard():
+    # Given: 本仓库的 slice-gate.py
+    # When: 运行 slice-gate.py features
+    p = run_hook("slice-gate", "features")
+
+    # Then: 以 0 退出，输出的某一行恰为 integ-guard
+    assert p.returncode == 0, p.stderr
+    assert "integ-guard" in p.stdout.split(), p.stdout

@@ -1,4 +1,6 @@
 """flight 插件的版本核对（scenario: flight-version-check#*）。versions.ts 是纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-measure
@@ -61,3 +63,15 @@ def test_judges_need_ledger_records():
     # When: 起飞核对判定器
     # Then: 核对失败且原因含 ledger-records；REQUIRED_FEATURES 含 ledger-records
     assert_ts_passed("judges-need-ledger-records")
+
+
+# ---------------------------------------------------------------- flight-unattended S5（骨架：实现后去掉 xfail 标记）
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S5 未实现")
+def test_takeoff_requires_integ_guard():
+    # Given: 判定器的 features 缺 integ-guard，其余能力齐全
+    # When: 发 /opsx-apply demo
+    # Then: 回复含 integ-guard，账本没有 takeoff；REQUIRED_FEATURES 含 integ-guard
+    assert_ts_passed("takeoff-requires-integ-guard")
+    assert_ts_passed("takeoff-requires-integ-guard/refused")

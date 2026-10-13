@@ -1,6 +1,8 @@
 """落地记录从账本生成（scenario: flight-ledger-records#render-records-from-ledger、#report-reads-ledger）。"""
 import json
 
+import pytest
+
 from conftest import git, ledger_append, make_change, run_hook, write
 
 FP = "a" * 64
@@ -116,3 +118,30 @@ def test_report_reads_ledger(tmp_path):
     assert "门禁红次数：1" in out, out
     assert "诊断：1 条" in out, out
     assert rec.returncode == 2 and not (d / "timeline.md").exists(), rec.stderr
+
+
+# ---------------------------------------------------------------- flight-unattended S2（骨架：实现后去掉 xfail 标记）
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
+def test_report_prints_heals_and_triage(tmp_path):
+    # Given: 账本有 takeoff、heal merge-retry S1、heal integ integ、halt（kind final）、triage（首行「S2 的 owns 漏了守卫测试」）
+    repo = new_repo(tmp_path / "repo")
+    d = make_change(repo)
+    for e in [
+        _ev("approve", "2026-10-13T10:00:00Z", fp=FP),
+        _ev("takeoff", "2026-10-13T10:00:00Z", fp=FP, branch="worktree-demo", model="claude-opus-5-5", waves=[["S1", "S2"]]),
+        _ev("heal", "2026-10-13T10:05:00Z", kind="merge-retry", slice="S1", reason="合回失败：无变更"),
+        _ev("heal", "2026-10-13T10:20:00Z", kind="integ", slice="integ", reason="final 红"),
+        _ev("halt", "2026-10-13T10:40:00Z", reason="final 未通过：G2 test", kind="final"),
+        _ev("triage", "2026-10-13T10:45:00Z", agent="d1", text="S2 的 owns 漏了守卫测试\n改计划\n草案：…"),
+    ]:
+        ledger_append(repo, "demo", e)
+
+    # When: 运行 timeline.py report
+    out = run_hook("timeline", "report", "--change-dir", str(d), cwd=repo).stdout
+
+    # Then: 输出含「自愈：2 次」「merge-retry S1」「integ integ」与「停飞诊断：S2 的 owns 漏了守卫测试」
+    assert "自愈：2 次" in out, out
+    assert "merge-retry S1" in out and "integ integ" in out, out
+    assert "停飞诊断：S2 的 owns 漏了守卫测试" in out, out

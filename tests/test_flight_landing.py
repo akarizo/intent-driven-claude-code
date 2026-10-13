@@ -1,6 +1,8 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -165,3 +167,30 @@ def test_landing_actions_skip_after_halt():
     # When: 以派发修复体与派发全量评审员两个动作调用 runLandingAction
     # Then: 没有 spawn；账本没有新增事件
     assert_ts_passed("landing-actions-skip-after-halt")
+
+
+# ---------------------------------------------------------------- flight-unattended S4（骨架：实现后去掉 xfail 标记）
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
+def test_integ_gate_runs_guard():
+    # Given: 账本有 integ 修复体 fi 的派发（base c9）与切片修复体 fx 的派发
+    # When: 先后对 fi、fx 调用 onLandingStop
+    # Then: 对 fi 的 final 命令含 --integ-base c9；对 fx 的不含 --integ-base
+    assert_ts_passed("integ-gate-runs-guard")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
+def test_integ_dispatch_records_base_and_range():
+    # Given: change 分支 HEAD 为 c9
+    # When: 执行 dispatch fixer {slice: integ, failed: [G2 test …]} 与 dispatch reviewer {slice: integ, mode: integ, base: c9, commit: c10}
+    # Then: 修复体提示词含 G2 test 与 scenario、dispatch 带 base c9；评审员提示词含 git diff c9 c10、dispatch 带 base 与 commit
+    assert_ts_passed("integ-dispatch-records-base-and-range")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
+def test_halt_notifies():
+    # Given: 落地世界的 ctx 带记录调用的 notify；另一个 ctx 的 notify 会抛错
+    # When: 执行 blocked 停飞、abort 停飞；再在 notify 抛错的 ctx 上执行 blocked 停飞
+    # Then: blocked：halt kind blocked、notify 一次含 demo 与原因首行；abort：halt kind abort、不通知；抛错那次照样有 halt、不抛
+    assert_ts_passed("halt-notifies")

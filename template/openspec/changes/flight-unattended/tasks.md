@@ -1,0 +1,28 @@
+<!-- 本文件由 slices.json 生成，不要手写编辑；改动请改 slices.json 后重新生成。 -->
+> **切片规则**：1–9 片 · DAG 深度 ≤ 3 · 同 wave 所有权不相交 · 每片 owns ≤ 12 条 · 每片一个 commit · 门禁绿才勾选。
+>
+> **本仓库自身纪律**：
+> - TDD：先写失败测试；
+> - 测试函数首行写 `# Given:` / `// Given:` 三段中文注释；
+> - `python3 -m pytest -q tests` 全绿；
+> - `cd template && openspec schema validate intent-driven` 绿。
+>
+> **wave 划分**：
+> - wave 1 = S1 + S2 + S3：状态机、判定器、纯模块，测试文件互不相交；
+> - wave 2 = S4（依赖 S1、S2、S3）+ S5（依赖 S1、S2、S3）：落地与编排并行，S4 的 verify 不跑 orchestrator 测试；
+> - wave 3 = S6（依赖 S5）+ S7（依赖 S4、S5）。
+>
+> **飞行条件**：
+> - 在已安装的插件 0.8.0 上飞，主检出须快进到 `e5551f4`（判定器从主检出运行）；
+> - 本 change 改的是 worktree 里的插件与判定器，不影响本次飞行的控制面，本次飞行享受不到自愈；
+> - 只在本会话起飞。
+
+## 切片
+
+- [ ] S1 状态机：合回失败重派、看门狗后的重派、自愈预算、整合修复、halt 分类；诊断员只读 （deps: - · verify: `python3 -m pytest -q tests/test_flight_core.py tests/test_flight_envelope.py`）
+- [ ] S2 判定器：G9 整合护栏与 integ-guard、账本认 heal / triage、report 打印自愈与诊断 （deps: - · verify: `python3 -m pytest -q tests/test_slice_gate_final.py tests/test_ledger.py tests/test_timeline_render.py tests/test_slice_gate.py tests/test_evidence_timeline.py`）
+- [ ] S3 纯模块：整合修复与诊断的提示词、诊断员定义、看门狗请求跟踪 （deps: - · verify: `python3 -m pytest -q tests/test_flight_agents.py tests/test_flight_watchdog.py`）
+- [ ] S4 落地：整合修复的派发与带护栏收口、专审评审、停飞与 PR 开出通知、事件表 （deps: S1, S2, S3 · verify: `python3 -m pytest -q tests/test_flight_landing.py tests/test_flight_ship.py tests/test_flight_io.py tests/test_flight_land.py`）
+- [ ] S5 编排：执行 heal、看门狗接线、停飞后派诊断员与 triage、终端通知、起飞核对 integ-guard （deps: S1, S2, S3 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_versions.py tests/test_flight_abort.py tests/test_flight_takeoff_commit.py`）
+- [ ] S6 批准带续飞：停飞态按钮、按下即批准并后台续飞、resume.ts 顺序 （deps: S5 · verify: `python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py`）
+- [ ] S7 文档与发布：/opsx-apply 命令与 skill、README、WORKFLOW 写清自愈与续飞，插件 0.9.0 （deps: S4, S5 · verify: `python3 -m pytest -q tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py`）
