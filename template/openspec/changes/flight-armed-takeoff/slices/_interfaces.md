@@ -110,5 +110,3 @@ export async function renderRecords(io: Io, f: Flight): Promise<string | undefin
 ```
 
 ## S6
-
-- 只改文档与 `plugin.json`。行为以 spec 为准，不 import 任何代码。
