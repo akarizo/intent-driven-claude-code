@@ -113,6 +113,10 @@ type World = {
   preflightRuns?: Run[]
   /** plan_fp.py 的结果队列（按调用顺序取；取完后按 fpRun / fp） */
   fpRuns?: Run[]
+  /** 另外的 change（各有 worktree /repo/.worktrees/<名>、分支 worktree-<名>、change 目录与 slices.json）；账本按 --change-dir 的 change 名分开作答 */
+  trees?: string[]
+  /** prompt.submit 以此消息拒绝（插件的 $.prompt.submit 随即抛错） */
+  submitDeny?: string
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -159,6 +163,7 @@ function useWorld(on: On, w: World) {
   const files: Record<string, string> = {
     [`${TREE}/${CD}/slices.json`]: JSON.stringify(SLICES),
     [`${PLUGIN_ROOT}/.claude-plugin/plugin.json`]: JSON.stringify({ name: 'flight', version: '0.4.0' }),
+    ...Object.fromEntries((w.trees ?? []).map(n => [`${MAIN}/.worktrees/${n}/template/openspec/changes/${n}/slices.json`, JSON.stringify({ ...SLICES, change: n })])),
     ...(w.files ?? {}),
   }
   const log = {
@@ -192,7 +197,7 @@ function useWorld(on: On, w: World) {
     /** mock.clock 的句柄（advance / settle） */
     clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown; set(ms: number): unknown },
   }
-  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
+  const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.trees ?? []).map(n => `${MAIN}/.worktrees/${n}/template/openspec/changes/${n}`), ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
   // worktree add -b 建过的分支（freshWorktree 用 rev-parse --verify refs/heads/<分支> 查占用）
   const branches = new Set<string>()
@@ -225,6 +230,8 @@ function useWorld(on: On, w: World) {
     return { value: w.notify ?? { isSent: true, channel: 'iterm2' } } as never
   })
   on('prompt.submit', ($, e) => {
+    // 抛错的测试 hook 被引擎跳过，其下没有实现：插件的 $.prompt.submit 随即抛错
+    if (w.submitDeny) throw new Error(w.submitDeny)
     const text = String((e as { text?: unknown }).text ?? '')
     log.submits.push(text)
     return { text } as never
@@ -324,7 +331,9 @@ function useWorld(on: On, w: World) {
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') {
-        const show = () => wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
+        // 按 --change-dir 的 change 名只答该 change 的事件（不带 change 的预置事件归 demo）
+        const name = String(argv[argv.indexOf('--change-dir') + 1]).split('/').pop()
+        const show = () => wrap(res(0, log.events.filter(x => (x.change ?? 'demo') === name).map(x => JSON.stringify(x)).join('\n') + '\n'))
         const held = w.ledgerHold?.()
         return held ? (held.then(show) as never) : show()
       }
@@ -363,7 +372,10 @@ function useWorld(on: On, w: World) {
     }
     switch (args[0]) {
       case 'worktree':
-        if (args[1] === 'list') return wrap(res(0, `worktree ${MAIN}\nbranch refs/heads/main\n\nworktree ${TREE}\nbranch refs/heads/worktree-demo\n`))
+        if (args[1] === 'list') {
+          const more = (w.trees ?? []).map(n => `\nworktree ${MAIN}/.worktrees/${n}\nbranch refs/heads/worktree-${n}\n`).join('')
+          return wrap(res(0, `worktree ${MAIN}\nbranch refs/heads/main\n\nworktree ${TREE}\nbranch refs/heads/worktree-demo\n${more}`))
+        }
         exists.add(String(args[4]))
         branches.add(String(args[3]))
         return wrap(res(0, ''))
@@ -2331,8 +2343,8 @@ test('ticker-not-duplicated', async ($, on) => {
 
 const BASELINE = '基线仍在跑（已 1 分钟，上次全量约 2 分钟）：等它结束再起飞'
 const OVERLAP = 'overlap: 同一 wave 的 S1 与 S2 都覆盖 a.ts'
-/** 主会话一轮结束（不带 agentId） */
-const MAIN_TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' }
+/** 主会话一轮结束（不带 agentId）；durationMs 0：这一轮开始于结束时刻，不早于时钟未动时的提交时刻 T0 */
+const MAIN_TURN = { answer: '', durationMs: 0, isAborted: false, turnId: 't1', reason: 'answer' }
 const notified = (log: { notifies: unknown[] }, ...parts: string[]) => log.notifies.filter(n => parts.every(p => JSON.stringify(n).includes(p)))
 const takeoffs = (log: { events: Record<string, unknown>[] }) => log.events.filter(x => x.ev === 'takeoff')
 
@@ -2505,10 +2517,149 @@ test('human-takeoff-skipped-while-arm-retrying', async ($, on) => {
   await until(() => takeoffs(log).length > 0 && notified(log, '已起飞').length > 0)
   await flush()
 
-  // Then: 人发的这次回复含「正在自动重试起飞」与 demo；账本恰一条 takeoff（attempt 1）
-  expect(String(r.text)).toContain('正在自动重试起飞')
+  // Then: 人发的这次回复含「正在起飞」与 demo；账本恰一条 takeoff（attempt 1）
+  expect(String(r.text)).toContain('正在起飞')
   expect(String(r.text)).toContain('demo')
   expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
+})
+
+// ---------------------------------------------------------------- flight-armed-followups S2（起飞锁原文、abort 遇锁、交模型对准、旧待命、状态行）
+
+const runsOf = (log: { runs: { argv: string[] }[] }, script: string, sub?: string) =>
+  log.runs.filter(x => String(x.argv[1]).endsWith(`/${script}`) && (sub === undefined || x.argv[2] === sub)).length
+
+test('second-takeoff-refused-while-taking-off', async ($, on) => {
+  // Given: demo 已批准；人发出的第一次 /opsx-apply demo 在起飞检查里读账本时卡住（持有起飞锁）
+  const release: (() => void)[] = []
+  const w = demoWorld()
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const log = useWorld(on, w)
+  const first = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await until(() => release.length > 0)
+
+  // When: 卡住期间人再发一次 /opsx-apply demo；之后放行第一次
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (const x of release) x()
+  await first
+  await flush()
+
+  // Then: 第二次回复含「正在起飞，稍候」、不含「自动重试」；账本恰一条 takeoff
+  expect(String(r.text)).toContain('正在起飞，稍候')
+  expect(String(r.text)).not.toContain('自动重试')
+  expect(takeoffs(log).length).toBe(1)
+})
+
+test('abort-waits-for-retry', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），之后通过；/opsx-apply demo 已进入待命；
+  //        时钟推进 60 秒，tick 触发的自动重试读账本时卡住（持有起飞锁）
+  const release: (() => void)[] = []
+  const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const retry = advance(log, 60000)
+  await until(() => release.length > 0)
+
+  // When: 重试卡住期间人发 /flight abort demo；之后放行，重试起飞成功
+  const r = await $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+  const statusAfterAbort = log.statuses.at(-1)
+  for (const x of release) x()
+  await retry
+  await until(() => takeoffs(log).length > 0 && notified(log, '已起飞').length > 0)
+  await flush()
+
+  // Then: abort 回复含「正在自动起飞」与「结束后再 /flight abort」；abort 之后状态行仍是 demo 的起飞待命；ui.notify 收到含 demo 与「已起飞」的通知恰一次
+  expect(String(r.text)).toContain('正在自动起飞')
+  expect(String(r.text)).toContain('结束后再 /flight abort')
+  expect(statusAfterAbort).toContain('起飞待命')
+  expect(notified(log, 'demo', '已起飞').length).toBe(1)
+})
+
+test('model-turn-aligned', async ($, on) => {
+  // Given: demo 已批准；slice-gate lint 第一次以 1 退出（overlap），之后通过；/opsx-apply demo 进入 model 类待命；
+  //        时钟推进到 clock.after(0) 到点（T0 = 12:00:00 提交修复请求），再推进 5 秒；
+  //        提交之前就在跑的那一轮（durationMs 10000，开始于 T0 − 5s）此时结束，记下那时 lint 的运行次数与 takeoff 条数
+  const log = useWorld(on, demoWorld({ lintRuns: [res(1, '', OVERLAP)] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 0)
+  await advance(log, 5000)
+  await $.turn.complete({ ...MAIN_TURN, durationMs: 10000 } as never)
+  await flush()
+  const lintAfterEarly = runsOf(log, 'slice-gate.py', 'lint')
+  const takeoffsAfterEarly = takeoffs(log).length
+
+  // When: 提交的那一轮（durationMs 3000，开始于 T0 + 2s）结束
+  await $.turn.complete({ ...MAIN_TURN, turnId: 't2', durationMs: 3000 } as never)
+  await until(() => takeoffs(log).length > 0)
+
+  // Then: 前一轮结束时 lint 只运行过 1 次（没有重试）、没有 takeoff；后一轮结束后账本恰一条 takeoff
+  expect(lintAfterEarly).toBe(1)
+  expect(takeoffsAfterEarly).toBe(0)
+  expect(takeoffs(log).length).toBe(1)
+})
+
+test('model-turn-aligned/submit-fails', async ($, on) => {
+  // Given: demo 已批准；slice-gate lint 第一次以 1 退出（overlap）；prompt.submit 以「提交通道不可用」拒绝；/opsx-apply demo 进入 model 类待命
+  const log = useWorld(on, demoWorld({ lintRuns: [res(1, '', OVERLAP)], submitDeny: '提交通道不可用' }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 时钟推进到 clock.after(0) 到点，插件提交修复请求
+  await advance(log, 0)
+  await until(() => notified(log, '放弃').length > 0)
+
+  // Then: ui.notify 收到含 demo、「放弃」与「提交修复请求失败」的通知恰一次；最后一次状态行不含「起飞待命」
+  expect(notified(log, 'demo', '放弃', '提交修复请求失败').length).toBe(1)
+  expect(log.statuses.at(-1)).not.toContain('起飞待命')
+})
+
+test('human-refusal-drops-old-arm', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑）；/opsx-apply demo 已进入待命（通知 1 次）；
+  //        之后 takeoff-gate.py 改为以 1 退出、stderr「计划已变」
+  const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.takeoff = res(1, '', '计划已变：指纹不符')
+
+  // When: 人再发 /opsx-apply demo（被拒为计划已变），之后时钟推进 60 秒
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 60000)
+
+  // Then: 最后一次状态行不含「起飞待命」；takeoff-gate.py 共运行 2 次（没有自动重试）；ui.notify 共 2 条，含「计划已变」的恰 1 条
+  expect(log.statuses.at(-1)).not.toContain('起飞待命')
+  expect(runsOf(log, 'takeoff-gate.py')).toBe(2)
+  expect(log.notifies.length).toBe(2)
+  expect(notified(log, '计划已变').length).toBe(1)
+})
+
+test('status-line-kept-for-others', async ($, on) => {
+  // Given: 世界另有 change e2；人发 /opsx-apply e2 已起飞（状态行显示 e2 的进度）；之后 slice-gate lint 改为一律以 1 退出（overlap）；
+  //        /opsx-apply demo 进入 model 类待命，三轮「clock.after(0) 到点 → 主会话一轮结束」各自动重试一次（都又被拒），第三次重试后的提交已到点
+  const red = res(1, '', OVERLAP)
+  const w = demoWorld({ trees: ['e2'] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'e2', ...HUMAN } as never)
+  w.lintRuns = [red, red, red, red, red]
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 0)
+  for (let i = 0; i < 2; i++) {
+    await $.turn.complete(MAIN_TURN as never)
+    await advance(log, 0)
+  }
+
+  // When: 主会话又一轮结束，demo 第 3 次重试仍被拒而放弃
+  await $.turn.complete(MAIN_TURN as never)
+  await until(() => notified(log, '重试已用尽').length > 0)
+  await flush()
+
+  // Then: ui.notify 收到含 demo 与「重试已用尽」的通知；最后一次状态行含 e2、不为空
+  expect(notified(log, 'demo', '重试已用尽').length).toBe(1)
+  expect(log.statuses.at(-1)).toContain('e2')
 })
 
 test('same-session-in-flight-takeoff-refused', async ($, on) => {
