@@ -47,18 +47,14 @@ export type FlightBand = {
 export type FlightPanel = {
 ```
 
-## S4 · `orchestrator.tsx`
+## S4
 
-- `atom({ plugin: 'flight', key: 'armed' } as const, { items: {} } as FlightArmed)`。
-- `/opsx-apply`、`/flight resume`、`takeoffNow` 都经同一个「起飞 + 被拒即待命」包装。
-- 推进事件：
-  - 看门狗计时器 tick；
-  - 已有的 `turn.complete { agentId: /./ }`（agent 结束）；
-  - 新增 `turn.complete { turnId: /./ }`（只处理 agentId 为空的主会话轮次）；
-  - `clock.after`。
-- `$.prompt.submit` 只在 `clock.after(0, …)` 的回调里调用，不在 `command.run` 里调用。
-- `/flight abort <change>`：待命中则清除并回复「已取消起飞待命」。
-- 偶发失败：`appendEvent(…, ev.diag(b, { attempt, where: 'takeoff', error }))`。账本读不出时跳过；attempt 取账本当前 attempt，没有起飞过时为 0。
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+export function registerOrchestrator(on: On): void {
+```
 
 ## S5
 
