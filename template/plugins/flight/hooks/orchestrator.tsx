@@ -660,8 +660,9 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   if (foreign !== undefined && !args.includes(TAKEOVER)) {
     return `flight：${name} 的 attempt ${state.attempt} 由另一个会话（${foreign.slice(0, 8)}）起飞，尚未落地或停飞；到那个会话里继续，或确认它已结束后用 /opsx-apply ${name} ${TAKEOVER} 接管`
   }
-  // 本会话在飞（以账本为准）：不在未结束的 attempt 上再写 takeoff（也不让它被归为可等待的拒绝而进入待命）
-  if (state.takeoff !== undefined && !settled && owner === session) {
+  // 本会话本进程正在驱动这次飞行（账本未结束且 active 已登记）：不在未结束的 attempt 上再写 takeoff（也不让它被归为可等待的拒绝而进入待命）。
+  // 本进程未登记的（进程重启后 --resume 回到原会话）照旧走后面的活 agent 检查与续飞
+  if (state.takeoff !== undefined && !settled && owner === session && active.has(name)) {
     return `flight：${name} 正在飞（attempt ${state.attempt}），不起飞；需要中止用 /flight abort ${name}`
   }
   const st = await io.run(['git', '-C', tree.path, 'status', '--porcelain', '--untracked-files=all'])

@@ -2533,16 +2533,34 @@ test('same-session-in-flight-takeoff-refused', async ($, on) => {
   expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
 })
 
-test('same-session-in-flight-takeoff-refused/ledger', async ($, on) => {
-  // Given: 账本预置本会话 sess-1 起飞的 demo attempt 1（未落地、未停飞），本进程没有登记 demo 在飞，agent.list 为空
+test('same-session-in-flight-takeoff-refused/resume', async ($, on) => {
+  // Given: 本进程经 /opsx-apply demo 已起飞（attempt 1 在飞、未落地也未停飞），派出的 agent-1 在 agent.list 里为 running
+  const w = demoWorld({ agents: [{ id: 'agent-1', status: 'running' }] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 人在同一会话发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复含「正在飞」与「/flight abort」，不含「已进入起飞待命」；状态行从未显示「起飞待命」；账本仍只有 attempt 1 的 takeoff
+  expect(String(r.text)).toContain('正在飞')
+  expect(String(r.text)).toContain('/flight abort')
+  expect(String(r.text)).not.toContain('已进入起飞待命')
+  expect(log.statuses.some(s => s.includes('起飞待命'))).toBe(false)
+  expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
+})
+
+test('same-session-unfinished-resumes-after-restart', async ($, on) => {
+  // Given: 账本预置本会话 sess-1 起飞的 demo attempt 1（未落地、未停飞，如进程重启后 --resume 回到原会话），本进程没有登记 demo 在飞，agent.list 为空
   const ledger = [ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' })]
   const log = useWorld(on, demoWorld({ ledger }))
 
   // When: 人发出 /flight resume demo
   const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
 
-  // Then: 回复含「正在飞」与「/flight abort」；账本仍只有预置的 1 条事件
-  expect(String(r.text)).toContain('正在飞')
-  expect(String(r.text)).toContain('/flight abort')
-  expect(log.events.length).toBe(1)
+  // Then: 回复含「续飞」与「✈ 起飞」，不含「正在飞」；预置之后的新事件首条是 attempt 2 的 takeoff
+  expect(String(r.text)).toContain('续飞')
+  expect(String(r.text)).toContain('✈ 起飞')
+  expect(String(r.text)).not.toContain('正在飞')
+  expect(log.events.slice(1).map(x => `${x.ev}:${x.attempt ?? ''}`)[0]).toBe('takeoff:2')
 })
