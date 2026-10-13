@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-envelope（executor-write-limited-to-owns 等 6 条纯判定）。envelope 是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
-import { bashUpgradable, bashVerdict, globMatch, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from '../hooks/envelope'
+import { bashUpgradable, bashVerdict, bashWriteTargets, bashWritesVerdict, globMatch, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from '../hooks/envelope'
 import type { ActiveTree, Who } from '../hooks/envelope'
 
 const W = '/repo/.claude/worktrees/flight-demo-S1'
@@ -719,4 +719,57 @@ test('main-session-spawns-code-reviewer', () => {
   expect(b?.deny).toContain('铁律 11')
   expect(c?.deny).toContain('飞行中的 agent 不得再派发子 agent')
   expect(d?.deny).toContain('只能由 flight 控制面派发')
+})
+
+// ---------------------------------------------------------------- spec flight-intent-guard（S4）
+
+test('bash-write-targets', () => {
+  // Given: cwd 为 /w；spec 列出的 13 条命令，与各自期望的 targets（第 12 条另期望 unresolved 为 ["$OUT"]，第 13 条 unresolved 为空）
+  const table: [string, string[]][] = [
+    ['echo hi > a.txt', ['/w/a.txt']],
+    ['echo hi >> logs/b.log 2>/dev/null', ['/w/logs/b.log']],
+    ['make 2>&1 | tee -a c.txt d.txt', ['/w/c.txt', '/w/d.txt']],
+    ["sed -i '' -e 's/x/y/' e.py", ['/w/e.py']],
+    ["sed -i.bak 's/x/y/' f.py g.py", ['/w/f.py', '/w/g.py']],
+    ['cp -r src dst/', ['/w/dst']],
+    ['cd sub && touch h && rm -f i', ['/w/sub/h', '/w/sub/i']],
+    ["echo '>' j", []],
+    ['ls >&2', []],
+    ['python3 tool.py > out.json', ['/w/out.json']],
+    ['dd if=a of=k.bin', ['/w/k.bin']],
+    ['echo x > $OUT', []],
+    ['git status', []],
+  ]
+
+  // When: 逐条求 bashWriteTargets(命令, '/w')
+  const got = table.map(([c]) => bashWriteTargets(c, '/w'))
+
+  // Then: 13 条的 targets 依次等于期望；第 12 条 unresolved 为 ["$OUT"]；第 13 条 unresolved 为空
+  expect(got.map(r => r.targets)).toEqual(table.map(([, t]) => t))
+  expect(got[11].unresolved).toEqual(['$OUT'])
+  expect(got[12].unresolved).toEqual([])
+})
+
+test('flight-agent-bash-writes-within-owns', () => {
+  // Given: 执行体 E（S1，owns src/a/**，worktree /wt/S1）的四条命令，评审员 R（worktree /wt/R）的一条命令 echo x > notes.txt
+  const e: Who = { role: 'executor', worktree: '/wt/S1', owns: ['src/a/**'] }
+  const r: Who = { role: 'reviewer', worktree: '/wt/R', owns: [] }
+  const calls: [Who, string][] = [
+    [e, 'echo x > src/a/y.py'],
+    [e, 'echo x > src/b/z.py'],
+    [e, 'echo x > "$OUT"'],
+    [e, "sed -i 's/a/b/' src/a/y.py"],
+    [r, 'echo x > notes.txt'],
+  ]
+
+  // When: 逐条以 bashWritesVerdict 判定
+  const [e1, e2, e3, e4, r1] = calls.map(([who, c]) => bashWritesVerdict(who, c))
+
+  // Then: E 第一、四条放行；第二条被拒且理由含 src/b/z.py 与 owns；第三条被拒且理由含「写入目标无法静态判定」；R 被拒
+  expect(e1).toBeUndefined()
+  expect(e4).toBeUndefined()
+  expect(e2?.deny).toContain('src/b/z.py')
+  expect(e2?.deny).toContain('owns')
+  expect(e3?.deny).toContain('写入目标无法静态判定')
+  expect(r1?.deny).toBeDefined()
 })
