@@ -334,7 +334,12 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   const all = plan.waves.flat()
   const reviews = all.filter(s => mergedOk(s)).flatMap(reviewActions)
   const wave = plan.waves.find(w => w.some(s => !done(s)))
-  if (wave) return [...wave.filter(s => !done(s)).flatMap(sliceActions), ...reviews]
+  if (wave) {
+    // 同一批里多片各自 heal 会一次突破预算：按剩余预算截断，被截掉的下一轮由 healVerdict 判为预算用尽（design D3）
+    const room = HEAL_BUDGET - healsOf(state).length
+    let n = 0
+    return [...wave.filter(s => !done(s)).flatMap(sliceActions), ...reviews].filter(a => a.kind !== 'heal' || n++ < room)
+  }
   if (reviews.length || all.some(s => mergedOk(s) && !reviewed(s))) return reviews
   return closing()
 }

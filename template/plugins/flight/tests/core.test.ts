@@ -749,6 +749,23 @@ test('heal-budget-caps', () => {
   expect(reasonOf(verdict)).toContain('自愈预算已用尽（3/3）')
 })
 
+test('heal-budget-caps-within-one-batch', () => {
+  // Given: waves [[S1, S2]]，本 attempt 已有 2 条 heal（watchdog review:S3、merge-retry S4），S1、S2 的执行体都收口绿后合回失败（非冲突）
+  const failed = (s: string, agent: string): FlightEvent[] => [
+    dispatch(1, s, 'executor', agent),
+    ev.gate(B, { attempt: 1, agent, slice: s, ok: true, commit: `c-${s}`, failed: [] }),
+    ended(1, agent),
+    ev.merge(B, { attempt: 1, slice: s, ok: false, commit: '', failed: ['合回对第一父无变更：…'] }),
+  ]
+  const state = reduce([approve, takeoff(1, ONE.waves), heal('watchdog', 'review:S3', 'r3'), heal('merge-retry', 'S4'), ...failed('S1', 'a1'), ...failed('S2', 'a2')])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 恰好只有 1 条 heal，本 attempt 合计不超过预算 3
+  expect(actions.filter(a => a.kind === 'heal')).toHaveLength(1)
+})
+
 test('watchdog-heal-redispatches-once', () => {
   // Given: waves [[S1, S2]] 全部合回；四份账本：
   //   甲：S2 评审为空列表，S1 评审员 r1 已结束、没有 review，有 heal {watchdog, review:S1, agent r1}；
