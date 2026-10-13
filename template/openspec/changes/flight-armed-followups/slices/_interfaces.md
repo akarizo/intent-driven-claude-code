@@ -8,21 +8,24 @@ W1 = S1 ∥ S2 ∥ S3；W2 = S4（依赖 S2）∥ S5（依赖 S2）。
 - **`Button` 没有禁用属性**（CLI 2.1.296）：「不可按」的做法是不渲染按钮，只显示文字。
 - **提交时刻要在调用 submit 之前取**：实测，插件提交的那一轮，开始时刻（结束时的 `clock.now` 减 `durationMs`）比 `prompt.submit` 完成早 7–20 ms。
 
-## S2 · `orchestrator.tsx` 与 `types/index.d.ts`
+## S2
 
-```ts
-// 纯函数，由本文件导出，S5 的 register.tsx import 它，删掉自己那份 scenarioFilesOf
-export async function scenarioFiles(io: Io, path: string): Promise<string[]>
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+export function registerOrchestrator(on: On): void {
 ```
 
-`types/index.d.ts`：
-```ts
-export type FlightItem = { …; busy?: string }          // 非空 = 进行中文字（「起飞中…」「基线运行中（已 N 分钟）」），渲染时只显示文字、不渲染按钮
-export type FlightArmedItem = { …; submittedAt?: number } // 交模型那一轮提交前的时刻 T0；缺失时 main-turn 按旧行为推进
+### template/plugins/flight/types/index.d.ts
 ```
-
-- **锁**：沿用 `armBusy`。人工起飞撞锁时回复「flight：<change> 正在起飞，稍候」；`/flight abort` 撞锁时回复「flight：<change> 正在自动起飞，结束后再 /flight abort」。
-- **S4 在 S2 之上加「正在飞」判据**：drive 期间登记进程内的 `driving: Set<string>`，`drive()` 的开头加入、结束时移除。由 S4 新增，S2 不做。
+export type FlightItem = {
+export type FlightArmedItem = {
+export type FlightArmed = { items: Record<string, FlightArmedItem> }
+export type FlightBand = {
+export type FlightPanel = {
+```
 
 ## S1
 
