@@ -1,0 +1,213 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/prompts.test.ts",
+      "line": 129,
+      "summary": "TS 用例 integ-prompts-state-guards 的 Given 偏离 spec：spec flight-integ-fix#integ-prompts-state-guards 的 failed 是多行项 'G2 test: exit 1（新增 1 条失败）\\ntests/test_x.py::test_y'，测试却用了单行的 'G7 tests/test_x.py::test_y'。切片包要求的「多行项原样缩进」（prompts.ts 里的 f.replace(/\\n/g, '\\n  ')）因此没有任何测试覆盖，把这行删掉测试照样绿。",
+      "fix": "把 failed 改成 spec 原样的 ['G2 test: exit 1（新增 1 条失败）\\ntests/test_x.py::test_y']，同时更新 Given 注释。另外加一条断言 expect(fix).toContain('- G2 test: exit 1（新增 1 条失败）\\n  tests/test_x.py::test_y')，把多行缩进锁住。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/prompts.ts",
+      "line": 128,
+      "summary": "integReviewPrompt 引入了第四种评审范围「专审整合修复」，但 agents/reviewer.md 的「审查范围」仍写「三种之一」（切片 / 全量 / 复核）。现有切片的 owns 都不含 reviewer.md，评审员只能把它当成复核来套。同时提示词没给验收依据（proposal / design / specs），而 wholeReviewPrompt 给了。",
+      "fix": "在后续切片或修复里给 reviewer.md 的「审查范围」补一种「整合修复专审」（用提示词给的 git diff <base> <commit> 取回；重点查改弱测试）。可选：integReviewPrompt 加一行验收依据，写明 ${changeDir} 下的 proposal.md / design.md / specs/。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1063,
+      "summary": "G9「新增 skip / xfail 标记」只扫 + 行、不和 - 行对冲：整合修复体只要改动或移动一行原本就有的 `pytest.mark.skip` / `pytest.skip(...)` / `.skip(`（例如只改 reason、调缩进、挪位置），这行在 diff 里一删一加，就被误判为新增标记，G9 判红，结果是 integ 停飞（kind integ）。方向是偏保守，不会漏放，但无人值守飞行会因此多一次不必要的停飞。",
+      "fix": "改成按标记行做多重集差：把 h[\"plus\"] 中命中 G9_MARK_RE 的行 strip 后放进 Counter，减去 h[\"minus\"] 中同样处理的 Counter，只报差集里剩下的行；或者至少改成净计数（plus 中的标记数 > minus 中的标记数才判红）。另补一条 GWT：只改既有 skip 的 reason，不得出现 G9 项。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1060,
+      "summary": "assert / 测试函数的「净减少」是按单个文件计的：把测试函数从 tests/a.py 原样挪到 tests/b.py，a.py 会被判为测试函数和 assert 净减少，G9 判红。这和 design D4 的表述（按测试文件判）一致，属于已知的保守误报；这里记一笔供后续权衡，本片不要求改。",
+      "fix": "可选：在逐文件判定之外，再按所有测试文件的合计做一次净计数；只有合计也减少时才判红，逐文件减少降级为 warning。若维持现状，在 design D4 或判定器注释里写明「跨文件挪动测试会被判红」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 265,
+      "summary": "finalRed 只要本 attempt 有 integ 合回（im），就停飞并写「整合修复合回后仍红」。但如果 integ 合回、final 绿之后，又走了全量评审、fix-r<k> 合回，然后 final 才红，这次的红和 integ 无关。停飞本身没错（同一 attempt 的 integ 只能自愈一次），只是停飞原因会误导诊断员和人工排查。",
+      "fix": "比较 im 与最近一次 fix-r<k> 合回的 seq：im 之后还有 fix-r<k> 合回时，原因改写成「修复轮合回后 final 红（本 attempt 整合修复已用过）」或类似说法；haltKind 仍为 final。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 431,
+      "summary": "摘要的修复列对 integ 用的 mergedOk 跨 attempt 计数，而 next 的 closing 用的 im 只看本 attempt（ofA）。续飞后的 attempt 里如果又派了一个 integ 修复体，面板会显示「整合 已合回」，实际还在进行中，与状态机口径不一致。另外 review:integ 被 blocked 时，修复列也不显示阻断。",
+      "fix": "fs === INTEG 时，「已合回」改按本 attempt 的 merge 判（ofA('merge')），阻断同时看 blockedNow(INTEG) 与 blockedNow('review:integ')。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/core.test.ts",
+      "line": 785,
+      "summary": "切片包要求 wholeReview 在看门狗之后重派时保持同 mode、同范围，复核还要带同一 base / prior；integ 修复体被看门狗停掉后的重派要带同一 failed。这两条路径都已实现，但没有任何用例覆盖（watchdog-heal-redispatches-once 只覆盖了切片评审员和 fix 修复体）。日后改 wholeReview 时，followup 的 base / prior 漂移不会被发现。",
+      "fix": "在 core.test.ts 加两组断言：① whole-r1 评审员结束、没有 review、有指向它的 watchdog heal 时，next 恰为 followup 派发，base、commit、prior 与首派完全相同；② integ 修复体 fi 结束、没有收口门禁、有 watchdog heal 时，next 恰为 {dispatch fixer, slice integ, findings [], failed: final 的 failed}。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 150,
+      "summary": "onLandingStop 遇到 slice 为 integ、但 dispatch 事件里没有 base 的修复体（例如旧版本插件写的账本，或以后有别的派发路径漏记 base）时，integBase 为 undefined，runFinal 就不带 --integ-base，G9 整合护栏被静默跳过，整合修复体改测试 / 骨架也会被放行。按当前代码，唯一的派发路径一定会记 base，所以这里只是缺一层 fail-closed 防御。",
+      "fix": "a.slice === INTEG 且 a.base 为空时不跑 final：直接追加一条 ok:false 的 gate 事件（failed 写「整合修复体缺 base，无法判 G9」），并返回 block；或在 runFinal 调用前断言 a.base 非空。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 268,
+      "summary": "halt 通知直接拼 action.haltKind。orchestrator.tsx 现有的 halt 构造（:441/:462/:476 经 terminal()，:673 的 /flight abort）都还没带 haltKind，要等并行切片 S5 补上。在 S5 合回前，人工中止会误发通知，文本还会是「停飞（undefined）」。这不是 S4 引入的契约问题，但合回顺序会让它暴露出来。",
+      "fix": "S5 合回后确认上述四处都带了 haltKind（typecheck 会拦住）；如需本片自保，可写成 `（${action.haltKind ?? '未知'}）`，并在 haltKind 缺省时不通知。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 732,
+      "summary": "同一个 agent 可能被处理两次，ensureTicker 注释里写的「不会重复处理」并不成立。ensureTicker 按「两个周期没 tick 即视为已停」来判断，机器休眠后唤醒等情况下会多起一个计时器，而且以后一直存在。watchTick 先拿 stale 快照，再逐个 forget 并 await watchOne：tick A 的快照含 [a1, a2]，A 处理 a1 期间 tick B 拿到快照 [a2] 并处理了它，A 循环到 a2 时仍会再处理一遍（startedAt 已删，since 退化为 now）。第二次 healVerdict 会看到同 key 的 heal，判「同一处已自愈过一次」，于是错误停飞；两次都在写入前读账本时则会记两条 heal。",
+      "fix": "循环里处理每个 id 之前先确认它仍在跟踪（例如 startedAt.has(id)），不在就跳过，确认后同步 forget，再 await。或者按设计用一个模块级的「已处理 agent」Set 去重。同时修正 ensureTicker 的 ceiling 注释。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 796,
+      "summary": "看门狗停飞走的是 drive 队列之外的路径，也没有像 abortCommand 那样 drain 队列、再补停中途派出的 agent。如果停飞时 drive 正在执行派发动作（spawn 已返回，dispatch 还没写入），liveAgents 读账本看不到这个 agent，停飞后它会继续跑，违背「停掉本 attempt 仍在跑的全部 agent」。",
+      "fix": "预算用尽的分支复用 abortFlight 的流程（halt → stop live → drain 队列 → 再 stop live），或者在 runLandingAction halt 之后 await queue 再调用一次 liveAgents 并逐个停掉。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 741,
+      "summary": "watchTick 在 watchOne 之前就 forget 了 agent。如果此时账本暂时读不出（flightOfAgent 判不出时返回 undefined），watchOne 会静默返回，watchDiag 也找不到所属飞行、不留证据。这个卡住的 agent 从此不再被看门狗处理，账本里也没有任何痕迹。",
+      "fix": "flightOfAgent 判不出（读账本失败）时，把 agent 保留在 tracker 里等下一次 tick 重试；或者至少经 ctx.log 打一行说明。"
+    },
+    {
+      "severity": "LOW",
+      "file": "README.md",
+      "line": 243,
+      "summary": "README 与 docs/WORKFLOW_zh.md（第 192 行）写「停飞与 PR 开出时发终端通知」，没写人工中止（abort）不通知这一例外。landing.tsx:268 对 abort 不发通知，命令文件与 SKILL.md 都写了「abort 除外」，两份概要文档的说法和实现有出入。README 还漏了「人工中止与计划变化不派诊断员」。",
+      "fix": "README 与 WORKFLOW 两处改成「停飞（人工中止除外）与 PR 开出时发终端通知」；README 的诊断员一句末尾补「人工中止与计划变化不派」，与命令文件和 SKILL.md 对齐。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 453,
+      "summary": "NO_TRIAGE 里的 'fingerprint'（计划指纹已变时不派诊断员）没有用例覆盖。abort-skips 走的是 abort.ts 的人工中止路径，这条路径本来就不调用 triage，所以它也没有测到 NO_TRIAGE 的过滤：把 'abort' 从 NO_TRIAGE 删掉，这个用例照样通过。",
+      "fix": "补一个用例：takeoff 之后改动计划，让 drive 以 haltKind 'fingerprint' 停飞，断言 log.spawns 里没有 flight:diagnostician。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 456,
+      "summary": "triage 的「本 attempt 已派过诊断员就不再派」是先读账本、再 spawn、最后追加 dispatch，没有加锁。如果同一 attempt 的两条停飞路径（例如看门狗停飞与 driveNow 的 halt）并发进入 triage，可能派出两个诊断员。能否真的并发需进一步确认。",
+      "fix": "在模块内按 change+attempt 记一个进程内的「已派诊断员」标记：spawn 前先检查并设置，失败或被拒时再清除。账本检查保留，作为跨进程兜底。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 722,
+      "summary": "press-approves-then-resumes 用 50 次真实 setTimeout(1) 轮询来等后台续飞跑完，又严格断言 fills 的先后顺序（先 alpha 后 beta）。两条续飞都是 clock.after(0) 里 void 起的并发链，alpha 比 beta 多一次 baseline 的 process.run。顺序靠的是调度时机，不是代码保证的；spec 的 Then 也没有要求顺序。机器慢时可能偶发红，或靠调度巧合才通过（需进一步确认）。",
+      "fix": "每次按键后各自 advance(0)+settle，等该次续飞跑完再进行下一步，让顺序由测试步骤决定。或者对 fills 排序后再比较（spec 只要求两条都被预填）。用可等待的完成信号代替真实时间轮询，例如把通知计数到 2。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 305,
+      "summary": "depsOf.stopLive 的真实实现在集成测试里没有覆盖：测试世界的 agent.list 恒返回 []，haltedLedger 里也没有 diagnostician 的 dispatch 事件。按 attempt 过滤、排除已 ended、与 agent.list 的运行状态求交、调用 TaskStop 这几段逻辑全都没跑到；resume.test.ts 用的是假依赖，只验证了调用顺序。",
+      "fix": "在 haltedLedger（或单独一个用例）里加入本 attempt 的 diagnostician dispatch（再加一条已 ended 的、一条上个 attempt 的），agent.list 返回其中正在 running 的 id，并记录 tool.call 的 TaskStop。断言只停了本 attempt 内未结束、且仍在跑的那个诊断员。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 319,
+      "summary": "stopLive 只要 $.tool.call 不抛错就把 id 记为已停。orchestrator.tsx:748 的注释写明 TaskStop 被拒时不抛错，而是返回 isError，所以这里会把被拒的 TaskStop 也当成已停飞返回。目前返回值没有被使用，影响很小。",
+      "fix": "仿照 orchestrator.tsx:751，读取返回值的 isError，为真时不计入 stopped。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 432,
+      "summary": "注释写的是「批准修订并续飞：不预填，直接后台续飞」，但本片已把 takeoff 依赖改成预填 /opsx-apply <change> 授权提交，注释与行为不一致。",
+      "fix": "改为「批准修订并续飞：后台续飞（基线绿后预填续飞命令）」之类与当前行为一致的描述。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 328,
+      "summary": "toast 依赖用 Promise.resolve($.ui.toast(text)) 包装，捕获不到同步抛出的错误。resumeFlight 第一步就调 toast，一旦它同步抛错，整条续飞会中止并走「续飞失败」通知，与 notifyQuietly「通知失败不影响续飞」的约定不一致。",
+      "fix": "改成 toast: text => { try { void Promise.resolve($.ui.toast(text)).catch(() => undefined) } catch { /* 忽略 */ } }。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 178,
+      "summary": "evaluate 在每次 refresh（每个主循环 turn.complete）时，都会为每个候选 change 额外跑一次 ledger.py show（stoppedNow），加上已有的 ledger.py approved，每个候选要起两个 python 子进程。候选一多，刷新开销会翻倍。",
+      "fix": "可以只跑一次 ledger.py show：从事件里同时算出最近的 approve 指纹和是否停飞，用来代替 approved 调用。或者在 approved 失败的分支里不再调 stoppedNow。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 248,
+      "summary": "诊断员在 inEnvelope 里一律返回 false，与 design D6「包络与 reviewer 同规则」不一致。评审员在 worktree 或主 worktree 内的 Read/Grep/Glob，以及只读的 Bash（如 python3 <hooksDir>/ledger.py show），可以把引擎的 ask 升级为 allow；诊断员的这些操作全部回落为 ask。人不在终端时（本 change 的目标场景），诊断员可能卡在权限询问上，triage 和「诊断就绪」通知迟迟不来。需进一步确认：本机 permissions 是否已经放行这些命令。",
+      "fix": "删掉 `if (who.role === 'diagnostician') return false`，让诊断员与 reviewer 走同一套 readUpgradable / bashUpgradable 规则（bashUpgradable 对 diagnostician 按 reviewer 处理）。写入类操作已由 writeVerdict 的 readOnly 拒绝，不受影响。补一条用例：诊断员执行 ledger.py show 时不产生 ask。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 859,
+      "summary": "inFlight 只认 active.has(change)。诊断员只在 halt 之后派发，此时 change 已经不在 active 里，所以诊断员的模型请求从不被 StepTracker 计时。watchOne 里 `settled || who.role === 'diagnostician'` 这一支对诊断员是死代码，与 design D2 第 2 步（停飞后的诊断员卡住时由看门狗直接 TaskStop）不符。卡死的诊断员会一直挂着，直到人按续飞时被 stopLive 停掉；在此之前 diagnosing 集合也不会被清除。",
+      "fix": "inFlight 改为 `active.has(o.change) || diagnosing.has(o.change)`，与 flyingWho 的口径一致。补一条用例：halt 后诊断员的请求超过 10 分钟，tick 时被 TaskStop，且不记 heal、不追加 halt。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 853,
+      "summary": "看门狗的 heal 和 halt 都不经过 drive 队列（queue）。watchOne 写 halt 后，立刻用 liveAgents 枚举并停掉在跑的 agent。可如果同一时刻 driveNow 正在 perform 一个 dispatch（spawn 已经发出、dispatch 还没写入），这个 agent 不在枚举结果里，会在已停飞的 attempt 里继续跑。abortCommand 正是为此加了 drain 来「补停中途派出的」，看门狗停飞没有这一步。另外，watchOne 读到的 state 与 drive 正在执行的那批动作并发，两边可能各写一条 heal，使本 attempt 突破 HEAL_BUDGET（批内截断只管 next 返回的这一批）。",
+      "fix": "watchOne 中写 heal、写 halt 以及之后停 agent 的整段改为排进 drive 的同一串行队列（例如复用 queue.then），或者在写 halt、停 agent 之后再 await queue，并重新执行一次 liveAgents + stop，与 abortFlight 的 drain 语义保持一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 1,
+      "summary": "文档与实现不符。命令、skill、README、WORKFLOW_zh 都写「批准修订并续飞：按下 = 批准 + 提交本 change 的工件 + 重跑基线 + 续飞」「续飞：等同 /flight resume」。按 design D7 的修订（attempt 2 后），实现已经降级：按下只预填 `/opsx-apply <change> 授权提交`，要人回车才会提交工件并起飞，「续飞」也同样是预填，并不调用 /flight resume。批准带上的说明文字（register.tsx 的「按下会提交本 change 的工件…」）也有同样的误导。人离开前按了按钮，会以为飞行已经接上。",
+      "fix": "命令与 skill 同改（仓库纪律），同时改 README.md、docs/WORKFLOW_zh.md：写明「按下 = 批准 +（计划改过时）重跑基线，绿则预填 `/opsx-apply <change> 授权提交`，回车后提交工件并续飞；直接起飞留待后续 change『起飞待命』」。批准带的说明行改为「按下会重跑基线并预填续飞命令，回车后提交本 change 工件并续飞」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 122,
+      "summary": "上轮 HIGH（首个请求落在登记中的窗口里，不被计时）的主体已闭环：inFlight 现在认 pending，tick 时仍在登记中的请求会留到下一次处理。剩余的窗口需进一步确认：markPending 在 `await $.agent.spawn` 返回之后才执行。如果引擎在 spawn 的 promise resolve 之前就派发了新 agent 的首个 turn.step，并且 turn.step hook 里两次 await clock.now 之后仍然先于 markPending 调用 ownership，ownership 会把它记进 misses，这次请求就不计时；首个请求恰好卡死时，看门狗不会触发。",
+      "fix": "在 ctx.spawn 里 `$.agent.spawn` 返回后先同步执行 markPending，再做其它 await（目前已是这样，确认中间没有 await 即可）。另外，turn.step 判定 inFlight 为 false 时不要永久放弃：可以对未命中的 id 用 steps.start 先记下，tick 时再用 ownership 复核，不属于在飞飞行的再 forget。也可以在真实引擎里实测一次 spawn resolve 与首个 turn.step 的先后，把结论写进代码注释。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 178,
+      "summary": "凡是最新 attempt 以 halt 结束、且指纹未变的 change，批准带都会常驻显示「续飞」按钮，halt kind 为 abort（人主动中止）的也不例外，人主动放弃的飞行会被一直提示续飞。另外，evaluate 对每个候选 change 每次刷新都多跑一次 ledger.py 子进程。",
+      "fix": "halt 的 kind 为 abort 时不给 resume 模式（维持原来的 `same → undefined`），或者在说明里注明这是已中止的飞行；按需缓存每个 change 的 stoppedNow 结果（以账本 ref 的 sha 为键）。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/io.ts",
+      "line": 255,
+      "summary": "上一轮的 HIGH 已闭环：freshWorktree 现在依次尝试 <name>、-a<A>、-a<A>-r2…-r4，两条新用例分别覆盖续飞 attempt 里的合回重派和看门狗重派修复体。但这次修复改了一条已有规格的行为，却没有配套的规格变更。flight-measure-followups 的 spec flight-fresh-worktrees（第 7 行「两者都已存在时返回错误」及其 scenario 的 THEN「第三次返回错误，没有执行 git worktree add」）仍写着旧行为，而映射这条 scenario 的骨架断言 fresh-worktree-never-reuses-old/both-exist 和 branch-left 已被改成「改建 -a2-r2」。本 change 的 specs 里没有对应的 MODIFIED delta，design.md:133 也还写着「沿用遇同名另起 -a<n>」。规格和验收映射出现了矛盾。",
+      "fix": "在 template/openspec/changes/flight-unattended/specs/ 下给 flight-fresh-worktrees 加一份 MODIFIED delta：把「两者都已存在时返回错误」改成「依次取 <name>、<name>-a<attempt>、<name>-a<attempt>-r2…-r4 中第一个未被占用的名字，全部被占用才返回错误」，并把 scenario 的第三条 THEN 改成改建 S1-a2-r2，另补一条「五个候选名都被占用时返回错误」。同步更新 design.md:133 的命名描述。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 179,
+      "summary": "freshResolve 的注释写着「按 io.freshWorktree 的规则命名」，但 freshWorktree 现在多了 -r2…-r4 候选，freshResolve 仍只认 <S>-resolve 和 -resolve-a<attempt>，注释与实际规则对不上。按 core.ts afterMergeFailed 的逻辑，同一 attempt 内一个切片只派一次解冲突执行体，所以只有注释不准确，行为本身没有问题。",
+      "fix": "把注释改成「<S>-resolve 被占用则另起 <S>-resolve-a<attempt>（同一 attempt 内解冲突只派一次，不需要 -r 后缀）」，不再说与 freshWorktree 规则相同。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "5cb887743ddc9a7e224797e4bef4d16408e6cfe9"
+  }
+}
