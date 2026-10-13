@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -548,17 +546,17 @@ def test_watchdog_exhausted_halts():
     assert_ts_passed("watchdog-exhausted-halts")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5b 未实现")
 def test_halt_dispatches_diagnostician():
     # Given: 单片飞行 S1 两个执行体都门禁红而 blocked；另一次飞行在途中被 /flight abort
     # When: 第一次飞行停飞；诊断员结束，回答首行「S1 的 owns 漏了 tests/test_x.py」
     # Then: halt 之后有 diagnostician 派发（flight:diagnostician、主模型）；结束后有 triage、通知含首行、面板含「诊断：…」；abort 那次不派诊断员
     assert_ts_passed("halt-dispatches-diagnostician")
+    assert_ts_passed("halt-dispatches-diagnostician/abort-skips")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5b 未实现")
 def test_notify_uses_terminal_channel():
     # Given: 两个会停飞的世界：ui.notify 分别应答 isSent true（iterm2）与 isSent false（no-channel）
     # When: 两次飞行分别停飞
     # Then: ui.notify 都收到 title flight、含停飞原因；第二个世界的飞行记录含 no-channel，飞行照常以 halt 结束
     assert_ts_passed("notify-uses-terminal-channel")
+    assert_ts_passed("notify-uses-terminal-channel/not-sent")

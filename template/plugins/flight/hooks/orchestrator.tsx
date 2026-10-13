@@ -5,7 +5,7 @@ import type { EngineInterface, On } from 'claude-code'
 import type { FlightPanel } from '../types'
 import { abortFlight } from './abort'
 import { agentOf, ev, healVerdict, next as nextActions, reduce, stopVerdict, summarize, summaryLines } from './core'
-import type { Action, Ctx, Flight, FlightEvent, GateJson, Io, Role, State } from './core'
+import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
 import { intentVerdict, toolTargets } from './intent'
@@ -13,7 +13,7 @@ import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktr
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
-import { executorPrompt, resolverPrompt, worktreeNote } from './prompts'
+import { executorPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
 import { SHIP_TOOL, shipPr } from './ship'
 import { checkJudges, checkPluginCopy } from './versions'
 import { StepTracker } from './watchdog'
@@ -23,7 +23,11 @@ type Ev = State['events'][number]
 
 // 与批准带（register.tsx）同一下限；register.tsx 未导出该常量，这里同值另立
 const VERSION_FLOOR = '2.1.295'
-const HIDDEN = ['flight:executor', 'flight:reviewer', 'flight:fixer']
+const DIAGNOSTICIAN = 'flight:diagnostician'
+const HIDDEN = ['flight:executor', 'flight:reviewer', 'flight:fixer', DIAGNOSTICIAN]
+/** 停飞后派诊断员（design D6）：人工中止与计划指纹已变不派 */
+const NO_TRIAGE: readonly HaltKind[] = ['abort', 'fingerprint']
+const TRIAGE_MAX = 4000
 const PASS_THROUGH = ['--gate=per-task']
 /** 旧 Workflow 引擎已删除（design D8）：带这个参数直接作答，不交给模型、不写事件、不派发 */
 const RETIRED_ENGINE = '--engine=workflow'
@@ -105,11 +109,14 @@ function ioHere($: Engine): Io {
 }
 
 function ctxOf($: Engine): Ctx {
+  const log = async (text: string) => { try { await $.ui.log(text) } catch { /* 打印失败不影响飞行 */ } }
   return {
     io: ioHere($),
     now: () => $.clock.now(),
     async spawn({ f, role, cwd, prompt, description }) {
-      const r = await $.agent.spawn({ prompt: `${worktreeNote(cwd)}\n${prompt}`, description, subagentType: agentType(role), model: f.model, cwd })
+      // io.ts 的 agentType 不认 diagnostician（缺省落到 flight:fixer），这里单列
+      const subagentType = role === 'diagnostician' ? DIAGNOSTICIAN : agentType(role)
+      const r = await $.agent.spawn({ prompt: `${worktreeNote(cwd)}\n${prompt}`, description, subagentType, model: f.model, cwd })
       if ('deny' in r) return { deny: r.deny }
       // dispatch 写入账本之前先登记：这段时间里它的工具调用一律拒绝（design D6）
       markPending(r.agentId, f.change)
@@ -122,7 +129,16 @@ function ctxOf($: Engine): Ctx {
       await $.ui.toast(text)
     },
     runCommand: (command, args) => $.command.run({ command, args }).then(() => undefined),
-    log: async text => { try { await $.ui.log(text) } catch { /* 打印失败不影响飞行 */ } },
+    log,
+    // 终端通知（design D5）：走用户的通知通道；未发出或抛错只记一行，不抛
+    async notify(text) {
+      try {
+        const r = (await $.ui.notify(text, { title: 'flight' })) as { isSent?: boolean; reason?: string } | undefined
+        if (r?.isSent === false) await log(`flight 通知未发出：${r.reason ?? '未知原因'}`)
+      } catch (err) {
+        await log(`flight 通知未发出：${firstLine(err instanceof Error ? err.message : String(err))}`)
+      }
+    },
   }
 }
 
@@ -179,7 +195,8 @@ async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: t
   const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
   if (owner === undefined || f === undefined) return undefined
   const env = await envelopeOf(io, f)
-  const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : owner.role === 'reviewer' ? [] : Object.values(env.owns).flat()
+  const readOnly = owner.role === 'reviewer' || owner.role === 'diagnostician'
+  const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : readOnly ? [] : Object.values(env.owns).flat()
   return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands, mainTree: f.mainTree }
 }
 
@@ -223,6 +240,8 @@ async function intentCheck($: Engine, tool: string, e: unknown): Promise<Deny | 
 
 /** D7：可把引擎的 ask 改答 allow 的包络内操作。 */
 function inEnvelope({ who, commands, mainTree }: Flying, tool: string, input: unknown): boolean {
+  // 诊断员只读，引擎的 ask 照常交给人
+  if (who.role === 'diagnostician') return false
   if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return readUpgradable(tool, input, who.worktree, mainTree)
   if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands, who.worktree, mainTree)
   const target = writeTarget(tool, input)
@@ -428,14 +447,38 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
   return true
 }
 
+/** 停飞之后在 change worktree 派诊断员（design D6）：本 attempt 已记 halt、尚未派过诊断员，且停飞不是人工中止 / 指纹已变。失败只记一行，不抛。 */
+async function triage(ctx: Ctx, f: Flight, haltKind: HaltKind, reason: string): Promise<void> {
+  if (NO_TRIAGE.includes(haltKind)) return
+  try {
+    const ledger = await readLedger(ctx.io, f)
+    if ('error' in ledger) return
+    const state = reduce(ledger.events)
+    const ofA = (e: Ev) => Number(e.attempt) === state.attempt
+    if (!state.events.some(e => e.ev === 'halt' && ofA(e))) return
+    if (state.events.some(e => e.ev === 'dispatch' && e.role === 'diagnostician' && ofA(e))) return
+    const prompt = triagePrompt({ change: f.change, changeDir: f.changeDir, hooksDir: f.hooksDir, reason, kind: haltKind })
+    const r = await ctx.spawn({ f, role: 'diagnostician', cwd: f.changeTree, prompt, description: `${f.change} 停飞诊断` })
+    if (r.agentId === undefined) {
+      await ctx.log(`flight：派诊断员被拒：${r.deny ?? '没有 agentId'}`)
+      return
+    }
+    const b = await base(ctx, f)
+    await appendEvent(ctx.io, f, ev.dispatch(b, { attempt: state.attempt, slice: 'triage', role: 'diagnostician', agent: r.agentId, model: f.model, worktree: f.changeTree }))
+  } catch (err) {
+    await ctx.log(`flight：派诊断员失败：${firstLine(err instanceof Error ? err.message : String(err))}`)
+  }
+}
+
 async function driveNow($: Engine, f: Flight): Promise<void> {
   const ctx = ctxOf($)
   const io = ctx.io
   const session = await $.session.id()
-  // 控制面自身的停飞（账本读不出、指纹算不出、动作异常）：做完后按最新账本刷新面板（design D8）
+  // 控制面自身的停飞（账本读不出、指纹算不出、动作异常）：做完后按最新账本刷新面板（design D8），再派诊断员
   const terminal = async (reason: string) => {
     await runLandingAction(ctx, f, { kind: 'halt', reason, haltKind: 'control' })
     await refreshFromLedger($, io, f)
+    await triage(ctx, f, 'control', reason)
   }
   let seen = -1
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -482,7 +525,10 @@ async function driveNow($: Engine, f: Flight): Promise<void> {
         throw err
       }
       // 停飞 / 落地真写进账本（本进程 land / halt 计数变了）才刷新面板；写入失败时账本没变，不多读一次
-      if ((a.kind === 'halt' || a.kind === 'land') && (terminals.get(f.change) ?? 0) !== halts) await refreshFromLedger($, io, f)
+      if ((a.kind === 'halt' || a.kind === 'land') && (terminals.get(f.change) ?? 0) !== halts) {
+        await refreshFromLedger($, io, f)
+        if (a.kind === 'halt') await triage(ctx, f, a.haltKind, a.reason)
+      }
       if (!progressed) return
     }
   }
@@ -791,9 +837,11 @@ async function watchOne($: Engine, id: string, waitedMs: number): Promise<void> 
     await stop(id)
     return
   }
-  await runLandingAction(ctx, f, { kind: 'halt', reason: `看门狗：${waited}，${v.reason}`, haltKind: 'watchdog' })
+  const reason = `看门狗：${waited}，${v.reason}`
+  await runLandingAction(ctx, f, { kind: 'halt', reason, haltKind: 'watchdog' })
   for (const agent of await liveAgents($, f, state)) await stop(agent)
   await refreshFromLedger($, ctx.io, f)
+  await triage(ctx, f, 'watchdog', reason)
 }
 
 /** agent 属于在飞的 change */
@@ -1027,7 +1075,17 @@ export function registerOrchestrator(on: On): void {
     const f = found.flight
     const who = agentOf(reduce(found.events), e.agentId)
     const model = (e.usage as { model?: string } | undefined)?.model ?? null
-    await appendEvent(ctx.io, f, ev.ended(await base(ctx, f), { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
+    const b = await base(ctx, f)
+    await appendEvent(ctx.io, f, ev.ended(b, { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
+    if (who?.role === 'diagnostician') {
+      // 诊断员的最终回答只供展示（design D6）；attempt 已停飞，不必 drive
+      const answer = String((r as { text?: unknown } | undefined)?.text ?? '').trim()
+      const text = answer === '' ? '（无回答）' : answer.slice(0, TRIAGE_MAX)
+      await appendEvent(ctx.io, f, ev.triage(b, { attempt: who.attempt, agent: e.agentId, text }))
+      await ctx.notify?.(`${f.change} 停飞诊断：${firstLine(text)}`)
+      await refreshFromLedger($, ctx.io, f)
+      return r
+    }
     await drive($, f)
     return r
   }).catch(($, e, next) => next(e))
