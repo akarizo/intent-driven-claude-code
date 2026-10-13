@@ -201,8 +201,15 @@ async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: t
   const env = await envelopeOf(io, f)
   const readOnly = owner.role === 'reviewer' || owner.role === 'diagnostician'
   const owns = owner.role === 'executor' ? env.owns[owner.slice] ?? [] : readOnly ? [] : Object.values(env.owns).flat()
-  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands: env.commands, mainTree: f.mainTree }
+  const commands = owner.role === 'diagnostician' ? [...env.commands, ...triageCommands(f)] : env.commands
+  return { who: { role: owner.role, worktree: owner.worktree, owns }, commands, mainTree: f.mainTree }
 }
+
+/** 诊断员提示词（prompts.ts 的 triagePrompt）里写给它的两条查看命令，原样同拼法 */
+const triageCommands = (f: Flight) => [
+  `python3 ${f.hooksDir}/ledger.py show --change-dir ${f.changeDir}`,
+  `python3 ${f.hooksDir}/timeline.py report --change-dir ${f.changeDir}`,
+]
 
 const commandOf = (input: unknown) => {
   const c = typeof input === 'object' && input !== null ? (input as { command?: unknown }).command : undefined
@@ -244,8 +251,7 @@ async function intentCheck($: Engine, tool: string, e: unknown): Promise<Deny | 
 
 /** D7：可把引擎的 ask 改答 allow 的包络内操作。 */
 function inEnvelope({ who, commands, mainTree }: Flying, tool: string, input: unknown): boolean {
-  // 诊断员只读，引擎的 ask 照常交给人
-  if (who.role === 'diagnostician') return false
+  // 诊断员与评审员同规则：只读操作升级，写入经 writeVerdict 判只读而不升级
   if (tool === 'Read' || tool === 'Grep' || tool === 'Glob') return readUpgradable(tool, input, who.worktree, mainTree)
   if (tool === 'Bash') return bashUpgradable(who.role, commandOf(input), commands, who.worktree, mainTree)
   const target = writeTarget(tool, input)
@@ -721,6 +727,14 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   return `${resumed}✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`
 }
 
+/** 起飞入口闭包：由本文件带 matcher 的 session.start hook 用该会话的 $ 造好（$ 不出文件） */
+let entry: ((args: string[], opts?: { resume?: boolean }) => Promise<string>) | undefined
+
+/** 批准带等其他文件起飞用：不收 $；插件尚未经历 session.start 时如实回复。 */
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+  return entry === undefined ? Promise.resolve('flight：插件尚未就绪，稍后再按') : entry(args, opts)
+}
+
 /** /flight abort：先在账本记停飞，再停本 attempt 仍在跑的 agent（策略在 abort.ts）；之后只刷新面板（停飞已清空状态行）。 */
 async function abortCommand($: Engine, f: Flight, state: State): Promise<string> {
   const ctx = ctxOf($)
@@ -771,30 +785,45 @@ const steps = new StepTracker()
 const startedAt: Map<string, number> = new Map()
 /** 最近一次 tick（或起表）的时刻；-1 = 未起表或计时器已结束 */
 let tickedAt = -1
+/** 计时器代号：每起一个递增；只有代号最新的计时器处理超时 */
+let tickerGen = 0
+/** 正在处理（含查归属）的 agent：认领在任何 await 之前，并发的另一次 tick 拿到同一快照也跳过 */
+const claimed: Set<string> = new Set()
 
 /** 计时器未起或已停时起一个；幂等。 */
-// ceiling: 「两个周期没 tick（或时钟回拨）即视为已停」是启发式，计时器只是迟到时会多起一个（已处理的 agent 已 forget，不会重复处理）-> 引擎给出计时器存活状态后改为按句柄判
+// 「两个周期没 tick（或时钟回拨）即视为已停」是启发式：计时器只是迟到（如机器休眠）时会多起一个，旧计时器之后的 tick 按代号直接返回，不重复处理。
+// ceiling: 旧计时器不会被取消，仍按周期空转 -> 引擎给出计时器句柄的存活状态或取消接口后改为按句柄判、取消旧计时器
 async function ensureTicker($: Engine): Promise<void> {
   const now = await $.clock.now()
   if (tickedAt >= 0 && now >= tickedAt && now - tickedAt < 2 * TICK_MS) return
   tickedAt = now
-  const h = $.clock.every(TICK_MS, () => watchTick($)) as unknown
-  if (h instanceof Promise) h.catch(() => { tickedAt = -1 })
+  const gen = ++tickerGen
+  const h = $.clock.every(TICK_MS, () => watchTick($, gen)) as unknown
+  if (h instanceof Promise) h.catch(() => { if (gen === tickerGen) tickedAt = -1 })
 }
 
-/** 一次 tick：处理新超时的 agent；任何异常只记 diag，不让计时器因抛错停掉。 */
-async function watchTick($: Engine): Promise<void> {
+/** 一次 tick：处理新超时的 agent；不是最新代号的计时器直接返回；任何异常只记 diag，不让计时器因抛错停掉。 */
+async function watchTick($: Engine, gen: number): Promise<void> {
+  if (gen !== tickerGen) return
   try {
     const now = await $.clock.now()
+    if (gen !== tickerGen) return
     tickedAt = now
     for (const id of steps.stale(now)) {
-      // 仍在登记中：dispatch 还没写入账本、找不到所属飞行，留到下一次 tick 再处理
-      const o = await ownership(ioHere($), id)
-      if (o !== undefined && 'pending' in o) continue
-      const since = startedAt.get(id) ?? now
-      steps.forget(id)
-      startedAt.delete(id)
-      await watchOne($, id, now - since).catch(err => watchDiag($, id, firstLine(err instanceof Error ? err.message : String(err))))
+      // 本次 tick 卡住期间可能已起了新计时器，或别的 tick 已认领 / 处理过它（startedAt 已删）
+      if (gen !== tickerGen || claimed.has(id) || !startedAt.has(id)) continue
+      claimed.add(id)
+      try {
+        // 仍在登记中：dispatch 还没写入账本、找不到所属飞行，留到下一次 tick 再处理
+        const o = await ownership(ioHere($), id)
+        if ((o !== undefined && 'pending' in o) || !startedAt.has(id)) continue
+        const since = startedAt.get(id) ?? now
+        steps.forget(id)
+        startedAt.delete(id)
+        await watchOne($, id, now - since).catch(err => watchDiag($, id, firstLine(err instanceof Error ? err.message : String(err))))
+      } finally {
+        claimed.delete(id)
+      }
     }
   } catch {
     // 连 clock.now 都失败：等下一次 tick
@@ -850,15 +879,28 @@ async function watchOne($: Engine, id: string, waitedMs: number): Promise<void> 
   }
   const reason = `看门狗：${waited}，${v.reason}`
   await runLandingAction(ctx, f, { kind: 'halt', reason, haltKind: 'watchdog' })
-  for (const agent of await liveAgents($, f, state)) await stop(agent)
+  // 与 /flight abort 同法（abort.ts）：先停在跑的，再等手上这轮 drive 做完，补停其间派出的
+  const seen: Set<string> = new Set()
+  const stopLive = async () => {
+    for (const agent of await liveAgents($, f, state)) {
+      if (seen.has(agent)) continue
+      seen.add(agent)
+      await stop(agent)
+    }
+  }
+  await stopLive()
+  await queue.then(() => undefined)
+  await stopLive()
   await refreshFromLedger($, ctx.io, f)
   await triage(ctx, f, 'watchdog', reason)
 }
 
-/** agent 属于在飞的 change；登记中（dispatch 尚未写入）也算：新 agent 的首个模型请求几乎都落在这段窗口里 */
+/** agent 属于在飞的 change，或是在诊断 change 的诊断员；登记中（dispatch 尚未写入）也算：新 agent 的首个模型请求几乎都落在这段窗口里 */
 async function inFlight(io: Io, id: string): Promise<boolean> {
   const o = await ownership(io, id)
-  return o !== undefined && !('unknown' in o) && active.has(o.change)
+  if (o === undefined || 'unknown' in o) return false
+  if (active.has(o.change)) return true
+  return 'role' in o && o.role === 'diagnostician' && diagnosing.has(o.change)
 }
 
 /** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
@@ -910,6 +952,7 @@ export function registerOrchestrator(on: On): void {
 
   // register.tsx 已有无 matcher 的 session.start；同事件第二个 hook 须带 matcher（3a S8 实测），用恒真的 cwd matcher
   on('session.start', { cwd: /^/ }, async ($, e, next) => {
+    entry = (args, opts) => takeoff($, args, opts ?? {})
     try {
       await $.tool.register({ ...FINDINGS_TOOL, isDeferred: false })
     } catch {
