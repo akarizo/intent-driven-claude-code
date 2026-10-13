@@ -122,8 +122,15 @@ function denySegments(command: string): string[] {
  * `env -S` / `--split-string` 的参数就是命令文本：去引号后接回词序列继续剥，而不是丢掉（丢掉会漏判其中的 git）。
  * ceiling: 选项按前缀命令查表，短选项簇（如 `env -iv`）与短选项粘参数（如 `-uFOO`）一律判为无法判定；`-S` 只去引号不做真正分词 -> 误拒或漏拒出现时补表或换 shell 词法分析。
  */
-function words(segment: string): { toks: string[]; hasEnv: boolean; envKeys: string[]; chdir?: string; unknownOpt?: string } {
-  let toks = segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean)
+function words(segment: string): Words {
+  return wordsOf(segment.trim().replace(/^[{!]\s*/, '').split(/\s+/).filter(Boolean))
+}
+
+type Words = { toks: string[]; hasEnv: boolean; envKeys: string[]; chdir?: string; unknownOpt?: string }
+
+/** words 的剥前缀部分，输入为已切好的原词（bashWriteTargets 用自己按引号切出的词） */
+function wordsOf(input: readonly string[]): Words {
+  let toks = [...input]
   // 段首的 shell 保留字之后才是命令名（`then git push`、`do git push`、`time git push`，PR #48 评审）；只认不带引号的原词
   let reserved = 0
   while (reserved < toks.length && (RESERVED_WORDS.has(toks[reserved]) || (toks[reserved] === '-p' && toks[reserved - 1] === 'time'))) reserved++
@@ -433,6 +440,263 @@ function segmentsVerdict(
     const out = gitTargets(g, cwd, worktree).find(t => t === null || !within(wt, t))
     if (out !== undefined) return { deny: `${name}的改动类 git 只能作用于自己的 worktree（${wt}）；${out === null ? '作用目录无法判定（目录栈旋转、相对路径无基准、变量或命令替换等）' : `作用目录：${out}`}` }
   }
+  return undefined
+}
+
+// ---------------------------------------------------------------- Bash 写入目标（flight-ledger-guards D6）
+
+/** 写入目标里不算文件的特殊路径 */
+const DEV_FILES = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'])
+
+type LexTok = { raw: string; op: boolean }
+
+/**
+ * 按引号切段切词（D6）：引号外的 `&&`、`||`、`;`、`|`、`&`、换行、`(`、`)`、反引号分段；重定向运算符单独成词（op 为真），
+ * 前导的 fd 数字与 `&>` 的 `&` 并入运算符。heredoc（`<<` / `<<-`）的正文跳过不解析。
+ * 不复用 denySegments：它不认引号，`git commit -m "feat(x): …"` 会被切开，引号失配后要么误拒、要么吞掉真正的重定向。
+ * ceiling: 双引号内的 `$(…)` / 反引号里的命令不再解析；`#` 注释不认 -> 出现漏判时把引号内的命令替换也递归切开。
+ */
+function lexSegments(command: string): LexTok[][] {
+  const segs: LexTok[][] = [[]]
+  const pending: string[] = []
+  let cur = ''
+  let has = false
+  let q = ''
+  const seg = () => segs[segs.length - 1]
+  const flush = () => {
+    if (!has) return
+    const prev = seg().at(-1)
+    if (prev?.op && /^\d*<<-?$/.test(prev.raw)) pending.push(shellWord(cur, true) ?? cur)
+    seg().push({ raw: cur, op: false })
+    cur = ''
+    has = false
+  }
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (q) {
+      cur += c
+      if (c === q) q = ''
+      else if (c === '\\' && q === '"' && i + 1 < command.length) cur += command[++i]
+      continue
+    }
+    if (c === '\\' && command[i + 1] === '\n') {
+      i++
+      continue
+    }
+    if (c === '\\' && i + 1 < command.length) {
+      cur += c + command[++i]
+      has = true
+      continue
+    }
+    if (c === "'" || c === '"') {
+      q = c
+      cur += c
+      has = true
+      continue
+    }
+    if (c === '>' || c === '<' || (c === '&' && command[i + 1] === '>')) {
+      let op = ''
+      if (has && /^\d+$/.test(cur)) {
+        op = cur
+        cur = ''
+        has = false
+      } else flush()
+      if (c === '&') op += command[i++]
+      op += command[i]
+      if (command[i] === '>') {
+        if (command[i + 1] === '>') op += command[++i]
+        if (command[i + 1] === '|' || command[i + 1] === '&') op += command[++i]
+      } else {
+        while (op.endsWith('<') && command[i + 1] === '<' && !op.endsWith('<<<')) op += command[++i]
+        if (op.endsWith('<<') && !op.endsWith('<<<') && command[i + 1] === '-') op += command[++i]
+        else if (op.endsWith('<') && (command[i + 1] === '>' || command[i + 1] === '&')) op += command[++i]
+      }
+      seg().push({ raw: op, op: true })
+      continue
+    }
+    if (/\s/.test(c) && c !== '\n') {
+      flush()
+      continue
+    }
+    if ('\n;|&()`'.includes(c)) {
+      flush()
+      segs.push([])
+      if (c === '\n' && pending.length > 0) {
+        // heredoc 正文：逐个定界符跳到其独占的一行（`<<-` 允许前导制表符）
+        let pos = i + 1
+        for (const delim of pending.splice(0)) {
+          while (pos < command.length) {
+            const end = command.indexOf('\n', pos)
+            const line = command.slice(pos, end < 0 ? command.length : end)
+            pos = end < 0 ? command.length : end + 1
+            if (line.replace(/^\t+/, '') === delim) break
+          }
+        }
+        i = pos - 1
+      }
+      continue
+    }
+    cur += c
+    has = true
+  }
+  flush()
+  return segs.filter(s => s.length > 0)
+}
+
+type OptKind = 'arg' | 'rest' | 'digits'
+
+/**
+ * 解析短选项簇与长选项，返回非选项参数（原词）与见到的选项（字母或 `=` 前的长名 → 值）。
+ * kinds：'arg' = 带参数（簇内余下部分，否则取下一个词）；'rest' = 簇内余下部分为可选参数（不取下一个词）；'digits' = 簇内紧随的数字为参数；
+ * 未列出的字母为开关。longArg 为不带 `=` 时取下一个词的长选项。`--` 之后都是非选项；去引号后为空串的参数忽略（`sed -i ''`）。
+ * ceiling: 不区分各实现（GNU / BSD）的选项差异，按并集查表 -> 误判出现时按命令补表。
+ */
+function scanArgs(args: readonly string[], kinds: Record<string, OptKind>, longArg: readonly string[] = []): { operands: string[]; opts: Map<string, string> } {
+  const operands: string[] = []
+  const opts = new Map<string, string>()
+  let ended = false
+  for (let i = 0; i < args.length; i++) {
+    const raw = args[i]
+    const u = shellWord(raw)
+    if (u === '') continue
+    if (ended || u === null || u === '-' || !u.startsWith('-')) {
+      operands.push(raw)
+      continue
+    }
+    if (u === '--') {
+      ended = true
+      continue
+    }
+    if (u.startsWith('--')) {
+      const eq = u.indexOf('=')
+      const name = eq < 0 ? u : u.slice(0, eq)
+      opts.set(name, eq >= 0 ? u.slice(eq + 1) : longArg.includes(name) ? args[++i] ?? '' : '')
+      continue
+    }
+    for (let k = 1; k < u.length; k++) {
+      const ch = u[k]
+      const kind = kinds[ch]
+      if (kind === 'arg') {
+        opts.set(ch, k + 1 < u.length ? u.slice(k + 1) : args[++i] ?? '')
+        break
+      }
+      if (kind === 'rest') {
+        opts.set(ch, u.slice(k + 1))
+        break
+      }
+      const digits = kind === 'digits' ? /^\d*/.exec(u.slice(k + 1))?.[0] ?? '' : ''
+      opts.set(ch, digits)
+      k += digits.length
+    }
+  }
+  return { operands, opts }
+}
+
+const COPY_KINDS: Record<string, OptKind> = { t: 'arg', S: 'arg', m: 'arg', o: 'arg', g: 'arg' }
+const COPY_LONG = ['--target-directory', '--suffix', '--mode', '--owner', '--group']
+const FILE_ARG_KINDS: Record<string, Record<string, OptKind>> = {
+  touch: { d: 'arg', t: 'arg', r: 'arg' },
+  truncate: { s: 'arg', r: 'arg' },
+  mkdir: { m: 'arg' },
+  rm: {},
+  rmdir: {},
+  tee: {},
+}
+const FILE_ARG_LONG = ['--date', '--reference', '--size', '--mode']
+
+/** 按命令名取出参数里的写入目标（原词）；不是写文件的命令返回空 */
+function commandTargets(prog: string, args: readonly string[]): string[] {
+  if (prog === 'sed' || prog === 'perl') {
+    const sed = prog === 'sed'
+    const { operands, opts } = sed
+      ? scanArgs(args, { e: 'arg', f: 'arg', l: 'arg', i: 'rest' }, ['--expression', '--file', '--line-length'])
+      : scanArgs(args, { e: 'arg', E: 'arg', i: 'rest', M: 'rest', m: 'rest', I: 'rest', d: 'rest', D: 'rest', x: 'rest', C: 'rest', l: 'digits', '0': 'digits' })
+    if (!opts.has('i') && !opts.has('--in-place')) return []
+    const script = sed ? ['e', 'f', '--expression', '--file'].some(k => opts.has(k)) : opts.has('e') || opts.has('E')
+    return script ? operands : operands.slice(1)
+  }
+  if (prog === 'cp' || prog === 'mv' || prog === 'install' || prog === 'ln') {
+    // ceiling: mv 的源文件被移走也算改动，这里只取目的地（design D6） -> 出现借 mv 搬走 owns 外文件时把源也算进来
+    const { operands, opts } = scanArgs(args, COPY_KINDS, COPY_LONG)
+    const dir = opts.get('t') ?? opts.get('--target-directory')
+    if (dir !== undefined) return [dir]
+    return prog === 'install' && opts.has('d') ? operands : operands.slice(-1)
+  }
+  const kinds = FILE_ARG_KINDS[prog]
+  if (kinds) return scanArgs(args, kinds, FILE_ARG_LONG).operands
+  if (prog === 'dd') return args.filter(a => (shellWord(a, true) ?? '').startsWith('of=')).map(a => a.slice(a.indexOf('of=') + 3))
+  return []
+}
+
+/**
+ * 命令的写入目标（D6）：重定向、tee、sed -i / perl -i、cp / mv / install / ln、touch / rm / rmdir / mkdir / truncate、dd of=。
+ * 相对路径按命令里的 cd / pushd 跟踪后相对 cwd 解析；含 `$`、反引号、`*`、`?`、`[` 或以 `~` 开头的目标词原样进 unresolved，
+ * cd 到无法判定的目录之后的相对目标也进 unresolved。`bash -c` / `eval` 的命令文本递归解析。
+ * ceiling: 只认上面这些写法（xargs、find -delete、解释器脚本内部的写入都不认） -> 出现漏判时补命令表。
+ */
+export function bashWriteTargets(command: string, cwd: string): { targets: string[]; unresolved: string[] } {
+  const targets: string[] = []
+  const unresolved: string[] = []
+  collectWrites(command, { cwd: normalizePath(cwd) }, targets, unresolved)
+  return { targets: [...new Set(targets)], unresolved: [...new Set(unresolved)] }
+}
+
+function collectWrites(command: string, state: { cwd: string | null }, targets: string[], unresolved: string[]): void {
+  for (const seg of lexSegments(command)) {
+    const words: string[] = []
+    const outs: string[] = []
+    for (let i = 0; i < seg.length; i++) {
+      const t = seg[i]
+      if (!t.op) {
+        words.push(t.raw)
+        continue
+      }
+      const next = seg[i + 1]
+      if (next && !next.op) i++
+      const core = t.raw.replace(/^(\d+|&)/, '')
+      if (core.startsWith('<') && core !== '<>') continue
+      if (!next || next.op) continue
+      if (core.endsWith('&') && /^(\d+|-)$/.test(shellWord(next.raw) ?? '')) continue
+      outs.push(next.raw)
+    }
+    const { toks, chdir } = wordsOf(words)
+    const cmd = shellWord(toks[0] ?? '')
+    const dir = chdir === undefined ? state.cwd : resolveDir(state.cwd, unquote(chdir))
+    const add = (raw: string) => {
+      const u = shellWord(raw)
+      if (u === null || /[*?[]/.test(u) || u.startsWith('~')) unresolved.push(raw)
+      else if (u === '') return
+      else {
+        const abs = u.startsWith('/') ? normalizePath(u) : dir === null ? null : normalizePath(`${dir}/${u}`)
+        if (abs === null) unresolved.push(raw)
+        else if (!DEV_FILES.has(abs)) targets.push(abs)
+      }
+    }
+    outs.forEach(add)
+    if (cmd === 'cd' || cmd === 'pushd') {
+      const p = dirArg(toks.slice(1))
+      state.cwd = p === null ? null : resolveDir(state.cwd, unquote(p))
+      continue
+    }
+    if (cmd === 'popd') {
+      state.cwd = null
+      continue
+    }
+    const inner = innerCommand(toks)
+    if (inner === null) unresolved.push(toks.join(' '))
+    else if (inner !== undefined) collectWrites(inner, progName(toks) === 'eval' && chdir === undefined ? state : { cwd: dir }, targets, unresolved)
+    else commandTargets(progName(toks), toks.slice(1)).forEach(add)
+  }
+}
+
+/** 飞行 agent 的 Bash 写入（D6）：每个写入目标与 Write / Edit 同一口径；有无法静态判定的目标即拒绝 */
+export function bashWritesVerdict(who: Who, command: string): Deny | undefined {
+  const { targets, unresolved } = bashWriteTargets(command, who.worktree)
+  for (const t of targets) {
+    const d = writeVerdict(who, t)
+    if (d) return d
+  }
+  if (unresolved.length > 0) return { deny: `flight：写入目标无法静态判定：${unresolved.join('、')}，请改用字面路径` }
   return undefined
 }
 

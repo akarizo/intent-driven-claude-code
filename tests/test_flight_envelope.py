@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -256,10 +254,9 @@ def test_main_session_spawns_code_reviewer():
     assert_ts_passed("main-session-spawns-code-reviewer")
 
 # ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S4 实现后去掉 xfail 标记。
+# S4 已实现：骨架标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_bash_write_targets():
     # Given: cwd 为 /w；spec 列出的 13 条命令
     # When: 逐条求 bashWriteTargets
@@ -267,7 +264,6 @@ def test_bash_write_targets():
     assert_ts_passed("bash-write-targets")
 
 
-@pytest.mark.xfail(strict=True, reason="S4：同名 TS 测试尚未实现")
 def test_flight_agent_bash_writes_within_owns():
     # Given: 执行体 E（owns src/a/**，worktree /wt/S1）与评审员 R
     # When: 以 bashWritesVerdict 判定 E 的四条命令与 R 的一条
