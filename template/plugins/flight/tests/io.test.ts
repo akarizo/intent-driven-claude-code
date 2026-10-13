@@ -440,13 +440,13 @@ test('measure-event-checked-before-write/bad-outcome', () => {
 })
 
 test('event-types-exported', () => {
-  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure 与 ship）
+  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship 与 diag）
 
   // When: 读取导出的 EVENT_TYPES 并排序
   const types = [...EVENT_TYPES].sort()
 
-  // Then: 恰为这 13 种事件类型
-  expect(types).toEqual(['approve', 'blocked', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff'])
+  // Then: 恰为这 14 种事件类型
+  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff'])
 })
 
 test('stopped-now-reads-latest-attempt', async () => {
