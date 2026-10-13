@@ -2483,3 +2483,30 @@ test('armed-gives-up-and-cancels/abort', async ($, on) => {
   expect(log.runs.filter(x => String(x.argv[1]).endsWith('/slice-gate.py') && x.argv[2] === 'preflight').length).toBe(1)
   expect(takeoffs(log)).toEqual([])
 })
+
+test('human-takeoff-skipped-while-arm-retrying', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），之后通过；/opsx-apply demo 已进入待命；
+  //        时钟推进 60 秒，看门狗 tick 触发自动重试，重试读账本时卡住（重试持有 armBusy）
+  const release: (() => void)[] = []
+  const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const retry = advance(log, 60000)
+  await until(() => release.length > 0)
+
+  // When: 人在重试卡住期间再发 /opsx-apply demo；之后卡住的读账本放行，重试接着做完
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (const x of release) x()
+  await retry
+  await until(() => takeoffs(log).length > 0 && notified(log, '已起飞').length > 0)
+  await flush()
+
+  // Then: 人发的这次回复含「正在自动重试起飞」与 demo；账本恰一条 takeoff（attempt 1）
+  expect(String(r.text)).toContain('正在自动重试起飞')
+  expect(String(r.text)).toContain('demo')
+  expect(takeoffs(log).map(x => x.attempt)).toEqual([1])
+})
