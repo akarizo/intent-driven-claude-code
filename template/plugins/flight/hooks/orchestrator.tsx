@@ -185,14 +185,18 @@ async function envelopeOf(io: Io, f: Flight): Promise<Envelope> {
 
 type Flying = { who: Who; commands: string[]; mainTree: string }
 
-/** agentId 属于在飞飞行时，给出它的包络（角色、worktree、owns）、可免询问的命令与主 worktree；已派发、dispatch 未写入的为登记中；在飞飞行的账本读不出时为判不出。 */
+/** 在诊断的 change：停飞后派诊断员前加入、诊断员结束（或派发失败）时移除。halt 已把 change 移出 active，诊断员的包络靠它生效（design D6） */
+const diagnosing: Set<string> = new Set()
+
+/** agentId 属于在飞飞行（或在诊断 change 的诊断员）时，给出它的包络（角色、worktree、owns）、可免询问的命令与主 worktree；已派发、dispatch 未写入的为登记中；在飞飞行的账本读不出时为判不出。 */
 async function flyingWho(io: Io, agentId: string): Promise<Flying | { pending: true } | { unknown: true; error: string } | undefined> {
-  // 没有在飞飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
-  if (active.size === 0) return undefined
+  // 没有在飞 / 在诊断的飞行就不必查归属：非飞行 subagent 的每次工具调用都会走到这里
+  if (active.size === 0 && diagnosing.size === 0) return undefined
   const owner = await ownership(io, agentId)
   if (owner !== undefined && 'unknown' in owner) return active.has(owner.change) ? { unknown: true, error: firstLine(owner.error) } : undefined
-  if (owner !== undefined && 'pending' in owner) return active.has(owner.change) ? { pending: true } : undefined
-  const f = owner && active.has(owner.change) ? flights.get(owner.change) : undefined
+  if (owner !== undefined && 'pending' in owner) return active.has(owner.change) || diagnosing.has(owner.change) ? { pending: true } : undefined
+  const live = owner !== undefined && (active.has(owner.change) || (owner.role === 'diagnostician' && diagnosing.has(owner.change)))
+  const f = live ? flights.get(owner.change) : undefined
   if (owner === undefined || f === undefined) return undefined
   const env = await envelopeOf(io, f)
   const readOnly = owner.role === 'reviewer' || owner.role === 'diagnostician'
@@ -458,14 +462,18 @@ async function triage(ctx: Ctx, f: Flight, haltKind: HaltKind, reason: string): 
     if (!state.events.some(e => e.ev === 'halt' && ofA(e))) return
     if (state.events.some(e => e.ev === 'dispatch' && e.role === 'diagnostician' && ofA(e))) return
     const prompt = triagePrompt({ change: f.change, changeDir: f.changeDir, hooksDir: f.hooksDir, reason, kind: haltKind })
+    // 派发前加入：登记中的诊断员同样受包络约束
+    diagnosing.add(f.change)
     const r = await ctx.spawn({ f, role: 'diagnostician', cwd: f.changeTree, prompt, description: `${f.change} 停飞诊断` })
     if (r.agentId === undefined) {
+      diagnosing.delete(f.change)
       await ctx.log(`flight：派诊断员被拒：${r.deny ?? '没有 agentId'}`)
       return
     }
     const b = await base(ctx, f)
     await appendEvent(ctx.io, f, ev.dispatch(b, { attempt: state.attempt, slice: 'triage', role: 'diagnostician', agent: r.agentId, model: f.model, worktree: f.changeTree }))
   } catch (err) {
+    diagnosing.delete(f.change)
     await ctx.log(`flight：派诊断员失败：${firstLine(err instanceof Error ? err.message : String(err))}`)
   }
 }
@@ -1081,6 +1089,7 @@ export function registerOrchestrator(on: On): void {
     const b = await base(ctx, f)
     await appendEvent(ctx.io, f, ev.ended(b, { attempt: who?.attempt ?? 0, agent: e.agentId, reason: String(e.reason), model }))
     if (who?.role === 'diagnostician') {
+      diagnosing.delete(f.change)
       // 诊断员的最终回答只供展示（design D6）；attempt 已停飞，不必 drive
       const answer = String((r as { text?: unknown } | undefined)?.text ?? '').trim()
       const text = answer === '' ? '（无回答）' : answer.slice(0, TRIAGE_MAX)

@@ -2050,6 +2050,25 @@ test('halt-dispatches-diagnostician', async ($, on) => {
   expect(await ui.find({ text: /诊断：S1 的 owns 漏了 tests\/test_x.py/ })).toBeDefined()
 })
 
+test('diagnostician-envelope-read-only', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1]]），S1 门禁一律红 [G7 demo#s1]；执行体逐个收口、结束直到停飞，停飞后已派出诊断员（仍在跑）
+  const log = useWorld(on, demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G7 demo#s1'] }] } }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (let i = 1; i <= 4 && !log.events.some(x => x.ev === 'halt'); i++) {
+    await $.classic.SubagentStop(subagentStop(`agent-${i}`) as never)
+    await $.turn.complete(ended(`agent-${i}`) as never)
+  }
+  const id = log.spawns.find(x => x.subagent_type === 'flight:diagnostician')?.agentId ?? '没有诊断员'
+
+  // When: 诊断员调用 Edit 改 change worktree 下的 slices.json，再调用 Bash 执行 git commit -m x
+  const edit = await $.tool.call({ tool: 'Edit', file_path: `${TREE}/${CD}/slices.json`, old_string: 'a', new_string: 'b', agentId: id } as never)
+  const bash = await $.tool.call({ tool: 'Bash', command: 'git commit -m x', agentId: id } as never)
+
+  // Then: 两次都答 deny，理由含「只读」或「诊断员」；都没有到达执行端
+  for (const r of [edit, bash]) expect(String((r as { deny?: unknown }).deny ?? '没有 deny')).toMatch(/只读|诊断员/)
+  expect(log.reached).toEqual([])
+})
+
 test('halt-dispatches-diagnostician/abort-skips', async ($, on) => {
   // Given: demo 已起飞并派出 agent-1（S1）、agent-2（S2），两者都在跑
   const log = useWorld(on, demoWorld({ agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
