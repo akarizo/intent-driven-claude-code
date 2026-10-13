@@ -449,20 +449,23 @@ function segmentsVerdict(
 const DEV_FILES = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'])
 
 type LexTok = { raw: string; op: boolean }
+/** 一段的词与结束它的分隔符：`&&`、`||`、`;`、`|`（含 `|&`）、`&`、换行、`(`、`)`、反引号；命令末尾为空串 */
+type LexSeg = { toks: LexTok[]; sep: string }
 
 /**
- * 按引号切段切词（D6）：引号外的 `&&`、`||`、`;`、`|`、`&`、换行、`(`、`)`、反引号分段；重定向运算符单独成词（op 为真），
+ * 按引号切段切词（D6）：引号外的 `&&`、`||`、`;`、`|`、`&`、换行、`(`、`)`、反引号分段，每段记下结束它的分隔符（空段也保留，
+ * 供调用方跟踪子 shell 与命令列表边界）；重定向运算符单独成词（op 为真），
  * 前导的 fd 数字与 `&>` 的 `&` 并入运算符。heredoc（`<<` / `<<-`）的正文跳过不解析。
  * 不复用 denySegments：它不认引号，`git commit -m "feat(x): …"` 会被切开，引号失配后要么误拒、要么吞掉真正的重定向。
  * ceiling: 双引号内的 `$(…)` / 反引号里的命令不再解析；`#` 注释不认 -> 出现漏判时把引号内的命令替换也递归切开。
  */
-function lexSegments(command: string): LexTok[][] {
-  const segs: LexTok[][] = [[]]
+function lexSegments(command: string): LexSeg[] {
+  const segs: LexSeg[] = [{ toks: [], sep: '' }]
   const pending: string[] = []
   let cur = ''
   let has = false
   let q = ''
-  const seg = () => segs[segs.length - 1]
+  const seg = () => segs[segs.length - 1].toks
   const flush = () => {
     if (!has) return
     const prev = seg().at(-1)
@@ -520,7 +523,11 @@ function lexSegments(command: string): LexTok[][] {
     }
     if ('\n;|&()`'.includes(c)) {
       flush()
-      segs.push([])
+      let sep = c
+      if ((c === '&' || c === '|') && command[i + 1] === c) sep += command[++i]
+      else if (c === '|' && command[i + 1] === '&') i++
+      segs[segs.length - 1].sep = sep
+      segs.push({ toks: [], sep: '' })
       if (c === '\n' && pending.length > 0) {
         // heredoc 正文：逐个定界符跳到其独占的一行（`<<-` 允许前导制表符）
         let pos = i + 1
@@ -540,7 +547,7 @@ function lexSegments(command: string): LexTok[][] {
     has = true
   }
   flush()
-  return segs.filter(s => s.length > 0)
+  return segs
 }
 
 type OptKind = 'arg' | 'rest' | 'digits'
@@ -641,8 +648,31 @@ export function bashWriteTargets(command: string, cwd: string): { targets: strin
   return { targets: [...new Set(targets)], unresolved: [...new Set(unresolved)] }
 }
 
+/**
+ * cd / pushd / popd 的作用范围：`(…)` 与反引号是子 shell，出来时恢复进去前的目录；管道里的 cd 不回传；
+ * `&` 放到后台的命令列表里的 cd 不回传后续各段；cd 之后经 `;`、`||`、换行继续时 cd 可能失败，目录置为无法判定（null）。
+ */
 function collectWrites(command: string, state: { cwd: string | null }, targets: string[], unresolved: string[]): void {
-  for (const seg of lexSegments(command)) {
+  const saved: { cwd: string | null; start: string | null }[] = []
+  let start = state.cwd // 当前命令列表开头的目录
+  let prev = ''
+  let backtick = false
+  for (const { toks: seg, sep } of lexSegments(command)) {
+    // 上一段的分隔符先生效
+    if (prev === '(' || (prev === '`' && !backtick)) {
+      saved.push({ cwd: state.cwd, start })
+      start = state.cwd
+    } else if ((prev === ')' || prev === '`') && saved.length > 0) {
+      ;({ cwd: state.cwd, start } = saved.pop()!)
+    } else if (prev === '&') state.cwd = start
+    else if (prev === ';' || prev === '\n' || prev === '||') {
+      if (state.cwd !== start) state.cwd = null
+      if (prev !== '||') start = state.cwd
+    }
+    if (prev === '`') backtick = !backtick
+    const piped = prev === '|' || sep === '|'
+    prev = sep
+    if (seg.length === 0) continue
     const words: string[] = []
     const outs: string[] = []
     for (let i = 0; i < seg.length; i++) {
@@ -673,13 +703,10 @@ function collectWrites(command: string, state: { cwd: string | null }, targets: 
       }
     }
     outs.forEach(add)
-    if (cmd === 'cd' || cmd === 'pushd') {
-      const p = dirArg(toks.slice(1))
+    if (cmd === 'cd' || cmd === 'pushd' || cmd === 'popd') {
+      if (piped) continue
+      const p = cmd === 'popd' ? null : dirArg(toks.slice(1))
       state.cwd = p === null ? null : resolveDir(state.cwd, unquote(p))
-      continue
-    }
-    if (cmd === 'popd') {
-      state.cwd = null
       continue
     }
     const inner = innerCommand(toks)

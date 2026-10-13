@@ -750,6 +750,28 @@ test('bash-write-targets', () => {
   expect(got[12].unresolved).toEqual([])
 })
 
+test('bash-write-targets-cd-scope', () => {
+  // Given: cwd 为 /w；子 shell / 管道 / 后台里的 cd，以及之后不是 && 的 cd（cd 可能失败）
+  const table: [string, string[], boolean][] = [
+    ['(cd sub); touch x', ['/w/x'], false],
+    ['(cd sub && make); echo x > y', ['/w/y'], false],
+    ['cd sub | touch x', ['/w/x'], false],
+    ['cd sub & touch x', ['/w/x'], false],
+    ['cd sub && touch h & touch x', ['/w/sub/h', '/w/x'], false],
+    ['cd sub; touch ../../x', [], true],
+    ['cd sub || echo x > ../../x', [], true],
+    ['cd sub && make; touch x', [], true],
+    ['cd sub && touch h', ['/w/sub/h'], false],
+  ]
+
+  // When: 逐条求 bashWriteTargets(命令, '/w')
+  const got = table.map(([c]) => bashWriteTargets(c, '/w'))
+
+  // Then: targets 依次等于期望；cd 可能失败之后的相对目标进 unresolved，其余 unresolved 为空
+  expect(got.map(r => r.targets)).toEqual(table.map(([, t]) => t))
+  expect(got.map(r => r.unresolved.length > 0)).toEqual(table.map(([, , u]) => u))
+})
+
 test('flight-agent-bash-writes-within-owns', () => {
   // Given: 执行体 E（S1，owns src/a/**，worktree /wt/S1）的四条命令，评审员 R（worktree /wt/R）的一条命令 echo x > notes.txt
   const e: Who = { role: 'executor', worktree: '/wt/S1', owns: ['src/a/**'] }

@@ -264,6 +264,13 @@ def test_bash_write_targets():
     assert_ts_passed("bash-write-targets")
 
 
+def test_bash_write_targets_cd_scope():
+    # Given: cwd 为 /w；子 shell / 管道 / 后台里的 cd，以及之后经 ;、||、换行继续的 cd
+    # When: 逐条求 bashWriteTargets
+    # Then: 子 shell / 管道 / 后台的 cd 不影响后续相对目标；cd 可能失败之后的相对目标进 unresolved
+    assert_ts_passed("bash-write-targets-cd-scope")
+
+
 def test_flight_agent_bash_writes_within_owns():
     # Given: 执行体 E（owns src/a/**，worktree /wt/S1）与评审员 R
     # When: 以 bashWritesVerdict 判定 E 的四条命令与 R 的一条
