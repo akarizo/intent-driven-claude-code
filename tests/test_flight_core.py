@@ -2,8 +2,6 @@
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架（标记已去）。"""
 
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -45,9 +43,9 @@ def test_core_reviews_fixes_then_finals():
 
 
 def test_core_halts_on_final_red():
-    # Given: 最新 final 事件 ok 为 false，failed 为 G2 lint
-    # When: 求下一批动作
-    # Then: 恰为停飞，原因含 G2 lint，没有落地
+    # Given: 两份账本，最新 final 事件 ok 为 false、failed 为 G2 lint：甲已有 3 条 heal（预算用尽），乙的 final commit 为空串
+    # When: 分别求下一批动作
+    # Then: 两份都恰为停飞，haltKind 为 final，原因含 G2 lint，没有落地也没有派整合修复
     assert_ts_passed("core-halts-on-final-red")
 
 
@@ -196,10 +194,10 @@ def test_diag_events_do_not_move_the_plan():
     assert_ts_passed("diag-events-do-not-move-the-plan")
 
 
-# ---------------------------------------------------------------- flight-unattended S1（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-unattended S1
+# S1 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_merge_failure_retried_once():
     # Given: waves [[S1]]；执行体 a1 收口门禁绿后合回失败（非冲突），没有 heal
     # When: 依次求 next：初始；追加 heal 后；追加 a2 派发、a2 收口绿与 ended 后；再追加一条 S1 失败合回后
@@ -207,7 +205,6 @@ def test_merge_failure_retried_once():
     assert_ts_passed("merge-failure-retried-once")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_heal_budget_caps():
     # Given: 甲：已有 3 条 heal、S1 合回失败（非冲突）；乙：已有 3 条 heal、全部合回、final 红（commit c9）
     # When: 分别求 next，并求 healVerdict(甲, merge-retry, S1)
@@ -215,7 +212,6 @@ def test_heal_budget_caps():
     assert_ts_passed("heal-budget-caps")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_watchdog_heal_redispatches_once():
     # Given: 甲：S1 评审员 r1 结束无 review、有 watchdog heal 指向 r1；乙：同甲无 heal；丙：修复体 fx 结束无收口门禁、有 watchdog heal 指向 fx
     # When: 分别求 next；甲再追加重派的 r2 结束（仍无 review）后求 next
@@ -223,7 +219,6 @@ def test_watchdog_heal_redispatches_once():
     assert_ts_passed("watchdog-heal-redispatches-once")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_summary_shows_heals():
     # Given: 一份账本有 heal merge-retry S9 与 watchdog review:S2；另一份没有 heal
     # When: 分别求 summaryLines(summarize(...))
@@ -231,7 +226,6 @@ def test_summary_shows_heals():
     assert_ts_passed("summary-shows-heals")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_final_red_dispatches_integ():
     # Given: waves [[S1, S2]] 全部合回、评审无阻断；最新 final 红（commit c9，G2 test 新增 3 条失败）；没有 heal
     # When: 求 next；追加 heal 后再求；另把 final 的 commit 改为空串再求
@@ -239,7 +233,6 @@ def test_final_red_dispatches_integ():
     assert_ts_passed("final-red-dispatches-integ")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_integ_reviewed_before_merge():
     # Given: integ 修复体 fi 已派（base c9）、收口门禁绿（commit c10）、已 ended
     # When: 求 next；追加 integ 评审派发与只有 MEDIUM 的 review 后求；追加 merge integ ok 后求
@@ -247,7 +240,6 @@ def test_integ_reviewed_before_merge():
     assert_ts_passed("integ-reviewed-before-merge")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_integ_failures_halt():
     # Given: 甲：review(integ) 有 1 条 HIGH；乙：blocked integ（gate）；丙：integ 已合回、其后 final 红
     # When: 分别求 next
@@ -255,7 +247,6 @@ def test_integ_failures_halt():
     assert_ts_passed("integ-failures-halt")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_halts_carry_kind():
     # Given: 甲：S1 blocked；乙：takeoff 指纹 F、当前 G；丙：integ 已合回后 final 红
     # When: 分别求 next，并构造 ev.halt(b, {attempt: 1, reason: x, kind: watchdog})

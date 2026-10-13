@@ -795,3 +795,21 @@ test('flight-agent-bash-writes-within-owns', () => {
   expect(e3?.deny).toContain('写入目标无法静态判定')
   expect(r1?.deny).toBeDefined()
 })
+
+// scenario 来源：spec flight-halt-handoff（flight-unattended）
+test('diagnostician-read-only', () => {
+  // Given: 诊断员 Who {role: diagnostician, worktree: /r/.worktrees/demo, owns: []}
+  const who: Who = { role: 'diagnostician', worktree: '/r/.worktrees/demo', owns: [] }
+
+  // When: 分别判定 Write /r/.worktrees/demo/a.py、Bash git -C … commit -m x、Bash git -C … log --oneline -3
+  const [w, c, l] = [
+    writeVerdict(who, '/r/.worktrees/demo/a.py'),
+    bashVerdict(who.role, 'git -C /r/.worktrees/demo commit -m x', who.worktree),
+    bashVerdict(who.role, 'git -C /r/.worktrees/demo log --oneline -3', who.worktree),
+  ]
+
+  // Then: 前两个被拒且理由含「诊断员」；git log 不被拒
+  expect(w?.deny).toContain('诊断员')
+  expect(c?.deny).toContain('诊断员')
+  expect(l).toBeUndefined()
+})

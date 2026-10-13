@@ -8,7 +8,9 @@ export type Who = { role: Role; worktree: string; owns: readonly string[] }
 export type ActiveTree = { change: string; changeTree: string; slicePrefix: string }
 export type Deny = { deny: string }
 
-const ROLE_NAME: Record<Role, string> = { executor: '执行体', fixer: '修复体', resolver: '解冲突 agent', reviewer: '评审员' }
+const ROLE_NAME: Record<Role, string> = { executor: '执行体', fixer: '修复体', resolver: '解冲突 agent', reviewer: '评审员', diagnostician: '诊断员' }
+/** 只读角色：不可写任何文件，git 只读（design D6：诊断员与评审员同规则） */
+const readOnly = (role: Role) => role === 'reviewer' || role === 'diagnostician'
 
 /** D6 拒绝表：移动 ref、改写历史或改动共享状态的 git 子命令 */
 const DENY_SUBS = new Set([
@@ -97,7 +99,7 @@ function within(root: string, p: string): boolean {
 export function writeVerdict(who: Who, absPath: string): Deny | undefined {
   const name = ROLE_NAME[who.role]
   const p = normalizePath(absPath)
-  if (who.role === 'reviewer') return { deny: `评审员不可写入任何文件（不在任何 owns 内）：${p}` }
+  if (readOnly(who.role)) return { deny: `${name}不可写入任何文件（不在任何 owns 内）：${p}` }
   const wt = normalizePath(who.worktree)
   if (!within(wt, p)) return { deny: `${name}只能写自己 worktree（${wt}）内、匹配 owns 的路径；越界：${p}` }
   const rel = p.slice(wt.length).replace(/^\/+/, '')
@@ -393,7 +395,7 @@ function segmentsVerdict(
   inheritedEnv: readonly string[] = [],
 ): Deny | undefined {
   const name = ROLE_NAME[role]
-  const extra = role === 'reviewer' ? REVIEWER_EXTRA : []
+  const extra = readOnly(role) ? REVIEWER_EXTRA : []
   const gitEnvDeny = (keys: readonly string[]) => ({ deny: `${name}不得用 GIT_* 环境变量（${keys.join('、')}）改变改动类 git 的作用对象` })
   for (const seg of denySegments(command)) {
     const { toks, envKeys, chdir, unknownOpt } = words(seg)
@@ -432,7 +434,7 @@ function segmentsVerdict(
     if (!g) continue
     if (g.opaque) return { deny: `${name}的 git 子命令或全局选项无法判定（含 $ 或反引号等 shell 展开）：写成脚本文件再运行` }
     const d = dangerOf(g, extra)
-    if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员只读）` }
+    if (d) return { deny: `${name}不得执行 ${d}（移动 ref、改写历史或改动共享状态；评审员与诊断员只读）` }
     if (READONLY_SUBS.has(g.sub)) continue
     if (gitEnv.length > 0) return gitEnvDeny(gitEnv)
     if (worktree === undefined) continue

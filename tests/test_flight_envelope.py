@@ -1,6 +1,4 @@
 """flight 插件能力包络的纯策略（scenario: flight-envelope#* 的纯判定部分）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-envelope S3
@@ -280,10 +278,10 @@ def test_flight_agent_bash_writes_within_owns():
     assert_ts_passed("flight-agent-bash-writes-within-owns")
 
 
-# ---------------------------------------------------------------- flight-unattended S1（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-unattended S1
+# S1 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S1 未实现")
 def test_diagnostician_read_only():
     # Given: Who {role: diagnostician, worktree: /r/.worktrees/demo, owns: []}
     # When: 判定 Write a.py、Bash git commit、Bash git log
