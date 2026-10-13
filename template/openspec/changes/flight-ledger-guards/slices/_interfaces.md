@@ -213,3 +213,72 @@ export function spawnVerdict(x: { subagentType: string; originPlugin: string | u
 export function toolTargets(tool: string, e: Record<string, unknown>, cwd: string): string[] {
 export async function intentVerdict(io: Io, hooksDir: string, cwd: string, targets: readonly string[]): Promise<{ deny: string } | undefined> {
 ```
+
+## S1
+
+### template/.claude/hooks/slice-gate.py
+```
+def pytest_runtest_logreport(report):
+def now_iso():
+def die(msg, code=2):
+def git(root, *args):
+def toplevel(cwd=None):
+def load_plan(change_dir):
+def save_plan(change_dir, data):
+def run_cmd_full(cmd, cwd):
+def _tail(out, n=6):
+def run_cmd(cmd, cwd):
+def _summary_failed(line):
+def run_test_gate(cmd, root):
+def normalize_lines(text):
+def plan_sha(data):
+def load_baseline(change_dir):
+def gate_cmd_verdict(kind, cmd, root, baseline):
+def full_suite_verdict(cmd, root, baseline):
+def glob_match(path, pattern):
+def globs_intersect(a, b):
+def compute_waves(slices):
+def lint_plan(data):
+def g5_ledger_verdict(events, slice_id, base, pairs, guards=()):
+def is_test_path(path):
+def is_doc_or_config(path):
+def source_files(files, change_rel):
+def is_bytecode(path):
+def changed_files(root, base):
+def added_lines(root, base):
+def ceiling_rows(root, base):
+def gwt_violations(root, test_files):
+def _py_test_bodies(lines):
+def _test_bodies(rel, lines):
+def ownership_violations(files, owns, change_rel, committed=()):
+def _py_decorators(source, func):
+def _g7_runner(gate):
+def _g7_timeout(gate):
+def _pytest_outcomes(root, targets, gate=None):
+def _g7_diag(text):
+def scenario_status(root, data, slice_ids=None):
+def detect_test_cmd(root):
+def guard_marker_errors(change_dir, data):
+def cmd_lint(args, print_waves=True):
+def _is_ancestor(root, anc, desc):
+def _base_check(root, branch):
+def cmd_checkpoint(args):
+def cmd_features(args):
+def cmd_base(args):
+def cmd_gate(args):
+def cmd_measure(args):
+def _reusable_fix_gate(root, change_dir):
+def _dirty_paths(root, change_dir):
+def cmd_final(args):
+def cmd_baseline(args):
+def _die_running_baseline(change_dir, bl, data):
+def cmd_preflight(args):
+def _final_fresh(root, change_dir, final_commit):
+def _is_fix_slice(s):
+def _whole_round(s):
+def _findings(reviews):
+def routing_findings(events):
+def ship_verdict(root, change_dir, data, events, head):
+def cmd_ship(args):
+def main():
+```
