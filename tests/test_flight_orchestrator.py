@@ -638,7 +638,6 @@ def test_armed_gives_up_and_cancels():
 
 # ---------------------------------------------------------------- flight-armed-followups S2（骨架：实现后去掉 xfail 标记）
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
 def test_second_takeoff_refused_while_taking_off():
     # Given: demo 已批准；第一次 /opsx-apply demo 卡在起飞检查中
     # When: 再发一次 /opsx-apply demo，随后放行第一次
@@ -646,7 +645,6 @@ def test_second_takeoff_refused_while_taking_off():
     assert_ts_passed("second-takeoff-refused-while-taking-off")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
 def test_abort_waits_for_retry():
     # Given: demo 因基线仍在跑待命；tick 触发的自动重试卡在起飞检查中
     # When: 发 /flight abort demo，随后放行重试，重试起飞成功
@@ -654,15 +652,14 @@ def test_abort_waits_for_retry():
     assert_ts_passed("abort-waits-for-retry")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
 def test_model_turn_aligned():
     # Given: demo 因 lint 红进入 model 类待命；提交修复请求前主会话已有一轮在跑
     # When: 那一轮先结束（开始早于 T0）；之后提交的那一轮结束（开始不早于 T0）
     # Then: 前一轮不重试、预算不变；后一轮自动重试；另一世界 prompt.submit 抛错时待命被放弃并通知含「放弃」
     assert_ts_passed("model-turn-aligned")
+    assert_ts_passed("model-turn-aligned/submit-fails")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
 def test_human_refusal_drops_old_arm():
     # Given: demo 因基线仍在跑处于待命
     # When: 人再发 /opsx-apply demo 被拒为「计划已变」，之后推进 60 秒
@@ -670,7 +667,6 @@ def test_human_refusal_drops_old_arm():
     assert_ts_passed("human-refusal-drops-old-arm")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
 def test_status_line_kept_for_others():
     # Given: e2 正在飞（状态行显示 e2 进度）；demo 处于 model 类待命且重试已用尽
     # When: demo 的待命再次被拒而放弃
