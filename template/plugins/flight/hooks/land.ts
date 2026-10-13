@@ -58,8 +58,17 @@ export function classifyDirty(paths: readonly string[], x: { changeDir: string; 
  */
 export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
   const abs = paths.map(p => `${f.changeTree}/${p}`)
-  const st = await git(io, f.changeTree, 'status', '--porcelain', '--', ...abs)
-  const staged = new Set(st.exitCode === 0 ? st.stdout.split('\n').filter(l => l.startsWith('D  ')).map(l => l.slice(3)) : [])
+  const st = await git(io, f.changeTree, 'status', '--porcelain', '-z', '--', ...abs)
+  const staged = new Set<string>()
+  if (st.exitCode === 0) {
+    // -z：条目以 \0 分隔、路径不加引号；改名 / 复制条目后跟一个原路径条目，跳过它。
+    const entries = st.stdout.split('\0')
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i]
+      if (e[0] === 'R' || e[0] === 'C') i++
+      else if (e.startsWith('D  ')) staged.add(e.slice(3))
+    }
+  }
   const toAdd = abs.filter((_, i) => !staged.has(paths[i]))
   if (toAdd.length) {
     const add = await git(io, f.changeTree, 'add', '--', ...toAdd)

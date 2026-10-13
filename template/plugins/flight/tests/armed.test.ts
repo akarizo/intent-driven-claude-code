@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-armed-takeoff#refusals-classified / armed-budget-and-expiry / armed-decides-next-step。armed.ts 是纯模块，直接调用。
 import { expect, test } from 'claude-code/testing'
 
-import { ARM_BUDGET, ARM_TTL_MS, TRANSIENT_DELAY_MS, classifyRefusal, nextStep } from '../hooks/armed'
+import { ARM_BUDGET, ARM_TTL_MS, TRANSIENT_DELAY_MS, beforeRetry, classifyRefusal, giveUpText, nextStep, refusedAgain } from '../hooks/armed'
 import type { Arm, ArmEvent } from '../hooks/armed'
 
 const NOW = 1_000_000_000
@@ -90,4 +90,49 @@ test('armed-decides-next-step', () => {
   ])
   const text = got[3].do === 'submit' ? got[3].text : ''
   expect(['slice-gate lint 未通过：overlap', '只修工作区与本 change 工件', '改了计划需要人在批准带重新批准', '不要发 /opsx-apply'].filter(s => !text.includes(s))).toEqual([])
+})
+
+// scenario 来源：spec flight-armed-takeoff#relaunch-keeps-args
+test('relaunch-keeps-args', () => {
+  // Given: resume 类待命 args 为 [demo, --takeover]；非 resume 待命 args 为 [demo, 授权提交]；放弃原因都是「待命已过期」
+  const arms = [arm({ resume: true, args: ['demo', '--takeover'] }), arm({ resume: false, args: ['demo', '授权提交'] })]
+
+  // When: 逐个生成 giveUpText
+  const texts = arms.map(a => giveUpText(a, '待命已过期'))
+
+  // Then: 前者的做法是 /flight resume demo --takeover；后者的做法是 /opsx-apply demo 授权提交
+  expect(texts[0].endsWith('做法：处理上面的原因后重新发 /flight resume demo --takeover')).toBe(true)
+  expect(texts[1].endsWith('做法：处理上面的原因后重新发 /opsx-apply demo 授权提交')).toBe(true)
+})
+
+// 补覆盖（PR #54 LOW，非 scenario）：重试记账
+test('retry-bookkeeping/before-retry', () => {
+  // Given: 四个 tries=1、awaitingModel=true 的待命，类分别为 transient、model、wait-agents、wait-baseline
+  const arms = (['transient', 'model', 'wait-agents', 'wait-baseline'] as const).map(cls => arm({ cls, tries: 1, awaitingModel: true }))
+
+  // When: 逐个调用 beforeRetry
+  const got = arms.map(beforeRetry)
+
+  // Then: tries 依次为 2、2、1、1；awaitingModel 全为 false
+  expect(got.map(a => a.tries)).toEqual([2, 2, 1, 1])
+  expect(got.map(a => a.awaitingModel)).toEqual([false, false, false, false])
+})
+
+test('retry-bookkeeping/refused-again', () => {
+  // Given: 旧类与新拒绝原文的四种组合：transient→起飞异常、transient→lint 未通过、model→起飞异常、wait-agents→起飞异常
+  const transientText = 'flight：起飞异常，不起飞（boom）'
+  const modelText = 'flight：slice-gate lint 未通过：overlap'
+  const cases: [Arm, string][] = [
+    [arm({ cls: 'transient' }), transientText],
+    [arm({ cls: 'transient' }), modelText],
+    [arm({ cls: 'model' }), transientText],
+    [arm({ cls: 'wait-agents' }), transientText],
+  ]
+
+  // When: 逐个调用 refusedAgain
+  const got = cases.map(([a, t]) => refusedAgain(a, t))
+
+  // Then: transientAgain 只有第一种为 true；新类依次为 transient、model、transient、transient
+  expect(got.map(a => a.transientAgain)).toEqual([true, false, false, false])
+  expect(got.map(a => a.cls)).toEqual(['transient', 'model', 'transient', 'transient'])
 })
