@@ -496,7 +496,6 @@ def test_takeoff_writes_no_timeline():
 # 骨架：S8 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
 def test_main_session_writes_checked():
     # Given: 会话 cwd 为 /repo，判定器在 template/.claude/hooks；check 拒 src/x.py 与 src/y.py；另一世界找不到判定器
     # When: 主会话 Write / Bash 重定向 / ls，非飞行 agent Write，执行体 owns 内 Write，第二世界主会话 Write
@@ -504,7 +503,6 @@ def test_main_session_writes_checked():
     assert_ts_passed("main-session-writes-checked")
 
 
-@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
 def test_perform_skips_after_halt():
     # Given: 派发 S1 期间被记 halt；另一世界合回动作算出后被记 halt
     # When: 各自推进
@@ -512,7 +510,6 @@ def test_perform_skips_after_halt():
     assert_ts_passed("perform-skips-after-halt")
 
 
-@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
 def test_subagent_stop_error_leaves_diag():
     # Given: 在飞执行体 a1 结束，收口门禁运行时抛出 Error「$.process.run(python3) aborted」
     # When: 引擎发出 a1 的 SubagentStop
@@ -520,7 +517,6 @@ def test_subagent_stop_error_leaves_diag():
     assert_ts_passed("subagent-stop-error-leaves-diag")
 
 
-@pytest.mark.xfail(strict=True, reason="S8：同名 TS 测试尚未实现")
 def test_panel_refreshes_on_terminal():
     # Given: 面板已打开；S1 已合回且评审为空；final 红（G2 lint）
     # When: drive 推进到停飞

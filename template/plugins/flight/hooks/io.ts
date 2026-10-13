@@ -98,6 +98,8 @@ const EVENTS: Record<string, Record<string, Check>> = {
     changed: STRS, source: STRS,
   },
   ship: { attempt: ATTEMPT, pr: NONEMPTY, verdict: oneOf('ready', 'draft'), commit: STR },
+  // kind / agent / budget 可选（design D9）
+  diag: { attempt: ATTEMPT, where: NONEMPTY, error: STR },
 }
 
 /** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */
