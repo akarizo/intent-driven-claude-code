@@ -2,7 +2,6 @@
 agent 定义文件由 pytest 直接解析；提示词是 TS 纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S3 写定义文件、提示词与同名 TS 测试后逐条去掉 xfail 标记。"""
 from conftest import ROOT
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -157,7 +156,6 @@ def test_whole_and_followup_prompts():
 # ---------------------------------------------------------------- flight-unattended S3（骨架：实现后去掉 xfail 标记）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S3 未实现")
 def test_integ_prompts_state_guards():
     # Given: change demo、failed 含 tests/test_x.py::test_y、base c9、commit c10
     # When: 分别生成 integFixerPrompt 与 integReviewPrompt
@@ -165,7 +163,6 @@ def test_integ_prompts_state_guards():
     assert_ts_passed("integ-prompts-state-guards")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S3 未实现")
 def test_triage_prompt_and_agent():
     # Given: agents/diagnostician.md；change demo、hooksDir /r/.claude/hooks、reason「切片 blocked：S4（G1 verify: exit 1）」、kind blocked
     meta, body = parse("diagnostician")
