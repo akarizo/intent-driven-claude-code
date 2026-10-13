@@ -169,10 +169,9 @@ def test_landing_actions_skip_after_halt():
     assert_ts_passed("landing-actions-skip-after-halt")
 
 
-# ---------------------------------------------------------------- flight-unattended S4（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-unattended S4（已实现：骨架的 xfail 标记已去）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
 def test_integ_gate_runs_guard():
     # Given: 账本有 integ 修复体 fi 的派发（base c9）与切片修复体 fx 的派发
     # When: 先后对 fi、fx 调用 onLandingStop
@@ -180,7 +179,6 @@ def test_integ_gate_runs_guard():
     assert_ts_passed("integ-gate-runs-guard")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
 def test_integ_dispatch_records_base_and_range():
     # Given: change 分支 HEAD 为 c9
     # When: 执行 dispatch fixer {slice: integ, failed: [G2 test …]} 与 dispatch reviewer {slice: integ, mode: integ, base: c9, commit: c10}
@@ -188,7 +186,6 @@ def test_integ_dispatch_records_base_and_range():
     assert_ts_passed("integ-dispatch-records-base-and-range")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S4 未实现")
 def test_halt_notifies():
     # Given: 落地世界的 ctx 带记录调用的 notify；另一个 ctx 的 notify 会抛错
     # When: 执行 blocked 停飞、abort 停飞；再在 notify 抛错的 ctx 上执行 blocked 停飞

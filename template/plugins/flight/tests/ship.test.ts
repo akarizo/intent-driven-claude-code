@@ -40,7 +40,7 @@ type World = {
   ship?: ShipJson | Record<string, unknown> // 形状不合的 ship 输出也照样打印
 }
 type Call = { argv: string[]; cwd?: string }
-type Log = { ledger: FlightEvent[]; calls: Call[] }
+type Log = { ledger: FlightEvent[]; calls: Call[]; notifies: { text: string; ledgerLen: number }[] }
 
 const ok = (stdout: string): RunResult => ({ exitCode: 0, stdout, stderr: '' })
 const has = (c: Call, ...parts: string[]) => parts.every(p => c.argv.some(a => a === p || a.endsWith(`/${p}`)))
@@ -79,7 +79,7 @@ function answer(w: World, log: Log, argv: string[], stdin: string | undefined): 
 }
 
 function ctxOf(w: World): { ctx: Ctx; log: Log } {
-  const log: Log = { ledger: [...w.ledger], calls: [] }
+  const log: Log = { ledger: [...w.ledger], calls: [], notifies: [] }
   const ctx: Ctx = {
     io: {
       async run(argv, opts) {
@@ -96,6 +96,8 @@ function ctxOf(w: World): { ctx: Ctx; log: Log } {
     toast: async () => undefined,
     runCommand: async () => undefined,
     log: async () => undefined,
+    // 记下内容与调用时账本的长度（用来判断通知是否在 ship 事件写入之后）
+    notify: async text => void log.notifies.push({ text, ledgerLen: log.ledger.length }),
   }
   return { ctx, log }
 }
@@ -201,4 +203,19 @@ test('ship-comment-lists-findings', () => {
   const at = parts.map(p => text.indexOf(p))
   expect(at.every((i, k) => i >= 0 && (k === 0 || i > at[k - 1]))).toBe(true)
   expect(text.trimEnd().split('\n').at(-1)).toBe('— flight 插件，2026-10-13')
+})
+
+// scenario 来源：spec flight-halt-handoff（flight-unattended S4）；交接失败那半见 landing.test.tsx 的 pr-open-notifies/handoff-failure
+test('pr-open-notifies', async () => {
+  // Given: 已落地（land ready）的世界：PR 7 头与 HEAD H1 相符、是 draft；ship 裁决 ready、blocking 0；notify 记下内容与调用时的账本长度
+  const world: World = { ledger: [TAKEOFF, event('land', { attempt: 1, verdict: 'ready' })], view: { isDraft: true }, ship: shipJson({ ready: true }) }
+
+  // When: 调用 shipPr(ctx, f, state, '7')
+  const { log } = await ship(world, '7')
+
+  // Then: 账本末条为 ship 事件；notify 恰被调用一次，且发生在 ship 事件写入之后；内容含「PR #7」、ready 与「blocking 0」
+  expect(log.ledger.at(-1)).toMatchObject({ ev: 'ship' })
+  expect(log.notifies).toHaveLength(1)
+  expect(log.notifies[0].ledgerLen).toBe(log.ledger.length)
+  expect([log.notifies[0].text.includes('PR #7'), log.notifies[0].text.includes('ready'), log.notifies[0].text.includes('blocking 0')]).toEqual([true, true, true])
 })
