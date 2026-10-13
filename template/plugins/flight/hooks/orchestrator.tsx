@@ -2,8 +2,10 @@
 // 状态只来自账本：每轮 drive 重读账本，经 core.next 得出动作再执行。
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
-import type { FlightPanel } from '../types'
+import type { FlightArmed, FlightPanel } from '../types'
 import { abortFlight } from './abort'
+import { armOf, armedLine, beforeRetry, classifyRefusal, giveUpText, humanText, nextStep, refusedAgain } from './armed'
+import type { Arm, ArmEvent, ArmStep } from './armed'
 import { agentOf, ev, healVerdict, next as nextActions, reduce, stopVerdict, summarize, summaryLines } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
@@ -600,6 +602,17 @@ async function locate($: Engine, given: string | undefined): Promise<{ f: Flight
   return { f: { change: name, mainTree: main.path, changeTree: tree.path, changeDir, branch: tree.branch, hooksDir, model: '', session }, tree, main }
 }
 
+/** 起飞参数里的 change 名与授权词：「授权提交」单独一个词，或粘在 change 名后面（design D1）；它本身不当 change 名 */
+function givenOf(args: string[]): { given: string | undefined; authorized: boolean } {
+  let authorized = args.includes(AUTHORIZE)
+  let given = args.find(a => !a.startsWith('--') && a !== AUTHORIZE)
+  if (given !== undefined && given.endsWith(AUTHORIZE)) {
+    given = given.slice(0, -AUTHORIZE.length)
+    authorized = true
+  }
+  return { given, authorized }
+}
+
 /** 起飞：版本 → 参数 → 定位 → 起飞检查 → 正在飞 → 写账本并 drive。返回回复文本。resume = /flight resume：只续飞已起飞、未落地的 change。 */
 export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
   let version: string
@@ -612,13 +625,7 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
 
   const ctx = ctxOf($)
   const io = ctx.io
-  // 授权词「授权提交」：单独一个词，或粘在 change 名后面（design D1）；它本身不当 change 名
-  let authorized = args.includes(AUTHORIZE)
-  let given = args.find(a => !a.startsWith('--') && a !== AUTHORIZE)
-  if (given !== undefined && given.endsWith(AUTHORIZE)) {
-    given = given.slice(0, -AUTHORIZE.length)
-    authorized = true
-  }
+  const { given, authorized } = givenOf(args)
   const at = await locate($, given)
   if ('error' in at) return at.error
   const { f, tree, main } = at
@@ -735,6 +742,157 @@ export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise
   return entry === undefined ? Promise.resolve('flight：插件尚未就绪，稍后再按') : entry(args, opts)
 }
 
+// ---------------------------------------------------------------- 起飞待命（design D2–D6；判定全在 armed.ts，这里只接线）
+
+/** 待命放会话状态，不进账本（用户定 Q4） */
+const armedAtom = atom({ plugin: 'flight', key: 'armed' } as const, { items: {} } as FlightArmed)
+/** 正在执行一步的待命：同一 change 的事件（tick / 计时 / agent 结束 / 主会话一轮）在其间到达时跳过 */
+const armBusy: Set<string> = new Set()
+
+const isAirborne = (text: string) => text.startsWith('✈ 起飞') || text.startsWith('续飞 attempt')
+/** 原因首行：去掉开头「flight：」之后的第一行 */
+const reasonHead = (text: string) => firstLine(text.startsWith('flight：') ? text.slice('flight：'.length) : text)
+const errText = (err: unknown) => firstLine(err instanceof Error ? err.message : String(err))
+
+async function armOfChange($: Engine, change: string): Promise<Arm | undefined> {
+  return (await read($, armedAtom)).items[change] as Arm | undefined
+}
+
+async function putArm($: Engine, arm: Arm): Promise<void> {
+  await update($, armedAtom, s => ({ items: { ...s.items, [arm.change]: arm } }))
+}
+
+async function dropArm($: Engine, change: string): Promise<void> {
+  await update($, armedAtom, s => ({ items: Object.fromEntries(Object.entries(s.items).filter(([k]) => k !== change)) }))
+}
+
+/** 起飞且不抛：异常按「起飞异常」的拒绝文本交回（分类为 transient） */
+async function takeoffSafe($: Engine, args: string[], opts: { resume?: boolean }): Promise<string> {
+  try {
+    return await takeoff($, args, opts)
+  } catch (err) {
+    return `flight：起飞异常，不起飞（${errText(err)}）`
+  }
+}
+
+/** transient 类被拒留证据：change 账本可读才追加 diag where takeoff；attempt 取账本当前 attempt（没有起飞过为 0）。失败吞掉。 */
+async function takeoffDiag($: Engine, change: string, text: string): Promise<void> {
+  try {
+    const at = await locate($, change)
+    if ('error' in at) return
+    const ctx = ctxOf($)
+    const ledger = await readLedger(ctx.io, at.f)
+    if ('error' in ledger) return
+    // 账本的 attempt 须为正整数（io.ts / ledger.py 的 ATTEMPT），没有起飞过时记 1
+    const attempt = Math.max(1, reduce(ledger.events).attempt)
+    await appendEvent(ctx.io, at.f, ev.diag(await base(ctx, at.f), { attempt, where: 'takeoff', error: reasonHead(text) }))
+  } catch {
+    // 留证据失败不影响待命
+  }
+}
+
+/** 被拒后记下待命（新待命覆盖旧的）并刷新状态行；transient 留证据。 */
+async function noteRefusal($: Engine, arm: Arm, text: string): Promise<void> {
+  await putArm($, arm)
+  if (arm.cls === 'transient') await takeoffDiag($, arm.change, text)
+  await $.ui.status(armedLine(arm, await $.clock.now()))
+}
+
+/** /opsx-apply、/flight resume、批准带按键共用的起飞：被拒且不是 human / human-key 类时进入待命（design D2）。 */
+async function takeoffArmed($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+  const text = await takeoffSafe($, args, opts)
+  let change = givenOf(args).given
+  if (change === undefined) {
+    const at = await locate($, undefined)
+    change = 'error' in at ? undefined : at.f.change
+  }
+  if (isAirborne(text)) {
+    if (change !== undefined) await dropArm($, change)
+    return text
+  }
+  const ctx = ctxOf($)
+  const cls = classifyRefusal(text)
+  if (change === undefined || cls === 'human' || cls === 'human-key') {
+    await ctx.notify?.(humanText(change ?? '（未知 change）', text, cls === 'human-key' ? 'human-key' : 'human'))
+    return text
+  }
+  const now = await $.clock.now()
+  const arm = armOf({ change, args, resume: opts.resume === true, text, now })
+  await noteRefusal($, arm, text)
+  await ensureTicker($).catch(() => undefined)
+  await ctx.notify?.(`flight：${change} 已进入起飞待命：${reasonHead(text)}`)
+  await runStep($, change, nextStep(arm, { kind: 'refused' }, now))
+  return `${text}\n已进入起飞待命：${reasonHead(text)}`
+}
+
+/** 执行一步；$ 来自触发它的 hook。prompt.submit 只在 clock.after(0) 的回调里调用（command.run 里调用会被引擎拒绝）。 */
+async function runStep($: Engine, change: string, step: ArmStep): Promise<void> {
+  if (step.do === 'wait') {
+    if (step.ms !== undefined) await $.clock.after(step.ms, () => void advanceArm($, change, { kind: 'timer' }))
+    return
+  }
+  const arm = await armOfChange($, change)
+  if (arm === undefined) return
+  const ctx = ctxOf($)
+  if (step.do === 'give-up') {
+    await dropArm($, change)
+    await ctx.notify?.(giveUpText(arm, step.reason))
+    await $.ui.status('')
+    return
+  }
+  if (step.do === 'submit') {
+    await putArm($, { ...arm, awaitingModel: true })
+    await $.clock.after(0, () => void Promise.resolve($.prompt.submit({ text: step.text })).catch(err => ctx.log(`flight：提交修复请求失败：${errText(err)}`)))
+    return
+  }
+  const tried = beforeRetry(arm)
+  await putArm($, tried)
+  const text = await takeoffSafe($, tried.args, { resume: tried.resume })
+  // 重试期间被 /flight abort 取消，或人另发了起飞（since 变了）：不再接着处理
+  if ((await armOfChange($, change))?.since !== tried.since) return
+  if (isAirborne(text)) {
+    await dropArm($, change)
+    await ctx.notify?.(`flight：${change} 已起飞（起飞待命自动重试）：${firstLine(text)}`)
+    return
+  }
+  const again = refusedAgain(tried, text)
+  await noteRefusal($, again, text)
+  await runStep($, change, nextStep(again, { kind: 'refused' }, await $.clock.now()))
+}
+
+/** 以一个事件推进某 change 的待命；没有待命或正在执行一步时跳过。异常只记一行。 */
+async function advanceArm($: Engine, change: string, event: ArmEvent): Promise<void> {
+  if (armBusy.has(change)) return
+  armBusy.add(change)
+  try {
+    const arm = await armOfChange($, change)
+    if (arm !== undefined) await runStep($, change, nextStep(arm, event, await $.clock.now()))
+  } catch (err) {
+    await ctxOf($).log(`flight：起飞待命推进失败（${change}）：${errText(err)}`)
+  } finally {
+    armBusy.delete(change)
+  }
+}
+
+/** 已停飞 / 落地的 attempt 派出的 agent 结束（flightOfAgent 不扫已结束的飞行）：账本里派过它的、等 agent 结束的待命以 agent-ended 推进。 */
+async function agentEndedArms($: Engine, agentId: string): Promise<void> {
+  const io = ioHere($)
+  const items = Object.values((await read($, armedAtom)).items) as Arm[]
+  for (const arm of items) {
+    if (arm.cls !== 'wait-agents') continue
+    const at = await locate($, arm.change)
+    if ('error' in at) continue
+    const ledger = await readLedger(io, at.f)
+    if ('events' in ledger && ledger.events.some(e => e.ev === 'dispatch' && String(e.agent) === agentId)) await advanceArm($, arm.change, { kind: 'agent-ended' })
+  }
+}
+
+/** 对全部（或满足 pick 的）待命以同一事件推进 */
+async function advanceAll($: Engine, event: ArmEvent, pick: (arm: Arm) => boolean = () => true): Promise<void> {
+  const items = Object.values((await read($, armedAtom)).items) as Arm[]
+  for (const arm of items) if (pick(arm)) await advanceArm($, arm.change, event)
+}
+
 /** /flight abort：先在账本记停飞，再停本 attempt 仍在跑的 agent（策略在 abort.ts）；之后只刷新面板（停飞已清空状态行）。 */
 async function abortCommand($: Engine, f: Flight, state: State): Promise<string> {
   const ctx = ctxOf($)
@@ -825,6 +983,8 @@ async function watchTick($: Engine, gen: number): Promise<void> {
         claimed.delete(id)
       }
     }
+    // 60 秒兜底：起飞待命按 tick 推进（design D3）
+    if (gen === tickerGen) await advanceAll($, { kind: 'tick' })
   } catch {
     // 连 clock.now 都失败：等下一次 tick
   }
@@ -907,12 +1067,18 @@ async function inFlight(io: Io, id: string): Promise<boolean> {
 async function flightCommand($: Engine, args: string[], origin: string | undefined): Promise<string> {
   const [sub, ...rest] = args
   if ((sub === 'abort' || sub === 'resume') && !HOST_ORIGINS.includes(origin ?? '')) return originRefusal(`/flight ${sub}`, origin)
-  if (sub === 'resume') return takeoff($, rest, { resume: true })
+  if (sub === 'resume') return takeoffArmed($, rest, { resume: true })
   if (sub !== 'status' && sub !== 'panel' && sub !== 'abort') return FLIGHT_USAGE
   // 省略 change：本进程只登记了一个 change 且它在飞时取它
   const only = flights.size === 1 ? [...flights.keys()][0] : undefined
   const given = rest[0] ?? (only !== undefined && active.has(only) ? only : undefined)
   if (given === undefined) return `${FLIGHT_USAGE}\n没有唯一在飞的 change，请给出 change 名`
+  // 待命中的 change：取消待命即可，不必有在飞飞行、不必定位成功（design D6）
+  if (sub === 'abort' && (await armOfChange($, given)) !== undefined) {
+    await dropArm($, given)
+    await $.ui.status('')
+    return `flight：${given} 已取消起飞待命`
+  }
   const at = await locate($, given)
   if ('error' in at) return at.error
   const { f } = at
@@ -941,7 +1107,7 @@ export function registerOrchestrator(on: On): void {
     const origin = originOf(e)
     if (!HOST_ORIGINS.includes(origin ?? '')) return { text: originRefusal('/opsx-apply', origin) }
     try {
-      return { text: await takeoff($, args) }
+      return { text: await takeoffArmed($, args) }
     } catch (err) {
       return { text: `flight：起飞异常，不起飞（${firstLine(err instanceof Error ? err.message : String(err))}）` }
     }
@@ -952,7 +1118,7 @@ export function registerOrchestrator(on: On): void {
 
   // register.tsx 已有无 matcher 的 session.start；同事件第二个 hook 须带 matcher（3a S8 实测），用恒真的 cwd matcher
   on('session.start', { cwd: /^/ }, async ($, e, next) => {
-    entry = (args, opts) => takeoff($, args, opts ?? {})
+    entry = (args, opts) => takeoffArmed($, args, opts ?? {})
     try {
       await $.tool.register({ ...FINDINGS_TOOL, isDeferred: false })
     } catch {
@@ -1124,7 +1290,11 @@ export function registerOrchestrator(on: On): void {
     if (!e.agentId) return next(e)
     const ctx = ctxOf($)
     const found = await flightOfAgent(ctx.io, e.agentId)
-    if (found === undefined) return next(e)
+    if (found === undefined) {
+      const r = await next(e)
+      await agentEndedArms($, e.agentId)
+      return r
+    }
     const r = await next(e)
     const f = found.flight
     const who = agentOf(reduce(found.events), e.agentId)
@@ -1142,6 +1312,15 @@ export function registerOrchestrator(on: On): void {
       return r
     }
     await drive($, f)
+    // 本 change 处于起飞待命（如等上一次的 agent 结束）：以 agent-ended 推进
+    await advanceArm($, f.change, { kind: 'agent-ended' })
+    return r
+  }).catch(($, e, next) => next(e))
+
+  // 主会话一轮结束（agentId 为空）：交给模型修复的待命以 main-turn 推进；同事件第三个 hook，带 turnId matcher
+  on('turn.complete', { turnId: /./ }, async ($, e, next) => {
+    const r = await next(e)
+    if (!e.agentId) await advanceAll($, { kind: 'main-turn' }, arm => arm.awaitingModel)
     return r
   }).catch(($, e, next) => next(e))
 
