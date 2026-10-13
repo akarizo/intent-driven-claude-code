@@ -79,3 +79,25 @@ mergeFix(io, f, _note: string, branch?: string, slice = 'fix')
 
 ### `abort.ts` `abortFlight`（S7 内部）
 - 依赖为 `{ state, session, halt, live, stop, drain }`，流程见 design D7。
+
+## S3
+
+### template/.claude/hooks/intent-gate.py
+```
+def deny_reason(rel):
+def scoped_deny_reason(rel, branch, name):
+def to_posix(rel):
+def is_exempt(rel_posix):
+def resolve_root(file_abs, project_dir):
+def has_unchecked_task(text):
+def tasks_unchecked(tasks):
+def has_apply_context(root):
+def current_branch(file_abs):
+def change_of_branch(branch):
+def parse_marker(text):
+def marker_expired(created):
+def mini_allows(root, rel_posix):
+def judge(target_abs, cwd):
+def classic():
+def check(argv):
+```
