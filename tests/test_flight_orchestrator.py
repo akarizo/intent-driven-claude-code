@@ -529,14 +529,18 @@ def test_heal_recorded_then_retried():
     # Given: 单片飞行：S1 第一次合回失败（非冲突），第二次合回成功
     # When: 起飞并让两个执行体先后收口结束
     # Then: 账本依次有失败 merge、heal merge-retry S1、第二个执行体派发、成功 merge；两个执行体的 worktree 不同
+    #       （续飞 attempt 2 中首派已落在 S1-a2 时，重派另起 S1-a2-r2，不 blocked）
     assert_ts_passed("heal-recorded-then-retried")
+    assert_ts_passed("heal-recorded-then-retried/resumed-attempt")
 
 
 def test_watchdog_stops_stalled_agent():
     # Given: 在飞：a1 的模型请求未结束；a2 的请求才开始 9 分钟
     # When: 时钟推进到 a1 请求开始后 10 分钟零 1 秒，看门狗 tick 两次
     # Then: 恰一条 heal watchdog（agent a1），写在 TaskStop a1 之前；只停 a1 一次；TaskStop isError 时追加 diag where watchdog
+    #       （续飞 attempt 2 中修复体落在 fix-a2 被停掉后，重派另起 fix-a2-r2，不 blocked）
     assert_ts_passed("watchdog-stops-stalled-agent")
+    assert_ts_passed("watchdog-stops-stalled-agent/resumed-fixer")
 
 
 def test_watchdog_exhausted_halts():

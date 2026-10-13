@@ -1950,6 +1950,60 @@ test('heal-recorded-then-retried', async ($, on) => {
   expect(log.spawns[1]?.cwd).not.toBe(log.spawns[0]?.cwd)
 })
 
+const SLICE1_A2_R2 = `${MAIN}/.claude/worktrees/flight-demo-S1-a2-r2`
+const FIX_A2_R2 = `${MAIN}/.claude/worktrees/flight-demo-fix-a2-r2`
+
+test('heal-recorded-then-retried/resumed-attempt', async ($, on) => {
+  // Given: 账本预置 attempt 1（waves [[S1]]）：S1 执行体 old-1 在 flight-demo-S1 派发后 blocked、halt，flight-demo-S1 仍在；
+  //        attempt 2 中 S1 全新派发落在 flight-demo-S1-a2，门禁绿；change worktree 的第 1 次 merge --no-ff 以非冲突原因失败
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'executor', agent: 'old-1', model: 'opus', worktree: SLICE1 }),
+    ev.blocked(B0, { attempt: 1, slice: 'S1', kind: 'gate', reason: '门禁红' }),
+    ev.halt(B0, { attempt: 1, reason: '切片 blocked' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, waves: [['S1']], paths: [SLICE1], mergeFails: [1] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  const s1 = log.spawns.find(s => s.cwd === SLICE1_A2)
+  await $.classic.SubagentStop(subagentStop(s1?.agentId ?? '没有 S1 执行体') as never)
+
+  // When: S1 的执行体结束（turn.complete），drive 合回失败、记 heal merge-retry 后重派
+  await $.turn.complete(ended(s1?.agentId ?? '没有 S1 执行体') as never)
+
+  // Then: attempt 2 有两条 S1 执行体 dispatch，worktree 依次为 flight-demo-S1-a2、flight-demo-S1-a2-r2；attempt 2 没有 S1 的 blocked
+  const execs = log.events.filter(x => x.ev === 'dispatch' && x.attempt === 2 && x.slice === 'S1' && x.role === 'executor')
+  expect(execs.map(x => x.worktree)).toEqual([SLICE1_A2, SLICE1_A2_R2])
+  expect(log.events.some(x => x.ev === 'blocked' && x.attempt === 2 && x.slice === 'S1')).toBe(false)
+})
+
+test('watchdog-stops-stalled-agent/resumed-fixer', async ($, on) => {
+  // Given: 账本预置 attempt 1：S1/S2/S3 都已合回并评审（S1 有一条 HIGH），派过修复体 old-fix（worktree flight-demo-fix）后 halt；flight-demo-fix 仍在；
+  //        attempt 2 的修复体落在 flight-demo-fix-a2，它的模型请求在 T0 开始且不结束
+  const merged = (slice: string) => ev.merge(B0, { attempt: 1, slice, ok: true, commit: 'c'.repeat(40), failed: [] })
+  const reviewed = (slice: string, findings: (typeof HIGH_FINDING)[]) => ev.review(B0, { attempt: 1, slice, agent: `r-${slice}`, findings })
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1', 'S2'], ['S3']], model: 'opus' }),
+    merged('S1'), merged('S2'), merged('S3'),
+    reviewed('S1', [HIGH_FINDING]), reviewed('S2', []), reviewed('S3', []),
+    ev.dispatch(B0, { attempt: 1, slice: 'fix', role: 'fixer', agent: 'old-fix', model: 'opus', worktree: FIX_TREE }),
+    ev.halt(B0, { attempt: 1, reason: '会话中断' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, paths: [FIX_TREE], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  const fixer = log.spawns.find(s => s.cwd === FIX_A2)
+  void step($, fixer?.agentId ?? '没有修复体')
+  await flush()
+  await advance(log, 661000)
+
+  // When: 看门狗停掉修复体后它结束（turn.complete），drive 重派修复体
+  await $.turn.complete(ended(fixer?.agentId ?? '没有修复体') as never)
+
+  // Then: attempt 2 有两条修复体 dispatch，worktree 依次为 flight-demo-fix-a2、flight-demo-fix-a2-r2；attempt 2 没有 fix 的 blocked
+  const fixers = log.events.filter(x => x.ev === 'dispatch' && x.attempt === 2 && x.role === 'fixer')
+  expect(fixers.map(x => x.worktree)).toEqual([FIX_A2, FIX_A2_R2])
+  expect(log.events.some(x => x.ev === 'blocked' && x.attempt === 2 && x.slice === 'fix')).toBe(false)
+})
+
 test('watchdog-stops-stalled-agent', async ($, on) => {
   // Given: demo 已起飞（waves [[S1, S2]]，agent-1 = S1、agent-2 = S2，都在跑）；agent-1 的请求在 T0 开始、agent-2 的在 T0+181s 开始，两者都不结束；TaskStop 应答 isError「Task agent-1 is not running」
   const log = useWorld(on, demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2'], stopError: '<tool_use_error>Task agent-1 is not running (status: completed)</tool_use_error>', agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
