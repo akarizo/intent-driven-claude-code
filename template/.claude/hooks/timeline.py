@@ -3,7 +3,8 @@
 #   render --change-dir DIR   从账本（同目录 ledger.py）与 <DIR>/gate-baseline.json 整份重写 <DIR>/timeline.md 与 <DIR>/gate-report.md；
 #                             stdout 打印 {"timeline", "report", "events"}；账本读不出 → stderr 写原因、退出 1、不写文件；账本不变时输出逐字节相同
 #   report --change-dir DIR   账本里有 takeoff → 账本模式：打印与 render 相同的事件行，再打印批准 → apply 完成（第一条 approve → 最后一条 land）、
-#                             批准 → PR 打开（第一条 approve → 第一条 ship）、每片派发 → 门禁绿、门禁红次数、测量统计、诊断条数；
+#                             批准 → PR 打开（第一条 approve → 第一条 ship）、每片派发 → 门禁绿、门禁红次数、测量统计、诊断条数、
+#                             自愈次数与逐条 <kind> <slice>、停飞诊断（最后一条 triage 的首行）；
 #                             否则（含账本读不出）→ 兼容模式：按 <DIR>/timeline.md 的行统计（PR 打开取账本第一条 ship，否则最后一条 pr-open 行）
 # 兼容 Python 3.8+，只用标准库。
 import argparse
@@ -100,6 +101,10 @@ def _note(e):
         return "%s %s" % (g("verdict"), g("pr"))
     if ev == "diag":
         return "%s %s：%s" % (g("where"), g("kind") or "-", g("error"))
+    if ev == "heal":
+        return "%s %s" % (g("kind"), g("slice"))
+    if ev == "triage":
+        return _flat(g("text") or "")
     return ""
 
 
@@ -251,6 +256,14 @@ def report_ledger(change_dir, events):
     diags = sum(1 for e in events if e.get("ev") == "diag")
     if diags:
         print("诊断：%d 条" % diags)
+    heals = [e for e in events if e.get("ev") == "heal"]
+    if heals:
+        print("自愈：%d 次" % len(heals))
+        for e in heals:
+            print("  %s %s（%s）" % (e.get("kind"), e.get("slice"), _flat(e.get("reason") or "")))
+    triages = [e for e in events if e.get("ev") == "triage"]
+    if triages:
+        print("停飞诊断：%s" % _flat(triages[-1].get("text") or ""))
 
 
 def report(change_dir):

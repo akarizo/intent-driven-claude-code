@@ -1,5 +1,6 @@
 // scenario 来源：spec flight-state-machine（core-*），事件形状对照 spec flight-ledger-events。核心是纯函数，直接调用，不经 $。
 import { expect, test } from 'claude-code/testing'
+import * as core from '../hooks/core'
 import { agentOf, ev, next, reduce, routingFindings, stopVerdict, summarize, summaryLines } from '../hooks/core'
 import type { FlightEvent, Plan, Role } from '../hooks/core'
 
@@ -182,23 +183,31 @@ test('core-reviews-fixes-then-finals', () => {
 })
 
 test('core-halts-on-final-red', () => {
-  // Given: waves [[S1, S2]] 全部合回且评审无问题；最新 final 事件 ok=false、failed=["G2 lint"]
-  const state = reduce([
+  // Given: waves [[S1, S2]] 全部合回且评审无问题；两份账本：
+  //   甲：本 attempt 已有 3 条 heal，最新 final ok=false、commit c-final、failed=["G2 lint"]；
+  //   乙：没有 heal，最新 final ok=false、commit 为空串、failed=["G2 lint"]
+  const base = [
     approve,
     takeoff(1, ONE.waves),
     ...landed(1, 'S1', 'a1'),
     ...landed(1, 'S2', 'a2'),
     ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [] }),
     ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [] }),
-    ev.final(B, { attempt: 1, ok: false, commit: 'c-final', failed: ['G2 lint'] }),
-  ])
+  ]
+  const ledgers = [
+    [...base, ...threeHeals(), ev.final(B, { attempt: 1, ok: false, commit: 'c-final', failed: ['G2 lint'] })],
+    [...base, ev.final(B, { attempt: 1, ok: false, commit: '', failed: ['G2 lint'] })],
+  ]
 
-  // When: 求下一批动作
-  const actions = next(state, ONE, F)
+  // When: 分别求下一批动作
+  const got = ledgers.map(evs => next(reduce(evs), ONE, F))
 
-  // Then: 恰为一条停飞动作，原因含 G2 lint（因而没有落地）
-  expect(actions).toHaveLength(1)
-  expect(actions[0]?.kind === 'halt' && actions[0].reason.includes('G2 lint')).toBe(true)
+  // Then: 两份都恰为一条停飞动作，haltKind 为 final、原因含 G2 lint（因而没有落地，也没有派整合修复）
+  for (const actions of got) {
+    expect(actions).toHaveLength(1)
+    expect(actions[0]).toMatchObject({ kind: 'halt', haltKind: 'final' })
+    expect(actions[0]?.kind === 'halt' && actions[0].reason.includes('G2 lint')).toBe(true)
+  }
 })
 
 test('core-halts-on-plan-change', () => {
@@ -476,13 +485,14 @@ test('summary-from-ledger', () => {
   // When: 求 summaryLines(summarize(state))
   const lines = summaryLines(summarize(state))
 
-  // Then: 恰为五行：首行 demo · attempt 1 · W1/2 · 在飞；S1 已合回且评审 1 条（CRITICAL/HIGH 1）；
-  //   S2 门禁红（1 次）、门禁红 1；S3 在 W2 待派；末行修复未派、final 未跑
+  // Then: 恰为六行：首行 demo · attempt 1 · W1/2 · 在飞；S1 已合回且评审 1 条（CRITICAL/HIGH 1）；
+  //   S2 门禁红（1 次）、门禁红 1；S3 在 W2 待派；自愈 0/3（flight-unattended）；末行修复未派、final 未跑
   expect(lines).toEqual([
     '✈ demo · attempt 1 · W1/2 · 在飞',
     'S1 W1 已合回 · 门禁红 0 · 测量 - · 评审 1 条（CRITICAL/HIGH 1）',
     'S2 W1 门禁红（1 次） · 门禁红 1 · 测量 - · 评审 未开始',
     'S3 W2 待派 · 门禁红 0 · 测量 - · 评审 未开始',
+    '自愈 0/3',
     '修复 未派 · final 未跑 · 全量评审 未开始',
   ])
 })
@@ -641,4 +651,238 @@ test('diag-events-do-not-move-the-plan', () => {
   expect(s2).toEqual(s1)
   expect(diag).toMatchObject({ ev: 'diag', attempt: 1, where: 'SubagentStop', error: 'aborted', kind: 'timeout', agent: 'a1', budget: 10000 })
   expect(fin).toMatchObject({ ev: 'final', warnings: ['w'] })
+})
+
+// scenario 来源：spec flight-self-heal、flight-integ-fix、flight-halt-handoff（flight-unattended）
+const SOLO: Plan = { waves: [['S1']], deps: {} }
+const MED = { severity: 'MEDIUM' as const, file: 'm.ts', line: 2, summary: 'M1', fix: 'm1' }
+function heal(kind: 'merge-retry' | 'watchdog' | 'integ', slice: string, agent?: string): FlightEvent {
+  return ev.heal(B, { attempt: 1, kind, slice, reason: 'r', ...(agent ? { agent } : {}) })
+}
+/** 本 attempt 已用满预算的 3 条 heal（merge-retry S2、watchdog review:S3、merge-retry S4） */
+function threeHeals(): FlightEvent[] {
+  return [heal('merge-retry', 'S2'), heal('watchdog', 'review:S3', 'r3'), heal('merge-retry', 'S4')]
+}
+/** S1 的执行体 a1 收口门禁绿（commit c1）、结束，随后合回失败（非冲突） */
+const mergeFailed = (): FlightEvent[] => [
+  dispatch(1, 'S1', 'executor', 'a1'),
+  ev.gate(B, { attempt: 1, agent: 'a1', slice: 'S1', ok: true, commit: 'c1', failed: [] }),
+  ended(1, 'a1'),
+  ev.merge(B, { attempt: 1, slice: 'S1', ok: false, commit: '', failed: ['合回对第一父无变更：…'] }),
+]
+/** waves [[S1, S2]] 全部合回、两片评审都为空列表 */
+const allMerged = (): FlightEvent[] => [
+  approve,
+  takeoff(1, ONE.waves),
+  ...landed(1, 'S1', 'a1'),
+  ...landed(1, 'S2', 'a2'),
+  ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [] }),
+  ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [] }),
+]
+const FIN_FAILED = ['G2 test: exit 1（新增 3 条失败）\n…']
+const finalRed = (commit: string) => ev.final(B, { attempt: 1, ok: false, commit, failed: FIN_FAILED })
+/** final 红（c9）→ heal integ → integ 修复体 fi 派发（base c9）；gateOk 时收口门禁绿（c10），否则红；之后 fi 结束 */
+const integFixed = (gateOk: boolean): FlightEvent[] => [
+  ...allMerged(),
+  finalRed('c9'),
+  heal('integ', 'integ'),
+  ev.dispatch(B, { attempt: 1, slice: 'integ', role: 'fixer', agent: 'fi', model: OPUS, worktree: '/wt/integ', base: 'c9' }),
+  ev.gate(B, { attempt: 1, agent: 'fi', slice: 'integ', ok: gateOk, commit: 'c10', failed: gateOk ? [] : ['G9 integ: tests/test_a.py'] }),
+  ended(1, 'fi'),
+]
+/** integFixed(true) 后派出 integ 评审员 ri 并交回 findings */
+const integReviewed = (findings: (typeof H1 | typeof MED)[]): FlightEvent[] => [
+  ...integFixed(true),
+  ev.dispatch(B, { attempt: 1, slice: 'integ', role: 'reviewer', agent: 'ri', model: OPUS, worktree: '/wt/integ', base: 'c9', commit: 'c10' }),
+  ev.review(B, { attempt: 1, slice: 'integ', agent: 'ri', findings }),
+  ended(1, 'ri'),
+]
+/** integ 已合回（复核无阻断）之后 final 再红（c11） */
+const integMergedThenRed = (): FlightEvent[] => [
+  ...integReviewed([MED]),
+  ev.merge(B, { attempt: 1, slice: 'integ', ok: true, commit: 'm-integ', failed: [] }),
+  finalRed('c11'),
+]
+
+test('merge-failure-retried-once', () => {
+  // Given: waves [[S1]]；四个账本快照：
+  //   ① a1 收口绿（c1）后合回失败（合回对第一父无变更），没有 heal；② ① 加 heal merge-retry S1；
+  //   ③ ② 加执行体 a2 派发、a2 收口门禁绿（c2）与 ended；④ ③ 再加一条 S1 的失败合回（非冲突）
+  const s1 = [approve, takeoff(1, SOLO.waves), ...mergeFailed()]
+  const s2 = [...s1, heal('merge-retry', 'S1')]
+  const s3 = [...s2, dispatch(1, 'S1', 'executor', 'a2'), ev.gate(B, { attempt: 1, agent: 'a2', slice: 'S1', ok: true, commit: 'c2', failed: [] }), ended(1, 'a2')]
+  const s4 = [...s3, ev.merge(B, { attempt: 1, slice: 'S1', ok: false, commit: '', failed: ['合回对第一父无变更：…'] })]
+
+  // When: 对四个快照各求一次下一批动作
+  const got = [s1, s2, s3, s4].map(evs => next(reduce(evs), SOLO, F))
+
+  // Then: ① 恰为 heal merge-retry S1；② 恰为不带 continuation 的 S1 执行体派发；③ 恰为 merge S1 via branch；
+  //   ④ 恰为 blocked S1（infra），原因含「合回失败」，不再 heal
+  expect(got[0]).toHaveLength(1)
+  expect(got[0]?.[0]).toMatchObject({ kind: 'heal', heal: 'merge-retry', slice: 'S1' })
+  expect(got[1]).toEqual([{ kind: 'dispatch', role: 'executor', slice: 'S1' }])
+  expect(got[2]).toEqual([{ kind: 'merge', slice: 'S1', via: 'branch' }])
+  expect(got[3]).toHaveLength(1)
+  expect(got[3]?.[0]).toMatchObject({ kind: 'blocked', slice: 'S1', blockKind: 'infra' })
+  expect(got[3]?.[0]?.kind === 'blocked' && got[3][0].reason.includes('合回失败')).toBe(true)
+})
+
+test('heal-budget-caps', () => {
+  // Given: 甲：waves [[S1]]，本 attempt 已有 3 条 heal（merge-retry S2、watchdog review:S3、merge-retry S4），S1 合回失败（非冲突）；
+  //   乙：waves [[S1, S2]] 全部合回且评审无阻断，已有同样 3 条 heal，最新 final 红（commit c9，G2 test: exit 1（新增 1 条失败））
+  const a = reduce([approve, takeoff(1, SOLO.waves), ...threeHeals(), ...mergeFailed()])
+  const b = reduce([...allMerged(), ...threeHeals(), ev.final(B, { attempt: 1, ok: false, commit: 'c9', failed: ['G2 test: exit 1（新增 1 条失败）'] })])
+
+  // When: 分别求甲、乙的下一批动作，并对甲求 healVerdict(merge-retry, S1)
+  const [na, nb, verdict] = [next(a, SOLO, F), next(b, ONE, F), core.healVerdict(a, 'merge-retry', 'S1')] as const
+
+  // Then: 甲恰为 blocked S1（infra），原因含「合回失败」与「自愈预算已用尽」；
+  //   乙恰为停飞，haltKind 为 final，原因含「final 未通过」与「自愈预算已用尽」；healVerdict 为 ok false、reason 含「自愈预算已用尽（3/3）」
+  const reasonOf = (x: unknown) => String((x as { reason?: unknown } | undefined)?.reason ?? '')
+  expect(na).toHaveLength(1)
+  expect(na[0]).toMatchObject({ kind: 'blocked', slice: 'S1', blockKind: 'infra' })
+  expect(['合回失败', '自愈预算已用尽'].every(w => reasonOf(na[0]).includes(w))).toBe(true)
+  expect(nb).toHaveLength(1)
+  expect(nb[0]).toMatchObject({ kind: 'halt', haltKind: 'final' })
+  expect(['final 未通过', '自愈预算已用尽'].every(w => reasonOf(nb[0]).includes(w))).toBe(true)
+  expect(verdict.ok).toBe(false)
+  expect(reasonOf(verdict)).toContain('自愈预算已用尽（3/3）')
+})
+
+test('heal-budget-caps-within-one-batch', () => {
+  // Given: waves [[S1, S2]]，本 attempt 已有 2 条 heal（watchdog review:S3、merge-retry S4），S1、S2 的执行体都收口绿后合回失败（非冲突）
+  const failed = (s: string, agent: string): FlightEvent[] => [
+    dispatch(1, s, 'executor', agent),
+    ev.gate(B, { attempt: 1, agent, slice: s, ok: true, commit: `c-${s}`, failed: [] }),
+    ended(1, agent),
+    ev.merge(B, { attempt: 1, slice: s, ok: false, commit: '', failed: ['合回对第一父无变更：…'] }),
+  ]
+  const state = reduce([approve, takeoff(1, ONE.waves), heal('watchdog', 'review:S3', 'r3'), heal('merge-retry', 'S4'), ...failed('S1', 'a1'), ...failed('S2', 'a2')])
+
+  // When: 求下一批动作
+  const actions = next(state, ONE, F)
+
+  // Then: 恰好只有 1 条 heal，本 attempt 合计不超过预算 3
+  expect(actions.filter(a => a.kind === 'heal')).toHaveLength(1)
+})
+
+test('watchdog-heal-redispatches-once', () => {
+  // Given: waves [[S1, S2]] 全部合回；四份账本：
+  //   甲：S2 评审为空列表，S1 评审员 r1 已结束、没有 review，有 heal {watchdog, review:S1, agent r1}；
+  //   乙：同甲但没有那条 heal；
+  //   丙：S1 评审为空、S2 评审 1 条 HIGH H1，修复体 fx（slice fix）已结束、没有收口门禁，有 heal {watchdog, fix, agent fx}；
+  //   丁：甲之后又派了 S1 评审员 r2，r2 也已结束、没有 review
+  const merged2 = [approve, takeoff(1, ONE.waves), ...landed(1, 'S1', 'a1'), ...landed(1, 'S2', 'a2')]
+  const noHeal = [...merged2, ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [] }), dispatch(1, 'S1', 'reviewer', 'r1'), ended(1, 'r1')]
+  const a = [...noHeal, heal('watchdog', 'review:S1', 'r1')]
+  const c = [
+    ...merged2,
+    ev.review(B, { attempt: 1, slice: 'S1', agent: 'r1', findings: [] }),
+    ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [H1] }),
+    dispatch(1, 'fix', 'fixer', 'fx'),
+    ended(1, 'fx'),
+    heal('watchdog', 'fix', 'fx'),
+  ]
+  const d = [...a, dispatch(1, 'S1', 'reviewer', 'r2'), ended(1, 'r2')]
+
+  // When: 分别求四份账本的下一批动作
+  const [ga, gb, gc, gd] = [a, noHeal, c, d].map(evs => next(reduce(evs), ONE, F))
+
+  // Then: 甲恰为派发 S1 评审员（commit m-S1，与 r1 同范围）；乙恰为 blocked review:S1（infra，评审未返回：r1）；
+  //   丙恰为派发修复体（slice 为 fix，findings 为 [H1]）；丁恰为 blocked review:S1（infra，评审未返回：r2）
+  expect(ga).toEqual([{ kind: 'dispatch', role: 'reviewer', slice: 'S1', commit: 'm-S1' }])
+  expect(gb).toEqual([{ kind: 'blocked', slice: 'review:S1', blockKind: 'infra', reason: '评审未返回：r1' }])
+  expect(gc).toHaveLength(1)
+  expect(gc[0]?.kind === 'dispatch' && gc[0].role === 'fixer' && (gc[0].slice ?? 'fix') === 'fix' && JSON.stringify(gc[0].findings) === JSON.stringify([H1])).toBe(true)
+  expect(gd).toEqual([{ kind: 'blocked', slice: 'review:S1', blockKind: 'infra', reason: '评审未返回：r2' }])
+})
+
+test('summary-shows-heals', () => {
+  // Given: 两份 attempt 1 的账本（waves [[S1]]）：甲有 heal merge-retry S9 与 heal watchdog review:S2（agent r2）；乙没有 heal
+  const a = [approve, takeoff(1, SOLO.waves), heal('merge-retry', 'S9'), heal('watchdog', 'review:S2', 'r2')]
+  const b = [approve, takeoff(1, SOLO.waves)]
+
+  // When: 分别求 summaryLines(summarize(...))
+  const [la, lb] = [a, b].map(evs => summaryLines(summarize(reduce(evs))))
+
+  // Then: 甲有一行同时含「自愈 2/3」「merge-retry S9」「watchdog review:S2」；乙有一行含「自愈 0/3」
+  expect(la?.some(l => ['自愈 2/3', 'merge-retry S9', 'watchdog review:S2'].every(w => l.includes(w)))).toBe(true)
+  expect(lb?.some(l => l.includes('自愈 0/3'))).toBe(true)
+})
+
+test('final-red-dispatches-integ', () => {
+  // Given: waves [[S1, S2]] 全部合回、评审无阻断；三份账本：
+  //   ① 最新 final 红（commit c9，failed G2 test 新增 3 条失败），没有 heal；② ① 加 heal integ integ；③ 同 ① 但 final 的 commit 为空串
+  const s1 = [...allMerged(), finalRed('c9')]
+  const s2 = [...s1, heal('integ', 'integ')]
+  const s3 = [...allMerged(), finalRed('')]
+
+  // When: 分别求下一批动作
+  const [g1, g2, g3] = [s1, s2, s3].map(evs => next(reduce(evs), ONE, F))
+
+  // Then: ① 恰为 heal integ（slice integ）；② 恰为派发修复体（slice integ、findings 空、failed 等于 final 的 failed）；③ 恰为停飞，haltKind 为 final
+  expect(g1).toHaveLength(1)
+  expect(g1?.[0]).toMatchObject({ kind: 'heal', heal: 'integ', slice: 'integ' })
+  expect(g2).toEqual([{ kind: 'dispatch', role: 'fixer', slice: 'integ', findings: [], failed: FIN_FAILED }])
+  expect(g3).toHaveLength(1)
+  expect(g3?.[0]).toMatchObject({ kind: 'halt', haltKind: 'final' })
+})
+
+test('integ-reviewed-before-merge', () => {
+  // Given: 三份账本：① integ 修复体 fi（base c9）收口门禁绿（c10）并结束；
+  //   ② ① 加 integ 评审员 ri 的派发、只含一条 MEDIUM 的 review(integ) 与 ri 结束；③ ② 加 merge integ ok
+  const s1 = integFixed(true)
+  const s2 = integReviewed([MED])
+  const s3 = [...s2, ev.merge(B, { attempt: 1, slice: 'integ', ok: true, commit: 'm-integ', failed: [] })]
+
+  // When: 分别求下一批动作
+  const got = [s1, s2, s3].map(evs => next(reduce(evs), ONE, F))
+
+  // Then: ① 恰为派发评审员（slice integ、mode integ、base c9、commit c10）；② 恰为 merge integ via fix（因而没有 fix 修复体）；③ 恰为 final
+  expect(got[0]).toEqual([{ kind: 'dispatch', role: 'reviewer', slice: 'integ', mode: 'integ', base: 'c9', commit: 'c10' }])
+  expect(got[1]).toEqual([{ kind: 'merge', slice: 'integ', via: 'fix' }])
+  expect(got[2]).toEqual([{ kind: 'final' }])
+})
+
+test('integ-failures-halt', () => {
+  // Given: 三份账本：甲：review(integ) 有 1 条 HIGH H1；乙：fi 收口门禁红后结束，有 blocked {integ, gate}；丙：integ 已合回，其后 final 红（c11）
+  const a = integReviewed([H1])
+  const b = [...integFixed(false), ev.blocked(B, { attempt: 1, slice: 'integ', kind: 'gate', reason: 'G9 integ: tests/test_a.py' })]
+  const c = integMergedThenRed()
+
+  // When: 分别求下一批动作
+  const [ga, gb, gc] = [a, b, c].map(evs => next(reduce(evs), ONE, F))
+
+  // Then: 甲恰为停飞（haltKind integ），原因含「整合修复复核未通过」；乙恰为停飞（haltKind integ）；
+  //   丙恰为停飞（haltKind final），因而没有 heal 与派发
+  expect(ga).toHaveLength(1)
+  expect(ga?.[0]).toMatchObject({ kind: 'halt', haltKind: 'integ' })
+  expect(ga?.[0]?.kind === 'halt' && ga[0].reason.includes('整合修复复核未通过')).toBe(true)
+  expect(gb).toHaveLength(1)
+  expect(gb?.[0]).toMatchObject({ kind: 'halt', haltKind: 'integ' })
+  expect(gc).toHaveLength(1)
+  expect(gc?.[0]).toMatchObject({ kind: 'halt', haltKind: 'final' })
+})
+
+test('halts-carry-kind', () => {
+  // Given: 甲：waves [[S1, S2]]，S1 已 blocked（gate，G7 x），S2 已合回且评审为空；乙：takeoff 指纹 F，当前计划指纹 G；
+  //   丙：integ 已合回，其后 final 红（c11）
+  const a = [
+    approve,
+    takeoff(1, ONE.waves),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G7 x' }),
+    ...landed(1, 'S2', 'a2'),
+    ev.review(B, { attempt: 1, slice: 'S2', agent: 'r2', findings: [] }),
+  ]
+  const b = [approve, takeoff(1)]
+  const c = integMergedThenRed()
+
+  // When: 甲、丙以指纹 F、乙以指纹 G 求下一批动作，并构造 ev.halt(attempt 1、reason x、kind watchdog)
+  const [ga, gb, gc, built] = [next(reduce(a), ONE, F), next(reduce(b), PLAN, G), next(reduce(c), ONE, F), ev.halt(B, { attempt: 1, reason: 'x', kind: 'watchdog' })] as const
+
+  // Then: 三份各恰为一个 halt 动作，haltKind 依次为 blocked、fingerprint、final；构造出的事件 ev 为 halt、kind 为 watchdog
+  expect([ga, gb, gc].map(g => g.length)).toEqual([1, 1, 1])
+  expect([ga, gb, gc].map(g => (g[0]?.kind === 'halt' ? g[0].haltKind : undefined))).toEqual(['blocked', 'fingerprint', 'final'])
+  expect(built).toMatchObject({ ev: 'halt', kind: 'watchdog' })
 })

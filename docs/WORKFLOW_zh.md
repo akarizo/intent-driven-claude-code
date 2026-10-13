@@ -186,6 +186,14 @@ Rule: Users can export their own data
 
 `evidence.log` 是飞行外（主会话修复等）由 hook 写的留痕，飞行中的 G5 不读它。
 
+**停飞自愈与续飞**（插件执行，不经模型）：
+
+- **自愈三种**：合回失败（非冲突）用新 worktree 重派一次 · 看门狗：模型请求等待超过 10 分钟即停下，执行体续派、评审员与修复体各重派一次 · 整合修复：final 红时派修复体 `integ`。预算每次飞行 3 次、同一处 1 次，先记 heal 再做，用尽即停飞。
+- **G9 整合护栏**（`slice-gate.py final --integ-base`）：整合修复不改工件与 ADR、不碰 scenario 测试、测试只增不减、不加 xfail / skip；专审评审有 CRITICAL/HIGH 即停飞。
+- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`），停飞与 PR 开出时经 `$.ui.notify` 发终端通知。
+- **诊断员**：停飞后派只读的 `flight:diagnostician`，诊断只供展示、不参与判定；人工中止与计划变化不派。
+- **批准带**：停飞后改了计划按「批准修订并续飞」（批准 + 提交本 change 工件 + 重跑基线 + 续飞），没改按「续飞」（等同 `/flight resume`）；首次起飞仍是「批准起飞」+ 回车 `/opsx-apply`。
+
 **模型路由（铁律，按角色显式声明）**：`flight:executor` / `flight:reviewer` / `flight:fixer` 用会话主模型 `<main>`（effort high）；起飞检查、门禁、合回、final、记账等机械动作由插件代码执行，零 token。`<main>` 由 `.claude/hooks/session-model.py` 读会话转录判定（stdout `opus|sonnet|haiku|fable`，exit 3 = 判定不出），**禁模型自述**；判定不出不起飞（需 `--model=<alias>` 显式指定）。插件派发时显式带 `model`；收口从账本对账各角色实际模型，不符即阻断。解析顺序自 v2.1.251 起为「调用参数 > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > 主会话」，派发时留空 `model` 就会落到 env 默认值。
 
 **两处人类审批不可省**：起飞批准 = 人审完 `spec.html` 后在 Claude Code 输入框上方的批准带按「批准起飞」，`flight@intent-driven` 插件把计划指纹写入账本 `refs/flight/<change>/ledger`；插件起飞检查时以 `.claude/hooks/takeoff-gate.py` 比对账本最新批准的指纹与当前计划指纹（exit 3 = 未批准 / 计划已变需重新批准 / 账本损坏，均不起飞），模型自证无效；PR review 是第二处。批准带依赖 `flight@intent-driven` 插件，`install.sh` 会项目级安装；手动安装：`claude plugin marketplace add akarizo/intent-driven-claude-code --scope project` 与 `claude plugin install flight@intent-driven -s project`。

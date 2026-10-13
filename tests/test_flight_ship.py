@@ -1,6 +1,8 @@
 """ship 工具纯模块（scenario: flight-ship-tool#ship-*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 """
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-ship-ledger
@@ -35,3 +37,14 @@ def test_ship_output_shape_checked():
     # When: 分别调用 shipPr(..., '7')
     # Then: 甲拒「ship 输出无法解析」且未跑 gh；乙拒「读取 origin 失败」；丙的 gh pr ready argv 恰为 [gh, pr, ready, 7]
     assert_ts_passed("ship-output-shape-checked")
+
+
+# ---------------------------------------------------------------- flight-unattended S4（已实现：骨架的 xfail 标记已去）
+
+
+def test_pr_open_notifies():
+    # Given: 已落地（ready）的 ship 世界，PR 7、blocking 0；另一落地世界的 runCommand(flight:pr-ship) 抛错
+    # When: 调用 shipPr(ctx, f, state, 7)；对另一世界执行 land
+    # Then: ship 事件写入后 notify 一次含 PR #7（或链接）、ready、blocking 0；交接失败的通知含「手动运行 /flight:pr-ship」
+    assert_ts_passed("pr-open-notifies")
+    assert_ts_passed("pr-open-notifies/handoff-failure")

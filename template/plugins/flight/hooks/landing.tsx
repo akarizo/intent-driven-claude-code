@@ -1,11 +1,11 @@
 // 评审回收与落地（spec flight-findings-intake · design D5）：submit_findings 的处理、评审员 / 修复 agent 收口、
 // 以及 drive 交来的 dispatch(reviewer|fixer) / final / land / halt。不注册 hook、不碰 $：副作用全经调用方造的 Ctx 闭包。
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
-import { agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
+import { INTEG, agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
 import type { Action, Ctx, Finding, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
 import { appendEvent, freshWorktree, judge, readLedger, stoppedNow } from './io'
 import { closeout, commitRecords, renderRecords, validateFindings } from './land'
-import { fixerPrompt, followupReviewPrompt, reviewerPrompt, wholeReviewPrompt } from './prompts'
+import { fixerPrompt, followupReviewPrompt, integFixerPrompt, integReviewPrompt, reviewerPrompt, wholeReviewPrompt } from './prompts'
 
 const FIX = 'fix'
 const firstLine = (s: string) => s.trim().split('\n')[0] ?? ''
@@ -40,6 +40,15 @@ async function base(ctx: Ctx, f: Flight) {
   return { change: f.change, at: new Date(await ctx.now()).toISOString(), session: f.session }
 }
 
+/** 终端通知（design D5）：ctx.notify 缺席或抛错都不影响飞行。 */
+async function notify(ctx: Ctx, text: string): Promise<void> {
+  try {
+    await ctx.notify?.(text)
+  } catch {
+    // 吞掉：通知只是提醒，失败不改变落地 / 停飞
+  }
+}
+
 /** 门禁 JSON；stdout 不是 JSON 时按红记。 */
 function parseGate(r: RunResult, slice: string): GateJson {
   try {
@@ -51,9 +60,12 @@ function parseGate(r: RunResult, slice: string): GateJson {
   return { slice, ok: false, commit: '', failed: [`G? 门禁输出无法解析：${r.stderr.trim().split('\n')[0] ?? ''}`] }
 }
 
-/** reuseFix：final 动作请求复用修复体收口门禁的结果（是否可复用由 slice-gate.py final --reuse-fix 判定，design D3）；修复体自己的收口不传。 */
-async function runFinal(io: Io, f: Flight, cwd: string, opts?: { reuseFix?: boolean }): Promise<GateJson> {
-  const argv = ['final', '--change-dir', f.changeDir, ...(opts?.reuseFix ? ['--reuse-fix'] : [])]
+/**
+ * reuseFix：final 动作请求复用修复体收口门禁的结果（是否可复用由 slice-gate.py final --reuse-fix 判定，design D3）；修复体自己的收口不传。
+ * integBase：整合修复体收口时另判 G9 整合护栏的起点（design D4）；其它修复体不传。
+ */
+async function runFinal(io: Io, f: Flight, cwd: string, opts?: { reuseFix?: boolean; integBase?: string }): Promise<GateJson> {
+  const argv = ['final', '--change-dir', f.changeDir, ...(opts?.reuseFix ? ['--reuse-fix'] : []), ...(opts?.integBase ? ['--integ-base', opts.integBase] : [])]
   return parseGate(await judge(io, f, 'slice-gate', argv, cwd, GATE_TIMEOUT_MS), 'final')
 }
 
@@ -84,7 +96,7 @@ export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: st
 }
 
 /** 评审员动作；mode / base / prior 是 S2 在 core.ts 的 Action 上新增的字段（_interfaces.md），这里按约定读取。 */
-type ReviewAction = { slice: string; commit: string; mode?: 'whole' | 'followup'; base?: string; prior?: Finding[] }
+type ReviewAction = { slice: string; commit: string; mode?: 'whole' | 'followup' | 'integ'; base?: string; prior?: Finding[] }
 type ReviewPlan = { prompt: string; description: string; range?: { commit: string; base: string } }
 
 /** 全量评审的起点：git merge-base <commit> <主 worktree HEAD>；任一步失败、输出为空或等于 commit 时返回原因。 */
@@ -99,9 +111,15 @@ async function wholeBase(io: Io, f: Flight, commit: string): Promise<{ base: str
   return { base }
 }
 
-/** 按 mode 选提示词：whole 先算起点，followup 用动作给的范围，不带 mode 为切片评审。 */
+/** 按 mode 选提示词：whole 先算起点，followup / integ 用动作给的范围，不带 mode 为切片评审。 */
 async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPlan | { error: string }> {
   const prior = x.prior ?? []
+  if (x.mode === 'integ') {
+    const base = x.base ?? ''
+    if (base === '' || base === x.commit) return { error: `专审范围缺 base：base 为「${base}」，commit 为 ${x.commit}` }
+    const prompt = integReviewPrompt({ change: f.change, changeDir: f.changeDir, base, commit: x.commit })
+    return { prompt, description: '专审整合修复', range: { commit: x.commit, base } }
+  }
   if (x.mode === 'whole') {
     const wb = await wholeBase(io, f, x.commit)
     if ('error' in wb) return { error: `算不出全量评审的起点：${wb.error}` }
@@ -129,7 +147,7 @@ export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Pr
     return { block: REMIND }
   }
   if (a.role !== 'fixer') return undefined
-  const gate = await runFinal(ctx.io, found.flight, a.worktree)
+  const gate = await runFinal(ctx.io, found.flight, a.worktree, a.slice === INTEG ? { integBase: a.base } : undefined)
   const g = ev.gate(await base(ctx, found.flight), { attempt: a.attempt, agent: agentId, ...gate, slice: a.slice || FIX })
   await appendEvent(ctx.io, found.flight, g)
   const v = stopVerdict(reduce([...found.events, g]), agentId, gate)
@@ -181,10 +199,23 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 worktree 创建失败：${wt.error}` }))
       return
     }
-    const prompt = fixerPrompt({ change: f.change, changeDir: f.changeDir, findings: action.findings })
+    // 整合修复体（design D4）：派发前 change worktree 的 HEAD 作 G9 整合护栏的起点，记进 dispatch
+    let integBase: { base: string } | undefined
+    if (slice === INTEG) {
+      const h = await io.run(['git', '-C', f.changeTree, 'rev-parse', 'HEAD'])
+      const head = h.stdout.trim()
+      if (h.exitCode !== 0 || head === '') {
+        await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `取整合修复起点失败：git rev-parse HEAD：${firstLine(h.stderr) || `exit ${h.exitCode}`}` }))
+        return
+      }
+      integBase = { base: head }
+    }
+    const prompt = integBase
+      ? integFixerPrompt({ change: f.change, changeDir: f.changeDir, failed: action.failed ?? [], base: integBase.base })
+      : fixerPrompt({ change: f.change, changeDir: f.changeDir, findings: action.findings })
     if ((await stoppedNow(io, f)) !== undefined) return
     const r = await ctx.spawn({ f, role: 'fixer', cwd: wt.path, prompt, description: `修复 ${slice}` })
-    if (r.agentId) await append(ev.dispatch(b, { attempt, slice, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch }))
+    if (r.agentId) await append(ev.dispatch(b, { attempt, slice, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch, ...integBase }))
     else await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
     return
   }
@@ -224,13 +255,16 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       const why = errLine(err)
       await ctx.log(`落地完成，但接 /flight:pr-ship 失败：${why}`)
       await ctx.toast(`flight：${f.change} 已落地，但接 /flight:pr-ship 失败：${why}；请手动运行 /flight:pr-ship ${args}`)
+      await notify(ctx, `${f.change}：已落地，接 /flight:pr-ship 失败，请手动运行 /flight:pr-ship`)
     }
     return
   }
   if (action.kind === 'halt') {
-    await append(ev.halt(b, { attempt, reason: action.reason }))
+    await append(ev.halt(b, { attempt, reason: action.reason, kind: action.haltKind }))
     await ctx.status(undefined)
     await ctx.toast(`flight：${f.change} 停飞：${action.reason}`)
     await ctx.log(await flightRecord(io, f, state, `停飞 · ${f.change}：${action.reason}`))
+    // 人工中止不通知（人就在场）
+    if (action.haltKind !== 'abort') await notify(ctx, `${f.change}：停飞（${action.haltKind}）：${firstLine(action.reason)}`)
   }
 }

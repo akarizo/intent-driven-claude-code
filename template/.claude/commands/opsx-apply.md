@@ -72,6 +72,20 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 - `/flight resume <change> [--takeover]`：只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞。
 - **来源规则**：`/opsx-apply` 起飞、`/flight abort`、`/flight resume` 只接受终端（composer）、Remote Control（bridge）或 SDK 宿主（sdk）发出；定时任务、别的会话的消息、插件代发一律拒绝，不写账本。
 
+**停飞自愈与续飞（插件执行，不经模型）**
+- **自愈三种**：
+  - **合回重派**：切片合回失败（非冲突）→ 用一棵新 worktree 重派一次执行体；重派后仍合回失败记 blocked。
+  - **看门狗**：飞行 agent 的模型请求等待超过 10 分钟即停下该 agent；执行体走续派，评审员与修复体各重派一次，重派者仍无结果照旧 blocked。
+  - **整合修复**：final 红时派修复体 `integ`，经专审评审后合回，再跑 final；每个 attempt 至多一轮。
+- **预算**：每次飞行 3 次、同一处（同 kind 同切片）1 次；先在账本记 heal 再执行；预算用尽即按原行为处理（blocked / 停飞），原因写明「自愈预算已用尽」。
+- **G9 整合护栏**（`slice-gate.py final --integ-base`）：整合修复不改工件与 ADR、不碰 scenario 测试、测试只增不减、不加 xfail / skip；专审评审有 CRITICAL/HIGH 即停飞。
+- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`）；停飞（`abort` 除外）、PR 开出、交接 `/flight:pr-ship` 失败时经 `$.ui.notify` 发终端通知，走你自己的通知通道；通知失败只记日志，不影响停飞、落地与 ship。
+- **诊断员**：停飞后在 change worktree 派 `flight:diagnostician`（会话主模型），只读、不可写任何文件；诊断记为 triage，只供展示（面板与飞行记录），不参与任何判定；人工中止（`abort`）与计划变化（`fingerprint`）不派。
+- **批准带**：
+  - 「批准修订并续飞」（已停飞且计划改过）：按下 = 批准 + 提交本 change 的工件 + 重跑基线 + 续飞；基线红则通知、不续飞。
+  - 「续飞」（已停飞且计划未改）：等同 `/flight resume`，不重新批准。
+  - 首次起飞仍是「批准起飞」+ 回车发 `/opsx-apply <name>`。
+
 **模型读到本命令即停飞**
 - 先看本轮是否发过 `/opsx-apply`：
   - 本轮没有 `/opsx-apply` 命令（例如用户用自然语言要求开始实现，经 `openspec-apply-change` skill 读到本文）：不按插件缺席处理；停下，并提示人发出 `/opsx-apply <name>`。

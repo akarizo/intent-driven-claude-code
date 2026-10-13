@@ -440,13 +440,13 @@ test('measure-event-checked-before-write/bad-outcome', () => {
 })
 
 test('event-types-exported', () => {
-  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship 与 diag）
+  // Given: 写入校验的事件字段表（approve 至 halt 共 11 种，再加 measure、ship、diag、heal 与 triage）
 
   // When: 读取导出的 EVENT_TYPES 并排序
   const types = [...EVENT_TYPES].sort()
 
-  // Then: 恰为这 14 种事件类型
-  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff'])
+  // Then: 恰为这 16 种事件类型
+  expect(types).toEqual(['approve', 'blocked', 'diag', 'dispatch', 'ended', 'final', 'gate', 'halt', 'heal', 'land', 'measure', 'merge', 'review', 'ship', 'takeoff', 'triage'])
 })
 
 test('stopped-now-reads-latest-attempt', async () => {
@@ -504,16 +504,31 @@ test('fresh-worktree-never-reuses-old/original-name', async () => {
   expect(r).toEqual({ path: '/repo/.claude/worktrees/flight-demo-S2', branch: 'flight/demo/S2' })
 })
 
+const SLICE_A2_R2 = '/repo/.claude/worktrees/flight-demo-S1-a2-r2'
+
 test('fresh-worktree-never-reuses-old/both-exist', async () => {
-  // Given: flight-demo-S1 与 flight-demo-S1-a2 两个 worktree 都已存在
+  // Given: flight-demo-S1 与 flight-demo-S1-a2 两个 worktree 都已存在（同一 attempt 内第二次另起，如合回重派）
   const { io, calls } = world({ files: [SLICE, SLICE_A2] })
 
   // When: 以 attempt 2 为 S1 另起 worktree
   const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
 
-  // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2>」
+  // Then: 改建 flight-demo-S1-a2-r2：只运行一次 worktree add -b flight/demo/S1-a2-r2；返回其路径与分支
+  expect(calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2-r2', SLICE_A2_R2, 'worktree-demo']])
+  expect(r).toEqual({ path: SLICE_A2_R2, branch: 'flight/demo/S1-a2-r2' })
+})
+
+test('fresh-worktree-never-reuses-old/all-occupied', async () => {
+  // Given: flight-demo-S1、-a2、-a2-r2、-a2-r3、-a2-r4 五个 worktree 都已存在
+  const names = ['S1', 'S1-a2', 'S1-a2-r2', 'S1-a2-r3', 'S1-a2-r4'].map(n => `/repo/.claude/worktrees/flight-demo-${n}`)
+  const { io, calls } = world({ files: names })
+
+  // When: 以 attempt 2 为 S1 另起 worktree
+  const r = await freshWorktree(io, flight(HOOKS), 'S1', 2)
+
+  // Then: 不运行任何 git 命令；返回 error「worktree 已存在：<flight-demo-S1-a2-r4>」
   expect(calls).toEqual([])
-  expect(r).toEqual({ error: `worktree 已存在：${SLICE_A2}` })
+  expect(r).toEqual({ error: `worktree 已存在：${names[4]}` })
 })
 
 test('fresh-worktree-never-reuses-old/branch-left', async () => {
@@ -525,9 +540,31 @@ test('fresh-worktree-never-reuses-old/branch-left', async () => {
   const r = await freshWorktree(left.io, flight(HOOKS), 'S1', 2)
   const r2 = await freshWorktree(both.io, flight(HOOKS), 'S1', 2)
 
-  // Then: 前者不按原名建（worktree add -b 会撞上已有分支），改建 flight-demo-S1-a2；后者不运行 worktree add，返回 error「分支已存在：flight/demo/S1-a2」
+  // Then: 前者不按原名建（worktree add -b 会撞上已有分支），改建 flight-demo-S1-a2；后者跳过已有分支的两个名字，改建 flight-demo-S1-a2-r2
   expect(left.calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2', SLICE_A2, 'worktree-demo']])
   expect(r).toEqual({ path: SLICE_A2, branch: 'flight/demo/S1-a2' })
-  expect(both.calls.filter(c => c.argv[1] === 'worktree')).toEqual([])
-  expect(r2).toEqual({ error: '分支已存在：flight/demo/S1-a2' })
+  expect(both.calls.filter(c => c.argv[1] === 'worktree').map(c => [c.cwd, ...c.argv])).toEqual([[MAIN, 'git', 'worktree', 'add', '-b', 'flight/demo/S1-a2-r2', SLICE_A2_R2, 'worktree-demo']])
+  expect(r2).toEqual({ path: SLICE_A2_R2, branch: 'flight/demo/S1-a2-r2' })
+})
+
+// scenario 来源：spec flight-self-heal（flight-unattended S4）
+test('io-knows-new-events', () => {
+  // Given: 五条事件——heal（attempt 1、kind integ、slice integ、reason「final 红」）、triage（attempt 1、agent d1、text「根因」）、
+  //        role 为 diagnostician 的 dispatch、kind 为 watchdog 的 halt、kind 为 oops 的 halt（两条 halt 都是 attempt 1、reason「停」）
+  const common = { v: 1, change: 'demo', at: '2026-10-13T00:00:00Z', by: { plugin: 'flight', session: 'sess' } }
+  const events = [
+    { ...common, ev: 'heal', attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' },
+    { ...common, ev: 'triage', attempt: 1, agent: 'd1', text: '根因' },
+    { ...DISPATCH, role: 'diagnostician' },
+    { ...common, ev: 'halt', attempt: 1, reason: '停', kind: 'watchdog' },
+    { ...common, ev: 'halt', attempt: 1, reason: '停', kind: 'oops' },
+  ] as FlightEvent[]
+
+  // When: 逐条求不合规原因
+  const why = events.map(e => eventProblem(e, 'demo'))
+
+  // Then: EVENT_TYPES 含 heal 与 triage；前四条无问题；kind 为 oops 的 halt 返回含 kind 的原因
+  expect(['heal', 'triage'].every(t => EVENT_TYPES.includes(t))).toBe(true)
+  expect(why.slice(0, 4)).toEqual([undefined, undefined, undefined, undefined])
+  expect(why[4]).toContain('kind')
 })

@@ -1,6 +1,16 @@
 import { expect, test } from 'claude-code/testing'
 
-import { executorPrompt, fixerPrompt, followupReviewPrompt, resolverPrompt, reviewerPrompt, wholeReviewPrompt } from '../hooks/prompts.ts'
+import {
+  executorPrompt,
+  fixerPrompt,
+  followupReviewPrompt,
+  integFixerPrompt,
+  integReviewPrompt,
+  resolverPrompt,
+  reviewerPrompt,
+  triagePrompt,
+  wholeReviewPrompt,
+} from '../hooks/prompts.ts'
 
 const CHANGE_DIR = 'template/openspec/changes/demo'
 const GATE_BY_CONTROL_PLANE = '门禁由控制面在你收口时运行'
@@ -112,4 +122,41 @@ test('whole-and-followup-prompts', async () => {
   // Then: 全量含 git diff b0 c9、a.ts:3、submit_findings、取 diff 失败、/repo/hooks/timeline.py report；复核含 git diff c9 c10、第 1 轮、a.ts:3、submit_findings、照原级别
   for (const s of ['git diff b0 c9', 'a.ts:3', 'submit_findings', '取 diff 失败', '/repo/hooks/timeline.py report']) expect(whole).toContain(s)
   for (const s of ['git diff c9 c10', '第 1 轮', 'a.ts:3', 'submit_findings', '照原级别']) expect(followup).toContain(s)
+})
+
+test('integ-prompts-state-guards', async () => {
+  // Given: change demo；final failed 含 "G7 tests/test_x.py::test_y"；整合修复起点 base c9、修复后 commit c10
+  const failed = ['G7 tests/test_x.py::test_y']
+
+  // When: 分别生成整合修复体与专审评审员提示词
+  const [fix, review] = [
+    integFixerPrompt({ change: 'demo', changeDir: CHANGE_DIR, failed, base: 'c9' }),
+    integReviewPrompt({ change: 'demo', changeDir: CHANGE_DIR, base: 'c9', commit: 'c10' }),
+  ]
+
+  // Then: 修复体含 tests/test_x.py::test_y、scenario、xfail、owns、先有失败测试、起点 c9；评审员含 git diff c9 c10、改弱测试、submit_findings
+  for (const s of ['tests/test_x.py::test_y', 'scenario', 'xfail', 'owns', '先有失败测试', 'c9']) expect(fix).toContain(s)
+  for (const s of ['git diff c9 c10', '改弱测试', 'submit_findings']) expect(review).toContain(s)
+})
+
+test('triage-prompt-and-agent', async () => {
+  // Given: change demo、hooksDir /r/.claude/hooks、停飞原因「切片 blocked：S4（G1 verify: exit 1）」、kind blocked
+  const x = { change: 'demo', changeDir: CHANGE_DIR, hooksDir: '/r/.claude/hooks', reason: '切片 blocked：S4（G1 verify: exit 1）', kind: 'blocked' }
+
+  // When: 生成诊断员提示词
+  const prompt = triagePrompt(x)
+
+  // Then: 含停飞原因、blocked、只读、ledger.py show 与 timeline.py report 全路径、改计划 / 修插件 / 人工操作与「首行」
+  for (const s of [
+    x.reason,
+    'blocked',
+    '只读',
+    `python3 /r/.claude/hooks/ledger.py show --change-dir ${CHANGE_DIR}`,
+    `python3 /r/.claude/hooks/timeline.py report --change-dir ${CHANGE_DIR}`,
+    '改计划',
+    '修插件',
+    '人工操作',
+    '首行',
+  ])
+    expect(prompt).toContain(s)
 })

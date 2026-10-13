@@ -107,3 +107,46 @@ export function fixerPrompt(x: { change: string; changeDir: string; findings: Fi
     '最后一行简述修了哪几条。',
   ].join('\n')
 }
+
+/** 整合修复：final 红时派发，failed 即全量门禁的失败项（design D4）。 */
+export function integFixerPrompt(x: { change: string; changeDir: string; failed: string[]; base: string }): string {
+  return [
+    `任务三 · 整合修复：OpenSpec change \`${x.change}\`（${x.changeDir}）全部切片合回后，全量 final 门禁的失败项如下：`,
+    ...x.failed.map(f => `- ${f.replace(/\n/g, '\n  ')}`),
+    '规则：',
+    '- 每处修复先有失败测试：final 的失败就是红，再最小修复；每处一个 commit，消息用 `fix:` 前缀。',
+    `- 只写全部切片 owns 的并集（见 ${x.changeDir}/slices.json）。`,
+    `- 不改本 change 的 proposal / design / tasks / slices.json / 切片包 / specs，也不改 openspec/adr。`,
+    '- 不碰 slices.json 里 scenario 映射的测试函数。',
+    '- 测试只增不减：不删 assert、不删测试函数、不加 xfail / skip。',
+    `门禁由控制面在你收口时运行（全量 final + G9 整合护栏，起点 \`${x.base}\`）：不要自己运行 slice-gate。`,
+    '修不了的在最后一行写明原因；否则最后一行简述修了哪几处。',
+  ].join('\n')
+}
+
+/** 整合修复的专审：只审整合修复体带来的改动（design D4）。 */
+export function integReviewPrompt(x: { change: string; changeDir: string; base: string; commit: string }): string {
+  return [
+    `专审整合修复：OpenSpec change \`${x.change}\`（${x.changeDir}）的整合修复，审查范围为 \`git diff ${x.base} ${x.commit}\`。`,
+    '重点核对是否以改弱测试换绿（删断言、放宽阈值、改期望值去迁就实现）；有则按 HIGH 提交。',
+    ...REVIEW_TAIL,
+  ].join('\n')
+}
+
+const TRIAGE_VERDICTS = '「改计划」「修插件」「人工操作」'
+
+/** 停飞诊断：只读查明根因，给出处置类别（design D6）。 */
+export function triagePrompt(x: { change: string; changeDir: string; hooksDir: string; reason: string; kind: string }): string {
+  return [
+    `停飞诊断：OpenSpec change \`${x.change}\`（${x.changeDir}）已停飞（kind ${x.kind}），停飞原因：${x.reason}`,
+    '只读：不改任何文件、不提交、不重跑全量测试。',
+    '查看：',
+    `- \`python3 ${x.hooksDir}/ledger.py show --change-dir ${x.changeDir}\``,
+    `- \`python3 ${x.hooksDir}/timeline.py report --change-dir ${x.changeDir}\``,
+    '- `git log` / `git diff` 与相关代码',
+    '最终回答格式：',
+    '- 首行：一句话根因；',
+    `- 第二行：恰为${TRIAGE_VERDICTS}之一；`,
+    '- 其后：需要改计划时，写出 slices.json / spec / 切片包的具体改法草案（只写在回答里，不落盘）。',
+  ].join('\n')
+}

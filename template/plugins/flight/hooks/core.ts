@@ -1,7 +1,15 @@
 // 飞行状态机核心：状态由账本事件推出，下一批动作由纯函数决定（spec flight-state-machine · design D2–D5）。
 // 只放纯函数与类型：不 import claude-code 的运行时值，不调用任何 $。
 
-export type Role = 'executor' | 'reviewer' | 'fixer' | 'resolver'
+export type Role = 'executor' | 'reviewer' | 'fixer' | 'resolver' | 'diagnostician'
+/** 自愈的种类（design D3）：合回失败重派 / 看门狗停掉后重派 / final 红后的整合修复 */
+export type HealKind = 'merge-retry' | 'watchdog' | 'integ'
+/** 停飞分类（design D5） */
+export type HaltKind = 'blocked' | 'final' | 'integ' | 'fingerprint' | 'control' | 'watchdog' | 'abort'
+/** 每个 attempt 至多自愈几次（用户定 Q4） */
+export const HEAL_BUDGET = 3
+/** 整合修复体与其专审评审的 slice 名（design D4） */
+export const INTEG = 'integ'
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 export type Finding = { severity: Severity; file: string; line: number; summary: string; fix: string }
 /** slice-gate.py gate / final 打印的 JSON */
@@ -30,18 +38,20 @@ export interface Ctx {
   toast(text: string): Promise<void>
   runCommand(command: string, args: string): Promise<void>
   log(text: string): Promise<void> // 打印到转录（飞行记录）
+  notify?(text: string): Promise<void> // 终端通知（design D5）；缺席或抛错都不影响飞行
 }
 export type Action =
   | { kind: 'dispatch'; role: 'executor'; slice: string; continuation?: { reason: string; failed: string[] }; base?: string }
   | { kind: 'dispatch'; role: 'resolver'; slice: string; conflicts: string[] }
-  | { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string; mode?: 'whole' | 'followup'; base?: string; prior?: Finding[] }
-  | { kind: 'dispatch'; role: 'fixer'; slice?: string; findings: Finding[] } // slice 缺省为 'fix'；修复轮为 'fix-r<k>'
+  | { kind: 'dispatch'; role: 'reviewer'; slice: string; commit: string; mode?: 'whole' | 'followup' | 'integ'; base?: string; prior?: Finding[] }
+  | { kind: 'dispatch'; role: 'fixer'; slice?: string; findings: Finding[]; failed?: string[] } // slice 缺省为 'fix'；修复轮为 'fix-r<k>'；整合修复为 'integ'（带 failed）
+  | { kind: 'heal'; heal: HealKind; slice: string; reason: string; agent?: string } // 只记 heal 事件，下一轮 next 给出重派
   | { kind: 'gate'; slice: string; agent: string } // 执行体未经收口结束后的补跑门禁
   | { kind: 'regate'; slice: string; base: string; worktree: string } // 续飞：上一 attempt 已绿未合回的切片，以原 base 补跑门禁
   | { kind: 'merge'; slice: string; via: 'branch' | 'resolve' | 'fix' }
   | { kind: 'final' }
   | { kind: 'land' }
-  | { kind: 'halt'; reason: string }
+  | { kind: 'halt'; reason: string; haltKind: HaltKind }
   | { kind: 'blocked'; slice: string; blockKind: 'gate' | 'infra'; reason: string }
 
 /** 账本事件按写入顺序编号；状态即带编号的事件序列加最新 takeoff。 */
@@ -104,6 +114,16 @@ export function stopVerdict(state: State, agent: string, gate: GateJson): { kind
   return { kind: 'block', text: `flight 收口门禁未通过（第 ${reds} 次，第 3 次起放行并记阻断）：\n${items}\n修好这些项后再收口。` }
 }
 
+const healsOf = (state: State) => state.events.filter(e => e.ev === 'heal' && Number(e.attempt) === state.attempt)
+
+/** 自愈预算（design D3）：本 attempt 至多 HEAL_BUDGET 次，同一 (kind, slice) 至多一次。 */
+export function healVerdict(state: State, kind: HealKind, slice: string): { ok: true } | { ok: false; reason: string } {
+  const heals = healsOf(state)
+  if (heals.length >= HEAL_BUDGET) return { ok: false, reason: `自愈预算已用尽（${HEAL_BUDGET}/${HEAL_BUDGET}）` }
+  if (heals.some(h => h.kind === kind && h.slice === slice)) return { ok: false, reason: '同一处已自愈过一次' }
+  return { ok: true }
+}
+
 export function next(state: State, plan: Plan, fpNow: string): Action[] {
   const { takeoff, attempt: A } = state
   if (!takeoff) return []
@@ -111,7 +131,8 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   const inA = (e: Ev) => Number(e.attempt) === A
   const ofA = (ev: string) => evs.filter(e => e.ev === ev && inA(e))
   if (ofA('land').length || ofA('halt').length) return []
-  if (fpNow !== takeoff.fp) return [{ kind: 'halt', reason: `计划指纹已变：起飞时 ${str(takeoff, 'fp').slice(0, 8)}，当前 ${fpNow.slice(0, 8)}` }]
+  const halt = (haltKind: HaltKind, reason: string): Action => ({ kind: 'halt', reason, haltKind })
+  if (fpNow !== takeoff.fp) return [halt('fingerprint', `计划指纹已变：起飞时 ${str(takeoff, 'fp').slice(0, 8)}，当前 ${fpNow.slice(0, 8)}`)]
 
   const mergedOk = (s: string) => last(evs.filter(e => e.ev === 'merge' && e.slice === s && e.ok === true))
   const blockedNow = (s: string) => ofA('blocked').find(e => e.slice === s)
@@ -121,6 +142,9 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   const blocked = (slice: string, blockKind: 'gate' | 'infra', reason: string): Action => ({ kind: 'blocked', slice, blockKind, reason })
 
   const baseOf = (e: Ev | undefined) => (e && typeof e.base === 'string' && e.base !== '' ? { base: e.base } : {})
+  const healsA = (kind: HealKind) => ofA('heal').filter(e => e.kind === kind)
+  /** 本 attempt 有一条 watchdog heal 指向该 agent（design D2：被看门狗停掉的评审员 / 修复体各重派一次） */
+  const stoppedByWatchdog = (agent: string) => healsA('watchdog').some(e => e.agent === agent)
 
   function firstDispatch(s: string): Action {
     const prev = last(evs.filter(e => e.ev === 'dispatch' && e.role === 'executor' && e.slice === s && Number(e.attempt) < A))
@@ -152,7 +176,12 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const r = last(dispatchesA(s, 'resolver'))
     if (!r) {
       if (conflicts.length) return [{ kind: 'dispatch', role: 'resolver', slice: s, conflicts }]
-      return [blocked(s, 'infra', `合回失败：${joined(m, '未知原因')}`)]
+      // 非冲突的合回失败先在新 worktree 重派一次执行体（design D1）
+      const why = `合回失败：${joined(m, '未知原因')}`
+      if (healsA('merge-retry').some(h => h.slice === s && h.seq > m.seq)) return [{ kind: 'dispatch', role: 'executor', slice: s }]
+      const v = healVerdict(state, 'merge-retry', s)
+      if (v.ok) return [{ kind: 'heal', heal: 'merge-retry', slice: s, reason: why }]
+      return [blocked(s, 'infra', `${why}（${v.reason}）`)]
     }
     if (r.seq < m.seq) return [blocked(s, 'infra', `解冲突后合回失败：${joined(m, '未知原因')}`)]
     const { end, closing } = lifecycle(state, str(r, 'agent'))
@@ -180,17 +209,30 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     if (dep) return [blocked(s, 'infra', `依赖已 blocked：${dep}`)]
     const execs = dispatchesA(s, 'executor')
     if (!execs.length) return beforeExecutor(s)
-    const m = last(ofA('merge').filter(e => e.slice === s))
+    // 只看最后一次执行体派发之后的合回；续派次数只数最后一条 merge-retry heal 之后的派发（design D1）
+    const lastExec = last(execs)!
+    const m = last(ofA('merge').filter(e => e.slice === s && e.seq > lastExec.seq))
     if (m) return afterMergeFailed(s, m)
-    return executorOutcome(s, str(last(execs)!, 'agent'), execs.length)
+    const h = last(healsA('merge-retry').filter(e => e.slice === s))
+    return executorOutcome(s, str(lastExec, 'agent'), execs.filter(e => !h || e.seq > h.seq).length)
+  }
+
+  /**
+   * 评审员结束而没有交 review：有指向它的 watchdog heal 就原样重派一次，否则记 blocked review:<slice>（design D2）。
+   * 未派过评审员时返回 fresh；评审员仍在跑时返回空。
+   */
+  function reviewerOutcome(s: string, fresh: Action): Action[] {
+    const d = last(dispatchesA(s, 'reviewer'))
+    if (!d) return [fresh]
+    const agent = str(d, 'agent')
+    if (!lifecycle(state, agent).end) return []
+    if (stoppedByWatchdog(agent)) return [fresh]
+    return [blocked(`review:${s}`, 'infra', `评审未返回：${agent}`)]
   }
 
   function reviewActions(s: string): Action[] {
     if (reviewed(s)) return []
-    const r = last(dispatchesA(s, 'reviewer'))
-    if (!r) return [{ kind: 'dispatch', role: 'reviewer', slice: s, commit: str(mergedOk(s)!, 'commit') }]
-    if (!lifecycle(state, str(r, 'agent')).end) return []
-    return [blocked(`review:${s}`, 'infra', `评审未返回：${str(r, 'agent')}`)]
+    return reviewerOutcome(s, { kind: 'dispatch', role: 'reviewer', slice: s, commit: str(mergedOk(s)!, 'commit') })
   }
 
   function closing(): Action[] {
@@ -199,29 +241,62 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     if (stuck.length) {
       const list = stuck.map(s => `${s}（${str(blockedNow(s)!, 'reason').split('\n')[0]}）`).join('、')
       const change = str(takeoff, 'change')
-      return [{ kind: 'halt', reason: `切片 blocked：${list}；未派修复、未跑 final。修好后重发 /opsx-apply${change ? ` ${change}` : ''} 续飞，只重派这些切片` }]
+      return [halt('blocked', `切片 blocked：${list}；未派修复、未跑 final。修好后重发 /opsx-apply${change ? ` ${change}` : ''} 续飞，只重派这些切片`)]
     }
     const sliceBlocking = blockingOf(reviewFindings(state, true))
     const fixed = evs.some(e => e.ev === 'merge' && e.slice === FIX && e.ok === true)
     if (sliceBlocking.length && !fixed && !blockedNow(FIX)) {
+      const fresh: Action = { kind: 'dispatch', role: 'fixer', findings: sliceBlocking }
       const fx = last(dispatchesA(FIX, 'fixer'))
-      if (!fx) return [{ kind: 'dispatch', role: 'fixer', findings: sliceBlocking }]
-      return fixerOutcome(FIX, fx)
+      if (!fx) return [fresh]
+      return fixerOutcome(FIX, fx, fresh)
     }
     const fin = last(ofA('final'))
-    if (!fin) return [{ kind: 'final' }]
-    if (fin.ok !== true) return [{ kind: 'halt', reason: `final 未通过：${joined(fin, '未知原因')}` }]
+    // 整合修复合回之后，最新 final 早于这次合回就再跑 final（design D4 第 4 步）
+    const im = last(ofA('merge').filter(e => e.slice === INTEG && e.ok === true))
+    if (!fin || (im && fin.seq < im.seq)) return [{ kind: 'final' }]
+    if (fin.ok !== true) return finalRed(fin, im)
     return wholeReview(fin)
   }
 
-  /** 修复体结束后：合回失败、门禁绿合回、否则 blocked（切片级修复与修复轮共用）。 */
-  function fixerOutcome(s: string, fx: Ev): Action[] {
-    const { end, closing: cg } = lifecycle(state, str(fx, 'agent'))
+  /** final 红（design D4）：整合修复至多一轮，经专审后合回；不满足条件或失败即停飞。 */
+  function finalRed(fin: Ev, im: Ev | undefined): Action[] {
+    const why = `final 未通过：${joined(fin, '未知原因')}`
+    if (im) return [halt('final', `${why}（整合修复合回后仍红）`)]
+    const ib = blockedNow(INTEG) ?? blockedNow(`review:${INTEG}`)
+    if (ib) return [halt('integ', `整合修复未通过：${str(ib, 'reason').split('\n')[0]}`)]
+    const fi = last(dispatchesA(INTEG, 'fixer'))
+    const fresh: Action = { kind: 'dispatch', role: 'fixer', slice: INTEG, findings: [], failed: failedOf(fin) }
+    if (fi) return fixerOutcome(INTEG, fi, fresh, commit => integReview(fi, commit))
+    if (str(fin, 'commit') === '') return [halt('final', why)]
+    if (healsA('integ').length) return [fresh]
+    const v = healVerdict(state, 'integ', INTEG)
+    if (v.ok) return [{ kind: 'heal', heal: 'integ', slice: INTEG, reason: why }]
+    return [halt('final', `${why}（${v.reason}）`)]
+  }
+
+  /** 整合修复体收口绿之后：专审（范围为其派发时的 base 到门禁 commit），无 CRITICAL/HIGH 才合回。 */
+  function integReview(fi: Ev, commit: string): Action[] {
+    const rv = last(ofA('review').filter(e => e.slice === INTEG))
+    if (!rv) return reviewerOutcome(INTEG, { kind: 'dispatch', role: 'reviewer', slice: INTEG, mode: 'integ', base: str(fi, 'base'), commit })
+    const bad = blockingOf(findingsOf(rv))
+    if (bad.length) return [halt('integ', `整合修复复核未通过：${bad.map(f => `${f.severity} ${f.file}:${f.line} ${f.summary}`).join('；')}`)]
+    return [{ kind: 'merge', slice: INTEG, via: 'fix' }]
+  }
+
+  /**
+   * 修复体结束后：合回失败、门禁绿合回（integ 先经 approved 专审）、被看门狗停掉且没有收口结论则原样重派一次、
+   * 否则 blocked（切片级修复、修复轮与整合修复共用）。
+   */
+  function fixerOutcome(s: string, fx: Ev, again: Action, approved?: (commit: string) => Action[]): Action[] {
+    const agent = str(fx, 'agent')
+    const { end, closing: cg } = lifecycle(state, agent)
     if (!end) return []
     const m = last(ofA('merge').filter(e => e.slice === s && e.seq > end.seq))
     if (m) return [blocked(s, 'infra', `修复合回失败：${joined(m, '未知原因')}`)]
     const g = last(cg)
-    if (g?.ok === true) return [{ kind: 'merge', slice: s, via: 'fix' }]
+    if (g?.ok === true) return approved ? approved(str(g, 'commit')) : [{ kind: 'merge', slice: s, via: 'fix' }]
+    if (!g && stoppedByWatchdog(agent)) return [again]
     return [blocked(s, 'gate', joined(g, '修复 agent 没有收口门禁结论'))]
   }
 
@@ -234,34 +309,37 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const rev = last(ofA('review').filter(e => e.slice === R))
     if (!rev) {
       if (blockedNow(`review:${R}`)) return [{ kind: 'land' }]
-      const d = last(dispatchesA(R, 'reviewer'))
-      if (!d) {
-        const commit = str(fin, 'commit')
-        if (k === 0) return [{ kind: 'dispatch', role: 'reviewer', slice: R, mode: 'whole', commit, prior: blockingOf(reviewFindings(state, true)) }]
-        const prev = wholeSlice(k - 1)
-        const prevReview = last(ofA('review').filter(e => e.slice === prev))
-        return [{
+      // 首派与看门狗后的重派是同一个动作：同 mode、同范围、同 prior（design D2）
+      const commit = str(fin, 'commit')
+      const prev = wholeSlice(k - 1)
+      const fresh: Action = k === 0
+        ? { kind: 'dispatch', role: 'reviewer', slice: R, mode: 'whole', commit, prior: blockingOf(reviewFindings(state, true)) }
+        : {
           kind: 'dispatch', role: 'reviewer', slice: R, mode: 'followup',
           base: String(last(dispatchesA(prev, 'reviewer'))?.commit ?? ''), commit,
-          prior: blockingOf(findingsOf(prevReview)),
-        }]
-      }
-      if (!lifecycle(state, str(d, 'agent')).end) return []
-      return [blocked(`review:${R}`, 'infra', `评审未返回：${str(d, 'agent')}`)]
+          prior: blockingOf(findingsOf(last(ofA('review').filter(e => e.slice === prev)))),
+        }
+      return reviewerOutcome(R, fresh)
     }
     const findings = blockingOf(findingsOf(rev))
     if (!findings.length || k >= 2) return [{ kind: 'land' }]
     const F = `fix-r${k + 1}`
     if (blockedNow(F)) return [{ kind: 'land' }]
+    const fresh: Action = { kind: 'dispatch', role: 'fixer', slice: F, findings }
     const fx = last(dispatchesA(F, 'fixer'))
-    if (!fx) return [{ kind: 'dispatch', role: 'fixer', slice: F, findings }]
-    return fixerOutcome(F, fx)
+    if (!fx) return [fresh]
+    return fixerOutcome(F, fx, fresh)
   }
 
   const all = plan.waves.flat()
   const reviews = all.filter(s => mergedOk(s)).flatMap(reviewActions)
   const wave = plan.waves.find(w => w.some(s => !done(s)))
-  if (wave) return [...wave.filter(s => !done(s)).flatMap(sliceActions), ...reviews]
+  if (wave) {
+    // 同一批里多片各自 heal 会一次突破预算：按剩余预算截断，被截掉的下一轮由 healVerdict 判为预算用尽（design D3）
+    const room = HEAL_BUDGET - healsOf(state).length
+    let n = 0
+    return [...wave.filter(s => !done(s)).flatMap(sliceActions), ...reviews].filter(a => a.kind !== 'heal' || n++ < room)
+  }
   if (reviews.length || all.some(s => mergedOk(s) && !reviewed(s))) return reviews
   return closing()
 }
@@ -269,9 +347,10 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
 const findingsOf = (e: Ev | undefined): Finding[] => (Array.isArray(e?.findings) ? (e.findings as Finding[]) : [])
 const blockingOf = (fs: readonly Finding[]): Finding[] => fs.filter(f => BLOCKING.includes(f.severity))
 
-/** 全部 review 事件的 findings；sliceOnly 时只取切片评审（不含 whole / whole-r<k>）。 */
+/** 全部 review 事件的 findings；sliceOnly 时只取切片评审（不含 whole / whole-r<k> 与 integ 专审，design D4）。 */
 function reviewFindings(state: State, sliceOnly = false): Finding[] {
-  return state.events.filter(e => e.ev === 'review' && !(sliceOnly && WHOLE.test(str(e, 'slice')))).flatMap(findingsOf)
+  const sliceReview = (s: string) => !WHOLE.test(s) && s !== INTEG
+  return state.events.filter(e => e.ev === 'review' && !(sliceOnly && !sliceReview(str(e, 'slice')))).flatMap(findingsOf)
 }
 
 export function routingFindings(state: State): Finding[] {
@@ -308,10 +387,12 @@ export type FlightSummary = {
   waves: number
   wave: number // 当前 wave（1 起），已全部完成为 waves
   slices: SliceRow[]
-  fix: string // 未派 / [第 k 轮 ]进行中 / [第 k 轮 ]已合回 / [第 k 轮 ]阻断（gate|infra）/ 无需
+  fix: string // 未派 / [第 k 轮 |整合 ]进行中 / [第 k 轮 |整合 ]已合回 / [第 k 轮 |整合 ]阻断（gate|infra）/ 无需
   final: string // 未跑 / 绿 / 红
   whole: string // 未开始 / 进行中 / 未返回 / 第 n 轮 x 条（CRITICAL/HIGH y）
   end: string // 在飞 / 已落地（ready|draft）/ 已停飞（<原因>）
+  heals: string[] // 本 attempt 的自愈，每条「<kind> <slice>」
+  triage?: string // 本 attempt 最新诊断的首行
 }
 
 /** 飞行进度归约（design D2）：只看本 attempt 的事件，合回与评审跨 attempt 计入（与 next 口径一致）。 */
@@ -347,11 +428,12 @@ export function summarize(state: State): FlightSummary {
     return { id, wave, phase, ...(exec ? { agent: str(exec, 'agent') } : {}), reds, measured, review }
   }
 
-  // 修复列：本 attempt 最新一个修复体（fix 或 fix-r<k>），fix-r<k> 前缀「第 <k> 轮 」（design D8）
-  const fx = last(ofA('dispatch').filter(e => e.role === 'fixer' && (e.slice === FIX || FIX_ROUND.test(str(e, 'slice')))))
+  // 修复列：本 attempt 最新一个修复体（fix、fix-r<k> 或 integ），fix-r<k> 前缀「第 <k> 轮 」（design D8），integ 前缀「整合 」
+  const fx = last(ofA('dispatch').filter(e => e.role === 'fixer' && (e.slice === FIX || e.slice === INTEG || FIX_ROUND.test(str(e, 'slice')))))
   const fs = fx ? str(fx, 'slice') : FIX
   const fxBlocked = blockedNow(fs)
-  const fix = fx ? `${fs === FIX ? '' : `第 ${fs.slice('fix-r'.length)} 轮 `}${mergedOk(fs) ? '已合回' : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）` : '进行中'}`
+  const prefix = fs === FIX ? '' : fs === INTEG ? '整合 ' : `第 ${fs.slice('fix-r'.length)} 轮 `
+  const fix = fx ? `${prefix}${mergedOk(fs) ? '已合回' : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）` : '进行中'}`
     : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）`
     : blockingOf(reviewFindings(state, true)).length ? '未派' : '无需'
   // 全量评审：本 attempt 最新一轮（whole 为第 1 轮，whole-r<k> 为第 k+1 轮）
@@ -367,6 +449,7 @@ export function summarize(state: State): FlightSummary {
   const land = last(ofA('land'))
   const halt = last(ofA('halt'))
   const current = waves.findIndex(w => w.some(s => !mergedOk(s) && !blockedNow(s)))
+  const triage = last(ofA('triage'))
   return {
     change: takeoff ? str(takeoff, 'change') : '',
     attempt: A,
@@ -377,13 +460,18 @@ export function summarize(state: State): FlightSummary {
     final: !fin ? '未跑' : fin.ok === true ? '绿' : '红',
     whole,
     end: land ? `已落地（${str(land, 'verdict')}）` : halt ? `已停飞（${str(halt, 'reason')}）` : '在飞',
+    heals: healsOf(state).map(h => `${str(h, 'kind')} ${str(h, 'slice')}`),
+    ...(triage ? { triage: str(triage, 'text').split('\n')[0] } : {}),
   }
 }
 
+/** 末行固定为「修复 … · final … · 全量评审 …」；自愈与诊断两行排在它之前。 */
 export function summaryLines(s: FlightSummary): string[] {
   return [
     `✈ ${s.change} · attempt ${s.attempt} · W${s.wave}/${s.waves} · ${s.end}`,
     ...s.slices.map(r => `${r.id} W${r.wave} ${r.phase} · 门禁红 ${r.reds} · 测量 ${r.measured} · 评审 ${r.review}`),
+    `自愈 ${s.heals.length}/${HEAL_BUDGET}${s.heals.length ? `：${s.heals.join(' · ')}` : ''}`,
+    ...(s.triage !== undefined ? [`诊断：${s.triage}`] : []),
     `修复 ${s.fix} · final ${s.final} · 全量评审 ${s.whole}`,
   ]
 }
@@ -409,7 +497,11 @@ export const ev: {
   blocked(b: Base, x: { attempt: number; slice: string; kind: 'gate' | 'infra'; reason: string }): FlightEvent
   final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[]; warnings?: string[] }): FlightEvent
   land(b: Base, x: { attempt: number; verdict: 'ready' | 'draft' }): FlightEvent
-  halt(b: Base, x: { attempt: number; reason: string }): FlightEvent
+  halt(b: Base, x: { attempt: number; reason: string; kind?: HaltKind }): FlightEvent
+  /** 先记 heal 再重派或停 agent（design D3） */
+  heal(b: Base, x: { attempt: number; kind: HealKind; slice: string; reason: string; agent?: string }): FlightEvent
+  /** 诊断员的最终回答，只供展示（design D6） */
+  triage(b: Base, x: { attempt: number; agent: string; text: string }): FlightEvent
   measure(b: Base, x: { attempt: number; slice: string; agent: string; base: string; commit: string; outcomes: [string, string][]; changed: string[]; source: string[] }): FlightEvent
   /** 只留证据：reduce / next / summarize 都不看 diag（design D9） */
   diag(b: Base, x: { attempt: number; where: string; error: string; kind?: string; agent?: string; budget?: number }): FlightEvent
@@ -424,6 +516,8 @@ export const ev: {
   final: make('final'),
   land: make('land'),
   halt: make('halt'),
+  heal: make('heal'),
+  triage: make('triage'),
   measure: make('measure'),
   diag: make('diag'),
 }

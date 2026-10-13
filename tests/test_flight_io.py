@@ -113,10 +113,11 @@ def test_measure_event_checked_before_write():
 def test_fresh_worktree_never_reuses_old():
     # Given: 主 worktree M、change demo，flight-demo-S1 已存在
     # When: freshWorktree 取 S2 / S1（attempt 2），再在 S1-a2 也存在时取 S1
-    # Then: S2 按原名建；S1 改建 S1-a2 且不碰旧树；两者都在时报错且不执行 worktree add
+    # Then: S2 按原名建；S1 改建 S1-a2 且不碰旧树；两者都在时改建 S1-a2-r2；五个候选名都在时报错且不执行 worktree add
     assert_ts_passed("fresh-worktree-never-reuses-old")
     assert_ts_passed("fresh-worktree-never-reuses-old/original-name")
     assert_ts_passed("fresh-worktree-never-reuses-old/both-exist")
+    assert_ts_passed("fresh-worktree-never-reuses-old/all-occupied")
 
 # ---------------------------------------------------------------- PR #47 评审修复
 
@@ -124,5 +125,15 @@ def test_fresh_worktree_never_reuses_old():
 def test_fresh_worktree_branch_left():
     # Given: S1 的旧 worktree 已删，但分支 flight/demo/S1 还在（另一份世界里 S1-a2 的分支也在）
     # When: 以 attempt 2 为 S1 另起 worktree
-    # Then: 改建 S1-a2；两个分支都在时报「分支已存在」且不运行 worktree add
+    # Then: 改建 S1-a2；两个分支都在时改建 S1-a2-r2
     assert_ts_passed("fresh-worktree-never-reuses-old/branch-left")
+
+
+# ---------------------------------------------------------------- flight-unattended S4（已实现：骨架的 xfail 标记已去）
+
+
+def test_io_knows_new_events():
+    # Given: 插件 io.ts 的字段表
+    # When: 读 EVENT_TYPES，并用 eventProblem 校验合法的 heal、triage、diagnostician 派发、kind watchdog 的 halt 与 kind oops 的 halt
+    # Then: EVENT_TYPES 含 heal 与 triage；四个合法事件无问题；kind oops 的 halt 返回含 kind 的原因
+    assert_ts_passed("io-knows-new-events")

@@ -2,7 +2,6 @@
 agent 定义文件由 pytest 直接解析；提示词是 TS 纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S3 写定义文件、提示词与同名 TS 测试后逐条去掉 xfail 标记。"""
 from conftest import ROOT
-import pytest
 
 from test_flight_plugin import assert_ts_passed
 
@@ -152,3 +151,30 @@ def test_whole_and_followup_prompts():
     # Then: 全量含 git diff b0 c9、a.ts:3、submit_findings、取 diff 失败、timeline.py report；复核含 git diff c9 c10、第 1 轮、照原级别；reviewer.md 含全量、复核、^1、取 diff 失败、HIGH；同名 TS 测试通过
     assert found == {"全量": True, "复核": True, "^1": True, "取 diff 失败": True, "HIGH": True}, found
     assert_ts_passed("whole-and-followup-prompts")
+
+
+# ---------------------------------------------------------------- flight-unattended S3（骨架：实现后去掉 xfail 标记）
+
+
+def test_integ_prompts_state_guards():
+    # Given: change demo、failed 含 tests/test_x.py::test_y、base c9、commit c10
+    # When: 分别生成 integFixerPrompt 与 integReviewPrompt
+    # Then: 前者含 tests/test_x.py::test_y、scenario、xfail、owns、先有失败测试；后者含 git diff c9 c10、改弱测试、submit_findings
+    assert_ts_passed("integ-prompts-state-guards")
+
+
+def test_triage_prompt_and_agent():
+    # Given: agents/diagnostician.md；change demo、hooksDir /r/.claude/hooks、reason「切片 blocked：S4（G1 verify: exit 1）」、kind blocked
+    meta, body = parse("diagnostician")
+
+    # When: 解析 frontmatter（triagePrompt 由同名 TS 测试生成并断言）
+    names = tools(meta)
+
+    # Then: name 为 diagnostician，tools 恰为 Read/Grep/Glob/Bash，effort high，maxTurns 30，没有 model；
+    #       正文写明只读；提示词含 reason、blocked、ledger.py show、timeline.py report、改计划 / 修插件 / 人工操作与首行
+    assert meta.get("name") == "diagnostician", meta
+    assert names == ["Read", "Grep", "Glob", "Bash"], names
+    assert meta.get("effort") == "high" and meta.get("maxTurns") == "30", meta
+    assert "model" not in meta, meta
+    assert "只读" in body, body
+    assert_ts_passed("triage-prompt-and-agent")

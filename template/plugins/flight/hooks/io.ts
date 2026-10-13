@@ -83,7 +83,7 @@ const isOutcome = (o: unknown) => Array.isArray(o) && o.length === 2 && typeof o
 const EVENTS: Record<string, Record<string, Check>> = {
   approve: { fp: FP },
   takeoff: { attempt: ATTEMPT, fp: FP, branch: NONEMPTY, model: NONEMPTY, waves: [x => Array.isArray(x) && x.every(isStrs), '不是字符串数组的数组'] },
-  dispatch: { attempt: ATTEMPT, slice: NONEMPTY, role: oneOf('executor', 'reviewer', 'fixer', 'resolver'), agent: NONEMPTY, model: NONEMPTY, worktree: NONEMPTY },
+  dispatch: { attempt: ATTEMPT, slice: NONEMPTY, role: oneOf('executor', 'reviewer', 'fixer', 'resolver', 'diagnostician'), agent: NONEMPTY, model: NONEMPTY, worktree: NONEMPTY },
   gate: RESULT,
   ended: { attempt: ATTEMPT, agent: NONEMPTY, reason: STR, model: [x => x === null || typeof x === 'string', '不是字符串或 null'] },
   merge: RESULT,
@@ -100,6 +100,12 @@ const EVENTS: Record<string, Record<string, Check>> = {
   ship: { attempt: ATTEMPT, pr: NONEMPTY, verdict: oneOf('ready', 'draft'), commit: STR },
   // kind / agent / budget 可选（design D9）
   diag: { attempt: ATTEMPT, where: NONEMPTY, error: STR },
+  heal: { attempt: ATTEMPT, kind: oneOf('merge-retry', 'watchdog', 'integ'), slice: NONEMPTY, reason: STR },
+  triage: { attempt: ATTEMPT, agent: NONEMPTY, text: STR },
+}
+// 可选字段：缺省不判，出现则须合法（与 ledger.py 的 OPTIONAL 同形）
+const OPTIONAL: Record<string, Record<string, Check>> = {
+  halt: { kind: oneOf('blocked', 'final', 'integ', 'fingerprint', 'control', 'watchdog', 'abort') },
 }
 
 /** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */
@@ -116,6 +122,7 @@ export function eventProblem(event: FlightEvent, change: string): string | undef
   if (typeof e.at !== 'string') return 'at 不是字符串'
   if (typeof e.by !== 'object' || e.by === null || !('plugin' in e.by)) return 'by 缺 plugin'
   for (const [name, [ok, why]] of Object.entries(fields)) if (!ok(e[name])) return `${String(e.ev)} 的 ${name} ${why}`
+  for (const [name, [ok, why]] of Object.entries(OPTIONAL[e.ev] ?? {})) if (e[name] !== undefined && !ok(e[name])) return `${String(e.ev)} 的 ${name} ${why}`
   return undefined
 }
 
@@ -241,14 +248,22 @@ export async function occupied(io: Io, f: Flight, name: string): Promise<string 
   return r.exitCode === 0 ? `分支已存在：${branch}` : undefined
 }
 
-/** 续飞另起：<name> 未被占用（见 occupied）用原名，否则改用 <name>-a<attempt>，两者都被占用则报错；一律基于 change 分支尖端新建，从不复用旧树。 */
+/**
+ * 续飞另起：依次取 <name>、<name>-a<attempt>、<name>-a<attempt>-r2 … -r4 中第一个未被占用（见 occupied）的名字，
+ * 全部被占用则报错（同一 attempt 内合回重派、看门狗重派会再要一棵）；一律基于 change 分支尖端新建，从不复用旧树。
+ */
 export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
-  let picked = name
-  if (await occupied(io, f, name)) {
-    picked = `${name}-a${attempt}`
-    const why = await occupied(io, f, picked)
-    if (why) return { error: why }
+  const names = [name, `${name}-a${attempt}`, ...[2, 3, 4].map(k => `${name}-a${attempt}-r${k}`)]
+  let picked = ''
+  let why = ''
+  for (const n of names) {
+    why = (await occupied(io, f, n)) ?? ''
+    if (!why) {
+      picked = n
+      break
+    }
   }
+  if (!picked) return { error: why }
   const path = worktreePath(f, picked)
   const branch = `flight/${f.change}/${picked}`
   const r = await io.run(['git', 'worktree', 'add', '-b', branch, path, f.branch], { cwd: f.mainTree })

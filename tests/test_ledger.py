@@ -356,3 +356,49 @@ def test_ledger_knows_diag_event(tmp_path):
     assert show.returncode == 0 and [json.loads(l)["ev"] for l in show.stdout.splitlines()] == ["takeoff", "diag"], show.stderr
     assert "diag" in events.stdout.split(), events.stdout
     assert bad_show.returncode != 0 and "where" in bad_show.stderr, bad_show.stderr
+
+
+# ---------------------------------------------------------------- flight-unattended S2（骨架：实现后去掉 xfail 标记）
+
+
+def test_ledger_accepts_heal_and_triage(tmp_path):
+    # Given: demo 的账本依次含合法的 takeoff、heal（watchdog review:S1）、role 为 diagnostician 的 dispatch、kind 为 final 的 halt、triage；
+    #        另有三个账本各只坏一处：heal 的 kind 为 retry、triage 缺 text、halt 的 kind 为 oops
+    repo = new_repo(tmp_path / "repo")
+
+    def shell(change):
+        takeoff = flight_events(change)[1]
+        common = {k: takeoff[k] for k in ("v", "change", "at", "by")}
+        return takeoff, common
+
+    good = make_change(repo)
+    takeoff, c = shell("demo")
+    rows = [
+        takeoff,
+        dict(c, ev="heal", attempt=1, kind="watchdog", slice="review:S1", reason="空等超过 10 分钟", agent="r1"),
+        dict(c, ev="dispatch", attempt=1, slice="triage", role="diagnostician", agent="d1", model="opus", worktree="/repo/.worktrees/demo"),
+        dict(c, ev="halt", attempt=1, reason="final 未通过", kind="final"),
+        dict(c, ev="triage", attempt=1, agent="d1", text="根因：S2 的 owns 漏了守卫测试"),
+    ]
+    for ev in rows:
+        ledger_append(repo, "demo", ev)
+    bad = {}
+    for name, broken in [
+        ("b-heal", lambda c: dict(c, ev="heal", attempt=1, kind="retry", slice="S1", reason="x")),
+        ("b-triage", lambda c: dict(c, ev="triage", attempt=1, agent="d1")),
+        ("b-halt", lambda c: dict(c, ev="halt", attempt=1, reason="x", kind="oops")),
+    ]:
+        bad[name] = make_change(repo, name=name)
+        t, cc = shell(name)
+        ledger_append(repo, name, t)
+        ledger_append(repo, name, broken(cc))
+
+    # When: 分别运行 ledger.py verify
+    ok = ledger("verify", good)
+    outs = {name: ledger("verify", d) for name, d in bad.items()}
+
+    # Then: 第一个以 0 退出；三个坏账本都以非 0 退出，stderr 分别点名 kind、text、kind
+    assert ok.returncode == 0, ok.stderr
+    assert outs["b-heal"].returncode != 0 and "kind" in outs["b-heal"].stderr, outs["b-heal"].stderr
+    assert outs["b-triage"].returncode != 0 and "text" in outs["b-triage"].stderr, outs["b-triage"].stderr
+    assert outs["b-halt"].returncode != 0 and "kind" in outs["b-halt"].stderr, outs["b-halt"].stderr

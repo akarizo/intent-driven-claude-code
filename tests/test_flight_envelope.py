@@ -276,3 +276,14 @@ def test_flight_agent_bash_writes_within_owns():
     # When: 以 bashWritesVerdict 判定 E 的四条命令与 R 的一条
     # Then: owns 内两条放行；越界被拒含路径与 owns；$OUT 拒「写入目标无法静态判定」；R 被拒
     assert_ts_passed("flight-agent-bash-writes-within-owns")
+
+
+# ---------------------------------------------------------------- flight-unattended S1
+# S1 已实现：骨架的 xfail 标记已去。
+
+
+def test_diagnostician_read_only():
+    # Given: Who {role: diagnostician, worktree: /r/.worktrees/demo, owns: []}
+    # When: 判定 Write a.py、Bash git commit、Bash git log
+    # Then: 前两个被拒且理由含「诊断员」；git log 不被拒
+    assert_ts_passed("diagnostician-read-only")
