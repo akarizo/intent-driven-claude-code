@@ -183,7 +183,6 @@ def _branch_from(git_repo, name, base):
     git(git_repo, "checkout", "-q", "-b", name, base)
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
 def test_guard_rejects_artifact_and_scenario_edits(git_repo):
     # Given: 单片计划 cap#adds → tests/test_cap.py::test_adds，gate.test 恒绿；base 之后分支甲改了 specs/cap/spec.md 与 slices.json，
     #        分支乙改了 test_adds 函数体里的一行
@@ -211,7 +210,6 @@ def test_guard_rejects_artifact_and_scenario_edits(git_repo):
     assert not [f for f in plain["failed"] if f.startswith("G9")], plain
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
 def test_guard_rejects_weakened_tests(git_repo):
     # Given: 同一单片计划，另有 tests/test_b.py（test_b1 两行 assert、test_b2 一行 assert）与 src/x.py；base 之后四个分支：
     #        甲删两行 assert 只加一行；乙给 test_b2 加 @pytest.mark.skip；丙删掉 test_b2；丁改 src/x.py 并新增带 assert 的 test_b3
@@ -241,7 +239,6 @@ def test_guard_rejects_weakened_tests(git_repo):
     assert not _g9(outs["ding"]), outs["ding"]
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S2 未实现")
 def test_features_declare_integ_guard():
     # Given: 本仓库的 slice-gate.py
     # When: 运行 slice-gate.py features

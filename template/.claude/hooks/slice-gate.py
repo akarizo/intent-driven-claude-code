@@ -10,8 +10,11 @@
 #   features                                   打印判定器声明的能力（FEATURES），每行一项；不读 change 目录，恒 exit 0
 #   gate     S --change-dir DIR --base REF    跑 G1–G8（G5 只按账本）；stdout 打印 JSON（含 base）；--base 必填
 #   measure  S --change-dir DIR --base REF    只读测量：实跑本片 scenario 的 .py 目标；--base 必填
-#   final    --change-dir DIR [--reuse-fix]   先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
-#                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿、未带 dirty 且其后只有记账改动 → 复用其全量结论
+#   final    --change-dir DIR [--reuse-fix] [--integ-base SHA]
+#                                              先 G7（全部 scenario 状态），再 lint / typecheck，最后全量 test（均按基线差分）；
+#                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿、未带 dirty 且其后只有记账改动 → 复用其全量结论；
+#                                              --integ-base：另判 G9 整合护栏（git diff SHA HEAD 不得动工件 / scenario 测试函数、
+#                                              测试只增不减），不依赖全量、G7 红也照判；失败项以「G9 integ:」开头
 #   baseline --change-dir DIR                 起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
 #                                              再跑 gate.test / lint / typecheck 与每片 verify，结束时整体覆盖为结果；
 #                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
@@ -52,7 +55,7 @@ TIMELINE = "timeline.md"
 BASELINE = "gate-baseline.json"
 # 判定器声明的能力（features 子命令逐行打印）。
 # 以后判定器新增插件依赖的能力时在这里追加；插件 versions.ts 的 REQUIRED_FEATURES 与之对应。
-FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger", "ledger-records")
+FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger", "ledger-records", "integ-guard")
 # verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
 VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -955,6 +958,116 @@ def _dirty_paths(root, change_dir):
     return sorted(paths)
 
 
+# G9 整合护栏（design D4）：对 git diff <integ-base> HEAD 判，只在整合修复体收口时由 final --integ-base 触发
+G9_ARTIFACT_FILES = ("proposal.md", "design.md", "tasks.md", "slices.json")
+G9_ARTIFACT_DIRS = ("slices/", "specs/")
+G9_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+G9_ASSERT_RE = re.compile(r"\bassert |expect\(")
+G9_TESTFN_RE = re.compile(r"\bdef test_|\b(?:test|it)\(")
+G9_MARK_RE = re.compile(r"pytest\.mark\.xfail|pytest\.mark\.skip|pytest\.skip\(|\.skip\(|\.todo\(")
+
+
+def _diff_path(p):
+    p = p.strip()
+    if p == "/dev/null":
+        return None
+    return p[2:] if p.startswith(("a/", "b/")) else p
+
+
+def _g9_hunks(root, base):
+    """git diff -U0 base HEAD（不认重命名）→ {路径: {"old": [(起, 止)], "new": [(起, 止)], "minus": [行], "plus": [行]}}。
+    文件头只在 diff --git 与第一个 @@ 之间认，内容行里以 --- / +++ 开头的不误当文件头。"""
+    out, cur, header, old = {}, None, False, None
+    for line in git(root, "-c", "core.quotePath=false", "diff", "-U0", "--no-renames", base, "HEAD").splitlines():
+        if line.startswith("diff --git "):
+            cur, header, old = None, True, None
+        elif line.startswith("@@"):
+            header = False
+            m = G9_HUNK_RE.match(line)
+            if m and cur is not None:
+                a, b, c, d = int(m.group(1)), int(m.group(2) or 1), int(m.group(3)), int(m.group(4) or 1)
+                if b:
+                    cur["old"].append((a, a + b - 1))
+                if d:
+                    cur["new"].append((c, c + d - 1))
+        elif header:
+            if line.startswith("--- "):
+                old = _diff_path(line[4:])
+            elif line.startswith("+++ "):
+                path = _diff_path(line[4:]) or old
+                cur = out.setdefault(path, {"old": [], "new": [], "minus": [], "plus": []}) if path else None
+        elif cur is not None and line.startswith("-"):
+            cur["minus"].append(line[1:])
+        elif cur is not None and line.startswith("+"):
+            cur["plus"].append(line[1:])
+    return out
+
+
+def _func_span(source, func):
+    """函数 func 的行区间（含装饰器）；源码为 None、解析失败或无此函数 → None。"""
+    import ast
+    if source is None:
+        return None
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+            start = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            return start, getattr(node, "end_lineno", None) or node.lineno
+    return None
+
+
+def _show(root, rev, rel):
+    p = subprocess.run(["git", "show", "%s:%s" % (rev, rel)], cwd=root, capture_output=True)
+    return p.stdout.decode("utf-8", "replace") if p.returncode == 0 else None
+
+
+def integ_guard(root, change_dir, data, base):
+    """G9：工件不可动 · scenario 测试不可动 · 测试只增不减；返回失败项（均以「G9 integ:」开头并点名文件）。"""
+    try:
+        names = [x for x in git(root, "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames",
+                                base, "HEAD").splitlines() if x]
+        hunks = _g9_hunks(root, base)
+    except RuntimeError as e:
+        return ["G9 integ: --integ-base %s 无法比较：%s" % (base, e)]
+    failed = []
+    change_rel = os.path.relpath(os.path.abspath(change_dir), root).replace(os.sep, "/")
+    artifacts = set("%s/%s" % (change_rel, n) for n in G9_ARTIFACT_FILES)
+    for path in names:
+        inner = path[len(change_rel) + 1:] if path.startswith(change_rel + "/") else None
+        if path in artifacts or (inner and inner.startswith(G9_ARTIFACT_DIRS)) or "/openspec/adr/" in "/" + path:
+            failed.append("G9 integ: 工件不可改：%s" % path)
+    # 新侧取 HEAD 版本：行号与 git diff base HEAD 的新侧一致（final 测的是已提交内容，未提交改动另有 dirty 警告）
+    for sid, target in sorted((data.get("scenario_tests") or {}).items()):
+        if not isinstance(target, str) or "::" not in target:
+            continue
+        rel, func = target.split("::", 1)
+        func = func.split("::")[-1]
+        if not rel.endswith(".py") or rel not in hunks:
+            continue
+        spans = {"old": _func_span(_show(root, base, rel), func), "new": _func_span(_show(root, "HEAD", rel), func)}
+        if any(spans[side] and lo <= spans[side][1] and hi >= spans[side][0]
+               for side in ("old", "new") for lo, hi in hunks[rel][side]):
+            failed.append("G9 integ: scenario 测试不可改：%s::%s（%s）" % (rel, func, sid))
+    for path in sorted(hunks):
+        if not is_test_path(path):
+            continue
+        h = hunks[path]
+        count = lambda rx, lines: sum(1 for l in lines if rx.search(l))  # noqa: E731
+        minus, plus = count(G9_ASSERT_RE, h["minus"]), count(G9_ASSERT_RE, h["plus"])
+        if minus > plus:
+            failed.append("G9 integ: %s assert 净减少（删 %d 增 %d）" % (path, minus, plus))
+        marks = [l.strip() for l in h["plus"] if G9_MARK_RE.search(l)]
+        if marks:
+            failed.append("G9 integ: %s 新增 skip / xfail 标记：%s" % (path, "; ".join(marks[:3])))
+        minus, plus = count(G9_TESTFN_RE, h["minus"]), count(G9_TESTFN_RE, h["plus"])
+        if minus > plus:
+            failed.append("G9 integ: %s 测试函数净减少（删 %d 增 %d）" % (path, minus, plus))
+    return failed
+
+
 def cmd_final(args):
     root = toplevel()
     data = load_plan(args.change_dir)
@@ -967,6 +1080,8 @@ def cmd_final(args):
     v7, total, passed, w7 = scenario_status(root, data)
     failed.extend(v7)
     warnings.extend(w7)
+    if getattr(args, "integ_base", None):  # G9 不依赖全量：G7 红或复用修复门禁时照判
+        failed.extend(integ_guard(root, args.change_dir, data, args.integ_base))
     baseline = load_baseline(args.change_dir)
     for key in ("lint", "typecheck"):
         cmd = gate.get(key)
@@ -1285,6 +1400,7 @@ def main():
         if name == "final":
             p.add_argument("--reuse-fix", action="store_true",
                            help="账本最后一条 fix gate 绿且其后只有记账改动 → 跳过全量 test，复用其结论")
+            p.add_argument("--integ-base", help="整合修复体派发时的 change 分支尖端：另判 G9 整合护栏")
     p = sub.add_parser("base", help="只读：打印切片区间起点 JSON；不写任何文件")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)

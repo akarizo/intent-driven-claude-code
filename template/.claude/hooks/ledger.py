@@ -52,7 +52,8 @@ EVENTS = {
     "approve": {"fp": FP},
     "takeoff": {"attempt": ATTEMPT, "fp": FP, "branch": NONEMPTY, "model": NONEMPTY,
                 "waves": (lambda x: isinstance(x, list) and all(_strs(w) for w in x), "不是字符串数组的数组")},
-    "dispatch": {"attempt": ATTEMPT, "slice": NONEMPTY, "role": _one_of("executor", "reviewer", "fixer", "resolver"),
+    "dispatch": {"attempt": ATTEMPT, "slice": NONEMPTY,
+                 "role": _one_of("executor", "reviewer", "fixer", "resolver", "diagnostician"),
                  "agent": NONEMPTY, "model": NONEMPTY, "worktree": NONEMPTY},
     "gate": RESULT,
     "ended": {"attempt": ATTEMPT, "agent": NONEMPTY, "reason": STR,
@@ -70,6 +71,12 @@ EVENTS = {
                 "changed": STRS, "source": STRS},
     "ship": {"attempt": ATTEMPT, "pr": NONEMPTY, "verdict": _one_of("ready", "draft"), "commit": STR},
     "diag": {"attempt": ATTEMPT, "where": NONEMPTY, "error": STR},  # kind / agent / budget 可选
+    "heal": {"attempt": ATTEMPT, "kind": _one_of("merge-retry", "watchdog", "integ"), "slice": NONEMPTY, "reason": STR},
+    "triage": {"attempt": ATTEMPT, "agent": NONEMPTY, "text": STR},
+}
+# 可选字段：缺省不判，出现则须合法（与 EVENTS 同形）
+OPTIONAL = {
+    "halt": {"kind": _one_of("blocked", "final", "integ", "fingerprint", "control", "watchdog", "abort")},
 }
 
 
@@ -119,7 +126,9 @@ def _check_event(sha, ev, change):
     by = ev.get("by")
     if not isinstance(by, dict) or "plugin" not in by:
         raise LedgerInvalid(sha, "by 缺 plugin")
-    for field, (ok, desc) in EVENTS[ev["ev"]].items():
+    checks = list(EVENTS[ev["ev"]].items())
+    checks += [(f, spec) for f, spec in OPTIONAL.get(ev["ev"], {}).items() if f in ev]
+    for field, (ok, desc) in checks:
         if not ok(ev.get(field)):
             raise LedgerInvalid(sha, "%s 的 %s %s" % (ev["ev"], field, desc))
 
