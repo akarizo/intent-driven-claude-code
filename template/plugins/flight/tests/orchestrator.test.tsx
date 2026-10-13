@@ -75,8 +75,16 @@ type World = {
   env?: Record<string, string>
   /** 预置的文件内容（绝对路径） */
   files?: Record<string, string>
-  /** slice-gate final 的结论（缺省无输出，按红记） */
-  final?: Gate
+  /** slice-gate final 的结论（缺省无输出，按红记）；commit 缺省 c×40 */
+  final?: Gate & { commit?: string }
+  /** 在 change worktree 里第几次（从 1 数）`git merge --no-ff` 以非冲突原因失败 */
+  mergeFails?: number[]
+  /** TaskStop 的应答为 isError 及此文本（对已结束的 agent，引擎不抛错） */
+  stopError?: string
+  /** 这些 agent 的 turn.step（模型请求）一直不结束 */
+  stalls?: string[]
+  /** slice-gate features 的输出（缺省全部能力） */
+  features?: string
   /** command.register 拒绝的命令名（模拟引擎拒绝与项目命令文件同名的注册） */
   registerRefuses?: string[]
   /** session.cwd 的应答（缺省 change worktree） */
@@ -161,15 +169,20 @@ function useWorld(on: On, w: World) {
     opens: [] as string[],
     /** TaskStop 停过的 task_id，及当时账本是否已有 halt */
     stops: [] as { id: string; halted: boolean }[],
+    /** 每次 TaskStop 时账本的事件数 */
+    stopsAt: [] as number[],
+    /** mock.clock 的句柄（advance / settle） */
+    clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
   // worktree add -b 建过的分支（freshWorktree 用 rev-parse --verify refs/heads/<分支> 查占用）
   const branches = new Set<string>()
   let agents = 0
+  let merges = 0
   let conflicted = ''
   let pending: Record<string, unknown> | undefined
-  mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) })
+  log.clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) }) as never
   mock.env(on, w.env ?? {})
   on('session.version', () => ({ value: { version: '2.1.295' } }))
   on('session.id', () => ({ value: w.session ?? 'sess-1' }))
@@ -189,6 +202,11 @@ function useWorld(on: On, w: World) {
   })
   on('agent.list', () => ({ value: (w.agents ?? []) as never }))
   on('turn.complete', () => ({ text: '' }))
+  // 插件之下没有实现应答 turn.step：stalls 里的 agent 的请求永不结束
+  on('turn.step', async function* ($, e) {
+    if (w.stalls?.includes(String((e as { agentId?: unknown }).agentId))) await new Promise(() => undefined)
+    return {} as never
+  } as never)
   on('classic.SubagentStop', () => ({}))
   on('command.run', ($, e) => {
     log.commands.push(`${e.command} ${e.args ?? ''}`)
@@ -218,6 +236,8 @@ function useWorld(on: On, w: World) {
     const x = e as unknown as { tool: string; file_path?: string; notebook_path?: string; command?: string; task_id?: string }
     if (x.tool === 'TaskStop') {
       log.stops.push({ id: String(x.task_id), halted: log.events.some(y => y.ev === 'halt') })
+      log.stopsAt.push(log.events.length)
+      if (w.stopError) return { result: w.stopError, isError: true, text: w.stopError } as never
       return { result: { message: `Successfully stopped task: ${x.task_id}` } } as never
     }
     log.reached.push(`${x.tool} ${x.file_path ?? x.notebook_path ?? x.command ?? ''}`)
@@ -277,7 +297,7 @@ function useWorld(on: On, w: World) {
       if (script === 'ledger.py' && sub === 'events') return wrap(res(0, (w.eventTypes ?? EVENT_TYPES).join('\n') + '\n'))
       if (script === 'ledger.py' && w.ledgerFails) return wrap(res(5, '', '账本 ref 读不出'))
       if (script === 'ledger.py') return wrap(res(0, log.events.map(x => JSON.stringify(x)).join('\n') + '\n'))
-      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n'))
+      if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, w.features ?? 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\ninteg-guard\n'))
       if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, SHIP_READY))
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(res(0, JSON.stringify(w.waves ?? [['S1', 'S2'], ['S3']]) + '\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
@@ -296,7 +316,7 @@ function useWorld(on: On, w: World) {
         return wrap(w.measures?.[s] ?? res(0, measureJson(s, baseOf(argv) ?? '', [[`tests/test_demo.py::test_${s.toLowerCase()}`, 'XFAIL']], [])))
       }
       if (script === 'slice-gate.py' && sub === 'final' && w.final) {
-        return wrap(res(w.final.ok ? 0 : 1, JSON.stringify({ slice: 'final', ok: w.final.ok, commit: 'c'.repeat(40), failed: w.final.failed })))
+        return wrap(res(w.final.ok ? 0 : 1, JSON.stringify({ slice: 'final', ok: w.final.ok, commit: w.final.commit ?? 'c'.repeat(40), failed: w.final.failed })))
       }
       if (script === 'slice-gate.py') return wrap(res(0, ''))
       throw new Error(`unexpected argv: ${argv.join(' ')}`)
@@ -361,6 +381,8 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, conflicted))
       case 'merge': {
         const s = String(args[2]).split('/').pop() ?? ''
+        if (args[1] === '--no-ff' && cwd === TREE) merges += 1
+        if (args[1] === '--no-ff' && cwd === TREE && w.mergeFails?.includes(merges)) return wrap(res(128, '', 'fatal: refusing to merge unrelated histories'))
         if (args[1] === '--no-ff' && cwd === TREE && w.conflicts[s]) {
           conflicted = w.conflicts[s].join('\n') + '\n'
           return wrap(res(1, '', 'CONFLICT'))
@@ -1819,14 +1841,14 @@ test('subagent-stop-error-leaves-diag', async ($, on) => {
 })
 
 test('panel-refreshes-on-terminal', async ($, on) => {
-  // Given: demo 账本为本会话 attempt 1：waves [[S1]]，S1 已合回，S1 评审员 r-S1 已派发且评审无发现；slice-gate final 红（G2 lint）
+  // Given: demo 账本为本会话 attempt 1：waves [[S1]]，S1 已合回，S1 评审员 r-S1 已派发且评审无发现；slice-gate final 红（G2 lint）且 commit 为空（没有可交给整合修复的提交，final 红直接停飞）
   const ledger = [
     ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
     ev.merge(B0, { attempt: 1, slice: 'S1', ok: true, commit: 'c'.repeat(40), failed: [] }),
     ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'reviewer', agent: 'r-S1', model: 'opus', worktree: TREE }),
     ev.review(B0, { attempt: 1, slice: 'S1', agent: 'r-S1', findings: [] }),
   ]
-  const log = useWorld(on, demoWorld({ ledger, final: { ok: false, failed: ['G2 lint'] } }))
+  const log = useWorld(on, demoWorld({ ledger, final: { ok: false, failed: ['G2 lint'], commit: '' } }))
 
   // When: 评审员 r-S1 结束（turn.complete），drive 跑 final 后停飞
   await $.turn.complete(ended('r-S1') as never)
@@ -1835,4 +1857,120 @@ test('panel-refreshes-on-terminal', async ($, on) => {
   expect(log.events.at(-1)?.ev).toBe('halt')
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...PANE } as never)
   expect(await ui.find({ text: /已停飞（final 未通过：G2 lint）/ })).toBeDefined()
+})
+
+// ---------------------------------------------------------------- flight-unattended S5a
+
+/** 让插件 hook 里的异步工作（进程调用、账本读写）跑完 */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 1))
+}
+
+/** 在测试一侧发出一次模型请求（turn.step）并读完；世界里 stalls 的 agent 永不结束 */
+async function step($: unknown, agentId: string): Promise<void> {
+  const gen = ($ as { turn: { step(e: unknown): AsyncIterable<unknown> } }).turn.step({ agentId, model: 'claude-opus-5-5' })
+  for await (const _ of gen) {
+    // 丢弃中间产出
+  }
+}
+
+/** 推进 mock 时钟并等计时器回调跑完 */
+async function advance(log: { clock: { advance(ms: number): unknown; settle(): unknown } }, ms: number): Promise<void> {
+  await log.clock.advance(ms)
+  await log.clock.settle()
+  await flush()
+}
+
+test('final-red-heals-integ', async ($, on) => {
+  // Given: demo 账本为本会话 attempt 1：waves [[S1]]，S1 已合回，S1 评审员 r-S1 评审无发现；slice-gate final 红（G2 lint），commit 为 c×40
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
+    ev.merge(B0, { attempt: 1, slice: 'S1', ok: true, commit: 'c'.repeat(40), failed: [] }),
+    ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'reviewer', agent: 'r-S1', model: 'opus', worktree: TREE }),
+    ev.review(B0, { attempt: 1, slice: 'S1', agent: 'r-S1', findings: [] }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, final: { ok: false, failed: ['G2 lint'] } }))
+
+  // When: 评审员 r-S1 结束（turn.complete），drive 跑 final
+  await $.turn.complete(ended('r-S1') as never)
+
+  // Then: 账本恰有一条 heal（kind integ、slice integ）；有 slice integ 的 fixer 派发；没有 halt
+  expect(log.events.filter(x => x.ev === 'heal').map(x => [x.kind, x.slice])).toEqual([['integ', 'integ']])
+  expect(log.events.some(x => x.ev === 'dispatch' && x.role === 'fixer' && x.slice === 'integ')).toBe(true)
+  expect(log.events.some(x => x.ev === 'halt')).toBe(false)
+})
+
+test('heal-recorded-then-retried', async ($, on) => {
+  // Given: demo 已批准、waves [[S1]]；在 change worktree 的第 1 次 merge --no-ff 以非冲突原因失败（exit 128），第 2 次成功；S1 门禁一律绿；已起飞，agent-1 收口并结束，第二个执行体 agent-2 已收口
+  const log = useWorld(on, demoWorld({ waves: [['S1']], mergeFails: [1] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+  await $.turn.complete(ended('agent-1') as never)
+  await $.classic.SubagentStop(subagentStop('agent-2') as never)
+
+  // When: 第二个执行体 agent-2 结束（turn.complete）
+  await $.turn.complete(ended('agent-2') as never)
+
+  // Then: 账本依次有失败的 S1 merge、heal merge-retry S1、S1 执行体 agent-2 的派发、成功的 S1 merge；两个执行体的 worktree 不同
+  const seq = log.events
+    .filter(x => (x.ev === 'merge' && x.slice === 'S1') || x.ev === 'heal' || (x.ev === 'dispatch' && x.role === 'executor' && x.agent === 'agent-2'))
+    .map(x => [x.ev, x.ok ?? x.kind ?? x.agent, x.slice])
+  expect(seq).toEqual([['merge', false, 'S1'], ['heal', 'merge-retry', 'S1'], ['dispatch', 'agent-2', 'S1'], ['merge', true, 'S1']])
+  expect(log.spawns[1]?.cwd).not.toBe(log.spawns[0]?.cwd)
+})
+
+test('watchdog-stops-stalled-agent', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1, S2]]，agent-1 = S1、agent-2 = S2，都在跑）；agent-1 的请求在 T0 开始、agent-2 的在 T0+181s 开始，两者都不结束；TaskStop 应答 isError「Task agent-1 is not running」
+  const log = useWorld(on, demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2'], stopError: '<tool_use_error>Task agent-1 is not running (status: completed)</tool_use_error>', agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'agent-1')
+  await flush()
+  await advance(log, 181000)
+  void step($, 'agent-2')
+  await flush()
+
+  // When: 时钟再推进 540s（到 T0+721s：agent-1 请求已等 12 分钟、agent-2 等 9 分钟），看门狗在 agent-1 超时后 tick 两次
+  await advance(log, 540000)
+
+  // Then: 恰一条 heal（kind watchdog、slice S1、agent agent-1），写在 TaskStop agent-1 之前；只停 agent-1 一次；有 where watchdog、agent agent-1 的 diag
+  const heals = log.events.filter(x => x.ev === 'heal')
+  expect(heals).toEqual([expect.objectContaining({ kind: 'watchdog', slice: 'S1', agent: 'agent-1' })])
+  expect(log.events.indexOf(heals[0] ?? {})).toBeLessThan(log.stopsAt[0] ?? -1)
+  expect(log.stops.map(x => x.id)).toEqual(['agent-1'])
+  expect(log.events.some(x => x.ev === 'diag' && x.where === 'watchdog' && x.agent === 'agent-1')).toBe(true)
+})
+
+test('watchdog-exhausted-halts', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 3 条 heal（merge-retry S8、integ integ、watchdog S9）；demo 起飞（waves [[S1, S2]]），agent-1、agent-2 都在跑；agent-1 的请求在 T0 开始且不结束
+  const ledger = [
+    ev.heal(B0, { attempt: 1, kind: 'merge-retry', slice: 'S8', reason: '合回失败' }),
+    ev.heal(B0, { attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' }),
+    ev.heal(B0, { attempt: 1, kind: 'watchdog', slice: 'S9', reason: '等待 11 分钟', agent: 'x9' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'agent-1')
+  await flush()
+
+  // When: 时钟推进 661s，看门狗 tick
+  await advance(log, 661000)
+
+  // Then: 追加 halt（kind watchdog，原因含 agent-1 与「自愈预算已用尽」）；agent-1、agent-2 都被停；heal 仍为 3 条
+  const halt = log.events.find(x => x.ev === 'halt')
+  expect(halt).toMatchObject({ kind: 'watchdog', reason: expect.stringContaining('自愈预算已用尽') })
+  expect(String(halt?.reason)).toContain('agent-1')
+  expect(log.stops.map(x => x.id)).toEqual(['agent-1', 'agent-2'])
+  expect(log.events.filter(x => x.ev === 'heal').length).toBe(3)
+})
+
+test('takeoff-requires-integ-guard/refused', async ($, on) => {
+  // Given: demo 已批准、其余起飞检查都过；slice-gate.py features 只输出 evidence-ledger-only、g5-per-target、guards、ship-ledger、ledger-records（缺 integ-guard）
+  const log = useWorld(on, demoWorld({ features: 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n' }))
+
+  // When: 人发出 /opsx-apply demo
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // Then: 回复含 integ-guard；账本没有 takeoff
+  expect(r.text).toContain('integ-guard')
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
 })
