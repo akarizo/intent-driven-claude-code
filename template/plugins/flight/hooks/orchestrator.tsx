@@ -9,7 +9,7 @@ import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, St
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
 import { intentVerdict, toolTargets } from './intent'
-import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktree, flights, judge, judgesDir, markPending, ownerOf, ownership, owners, readLedger, stoppedNow, terminals, trees } from './io'
+import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktree, flights, judge, judgesDir, markPending, ownership, owners, readLedger, stoppedNow, terminals, trees } from './io'
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
@@ -780,6 +780,9 @@ async function watchTick($: Engine): Promise<void> {
     const now = await $.clock.now()
     tickedAt = now
     for (const id of steps.stale(now)) {
+      // 仍在登记中：dispatch 还没写入账本、找不到所属飞行，留到下一次 tick 再处理
+      const o = await ownership(ioHere($), id)
+      if (o !== undefined && 'pending' in o) continue
       const since = startedAt.get(id) ?? now
       steps.forget(id)
       startedAt.delete(id)
@@ -844,10 +847,10 @@ async function watchOne($: Engine, id: string, waitedMs: number): Promise<void> 
   await triage(ctx, f, 'watchdog', reason)
 }
 
-/** agent 属于在飞的 change */
+/** agent 属于在飞的 change；登记中（dispatch 尚未写入）也算：新 agent 的首个模型请求几乎都落在这段窗口里 */
 async function inFlight(io: Io, id: string): Promise<boolean> {
-  const o = await ownerOf(io, id)
-  return o !== undefined && active.has(o.change)
+  const o = await ownership(io, id)
+  return o !== undefined && !('unknown' in o) && active.has(o.change)
 }
 
 /** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
