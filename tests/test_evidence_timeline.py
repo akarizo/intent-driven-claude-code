@@ -1,5 +1,5 @@
 """test-evidence / timeline / 退役 hook（scenario: slice-gate#evidence-*, flight-apply#timeline-*, flight-retire-hooks#*）。
-test-evidence 只记飞行外：切片 worktree（有 .openspec-slice 标记）一律不写，测试结果由控制面测量入账本。"""
+test-evidence 只记飞行外：分支以 flight/ 开头的飞行 worktree 一律不写，测试结果由控制面测量入账本。"""
 import pytest
 
 import json
@@ -72,20 +72,6 @@ def test_evidence_ignores_non_test_commands(git_repo):
 
 
 # ---------------------------------------------------------------- timeline
-
-def test_timeline_record_appends(tmp_path):
-    # Given: 一个空的 change 目录
-    change = tmp_path / "c"
-    change.mkdir()
-
-    # When: 运行 timeline.py record approve --note 起飞
-    p = run_hook("timeline", "record", "approve", "--change-dir", str(change), "--note", "起飞")
-
-    # Then: timeline.md 存在且最后一行含 approve 与备注
-    assert p.returncode == 0, p.stderr
-    line = (change / "timeline.md").read_text(encoding="utf-8").strip().splitlines()[-1]
-    assert "\tapprove\t起飞" in line
-
 
 def test_timeline_report(tmp_path):
     # Given: timeline.md 里 approve 在 10:00:00、pr-open 在 10:30:00
@@ -193,21 +179,6 @@ def test_red_count_from_ledger(git_repo):
     assert "测量：3 次（见红 2 次）" in out, out
 
 
-def test_evidence_skips_ledger_marked_slice(git_repo):
-    # Given: 仓库根的切片标记写明 evidence=ledger；一条 pytest 的 PostToolUse
-    change = marker_repo(git_repo)
-    marker = git_repo / ".openspec-slice"
-    data = json.loads(marker.read_text(encoding="utf-8"))
-    marker.write_text(json.dumps(dict(data, evidence="ledger")), encoding="utf-8")
-    event = bash_event("python3 -m pytest -q tests", stdout="3 passed in 0.1s", cwd=git_repo)
-
-    # When: 运行 test-evidence.py
-    run_hook("test-evidence", stdin=event, cwd=git_repo)
-
-    # Then: 没有写 evidence.log
-    assert not (change / "evidence.log").exists()
-
-
 # ---------------------------------------------------------------- flight-retire-workflow-engine（scenario: flight-retire-hooks#*）
 
 
@@ -222,30 +193,6 @@ def test_stop_gate_is_noop(git_repo):
     # Then: 退出 0；stdout 为空（不 block）
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip() == "", p.stdout
-
-
-def test_test_evidence_skips_slice_worktrees(git_repo, tmp_path):
-    # Given: 仓库甲有指向 change c 的 .openspec-slice 标记且 evidence="log"（c 的 tasks.md 有未勾选项）；
-    #        仓库乙在 worktree-demo 分支、无标记、有 openspec/changes/demo；两边都是跑 pytest 输出 "1 passed" 的 Bash 载荷
-    change_c = marker_repo(git_repo)
-    marker = git_repo / ".openspec-slice"
-    marker.write_text(json.dumps(dict(json.loads(marker.read_text(encoding="utf-8")), evidence="log")), encoding="utf-8")
-    other = tmp_path / "other"
-    other.mkdir()
-    git(other, "init", "-q", "-b", "main")
-    git(other, "config", "user.email", "t@example.com")
-    git(other, "config", "user.name", "t")
-    git(other, "commit", "-q", "--allow-empty", "-m", "init")
-    demo = branch_repo(other, "demo")
-    cmd = "python3 -m pytest -q tests"
-
-    # When: 分别在两个仓库运行 test-evidence.py
-    for repo in (git_repo, other):
-        run_hook("test-evidence", stdin=bash_event(cmd, stdout="1 passed", cwd=repo), cwd=repo)
-
-    # Then: 甲的 c 下没有 evidence.log；乙的 demo/evidence.log 恰好新增一行
-    assert not (change_c / "evidence.log").exists()
-    assert len((demo / "evidence.log").read_text(encoding="utf-8").strip().splitlines()) == 1
 
 
 def test_retired_hooks_unregistered():
@@ -264,12 +211,33 @@ def test_retired_hooks_unregistered():
     assert not (HOOKS / "session-decompose.py").exists()
 
 # ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S2 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S2：尚未实现")
+def _repo(path, branch):
+    """一次 init 提交、切到 branch、openspec/changes/demo/tasks.md 有未勾选项的仓库；返回 change 目录。"""
+    path.mkdir(parents=True)
+    git(path, "init", "-q", "-b", "main")
+    git(path, "config", "user.email", "t@example.com")
+    git(path, "config", "user.name", "t")
+    git(path, "commit", "-q", "--allow-empty", "-m", "init")
+    git(path, "checkout", "-q", "-b", branch)
+    change = path / "openspec" / "changes" / "demo"
+    write(change / "tasks.md", "- [ ] S1 x\n")
+    return change
+
+
 def test_evidence_skips_flight_branches(tmp_path):
-    # Given: 仓库甲在 flight/demo/S1；仓库乙在 worktree-demo 且根有 evidence=ledger 的遗留标记；两边都是 pytest 1 passed 的载荷
+    # Given: 仓库甲在 flight/demo/S1（demo 的 tasks.md 有未勾选项，是唯一候选）；
+    #        仓库乙在 worktree-demo 且根有 evidence=ledger 的遗留 .openspec-slice 标记；两边都是 pytest 输出 "1 passed" 的载荷
+    a = _repo(tmp_path / "a", "flight/demo/S1")
+    b = _repo(tmp_path / "b", "worktree-demo")
+    write(tmp_path / "b" / ".openspec-slice", json.dumps({"slice": "S1", "change_dir": str(b), "evidence": "ledger"}))
+    cmd = "python3 -m pytest -q tests"
+
     # When: 分别运行 test-evidence.py
+    for root in (tmp_path / "a", tmp_path / "b"):
+        run_hook("test-evidence", stdin=bash_event(cmd, stdout="1 passed", cwd=root), cwd=root)
+
     # Then: 甲没有 evidence.log；乙的 evidence.log 恰好新增一行
-    pytest.fail("骨架：S2 写实断言")
+    assert not (a / "evidence.log").exists()
+    assert len((b / "evidence.log").read_text(encoding="utf-8").strip().splitlines()) == 1

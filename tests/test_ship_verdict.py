@@ -474,6 +474,7 @@ def test_judges_know_ship_event(git_repo):
     d = make_change(git_repo)
     write(d / "timeline.md", "2026-10-13T10:00:00Z\tapprove\tx\n")
     ship_ev = _ev("ship", change="demo", at="2026-10-13T10:30:00Z", pr="https://x/pull/7", verdict="ready", commit="c" * 40)
+    ledger_append(git_repo, "demo", _ev("approve", change="demo", at="2026-10-13T10:00:00Z", fp="a" * 64))
     ledger_append(git_repo, "demo", dict(takeoff(), change="demo"))
     ledger_append(git_repo, "demo", ship_ev)
 
