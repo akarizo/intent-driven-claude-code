@@ -12,4 +12,4 @@
 
 ## 切片
 
-- [ ] S1 install.sh 对 openspec/ 只下发种子，并列出疑似旧版误拷的开发工件 （deps: - · verify: `python3 -m pytest -q tests/test_install.py`）
+- [x] S1 install.sh 对 openspec/ 只下发种子，并列出疑似旧版误拷的开发工件 （deps: - · verify: `python3 -m pytest -q tests/test_install.py`）
