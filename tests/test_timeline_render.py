@@ -39,24 +39,26 @@ def _table_rows(text, header_prefix):
 
 
 def test_render_records_from_ledger(tmp_path):
-    # Given: gate-baseline.json（at 09:50、exit 0、9.6s、ok）与一份含 approve 至 land 共 10 条事件的账本
-    #        （S1 gate 先红后绿，绿的那条带天花板 src/a.py:3；final 绿）；change 目录已有手写的 timeline.md（junk）
+    # Given: gate-baseline.json（at 09:50、exit 0、111.2s、ok）与一份含 approve 至 land 共 10 条事件的账本
+    #        （measure 目标 2 个红 2 个；S1 gate 先红后绿，绿的那条带 warnings w1 与天花板 src/a.py:3；
+    #        review 1 条 HIGH；final 绿带 warnings「G2 预存红」）；change 目录已有手写的 timeline.md（junk）
     repo = new_repo(tmp_path / "repo")
     d = make_change(repo)
-    write(d / "gate-baseline.json", json.dumps({"at": "2026-10-13T09:50:00Z", "ok": True, "test": {"exit": 0, "sec": 9.6}}))
+    write(d / "gate-baseline.json", json.dumps({"at": "2026-10-13T09:50:00Z", "ok": True, "test": {"exit": 0, "sec": 111.2}}))
     write(d / "timeline.md", "junk line\n")
+    high = {"severity": "HIGH", "file": "src/a.py", "line": 3, "summary": "s", "fix": "f"}
     events = [
         _ev("approve", "2026-10-13T10:00:00Z", fp=FP),
         _ev("takeoff", "2026-10-13T10:00:30Z", fp=FP, branch="worktree-demo", model="claude-opus-5-5", waves=[["S1"]]),
         _ev("dispatch", "2026-10-13T10:01:00Z", slice="S1", role="executor", agent="agent-0123456789", model="m", worktree="/w"),
         _ev("measure", "2026-10-13T10:02:00Z", slice="S1", agent="a1", base="f" * 40, commit="e" * 40,
-            outcomes=[["t::a", "FAILED"], ["t::b", "PASSED"]], changed=[], source=[]),
-        _ev("gate", "2026-10-13T10:05:00Z", slice="S1", ok=False, commit="c" * 40, failed=["G2 test: exit 1"]),
-        _ev("gate", "2026-10-13T10:07:00Z", slice="S1", ok=True, commit="d" * 40, failed=[],
-            ceilings=[["src/a.py", 3, "全局锁串行", "按切片分锁"]]),
+            outcomes=[["t::a", "FAILED"], ["t::b", "FAILED"]], changed=[], source=[]),
+        _ev("gate", "2026-10-13T10:05:00Z", slice="S1", ok=False, commit="c" * 40, failed=["G1 verify: exit 1"]),
+        _ev("gate", "2026-10-13T10:07:00Z", slice="S1", ok=True, commit="d" * 40, failed=[], warnings=["w1"],
+            ceilings=[["src/a.py", 3, "上限", "升级条件"]]),
         _ev("merge", "2026-10-13T10:08:00Z", slice="S1", ok=True, commit="d" * 40, failed=[]),
-        _ev("review", "2026-10-13T10:09:00Z", slice="S1", agent="r1", findings=[]),
-        _ev("final", "2026-10-13T10:15:00Z", ok=True, commit="d" * 40, failed=[]),
+        _ev("review", "2026-10-13T10:09:00Z", slice="S1", agent="r1", findings=[high]),
+        _ev("final", "2026-10-13T10:15:00Z", ok=True, commit="d" * 40, failed=[], warnings=["G2 预存红"]),
         _ev("land", "2026-10-13T10:20:00Z", verdict="ready"),
     ]
     for e in events:
@@ -68,14 +70,18 @@ def test_render_records_from_ledger(tmp_path):
         p = run_hook("timeline", "render", "--change-dir", str(d), cwd=repo)
         runs.append((p, (d / "timeline.md").read_bytes(), (d / "gate-report.md").read_bytes()))
 
-    # Then: 两次退出 0、events 为 10；timeline.md 为 baseline 加 10 行事件且无 junk；
-    #       gate-report 门禁表恰 3 行、天花板表含 src/a.py:3；两次输出逐字节相同
+    # Then: 两次退出 0、events 为 10；timeline.md 首行为生成说明注释、次行 baseline 备注 exit 0, 111.2s ok、
+    #       其后 10 行事件且无 junk；门禁表依次 S1 red / S1 ok（w1）/ final ok（G2 预存红）；
+    #       天花板表含 src/a.py:3；两次输出逐字节相同
     assert [r[0].returncode for r in runs] == [0, 0], runs[0][0].stderr + runs[1][0].stderr
     assert [json.loads(r[0].stdout)["events"] for r in runs] == [10, 10]
     lines = runs[0][1].decode("utf-8").splitlines()
-    assert [l.split("\t")[1] for l in lines[1:]] == ["baseline"] + [e["ev"] for e in events] and "junk" not in runs[0][1].decode("utf-8"), lines
+    assert lines[0] == "<!-- timeline：timeline.py render 从账本生成，勿手改 -->", lines
+    assert lines[1].split("\t")[1:] == ["baseline", "exit 0, 111.2s ok"], lines
+    assert [l.split("\t")[1] for l in lines[2:]] == [e["ev"] for e in events] and "junk" not in runs[0][1].decode("utf-8"), lines
     report = runs[0][2].decode("utf-8")
-    assert len(_table_rows(report, "| 时间 | 切片 | 结论 |")) == 3, report
+    rows = [[c.strip() for c in r.strip().strip("|").split("|")] for r in _table_rows(report, "| 时间 | 切片 | 结论 |")]
+    assert [(r[1], r[2], r[5]) for r in rows] == [("S1", "red", "-"), ("S1", "ok", "w1"), ("final", "ok", "G2 预存红")], report
     assert any("src/a.py:3" in r for r in _table_rows(report, "| 时间 | 切片 | 位置 |")), report
     assert runs[0][1:] == runs[1][1:]
 
