@@ -1,6 +1,6 @@
 // scenario 来源：spec flight-integration（land-*）。land.ts 只经 Io 做副作用，这里用假 Io 记录调用、按 argv 返回预设结果。
 import { expect, test } from 'claude-code/testing'
-import { classifyDirty, closeout, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
+import { classifyDirty, closeout, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve, validateFindings } from '../hooks/land'
 import type { Flight, GateJson, Io, RunResult } from '../hooks/core'
 
 const CT = '/repo/.worktrees/demo'
@@ -482,4 +482,19 @@ test('classify-dirty-paths', () => {
   expect(r.records).toEqual([`${CD}/timeline.md`])
   expect(r.artifacts).toEqual([`${CD}/proposal.md`, 'template/openspec/adr/DRAFT-x.md', 'tests/test_a.py'])
   expect(r.others).toEqual(['template/openspec/adr/0001-y.md', 'src/x.py'])
+})
+
+test('commit-artifacts-handles-staged-deletion', async () => {
+  // Given: 工件 a.md 已修改未暂存；slices/S5.md 的删除已暂存，git status --porcelain 答「 M …/a.md」与「D  …/slices/S5.md」；其余 git 调用退出 0
+  const a = `${CD}/a.md`
+  const s5 = `${CD}/slices/S5.md`
+  const { io, calls } = fakeIo({}, argv => (has(argv, 'status', '--porcelain') ? { stdout: ` M ${a}\nD  ${s5}\n` } : undefined))
+
+  // When: commitArtifacts(io, f, [a.md, S5.md])
+  const err = await commitArtifacts(io, F, [a, s5])
+
+  // Then: git add 的路径只有 a.md；git commit 的路径同时含 a.md 与 S5.md；返回没有错误
+  expect(calls[find(calls, 'add')].argv).toEqual(['git', '-C', CT, 'add', '--', `${CT}/${a}`])
+  expect(calls[find(calls, 'commit')].argv.slice(-3)).toEqual(['--', `${CT}/${a}`, `${CT}/${s5}`])
+  expect(err).toBeUndefined()
 })
