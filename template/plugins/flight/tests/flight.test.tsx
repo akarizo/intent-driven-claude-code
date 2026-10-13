@@ -21,6 +21,12 @@ type World = {
   /** `ledger.py show` 输出的事件（缺省为空账本）；showFails 时 show 以 exit 5 失败 */
   ledger?: object[]
   showFails?: boolean
+  /** change 名 → 该 change 的账本事件（给出时 show 按 --change-dir 的末段取，优先于 ledger） */
+  ledgers?: Record<string, object[]>
+  /** change 名 → `ledger.py approved` 的输出（给出时优先于本次测试写入的 approve；写入 approve 时同步更新） */
+  approved?: Record<string, string>
+  /** `slice-gate.py baseline` 的退出码与 stdout（缺省 exit 0） */
+  baseline?: { exitCode: number; stdout: string }
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -75,11 +81,22 @@ function useWorld(on: On, w: World) {
     commands: [] as string[],
     versionReads: 0,
     approved: '',
+    /** ui.notify 收到的调用（整条事件 JSON） */
+    notes: [] as string[],
+    /** slice-gate.py baseline 的 --change-dir */
+    baselines: [] as string[],
+    /** mock.clock 的句柄（advance / settle） */
+    clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
   let fpCalls = 0
   let updateRefCalls = 0
   let lastEvent = ''
-  mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) })
+  log.clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 12, 0, 0) }) as never
+  on('ui.notify', ($, e) => {
+    log.notes.push(JSON.stringify(e))
+    return { value: { isSent: true, channel: 'iterm2' } } as never
+  })
+  on('agent.list', () => ({ value: [] as never }))
   on('session.version', () => {
     log.versionReads += 1
     if (w.versionFails) throw new Error('session.version 不可用')
@@ -130,9 +147,15 @@ function useWorld(on: On, w: World) {
       return ok(w.fp(fpCalls++, String(args[2])) + '\n')
     }
     if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) {
-      if (args[1] !== 'show') return ok(log.approved + '\n')
+      const name = String(args[3]).split('/').pop() ?? ''
+      if (args[1] !== 'show') return ok((w.approved?.[name] ?? log.approved) + '\n')
       if (w.showFails) return { value: { ...fail('git 不可用').value, exitCode: 5 } }
-      return ok((w.ledger ?? []).map(ev => JSON.stringify(ev) + '\n').join(''))
+      return ok((w.ledgers?.[name] ?? w.ledger ?? []).map(ev => JSON.stringify(ev) + '\n').join(''))
+    }
+    if (cmd === 'python3' && args[0]?.endsWith('/slice-gate.py') && args[1] === 'baseline') {
+      log.baselines.push(String(args[3]))
+      const b = w.baseline ?? { exitCode: 0, stdout: '{"ok": true, "reasons": []}' }
+      return { value: { ...ok(b.stdout).value, exitCode: b.exitCode } }
     }
     if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
     if (cmd !== 'git') throw new Error(`unexpected argv: ${e.argv.join(' ')}`)
@@ -151,6 +174,7 @@ function useWorld(on: On, w: World) {
         updateRefCalls += 1
         if (updateRefCalls <= (w.updateRefFailures ?? 0)) return fail('cannot lock ref: is at dddd but expected 0000')
         log.approved = JSON.parse(lastEvent).fp
+        if (w.approved) w.approved[JSON.parse(lastEvent).change] = log.approved
         return ok('')
     }
     throw new Error(`unexpected git: ${args.join(' ')}`)
@@ -613,4 +637,94 @@ test('guard-denies-gate-record-writes', async ($, on) => {
   // Then: 前者被拒、理由含 ledger.py show 且未到达执行端；后者原样到达
   expect(JSON.stringify(denied)).toContain('ledger.py show')
   expect(reached).toEqual([gate])
+})
+
+const TURN = { answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as const
+
+/** 已停飞的账本：approve F → attempt 1 的 takeoff → halt。 */
+function haltedLedger(change: string) {
+  const by = { plugin: 'flight', session: 'sess-0' }
+  return [
+    { v: 1, ev: 'approve', change, fp: F, at: '2026-10-09T10:00:00.000Z', by },
+    { v: 1, ev: 'takeoff', change, attempt: 1, fp: F, at: '2026-10-09T10:01:00.000Z', by },
+    { v: 1, ev: 'halt', change, attempt: 1, reason: 'S2 blocked', at: '2026-10-09T10:30:00.000Z', by },
+  ]
+}
+
+/**
+ * 主 worktree 里的若干 change：alpha 已停飞、计划改过（当前 G，最近批准 F）；beta 已停飞、计划未改（F / F）；
+ * gamma 从未起飞、未批准（F / 空）。只放 names 里给出的。
+ */
+function haltWorld(names: string[]): World {
+  const fps: Record<string, string> = { alpha: G, beta: F, gamma: F }
+  const approved: Record<string, string> = { alpha: F, beta: F, gamma: '' }
+  const ledgers: Record<string, object[]> = { alpha: haltedLedger('alpha'), beta: haltedLedger('beta'), gamma: [] }
+  const world = demoWorld((_, dir) => fps[dir.split('/').pop() ?? ''] ?? F, { approved: {}, ledgers: {} })
+  world.dirs[CHANGES] = names
+  for (const name of names) {
+    world.files[`${CHANGES}/${name}/spec.html`] = '<html></html>'
+    world.files[`${CHANGES}/${name}/tasks.md`] = '- [ ] 1.1 写代码\n'
+    world.approved![name] = approved[name] ?? ''
+    world.ledgers![name] = ledgers[name] ?? []
+  }
+  return world
+}
+
+/** 让 name 成为 spec.html 最近修改的一项。 */
+function newestIs(world: World, name: string): void {
+  world.mtimes = { [`${CHANGES}/${name}/spec.html`]: 2000 }
+}
+
+test('band-offers-resume-for-halted', async ($, on) => {
+  // Given: 主 worktree 有 alpha（最新 attempt 以 halt 结束、当前指纹 G ≠ 最近批准 F）、beta（halt、当前与批准都为 F）、gamma（账本为空、未批准、指纹 F）；terminal 与 desktop 各挂一个批准带
+  const world = haltWorld(['alpha', 'beta', 'gamma'])
+  useWorld(on, world)
+  await $.session.start(START)
+  const surfaces = [
+    await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND }),
+    await $.ui.mount({ plugin: 'flight', surface: 'desktop', ...BAND }),
+  ]
+
+  // When: 依次让 alpha、beta、gamma 成为最近修改的一项并刷新，每次在两个绘制面上读出按钮 key、label 与说明行是否含「提交本 change 的工件」「重跑基线」
+  const seen: string[] = []
+  for (const name of ['alpha', 'beta', 'gamma']) {
+    newestIs(world, name)
+    await $.turn.complete(TURN)
+    for (const ui of surfaces) {
+      const button = await ui.find({ type: 'Button' })
+      const note = (await ui.find({ text: /提交本 change 的工件/ })) !== undefined && (await ui.find({ text: /重跑基线/ })) !== undefined
+      seen.push(`${String(button?.key)}|${String(button?.props.label)}|${note}`)
+    }
+  }
+
+  // Then: alpha 在两面都是 replan:alpha:<G>、「批准修订并续飞」且有说明行；beta 两面都是 resume:beta:<F>、「续飞」、无说明行；gamma 两面都是 approve:gamma:<F>、「批准起飞」、无说明行
+  expect(seen.filter(s => s.includes(':alpha:'))).toEqual(Array(2).fill(`replan:alpha:${G}|批准修订并续飞|true`))
+  expect(seen.filter(s => s.includes(':beta:'))).toEqual(Array(2).fill(`resume:beta:${F}|续飞|false`))
+  expect(seen.filter(s => s.includes(':gamma:'))).toEqual(Array(2).fill(`approve:gamma:${F}|批准起飞|false`))
+})
+
+test('press-approves-then-resumes', async ($, on) => {
+  // Given: alpha（已停飞、计划改过，指纹 G）为最新一项，beta（已停飞、计划未改，指纹 F）次之；slice-gate.py baseline 以 exit 0、{"ok": true, "reasons": []} 作答；prompt.fill 一律 isFilled true；测试世界记下 baseline 的 --change-dir、预填文本与 ui.notify 收到的正文
+  const world = haltWorld(['alpha', 'beta'])
+  world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
+  newestIs(world, 'alpha')
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 人按下 alpha 的「批准修订并续飞」；beta 成为最新一项后再按下它的「续飞」；推进时钟让后台续飞跑完
+  await ui.press({ key: `replan:alpha:${G}` })
+  newestIs(world, 'beta')
+  await $.turn.complete(TURN)
+  await ui.press({ key: `resume:beta:${F}` })
+  await log.clock.advance(0)
+  await log.clock.settle()
+  for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 1))
+
+  // Then: 账本恰追加一条 approve（alpha、fp G），beta 没有；baseline 只为 alpha 跑过（alpha replan true、beta replan false）；输入框依次预填 alpha、beta 的续飞命令；通知里有一条含「回车续飞」
+  const approves = log.git.filter(c => c.args[0] === 'hash-object').map(c => JSON.parse(String(c.stdin)))
+  expect(approves.map(a => [a.change, a.fp])).toEqual([['alpha', G]])
+  expect(log.baselines).toEqual([`${CHANGES}/alpha`])
+  expect(log.fills).toEqual(['/opsx-apply alpha 授权提交', '/opsx-apply beta 授权提交'])
+  expect(log.notes.some(n => n.includes('回车续飞'))).toBe(true)
 })

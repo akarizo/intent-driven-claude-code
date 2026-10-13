@@ -15,6 +15,8 @@ export type FlightItem = {
   fp: string
   /** 非空 = 该项无法批准的原因（如「找不到 plan_fp.py」「账本损坏」），此时不出按钮。 */
   problem: string
+  /** approve = 首次（或落地后）批准；replan = 已停飞且计划改过（批准修订并续飞）；resume = 已停飞且计划未改（续飞）。 */
+  mode: 'approve' | 'replan' | 'resume'
 }
 
 export type FlightBand = {
