@@ -1,0 +1,21 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "install.sh",
+      "line": 628,
+      "summary": "疑似误拷提示按 template/openspec/changes/* 的顶层名字匹配，没有排除 openspec 的保留目录 archive。S1 取舍里自己也写了本仓以后可能出现 changes/archive/（openspec archive 的标准落点）。一旦本仓归档过任何 change，每个归档过自己 change 的用户都会看到 openspec/changes/archive 被列为「多半是旧版安装器误拷进来的，可手动删除」，提示会引导用户删掉自己的整个归档目录。当前模板里还没有 archive，所以这是潜在问题，不是现行故障。",
+      "fix": "在提示循环里跳过保留名，例如在 for 循环体开头加 `[[ \"$(basename \"$src\")\" == archive ]] && continue`（要兼容 set -e，写成 if 形式）；如果要覆盖归档内容，改为逐项匹配 changes/archive/* 的子项。另补一条测试：模板与目标里都有 changes/archive 时，提示不列 openspec/changes/archive。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/openspec/changes/install-openspec-seeds/slices/_interfaces.md",
+      "line": 7,
+      "summary": "公开接口摘要把 install.sh 里内嵌 Python 片段的 `def key(entry)` / `def strip_retired(hook_map)` 当成 install.sh 的公开接口。这些与本 change 无关，摘要有误导；本 change 的契约其实是 install.sh 的 CLI 与种子清单，不是这两个函数。",
+      "fix": "由生成器重新生成，或者对 shell 脚本不提取内嵌 heredoc 中的 def；本 change 内可把它改为说明 install.sh CLI 契约不变（`install.sh [-u|--upgrade] [TARGET]`，退出码不变）。"
+    }
+  ],
+  "fix": null
+}

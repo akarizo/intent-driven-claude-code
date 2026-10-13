@@ -247,8 +247,12 @@ exit "${STUB_RC:-0}"
 
 
 def _skip_changes(info):
-    """打归档时略去 template/openspec/changes（历史 change 工件，与安装无关，只会拖慢测试）。"""
-    return None if "/template/openspec/changes" in info.name else info
+    """打归档时略去 template/openspec/changes 下的历史 change 工件（与安装无关，只会拖慢测试）；保留种子 changes/.gitkeep。"""
+    marker = "/template/openspec/changes/"
+    i = info.name.find(marker)
+    if i < 0:
+        return info
+    return info if info.name[i + len(marker):] == ".gitkeep" else None
 
 
 def make_source(tmp_path, ref, kind, files):
@@ -508,3 +512,95 @@ def test_install_lists_files_moved_into_plugin(tmp_path):
     assert "已迁入 flight 插件" in p.stdout and "/flight:pr-ship" in p.stdout, p.stdout
     assert all((target / rel).exists() for rel in MOVED)
     assert not any((fresh / rel).exists() for rel in MOVED)
+
+# ---------------------------------------------------------------- install-openspec-seeds
+# 骨架：S1 实现后去掉 xfail 标记；test_upgrade_keeps_user_seed_edits 是护栏，base 上须通过。
+TEMPLATE_OPENSPEC = ROOT / "template" / "openspec"
+OPENSPEC_SEEDS = {".gitignore", "config.yaml", "changes/.gitkeep", "adr/.gitkeep", "superpower/.gitkeep"}
+SUSPECT_HINT = "旧版安装器"
+
+
+def _files_under(root):
+    return {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
+
+
+def _dev_artifact_names():
+    """本仓自己的开发工件各取一个名字：template/openspec/changes 下的 change 目录、adr 下的 DRAFT ADR。"""
+    change = sorted(p.name for p in (TEMPLATE_OPENSPEC / "changes").iterdir() if p.is_dir())[0]
+    adr = sorted(p.name for p in (TEMPLATE_OPENSPEC / "adr").glob("DRAFT-*.md"))[0]
+    return change, adr
+
+
+def test_fresh_install_ships_only_seeds(tmp_path):
+    # Given: 一个空目录
+    target = tmp_path / "proj"
+
+    # When: 运行 install.sh <目录>
+    p, _ = run_install_stubbed(tmp_path, target, claude=False)
+
+    # Then: 以 0 退出；openspec/ 里的文件恰为种子清单加上模板 openspec/schemas/ 下的全部文件
+    assert p.returncode == 0, p.stderr
+    schemas = {"schemas/" + rel for rel in _files_under(TEMPLATE_OPENSPEC / "schemas")}
+    assert _files_under(target / "openspec") == OPENSPEC_SEEDS | schemas
+
+
+def test_upgrade_adds_no_dev_artifacts(tmp_path):
+    # Given: 用 install.sh 装好的项目；用户自己建了 change my-change（含 proposal.md）与 ADR 0001-mine.md
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    for f in (target / "openspec" / "changes" / "my-change" / "proposal.md", target / "openspec" / "adr" / "0001-mine.md"):
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("# mine\n", encoding="utf-8")
+
+    # When: 运行 install.sh --upgrade <项目>
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+
+    # Then: 以 0 退出；changes/ 下只有 .gitkeep 与 my-change，adr/ 下只有 .gitkeep 与 0001-mine.md；输出不含「旧版安装器」
+    assert p.returncode == 0, p.stderr
+    assert {x.name for x in (target / "openspec" / "changes").iterdir()} == {".gitkeep", "my-change"}
+    assert {x.name for x in (target / "openspec" / "adr").iterdir()} == {".gitkeep", "0001-mine.md"}
+    assert SUSPECT_HINT not in p.stdout, p.stdout
+
+
+def test_upgrade_keeps_user_seed_edits(tmp_path):
+    # Given: 用 install.sh 装好的项目；用户改过 openspec/config.yaml，openspec/schemas/intent-driven/schema.yaml 被本地改坏
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    config = target / "openspec" / "config.yaml"
+    schema = target / "openspec" / "schemas" / "intent-driven" / "schema.yaml"
+    config.write_text("schema: intent-driven\n# mine\n", encoding="utf-8")
+    schema.write_text("broken\n", encoding="utf-8")
+
+    # When: 运行 install.sh --upgrade <项目>
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+
+    # Then: 以 0 退出；config.yaml 仍是用户的内容；schema.yaml 恢复为模板原文
+    assert p.returncode == 0, p.stderr
+    assert config.read_text(encoding="utf-8") == "schema: intent-driven\n# mine\n"
+    assert schema.read_bytes() == (TEMPLATE_OPENSPEC / "schemas" / "intent-driven" / "schema.yaml").read_bytes()
+
+
+def test_upgrade_lists_suspected_dev_artifacts(tmp_path):
+    # Given: 已装项目里有与模板 change 目录同名的目录、与模板 DRAFT ADR 同名的文件（模拟旧版安装器误拷），另有用户自己的 my-change
+    change, adr = _dev_artifact_names()
+    target = tmp_path / "proj"
+    first, _ = run_install_stubbed(tmp_path, target, claude=False)
+    assert first.returncode == 0, first.stderr
+    planted = [target / "openspec" / "changes" / change / "proposal.md", target / "openspec" / "adr" / adr,
+               target / "openspec" / "changes" / "my-change" / "proposal.md"]
+    for f in planted:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("# old copy\n", encoding="utf-8")
+
+    # When: 运行 install.sh --upgrade <项目>
+    p, _ = run_install_stubbed(tmp_path, target, "--upgrade", claude=False)
+
+    # Then: 以 0 退出；输出含「旧版安装器」与「安装器不代删」；提示段列出那个 change 目录与那份 ADR，不列 my-change；三者都仍在
+    assert p.returncode == 0, p.stderr
+    assert SUSPECT_HINT in p.stdout and "安装器不代删" in p.stdout, p.stdout
+    hint = p.stdout[p.stdout.index(SUSPECT_HINT):]
+    assert "openspec/changes/%s" % change in hint and "openspec/adr/%s" % adr in hint, hint
+    assert "my-change" not in hint, hint
+    assert all(f.exists() for f in planted)
