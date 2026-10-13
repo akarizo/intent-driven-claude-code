@@ -7,52 +7,27 @@ W1 = S1 ∥ S2 ∥ S3；W2 = S4 ∥ S5 ∥ S6。同 wave 的片只经下面写�
 - 测试与插件是隔离实例。测试 import 插件模块拿到的是另一份模块状态，所以模块变量（如 `takeoffNow` 的闭包）只能经插件 hook 的效果观察。
 - 每插件一个 hooks 模块（`register.tsx`）。同一事件的后续 hook 要带 matcher。实测：`turn.complete` 上不带 matcher、`{ agentId: /./ }`、`{ turnId: /./ }` 三个 hook 可以共存，第三个能看到主会话轮次（agentId 为空）。
 
-## S1 · `template/plugins/flight/hooks/armed.ts`（纯模块，不 import 运行时值、不碰 `$`）
+## S1
 
-```ts
+### template/plugins/flight/hooks/armed.ts
+```
 export type ArmClass = 'wait-baseline' | 'wait-agents' | 'transient' | 'model' | 'human-key' | 'human'
 export const ARM_BUDGET = 3
 export const ARM_TTL_MS = 1800000
 export const TRANSIENT_DELAY_MS = 10000
-
-/** 一次待命；存进会话状态 flight.armed.items[change]（字段与 types 的 FlightArmedItem 一一对应） */
 export type Arm = {
-  change: string
-  args: string[]          // 起飞参数原样（含「授权提交」等）
-  resume: boolean         // 来自 /flight resume 或续飞按钮
-  cls: ArmClass
-  reason: string          // 最近一次拒绝的原文
-  since: number           // 首次被拒的时刻（毫秒）
-  tries: number           // 已计入预算的自动重试次数
-  awaitingModel: boolean  // 已提交「交模型」的一轮、尚未结束
-  transientAgain: boolean // 上一次自动重试的结果也是 transient
-}
 export type ArmEvent = { kind: 'refused' } | { kind: 'agent-ended' } | { kind: 'main-turn' } | { kind: 'tick' } | { kind: 'timer' }
 export type ArmStep =
-  | { do: 'retry' }
-  | { do: 'submit'; text: string }
-  | { do: 'wait'; ms?: number }       // ms 给出时由调用方起 clock.after(ms)，到点产生 timer
-  | { do: 'give-up'; reason: string }
-
-export function classifyRefusal(text: string): ArmClass
-/** 首次被拒：cls = classifyRefusal(text)，reason = text，since = now，tries 0，两个布尔为假 */
-export function armOf(x: { change: string; args: string[]; resume: boolean; text: string; now: number }): Arm
-/** 执行 retry 之前调用：transient / model 类 tries + 1；awaitingModel 置假 */
-export function beforeRetry(arm: Arm): Arm
-/** 自动重试后又被拒：cls / reason 换成新的；transientAgain = 旧 cls 与新 cls 都是 transient */
-export function refusedAgain(arm: Arm, text: string): Arm
-export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep
-/** 交模型那一轮的正文：拒绝原文 + 「只修工作区与本 change 工件」「改了计划需要人在批准带重新批准」「不要发 /opsx-apply」 */
-export function modelPrompt(arm: Arm): string
-/** 状态行：「flight · 起飞待命 <change> · <原因首行>（重试 n/3，剩 m 分钟）」 */
-export function armedLine(arm: Arm, now: number): string
-/** 放弃待命的通知正文：含 change、why 与做法 */
-export function giveUpText(arm: Arm, why: string): string
-/** 不进入待命（human / human-key）时的通知正文：原因首行 + 做法（human-key：「在批准带按『批准起飞』或『起飞』」；跨会话：提到 --takeover） */
-export function humanText(change: string, text: string, cls: 'human' | 'human-key'): string
+export function classifyRefusal(text: string): ArmClass {
+export function armOf(x: { change: string; args: string[]; resume: boolean; text: string; now: number }): Arm {
+export function beforeRetry(arm: Arm): Arm {
+export function refusedAgain(arm: Arm, text: string): Arm {
+export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep {
+export function modelPrompt(arm: Arm): string {
+export function armedLine(arm: Arm, now: number): string {
+export function giveUpText(arm: Arm, why: string): string {
+export function humanText(change: string, text: string, cls: 'human' | 'human-key'): string {
 ```
-
-「原因首行」指去掉开头 `flight：` 之后的第一行。
 
 ## S3 · `orchestrator.tsx` 与 `types/index.d.ts`
 
