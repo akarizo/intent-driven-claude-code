@@ -69,10 +69,11 @@ export async function renderRecords(io: Io, f: Flight): Promise<string | undefin
 - 拒飞条件：`state.takeoff !== undefined && !settled && owner === session && active.has(name) && (driving.has(name) || (await liveAgents($, f, state)).length > 0)`；
 - 拒绝原文：`flight：<name> 正在飞（attempt N），不起飞；需要中止用 /flight abort <name>；中止后可用 /flight resume <name> 续飞`。
 
-## S5 · `register.tsx`
+## S5
 
-- import `scenarioFiles` 与 `takeoffNow`（都来自 `./orchestrator`），不把 `$` 传出本文件。
-- 进程内进行中表：`Map<string, { phase: 'takeoff' | 'baseline'; since: number }>`。刷新批准带时，按它给项填 `busy`。
-- 基线进度：用 `$.clock.after(60000, …)` 自己续表，基线结束即停；状态行文本见 spec `flight-band-progress`。
+### template/plugins/flight/hooks/register.tsx
+```
+export const register: Register = on => {
+```
 
 ## S3
