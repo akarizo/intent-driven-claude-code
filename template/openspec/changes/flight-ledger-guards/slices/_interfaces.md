@@ -282,3 +282,57 @@ def ship_verdict(root, change_dir, data, events, head):
 def cmd_ship(args):
 def main():
 ```
+
+## S6
+
+### template/plugins/flight/hooks/landing.tsx
+```
+export const FINDINGS_TOOL: { name: 'submit_findings'; description: string; inputSchema: Record<string, unknown> } = {
+export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
+export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
+export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
+```
+
+### template/plugins/flight/hooks/land.ts
+```
+export const RECORD_FILES = ['timeline.md', 'gate-report.md', 'evidence.log', 'slices/_interfaces.md'] // 相对 change 目录
+export async function commitRecords(io: Io, f: Flight, message: string, extra: readonly string[] = []): Promise<string | undefined> {
+export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
+export async function commitArtifacts(io: Io, f: Flight, paths: readonly string[]): Promise<string | undefined> {
+export async function mergeSlice(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], branch = `flight/${f.change}/${slice}`):
+export async function prepareResolve(io: Io, f: Flight, slice: string, x: { branch?: string; attempt?: number } = {}):
+export async function finishResolve(io: Io, f: Flight, slice: string, gate: GateJson, owns: readonly string[], resolve = { path: resolvePath(f, slice), branch: resolveBranch(f, slice) }):
+export async function mergeFix(io: Io, f: Flight, _note: string, branch?: string, slice = 'fix'): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
+export function validateFindings(input: unknown): { ok: true; findings: Finding[] } | { ok: false; error: string } {
+export async function closeout(io: Io, f: Flight, merged: readonly string[]): Promise<{ verdict: 'ready' | 'draft'; reasons: string }> {
+export async function renderRecords(io: Io, f: Flight): Promise<string | undefined> {
+```
+
+### template/plugins/flight/hooks/io.ts
+```
+export type Tree = { path: string; branch: string }
+export async function trees(io: Io, cwd: string): Promise<Tree[]> {
+export async function judgesDir(io: Io, mainTree: string): Promise<string> {
+export function judge(io: Io, f: Flight, name: string, args: readonly string[], cwd: string, timeoutMs?: number): Promise<RunResult> {
+export async function readLedger(io: Io, f: Flight): Promise<{ events: FlightEvent[] } | { error: string }> {
+export async function stoppedNow(io: Io, f: Flight): Promise<'halt' | 'land' | 'unreadable' | undefined> {
+export const EVENT_TYPES: readonly string[] = Object.keys(EVENTS)
+export function eventProblem(event: FlightEvent, change: string): string | undefined {
+export async function appendEvent(io: Io, f: Flight, event: FlightEvent): Promise<boolean> {
+export const active: Map<string, ActiveTree> = new Map()
+export const terminals: Map<string, number> = new Map()
+export type Owner = { change: string; role: Role; slice: string; worktree: string }
+export const owners: Map<string, Owner> = new Map()
+export function markPending(agentId: string, change: string): void {
+export function resetOwnership(): void {
+export type Unknown = { unknown: true; change: string; error: string }
+export async function ownership(io: Io, agentId: string): Promise<Owner | { pending: true; change: string } | Unknown | undefined> {
+export async function ownerOf(io: Io, agentId: string): Promise<Owner | undefined> {
+export function worktreePath(f: Flight, name: string): string {
+export async function ensureWorktree(io: Io, f: Flight, name: string): Promise<{ path: string; created: boolean } | { error: string }> {
+export async function occupied(io: Io, f: Flight, name: string): Promise<string | undefined> {
+export async function freshWorktree(io: Io, f: Flight, name: string, attempt: number): Promise<{ path: string; branch: string } | { error: string }> {
+export function agentType(role: Role): string {
+export const flights: Map<string, Flight> = new Map()
+export async function flightOfAgent(io: Io, agentId: string): Promise<{ flight: Flight; events: FlightEvent[] } | undefined> {
+```
