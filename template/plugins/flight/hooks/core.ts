@@ -308,7 +308,7 @@ export type FlightSummary = {
   waves: number
   wave: number // 当前 wave（1 起），已全部完成为 waves
   slices: SliceRow[]
-  fix: string // 未派 / 进行中 / 已合回 / 无需
+  fix: string // 未派 / [第 k 轮 ]进行中 / [第 k 轮 ]已合回 / [第 k 轮 ]阻断（gate|infra）/ 无需
   final: string // 未跑 / 绿 / 红
   whole: string // 未开始 / 进行中 / 未返回 / 第 n 轮 x 条（CRITICAL/HIGH y）
   end: string // 在飞 / 已落地（ready|draft）/ 已停飞（<原因>）
@@ -338,14 +338,21 @@ export function summarize(state: State): FlightSummary {
     const measured = !ms.length ? '-' : ms.some(m => !(Array.isArray(m.source) && m.source.length) && failing(m)) ? '先红' : '未先红'
     const reviews = evs.filter(e => e.ev === 'review' && e.slice === id)
     const findings = reviews.flatMap(e => (Array.isArray(e.findings) ? (e.findings as Finding[]) : []))
+    // 与 next 的 reviewed 同口径：blocked review:<S> 跨 attempt 计入
+    const rb = last(evs.filter(e => e.ev === 'blocked' && e.slice === `review:${id}`))
     const review = reviews.length ? `${findings.length} 条（CRITICAL/HIGH ${findings.filter(f => BLOCKING.includes(f.severity)).length}）`
+      : rb ? `阻断（${str(rb, 'kind')}）`
       : dispatchesA(id, 'reviewer').length ? '进行中'
       : '未开始'
     return { id, wave, phase, ...(exec ? { agent: str(exec, 'agent') } : {}), reds, measured, review }
   }
 
-  const fixers = dispatchesA(FIX, 'fixer')
-  const fix = fixers.length ? (mergedOk(FIX) ? '已合回' : '进行中')
+  // 修复列：本 attempt 最新一个修复体（fix 或 fix-r<k>），fix-r<k> 前缀「第 <k> 轮 」（design D8）
+  const fx = last(ofA('dispatch').filter(e => e.role === 'fixer' && (e.slice === FIX || FIX_ROUND.test(str(e, 'slice')))))
+  const fs = fx ? str(fx, 'slice') : FIX
+  const fxBlocked = blockedNow(fs)
+  const fix = fx ? `${fs === FIX ? '' : `第 ${fs.slice('fix-r'.length)} 轮 `}${mergedOk(fs) ? '已合回' : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）` : '进行中'}`
+    : fxBlocked ? `阻断（${str(fxBlocked, 'kind')}）`
     : blockingOf(reviewFindings(state, true)).length ? '未派' : '无需'
   // 全量评审：本 attempt 最新一轮（whole 为第 1 轮，whole-r<k> 为第 k+1 轮）
   const wd = last(ofA('dispatch').filter(e => e.role === 'reviewer' && WHOLE.test(str(e, 'slice'))))
@@ -400,10 +407,12 @@ export const ev: {
   merge(b: Base, x: { attempt: number; slice: string; ok: boolean; commit: string; failed: string[] }): FlightEvent
   review(b: Base, x: { attempt: number; slice: string; agent: string; findings: Finding[] }): FlightEvent
   blocked(b: Base, x: { attempt: number; slice: string; kind: 'gate' | 'infra'; reason: string }): FlightEvent
-  final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[] }): FlightEvent
+  final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[]; warnings?: string[] }): FlightEvent
   land(b: Base, x: { attempt: number; verdict: 'ready' | 'draft' }): FlightEvent
   halt(b: Base, x: { attempt: number; reason: string }): FlightEvent
   measure(b: Base, x: { attempt: number; slice: string; agent: string; base: string; commit: string; outcomes: [string, string][]; changed: string[]; source: string[] }): FlightEvent
+  /** 只留证据：reduce / next / summarize 都不看 diag（design D9） */
+  diag(b: Base, x: { attempt: number; where: string; error: string; kind?: string; agent?: string; budget?: number }): FlightEvent
 } = {
   takeoff: make('takeoff'),
   dispatch: make('dispatch'),
@@ -416,4 +425,5 @@ export const ev: {
   land: make('land'),
   halt: make('halt'),
   measure: make('measure'),
+  diag: make('diag'),
 }

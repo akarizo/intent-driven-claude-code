@@ -1,8 +1,6 @@
 """ship 工具纯模块（scenario: flight-ship-tool#ship-*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 """
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-ship-ledger
@@ -29,10 +27,9 @@ def test_ship_comment_lists_findings():
     assert_ts_passed("ship-comment-lists-findings")
 
 # ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S5 实现后去掉 xfail 标记。
+# S5 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_ship_output_shape_checked():
     # Given: 三个已落地世界：ship JSON 缺 review；origin 读取失败；一切正常且 PR 7 为 draft
     # When: 分别调用 shipPr(..., '7')

@@ -2,8 +2,6 @@
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 S2 已实现：骨架的 xfail 标记已去。flight-gate-speedup 的 S3 在末尾追加了 4 个 flight-blocked-halt#* 骨架（标记已去）。"""
 
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -179,10 +177,9 @@ def test_summary_shows_whole_review():
     assert_ts_passed("summary-shows-whole-review")
 
 # ---------------------------------------------------------------- flight-ledger-guards
-# 骨架：S5 实现后去掉 xfail 标记。
+# S5 已实现：骨架的 xfail 标记已去。
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_summary_shows_blocked_review_and_fix():
     # Given: 四份账本：blocked review:S1、blocked fix（gate）、fix-r1 进行中、未派即 blocked fix（infra）
     # When: 分别求 summaryLines(summarize(...))
@@ -190,7 +187,6 @@ def test_summary_shows_blocked_review_and_fix():
     assert_ts_passed("summary-shows-blocked-review-and-fix")
 
 
-@pytest.mark.xfail(strict=True, reason="S5：同名 TS 测试尚未实现")
 def test_diag_events_do_not_move_the_plan():
     # Given: wave 1 进行中的账本 L，及末尾多一条 ev.diag 的 L2
     # When: 分别求 next 与摘要，并构造带 warnings 的 ev.final
