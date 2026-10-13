@@ -68,7 +68,6 @@ def test_judges_need_ledger_records():
 # ---------------------------------------------------------------- flight-unattended S5a（骨架：实现后去掉 xfail 标记）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5a 未实现")
 def test_takeoff_requires_integ_guard():
     # Given: 判定器的 features 缺 integ-guard，其余能力齐全
     # When: 发 /opsx-apply demo

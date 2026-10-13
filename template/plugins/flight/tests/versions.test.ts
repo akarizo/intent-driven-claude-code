@@ -11,7 +11,7 @@ const ROOT_032 = `${CACHE}/idd/flight/0.3.2`
 const INSTALLED = `${CFG}/plugins/installed_plugins.json`
 const HOOKS = '/repo/template/.claude/hooks'
 /** slice-gate.py features 列出全部能力时的输出 */
-const ALL_FEATURES = 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n'
+const ALL_FEATURES = 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\ninteg-guard\n'
 
 function fakeIo(files: Record<string, string>, respond: (argv: string[]) => Partial<RunResult> = () => ({})): Io {
   const fs = new Map(Object.entries(files))
@@ -135,10 +135,10 @@ test('takeoff-refuses-stale-judges', async () => {
   // When: 分别对三个目录运行 checkJudges（需要事件 approve、measure）
   const rs = await Promise.all(['/j1', '/j2', '/j3'].map(hooksDir => checkJudges(io, { hooksDir, required: ['approve', 'measure'] })))
 
-  // Then: /j1 拒飞且原因说明判定器过旧并提示更新主检出；/j2 拒飞且原因列出 g5-per-target、guards、ship-ledger、ledger-records 并提示更新主检出；/j3 通过
+  // Then: /j1 拒飞且原因说明判定器过旧并提示更新主检出；/j2 拒飞且原因列出 g5-per-target、guards、ship-ledger、ledger-records、integ-guard 并提示更新主检出；/j3 通过
   expect(rs).toEqual([
     { ok: false, reason: 'flight：判定器过旧（/j1/slice-gate.py 没有 features 子命令）：先把主检出更新到与插件同一版本' },
-    { ok: false, reason: 'flight：判定器（/j2）缺少能力 g5-per-target，guards，ship-ledger，ledger-records：先把主检出更新到与插件同一版本' },
+    { ok: false, reason: 'flight：判定器（/j2）缺少能力 g5-per-target，guards，ship-ledger，ledger-records，integ-guard：先把主检出更新到与插件同一版本' },
     { ok: true, line: '' },
   ])
 })
@@ -151,12 +151,12 @@ test('judges-need-ship-ledger', async () => {
   const r = await checkJudges(io, { hooksDir: '/j4', required: ['approve', 'measure'] })
 
   // Then: 拒飞，原因含「缺少能力 ship-ledger」与「先把主检出更新到与插件同一版本」
-  expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j4）缺少能力 ship-ledger，ledger-records：先把主检出更新到与插件同一版本' })
+  expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j4）缺少能力 ship-ledger，ledger-records，integ-guard：先把主检出更新到与插件同一版本' })
 })
 
 test('judges-need-ledger-records', async () => {
-  // Given: 判定器目录 /j5：ledger.py events 输出所需的 approve 与 measure；slice-gate.py features 输出除 ledger-records 外的全部能力（evidence-ledger-only、g5-per-target、guards、ship-ledger）
-  const io = fakeIo({}, argv => (argv[2] === 'features' ? { stdout: 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\n' } : { stdout: 'approve\nmeasure\n' }))
+  // Given: 判定器目录 /j5：ledger.py events 输出所需的 approve 与 measure；slice-gate.py features 输出除 ledger-records 外的全部能力（evidence-ledger-only、g5-per-target、guards、ship-ledger、integ-guard）
+  const io = fakeIo({}, argv => (argv[2] === 'features' ? { stdout: 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\ninteg-guard\n' } : { stdout: 'approve\nmeasure\n' }))
 
   // When: 对 /j5 运行 checkJudges（需要事件 approve、measure）
   const r = await checkJudges(io, { hooksDir: '/j5', required: ['approve', 'measure'] })
@@ -164,4 +164,16 @@ test('judges-need-ledger-records', async () => {
   // Then: 拒飞，原因恰为「缺少能力 ledger-records」并提示更新主检出；导出的 REQUIRED_FEATURES 含 ledger-records
   expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j5）缺少能力 ledger-records：先把主检出更新到与插件同一版本' })
   expect(REQUIRED_FEATURES).toContain('ledger-records')
+})
+
+test('takeoff-requires-integ-guard', async () => {
+  // Given: 判定器目录 /j6：ledger.py events 输出所需的 approve 与 measure；slice-gate.py features 输出除 integ-guard 外的全部能力（evidence-ledger-only、g5-per-target、guards、ship-ledger、ledger-records）
+  const io = fakeIo({}, argv => (argv[2] === 'features' ? { stdout: 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\n' } : { stdout: 'approve\nmeasure\n' }))
+
+  // When: 对 /j6 运行 checkJudges（需要事件 approve、measure）
+  const r = await checkJudges(io, { hooksDir: '/j6', required: ['approve', 'measure'] })
+
+  // Then: 拒飞，原因恰为「缺少能力 integ-guard」并提示更新主检出；导出的 REQUIRED_FEATURES 含 integ-guard
+  expect(r).toEqual({ ok: false, reason: 'flight：判定器（/j6）缺少能力 integ-guard：先把主检出更新到与插件同一版本' })
+  expect(REQUIRED_FEATURES).toContain('integ-guard')
 })

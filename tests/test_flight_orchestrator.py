@@ -517,7 +517,6 @@ def test_subagent_stop_error_leaves_diag():
     assert_ts_passed("subagent-stop-error-leaves-diag")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended：S1 合回后 final 红先派整合修复；S5a 修绿并去掉本标记")
 def test_panel_refreshes_on_terminal():
     # Given: 面板已打开；S1 已合回且评审为空；final 红（G2 lint）
     # When: drive 推进到停飞
@@ -528,7 +527,6 @@ def test_panel_refreshes_on_terminal():
 # ---------------------------------------------------------------- flight-unattended S5a / S5b（骨架：实现后去掉 xfail 标记）
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5a 未实现")
 def test_heal_recorded_then_retried():
     # Given: 单片飞行：S1 第一次合回失败（非冲突），第二次合回成功
     # When: 起飞并让两个执行体先后收口结束
@@ -536,7 +534,6 @@ def test_heal_recorded_then_retried():
     assert_ts_passed("heal-recorded-then-retried")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5a 未实现")
 def test_watchdog_stops_stalled_agent():
     # Given: 在飞：a1 的模型请求未结束；a2 的请求才开始 9 分钟
     # When: 时钟推进到 a1 请求开始后 10 分钟零 1 秒，看门狗 tick 两次
@@ -544,7 +541,6 @@ def test_watchdog_stops_stalled_agent():
     assert_ts_passed("watchdog-stops-stalled-agent")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-unattended S5a 未实现")
 def test_watchdog_exhausted_halts():
     # Given: 在飞，本 attempt 已有 3 条 heal；a1 请求等待超过 10 分钟，a2 在跑
     # When: 看门狗 tick
