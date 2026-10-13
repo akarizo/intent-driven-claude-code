@@ -64,30 +64,27 @@ integ 修复体的 dispatch 事件带 `base`（S4 写入），专审评审员的
   - 有 triage 时打印「停飞诊断：<首行>」。
   - `render` 的 timeline.md 记 heal、triage 行。
 
-## S3 · `template/plugins/flight/hooks/prompts.ts`
+## S3
 
-```ts
-export function integFixerPrompt(x: { change: string; changeDir: string; failed: string[]; base: string }): string
-export function integReviewPrompt(x: { change: string; changeDir: string; base: string; commit: string }): string
-export function triagePrompt(x: { change: string; changeDir: string; hooksDir: string; reason: string; kind: string }): string
+### template/plugins/flight/hooks/prompts.ts
+```
+export function worktreeNote(worktree: string): string {
+export function executorPrompt(x: {
+export function reviewerPrompt(x: { change: string; changeDir: string; slice: string; commit: string }): string {
+export function wholeReviewPrompt(x: { change: string; changeDir: string; hooksDir: string; base: string; commit: string; prior: Finding[] }): string {
+export function followupReviewPrompt(x: { change: string; changeDir: string; round: number; base: string; commit: string; prior: Finding[] }): string {
+export function resolverPrompt(x: { change: string; changeDir: string; slice: string; conflicts: string[] }): string {
+export function fixerPrompt(x: { change: string; changeDir: string; findings: Finding[] }): string {
+export function integFixerPrompt(x: { change: string; changeDir: string; failed: string[]; base: string }): string {
+export function integReviewPrompt(x: { change: string; changeDir: string; base: string; commit: string }): string {
+export function triagePrompt(x: { change: string; changeDir: string; hooksDir: string; reason: string; kind: string }): string {
 ```
 
-## S3 · `template/plugins/flight/hooks/watchdog.ts`
-
-```ts
+### template/plugins/flight/hooks/watchdog.ts
+```
 export const WATCHDOG_MS = 600000
 export class StepTracker {
-  start(id: string, at: number): void   // 覆盖同一 id 的旧起点
-  end(id: string): void
-  stale(now: number, limitMs?: number): string[]   // 起点 < now - limitMs，按 start 先后排序
-  forget(id: string): void
-}
 ```
-
-## S3 · `template/plugins/flight/agents/diagnostician.md`
-
-- 类型 `flight:diagnostician`；
-- tools `Read, Grep, Glob, Bash`；effort high；maxTurns 30；不带 model。
 
 ## S4 · 落地
 
