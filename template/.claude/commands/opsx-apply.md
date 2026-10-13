@@ -17,12 +17,17 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
   - Bash 只对门禁 / verify 命令、只读 git、`git add` / `git commit` 这类白名单免询问（带前导 `VAR=` 的段、git 指向范围之外的段不免询问），其余按你的权限设置；
   - 读取（Read / Grep / Glob）只在主仓库内免询问，主仓库之外按你的权限设置；
   - 飞行中主会话对在飞的 change worktree 只读。这一条是尽力而为：shell 已 `cd` 进去后不带路径的 git 命令拦不到，会话重启后要等再次起飞才恢复。
+- **意图门禁**：
+  - 插件在场时，对主会话与非飞行 agent 的 Write、Edit 以及 Bash 写法（重定向、`tee`、`cp`、`mv` 等的写入目标）调用 `intent-gate.py check` 判定，不过即拒绝；
+  - 飞行 agent 按 owns 限写，Bash 写法同样适用；
+  - 插件缺席时由 classic hook（`intent-gate.py` 拦 Write / Edit）兜底；
+  - apply 上下文只认目标所在 worktree 的 change：分支为 `worktree-<name>` 或 `flight/<name>/…` 时，只有该 change 的 `tasks.md` 有未勾项才算 apply 上下文。
 
 **Input**：可选指定 change 名（如 `/opsx-apply add-auth`）。留空则取会话所在 worktree 的分支 `worktree-<name>`。
 `授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
 `--takeover`（可选）→ 只在「最新一次起飞来自另一个会话、尚未落地或停飞，而且你已确认那个会话已结束」时使用；不加时插件会拒飞并提示。
-起飞只接受人发出的命令，见下文「飞行中的交互」。
+起飞的命令来源限制见下文「飞行中的交互」。
 `--gate=per-task`（可选）→ 跳过飞行模式：插件不接管，把命令原样交给模型；模型转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行（legacy 路径，本命令其余段落不适用）。
 
 **起飞检查（插件执行；任一项不过即不起飞，原样回报原因，不问询）**
@@ -39,7 +44,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
   `lint` 非 0（规划红）或 `preflight` 非 0（`gate-baseline.json` 缺基线 / 基线红 / 基线过期）→ 不起飞，把 stderr 原样回报；基线由 `/opsx-propose` 的 `baseline` 步骤生成，缺了回去补，不在这里手工造。
 - **主模型**：有 `--model=` 以它为准；否则由 `session-model.py` 判定 `<main>`；判不出 → 不起飞，提示用 `/opsx-apply <name> --model=<alias>` 重发。禁模型自述主模型。
 - **上一次派出的 agent**：仍在运行 → 等它们结束再起飞。
-- 全部通过后：首次起飞时插件以 `takeoff-gate.py` 的批准证据原文记 `timeline.py record approve` 并提交 `chore(flight): approve`，再把 takeoff 事件写入账本。
+- 全部通过后：插件把 takeoff 事件写入账本。飞行中判定器不写记录文件，记录都在账本里。
 
 **派发与收口门禁（插件执行，中途不问）**
 - **派发**：按 preflight 给出的 waves 逐 wave 派 `flight:executor`，每片一间 worktree（`.claude/worktrees/flight-<name>-<S>`，分支 `flight/<name>/<S>`，基于 change 分支尖端；见 `openspec-git-discipline`）。执行体按切片包 TDD，改生产代码前调用 `measure`，由控制面测量并写入账本。
@@ -48,7 +53,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
   - `flight:reviewer` 评审已合回的切片；阻断 finding 交 `flight:fixer` 批量修复；再跑 final 门禁。有切片 blocked 或 final 未通过 → 停飞，修好后重发 `/opsx-apply <name>` 续飞。
   - final 绿后，控制面派 `flight:reviewer` 做**全量评审**，审整条 change 分支；有 CRITICAL/HIGH 交 `flight:fixer` 自动修，至多 2 轮，每轮修复后重跑 final，再派 `flight:reviewer` 复核本轮修复；仍未闭环就照常落地，由裁决落为 draft。
 - **续飞另起 worktree**：续飞时同名 worktree 已存在就另起 `<S>-a<attempt>`，旧现场保留，清理由人执行。
-- **落地交 `/flight:pr-ship`**：控制面在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`，按 `slice-gate.py ship`（只读账本）的输出写 `review-findings.json`，提交飞行记录，然后调用 `/flight:pr-ship`。`/flight:pr-ship` 以 draft 建 PR 后调用 `ship` 工具，由插件按账本裁决 draft / ready 并贴评论。主会话不自行判断 draft。
+- **落地交 `/flight:pr-ship`**：控制面在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`，按 `slice-gate.py ship`（只读账本）的输出写 `review-findings.json`，由插件从账本生成 `timeline.md` 与 `gate-report.md`，与 `review-findings.json` 一起提交，然后调用 `/flight:pr-ship`。`/flight:pr-ship` 以 draft 建 PR 后调用 `ship` 工具，由插件按账本裁决 draft / ready 并贴评论。主会话不自行判断 draft。
 
 **模型路由（铁律：按角色显式声明，不得留空让 `CLAUDE_CODE_SUBAGENT_MODEL` 默认兜底）**
 

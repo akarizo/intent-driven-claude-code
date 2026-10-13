@@ -172,6 +172,8 @@ your-project/
 不是所有改动都值得 5 工件。安装器注入两个 hook（需 python3），把「该不该走工作流」从自觉变成强制：
 
 - **PreToolUse 门禁**（`intent-gate.py`）：拦 `Write|Edit`。改**源码或通用配置（`json`/`yaml`/IaC/schema）**时，除非 ① 当前有进行中的 change（`tasks.md` 仍有未勾选项），② 或先用 `/opsx-mini` 声明过 mini，否则**直接拒绝**并提示先 `/opsx-propose`。文档 / `openspec/` / `.claude/` / `docs/` / lockfile 永远放行。
+  - **范围**：flight 插件在场时，由插件对主会话与非飞行 agent 的 Write、Edit 以及 Bash 写法（重定向、`tee`、`cp`、`mv` 等的写入目标）调用 `intent-gate.py check` 判定；飞行 agent 按 owns 限写，Bash 同样适用；插件缺席时由上面的 classic hook（只拦 `Write|Edit`）兜底。
+  - **apply 上下文只认目标所在 worktree 的 change**：分支为 `worktree-<name>` 或 `flight/<name>/…` 时，只有该 change 的 `tasks.md` 有未勾项才放行。
 - **UserPromptSubmit 提醒**（`intent-reminder.py`）：每个任务开头注入分级 rubric，并强调**原生 plan mode 的 markdown plan ≠ 工作流**。
 
 | 任务 | 例子 | 走法 |
@@ -219,8 +221,11 @@ your-project/
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
   → slice-gate.py final（全量测试 + 全部 scenario 转 pass）→ timeline.py report 打印飞行记录（批准→PR 用时 / 门禁红次数 / 每切片用时）
   → final 绿后 flight:reviewer 全量评审整条 change 分支 → 有 CRITICAL/HIGH 派 flight:fixer 自动修（至多 2 轮，每轮重跑 final 并复核）
-  → 落地交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
+  → 落地：插件从账本生成 timeline.md 与 gate-report.md，与 review-findings.json 一起提交
+  → 交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
 ```
+
+**飞行记录**：飞行中判定器（`slice-gate.py` 等）不写任何记录文件，起飞、测量、门禁、ship 等事件只写入账本 `refs/flight/<change>/ledger`；落地时由插件从账本生成 `timeline.md` 与 `gate-report.md` 并提交。
 
 **飞行中的交互**（flight 插件提供；起飞时自动打开飞行面板）：
 

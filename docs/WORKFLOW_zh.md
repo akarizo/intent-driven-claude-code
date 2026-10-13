@@ -177,9 +177,12 @@ Rule: Users can export their own data
   → flight:reviewer 评审已合回的切片 → 有 CRITICAL/HIGH 派 flight:fixer 批量修复
   → slice-gate.py final（全量 test/lint/typecheck + 全部 scenario 状态）→ timeline.py report 打印飞行记录
   → final 绿后 flight:reviewer 全量评审整条 change 分支 → 有 CRITICAL/HIGH 派 flight:fixer 自动修（至多 2 轮，每轮重跑 final 并复核）
-  → 落地交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
+  → 落地：插件从账本生成 timeline.md 与 gate-report.md，与 review-findings.json 一起提交
+  → 交 /flight:pr-ship：以 draft 建 PR，由 ship 工具按账本裁决 draft / ready 并贴评论
     （飞行外的 /flight:pr-ship：干净评审员 + 至多一次问询）
 ```
+
+**飞行记录**：飞行中判定器（`slice-gate.py` 等）不写任何记录文件，起飞、测量、门禁、ship 等事件只写入账本 `refs/flight/<change>/ledger`；落地时由插件从账本生成 `timeline.md` 与 `gate-report.md` 并提交。PR 打开时间取自 ship 事件，飞行外不再记录。
 
 `evidence.log` 是飞行外（主会话修复等）由 hook 写的留痕，飞行中的 G5 不读它。
 
@@ -293,6 +296,10 @@ git checkout main && git pull
 2. 目标命中豁免名单：文档（`*.md`/`*.rst`/`*.txt`）、`openspec/**`、`.claude/**`、`docs/**`、生成式 lockfile/清单（`*.lock`/`package-lock.json`/`pnpm-lock.yaml`/`go.sum`）。**通用 `*.json`/`*.yaml`/`*.toml`/`*.ini` 不再整类豁免**——它们可能是中级+ 的 CI/k8s/IaC/schema/app 配置改动，受门禁；确属 mini 走 `/opsx-mini`（`openspec/`、`.claude/` 内的配置仍按目录豁免）
 3. 存在某个非 archive change 且其 `tasks.md` **仍有未勾选 `- [ ]`**（实现进行中）——全勾选（应归档）或无 checkbox 不再放行，避免「一个没归档的旧 change 永久放行后续所有源码写入」
 4. `openspec/.mini-active` 有效（24h 内）且其 `scope` 覆盖该文件
+
+第 3 条的 apply 上下文只认目标所在 worktree 的 change：分支为 `worktree-<name>` 或 `flight/<name>/…` 时，只有该 change 的 `tasks.md` 有未勾项才算；其他分支沿用「任一 change 有未勾项」。
+
+**门禁范围**：flight 插件在场时，由插件对主会话与非飞行 agent 的 Write、Edit 以及 Bash 写法（重定向、`tee`、`cp`、`mv` 等的写入目标）调用 `intent-gate.py check` 判定；飞行 agent 按 owns 限写，Bash 同样适用；插件缺席时由 classic hook（只拦 `Write|Edit`）兜底。
 
 配套提醒 `intent-reminder.py`（UserPromptSubmit）在每个任务开头注入本 rubric。
 

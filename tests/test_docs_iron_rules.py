@@ -187,7 +187,14 @@ def test_measure_adr_and_review_refs():
 
 
 def _rule(text, n):
-    return next(line for line in text.splitlines() if line.lstrip().startswith("%d. " % n))
+    lines = text.splitlines()
+    i = next(k for k, line in enumerate(lines) if line.lstrip().startswith("%d. " % n))
+    out = [lines[i]]
+    for line in lines[i + 1:]:
+        if not line.startswith(" ") or not line.strip():
+            break
+        out.append(line.strip())  # 铁律续行（缩进）算同一条
+    return "".join(out)
 
 
 def test_iron_rule_10_no_second_implementation():
