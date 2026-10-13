@@ -17,8 +17,8 @@
 
 ## 切片
 
-- [ ] S1 小修：放弃待命的做法保留参数、已暂存删除改读 porcelain -z、补记账用例 （deps: - · verify: `python3 -m pytest -q tests/test_flight_armed.py tests/test_flight_land.py tests/test_flight_takeoff_commit.py`）
-- [ ] S2 orchestrator（一）：起飞锁原文、abort 遇锁、交模型对准、旧待命清理、状态行；导出 scenarioFiles；类型 （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_abort.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py`）
-- [ ] S3 文档与发布：三处「按批准起飞后再发命令」残留照实改，插件 0.10.1 （deps: - · verify: `python3 -m pytest -q tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py`）
-- [ ] S4 orchestrator（二）：「正在飞」判据与卡住时续飞、诊断员登记窗口计时、tick 复查 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_watchdog.py tests/test_flight_abort.py`）
-- [ ] S5 批准带：进行中显示、基线进度、去重提示；加强按键起飞的断言 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py`）
+- [x] S1 小修：放弃待命的做法保留参数、已暂存删除改读 porcelain -z、补记账用例 （deps: - · verify: `python3 -m pytest -q tests/test_flight_armed.py tests/test_flight_land.py tests/test_flight_takeoff_commit.py`）
+- [x] S2 orchestrator（一）：起飞锁原文、abort 遇锁、交模型对准、旧待命清理、状态行；导出 scenarioFiles；类型 （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_abort.py tests/test_flight_takeoff_commit.py tests/test_flight_plugin.py`）
+- [x] S3 文档与发布：三处「按批准起飞后再发命令」残留照实改，插件 0.10.1 （deps: - · verify: `python3 -m pytest -q tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py`）
+- [x] S4 orchestrator（二）：「正在飞」判据与卡住时续飞、诊断员登记窗口计时、tick 复查 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_watchdog.py tests/test_flight_abort.py`）
+- [x] S5 批准带：进行中显示、基线进度、去重提示；加强按键起飞的断言 （deps: S2 · verify: `python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py`）
