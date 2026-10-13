@@ -44,7 +44,10 @@ export async function readLedger(io: Io, f: Flight): Promise<{ events: FlightEve
   return { events }
 }
 
-/** 按账本最新 takeoff 的 attempt 查停飞（design D8）：有 halt 为 'halt'，有 land 为 'land'，账本读不出为 'unreadable'，都没有为 undefined。 */
+/**
+ * 按账本最新 takeoff 的 attempt 查停飞（design D8）：有 land 为 'land'（同 attempt 落地后又补记的 halt 不算停飞，0.2.x 旧账本），
+ * 否则有 halt 为 'halt'；账本读不出为 'unreadable'，都没有为 undefined。
+ */
 export async function stoppedNow(io: Io, f: Flight): Promise<'halt' | 'land' | 'unreadable' | undefined> {
   let ledger: Awaited<ReturnType<typeof readLedger>>
   try {
@@ -56,8 +59,8 @@ export async function stoppedNow(io: Io, f: Flight): Promise<'halt' | 'land' | '
   const takeoff = ledger.events.filter(e => e.ev === 'takeoff').pop()
   if (takeoff === undefined) return undefined
   const mine = ledger.events.filter(e => e.attempt === takeoff.attempt)
-  if (mine.some(e => e.ev === 'halt')) return 'halt'
   if (mine.some(e => e.ev === 'land')) return 'land'
+  if (mine.some(e => e.ev === 'halt')) return 'halt'
   return undefined
 }
 
