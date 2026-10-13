@@ -25,13 +25,13 @@ def test_docs_describe_self_heal_and_resume():
     assert all("每次飞行 3 次" in t and "只读" in t for t in cmd_skill)
 
 
-def test_plugin_version_0_9_0():
+def test_plugin_version_at_least_0_9_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     manifest = json.loads((ROOT / "template/plugins/flight/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
 
     # When: 读取 version 与 description
     version, desc = manifest.get("version"), manifest.get("description", "")
 
-    # Then: version 为 0.9.0；description 含「自愈」「看门狗」「续飞」
-    assert version == "0.9.0", version
+    # Then: version 按数字逐段比较不低于 0.9.0；description 含「自愈」「看门狗」「续飞」
+    assert tuple(int(p) for p in version.split(".")) >= (0, 9, 0), version
     assert all(w in desc for w in ("自愈", "看门狗", "续飞")), desc

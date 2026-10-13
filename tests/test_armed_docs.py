@@ -1,7 +1,5 @@
-"""起飞待命与按下即起飞的文档（scenario: flight-armed-docs#*）。骨架：S6 改完文档与 plugin.json 后去掉 xfail 标记。"""
+"""起飞待命与按下即起飞的文档（scenario: flight-armed-docs#*）。"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
@@ -21,7 +19,6 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S6 未实现")
 def test_docs_describe_armed_takeoff():
     # Given: opsx-apply 命令与 skill、README、WORKFLOW_zh、opsx-propose 命令与 skill
     # When: 读取六个文件
@@ -38,7 +35,6 @@ def test_docs_describe_armed_takeoff():
         assert "回车发出预填" not in text, f"{rel} 仍写着「回车发出预填」"
 
 
-@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S6 未实现")
 def test_plugin_version_0_10_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
