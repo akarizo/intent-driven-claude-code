@@ -1,8 +1,6 @@
 """flight 评审回收与落地接线（scenario: flight-findings-intake#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 同名 TS 测试见 template/plugins/flight/tests/landing.test.tsx。flight-gate-speedup 的 S4 在末尾追加了 2 个 final-gate-fastpath#* 骨架。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -141,7 +139,6 @@ def test_whole_review_dispatch_records_range():
 # 骨架：S6 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_land_renders_records():
     # Given: final 绿（warnings G2 预存红）、全量评审为空、ship ready；另一世界 render 以 1 退出
     # When: 分别推进到落地
@@ -149,7 +146,6 @@ def test_land_renders_records():
     assert_ts_passed("land-renders-records")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_followup_review_needs_base():
     # Given: S1 已合回；followup 动作 base 为空或等于 commit
     # When: 分别 runLandingAction
@@ -157,7 +153,6 @@ def test_followup_review_needs_base():
     assert_ts_passed("followup-review-needs-base")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_draft_reasons_in_flight_record():
     # Given: ship 输出 draft「final 过期」；另一世界 ship 输出 not json
     # When: 分别推进到落地
@@ -165,7 +160,6 @@ def test_draft_reasons_in_flight_record():
     assert_ts_passed("draft-reasons-in-flight-record")
 
 
-@pytest.mark.xfail(strict=True, reason="S6：同名 TS 测试尚未实现")
 def test_landing_actions_skip_after_halt():
     # Given: 动作算出后账本已追加本 attempt 的 halt
     # When: 以派发修复体与派发全量评审员两个动作调用 runLandingAction

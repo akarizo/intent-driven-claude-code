@@ -3,8 +3,8 @@
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
 import { agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
 import type { Action, Ctx, Finding, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
-import { appendEvent, freshWorktree, judge, readLedger } from './io'
-import { closeout, commitRecords, validateFindings } from './land'
+import { appendEvent, freshWorktree, judge, readLedger, stoppedNow } from './io'
+import { closeout, commitRecords, renderRecords, validateFindings } from './land'
 import { fixerPrompt, followupReviewPrompt, reviewerPrompt, wholeReviewPrompt } from './prompts'
 
 const FIX = 'fix'
@@ -111,6 +111,7 @@ async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPla
   if (x.mode === 'followup') {
     const round = Number(/^whole-r(\d+)$/.exec(x.slice)?.[1] ?? 0)
     const base = x.base ?? ''
+    if (base === '' || base === x.commit) return { error: `复核范围缺 base：base 为「${base}」，commit 为 ${x.commit}` }
     const prompt = followupReviewPrompt({ change: f.change, changeDir: f.changeDir, round, base, commit: x.commit, prior })
     return { prompt, description: `复核 第 ${round} 轮`, range: { commit: x.commit, base } }
   }
@@ -151,6 +152,8 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
 
   if (action.kind === 'dispatch' && action.role === 'reviewer') {
     const x = action as ReviewAction
+    // 派发前查停飞（design D8）：动作算出后人可能已停飞或已落地；此时不派发、不追加事件
+    if ((await stoppedNow(io, f)) !== undefined) return
     const plan = await reviewPlan(io, f, x)
     if ('error' in plan) {
       await append(ev.blocked(b, { attempt, slice: `review:${x.slice}`, kind: 'infra', reason: plan.error }))
@@ -179,6 +182,7 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       return
     }
     const prompt = fixerPrompt({ change: f.change, changeDir: f.changeDir, findings: action.findings })
+    if ((await stoppedNow(io, f)) !== undefined) return
     const r = await ctx.spawn({ f, role: 'fixer', cwd: wt.path, prompt, description: `修复 ${slice}` })
     if (r.agentId) await append(ev.dispatch(b, { attempt, slice, role: 'fixer', agent: r.agentId, model: f.model, worktree: wt.path, branch: wt.branch }))
     else await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
@@ -192,17 +196,25 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
       return
     }
     const g = await runFinal(io, f, f.changeTree, { reuseFix: true })
-    await append(ev.final(b, { attempt, ok: g.ok, commit: g.commit, failed: g.failed }))
+    await append(ev.final(b, { attempt, ok: g.ok, commit: g.commit, failed: g.failed, ...(g.warnings ? { warnings: g.warnings } : {}) }))
     return
   }
   if (action.kind === 'land') {
     // 修复合回（fix 与 fix-r<k>）不是 tasks.md 里的切片
     const isFix = (s: unknown) => s === FIX || /^fix-r\d+$/.test(String(s))
     const merged = [...new Set(state.events.filter(x => x.ev === 'merge' && x.ok === true && !isFix(x.slice)).map(x => String(x.slice)))]
-    const { verdict } = await closeout(io, f, merged)
+    // 落地顺序（design D3）：收口 → land 事件 → 从账本生成并提交记录 → 飞行记录 → 交接 pr-ship
+    const { verdict, reasons } = await closeout(io, f, merged)
     await append(ev.land(b, { attempt, verdict }))
+    // 记录只给人看、裁决以账本为准：生成失败不改裁决，照常交接
+    const recErr = await renderRecords(io, f)
+    if (recErr !== undefined) {
+      await ctx.log(`落地记录生成失败：${recErr}`)
+      await ctx.toast(`flight：${f.change} 落地记录生成失败：${recErr}`)
+    }
     await ctx.status(undefined)
-    await ctx.log(await flightRecord(io, f, state, `飞行记录 · ${f.change}`))
+    const record = await flightRecord(io, f, state, `飞行记录 · ${f.change}`)
+    await ctx.log(verdict === 'draft' && reasons ? `${record}\ndraft 原因：${reasons}` : record)
     // 交接给插件自带命令 /flight:pr-ship（design D4）；$.prompt.submit 不能提交斜杠命令（X10），故由调用方以 command.run 跑
     // 交接失败不停飞：已落地，不向上抛（否则 drive 会补记 halt），只提示人带同样参数手动接
     const args = `--worktree ${f.changeTree} --change-dir ${f.changeDir} --judges ${f.hooksDir}`
