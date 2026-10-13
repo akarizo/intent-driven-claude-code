@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -633,4 +635,88 @@ def test_armed_gives_up_and_cancels():
     assert_ts_passed("armed-gives-up-and-cancels")
     assert_ts_passed("armed-gives-up-and-cancels/budget")
     assert_ts_passed("armed-gives-up-and-cancels/abort")
+
+# ---------------------------------------------------------------- flight-armed-followups S2（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
+def test_second_takeoff_refused_while_taking_off():
+    # Given: demo 已批准；第一次 /opsx-apply demo 卡在起飞检查中
+    # When: 再发一次 /opsx-apply demo，随后放行第一次
+    # Then: 第二次回复含「正在起飞，稍候」、不含「自动重试」；账本恰一条 takeoff
+    assert_ts_passed("second-takeoff-refused-while-taking-off")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
+def test_abort_waits_for_retry():
+    # Given: demo 因基线仍在跑待命；tick 触发的自动重试卡在起飞检查中
+    # When: 发 /flight abort demo，随后放行重试，重试起飞成功
+    # Then: abort 回复含「正在自动起飞」与「结束后再 /flight abort」；待命保留到重试结束；之后通知含「已起飞」
+    assert_ts_passed("abort-waits-for-retry")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
+def test_model_turn_aligned():
+    # Given: demo 因 lint 红进入 model 类待命；提交修复请求前主会话已有一轮在跑
+    # When: 那一轮先结束（开始早于 T0）；之后提交的那一轮结束（开始不早于 T0）
+    # Then: 前一轮不重试、预算不变；后一轮自动重试；另一世界 prompt.submit 抛错时待命被放弃并通知含「放弃」
+    assert_ts_passed("model-turn-aligned")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
+def test_human_refusal_drops_old_arm():
+    # Given: demo 因基线仍在跑处于待命
+    # When: 人再发 /opsx-apply demo 被拒为「计划已变」，之后推进 60 秒
+    # Then: 待命被清除、状态行不含 demo 的起飞待命；之后不重试、没有第二条通知
+    assert_ts_passed("human-refusal-drops-old-arm")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S2 未实现")
+def test_status_line_kept_for_others():
+    # Given: e2 正在飞（状态行显示 e2 进度）；demo 处于 model 类待命且重试已用尽
+    # When: demo 的待命再次被拒而放弃
+    # Then: 状态行仍显示 e2 的进度、不为空
+    assert_ts_passed("status-line-kept-for-others")
+
+
+# ---------------------------------------------------------------- flight-armed-followups S4（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
+def test_driving_flight_refused():
+    # Given: demo 由本会话起飞、attempt 1 未结束、在在飞集合里；agent a1 在引擎里仍在运行
+    # When: 分别发 /opsx-apply demo 与 /flight resume demo
+    # Then: 两次回复都含「正在飞」「/flight abort demo」「/flight resume demo」；账本没有新 takeoff
+    assert_ts_passed("driving-flight-refused")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
+def test_stuck_flight_resumes():
+    # Given: demo 由本会话起飞、attempt 1 未结束、在在飞集合里；drive 不在跑；派出的 agent 都已结束
+    # When: 发 /flight resume demo
+    # Then: 不回复「正在飞」；账本追加 attempt 2 的 takeoff
+    assert_ts_passed("stuck-flight-resumes")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
+def test_diagnostician_pending_timed():
+    # Given: demo 已停飞，诊断员 d1 已派发、dispatch 未写入；d1 在此期间发出的请求一直不结束
+    # When: dispatch 写入；时钟推进到请求开始后 10 分钟零 1 秒，看门狗 tick
+    # Then: 对 d1 恰一次 TaskStop
+    assert_ts_passed("diagnostician-pending-timed")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S4 未实现")
+def test_tick_rechecks_staleness():
+    # Given: a1 的请求已超时被 tick 取进快照；tick 查归属时卡住，其间 a1 旧请求结束、新请求开始
+    # When: 放行 tick
+    # Then: 没有对 a1 调用 TaskStop，账本没有 heal
+    assert_ts_passed("tick-rechecks-staleness")
+
+
+# ---------------------------------------------------------------- flight-armed-followups S4 护栏（规划时写好，base 上已通过）
+
+def test_restart_resumes():
+    # Given: 账本里 demo 的 attempt 1 由本会话起飞、未结束；本进程在飞集合为空（模拟重启）
+    # When: 发 /flight resume demo
+    # Then: 不回复「正在飞」，照常续飞
+    assert_ts_passed("same-session-unfinished-resumes-after-restart")
 

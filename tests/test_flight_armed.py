@@ -1,5 +1,7 @@
 """起飞待命的纯判定 armed.ts（scenario: flight-armed-takeoff#refusals-classified / armed-budget-and-expiry / armed-decides-next-step）。
 断言插件里同名的 TS 测试通过；骨架：S1 实现后去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -22,3 +24,13 @@ def test_armed_decides_next_step():
     # When: wait-agents 遇 agent-ended；transient 遇 refused 与 timer；model 遇 refused、（awaitingModel 后）main-turn 与 tick
     # Then: retry；wait（10000）与 retry；submit、retry 与 wait；submit 正文含拒绝原文与三段边界文字
     assert_ts_passed("armed-decides-next-step")
+
+# ---------------------------------------------------------------- flight-armed-followups S1（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-followups S1 未实现")
+def test_relaunch_keeps_args():
+    # Given: resume 类待命 args 为 [demo, --takeover]；非 resume 待命 args 为 [demo, 授权提交]
+    # When: 分别生成 giveUpText
+    # Then: 前者含 /flight resume demo --takeover；后者含 /opsx-apply demo 授权提交
+    assert_ts_passed("relaunch-keeps-args")
+
