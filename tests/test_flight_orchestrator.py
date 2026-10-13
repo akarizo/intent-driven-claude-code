@@ -1,6 +1,8 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -564,3 +566,79 @@ def test_notify_uses_terminal_channel():
     # Then: ui.notify 都收到 title flight、含停飞原因；第二个世界的飞行记录含 no-channel，飞行照常以 halt 结束
     assert_ts_passed("notify-uses-terminal-channel")
     assert_ts_passed("notify-uses-terminal-channel/not-sent")
+
+# ---------------------------------------------------------------- flight-armed-takeoff S3（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
+def test_diagnostician_reads_auto_allowed():
+    # Given: demo 停飞后派出诊断员 d1；引擎对 d1 的工具检查都答 ask
+    # When: 检查 d1 的 Read proposal.md、Bash ledger.py show、Bash git log、Write x.md
+    # Then: 前三个改答 allow（理由含 flight 包络内）；Write 仍答 ask
+    assert_ts_passed("diagnostician-reads-auto-allowed")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
+def test_watchdog_stops_stalled_diagnostician():
+    # Given: demo 已停飞并派出诊断员 d1；d1 的请求已开始、从未结束
+    # When: 时钟推进到请求开始后 10 分钟零 1 秒，看门狗 tick
+    # Then: 对 d1 恰一次 TaskStop；账本没有 heal、没有新的 halt
+    assert_ts_passed("watchdog-stops-stalled-diagnostician")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
+def test_watchdog_halt_drains_queue():
+    # Given: 本 attempt 已有 3 条 heal；a1 请求等待超过 10 分钟；drive 正在派发 a2（spawn 已返回、dispatch 未写入）
+    # When: 看门狗 tick
+    # Then: 追加 halt kind watchdog；a1 与 a2 都被 TaskStop，a2 在 drive 这一轮做完之后补停
+    assert_ts_passed("watchdog-halt-drains-queue")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S3 未实现")
+def test_ticker_not_duplicated():
+    # Given: 看门狗计时器被误判已停又起了第二个，第一个仍在；a1 请求等待超过 10 分钟，预算未用尽
+    # When: 时钟推进，两个计时器各 tick 一次
+    # Then: 账本恰一条 heal（a1）；TaskStop a1 恰一次
+    assert_ts_passed("ticker-not-duplicated")
+
+
+# ---------------------------------------------------------------- flight-armed-takeoff S4（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
+def test_refused_takeoff_arms():
+    # Given: demo 已批准；preflight 以 1 退出、stderr「基线仍在跑（…）：等它结束再起飞」
+    # When: 发 /opsx-apply demo
+    # Then: 回复首行同原拒绝、下一行含已进入起飞待命与基线仍在跑；状态行含起飞待命；通知一次；账本没有 takeoff
+    assert_ts_passed("refused-takeoff-arms")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
+def test_wait_retries_takeoff():
+    # Given: demo 因基线仍在跑进入待命，之后 preflight 通过；另一世界因上一次的 agent 仍在运行进入待命
+    # When: 时钟推进 60 秒；另一世界该 agent 结束（turn.complete 带 agentId）
+    # Then: 自动重试、账本追加 takeoff、待命清除、通知含已起飞；另一世界同样自动起飞
+    assert_ts_passed("wait-retries-takeoff")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
+def test_model_fix_submits_then_retries():
+    # Given: demo 已批准；lint 第一次以 1 退出（overlap …），之后通过
+    # When: 发 /opsx-apply demo；推进时钟让 clock.after(0) 到点；主会话一轮结束
+    # Then: prompt.submit 一次、正文含拒绝原文与只修工作区与本 change 工件、不要发 /opsx-apply；之后自动起飞
+    assert_ts_passed("model-fix-submits-then-retries")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
+def test_transient_retries_once_with_diag():
+    # Given: demo 已批准；plan_fp.py 前两次以 1 退出（plan_fp 超时）
+    # When: 发 /opsx-apply demo，推进 10 秒，再推进 10 秒
+    # Then: 进入待命并追加 diag where takeoff；10 秒后恰重试一次；仍失败则放弃并通知；之后不再重试
+    assert_ts_passed("transient-retries-once-with-diag")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S4 未实现")
+def test_armed_gives_up_and_cancels():
+    # Given: 甲跨会话起飞未落地；乙 lint 红待命、已重试 3 次；丙基线仍在跑待命
+    # When: 甲发 /opsx-apply；乙第 3 次重试又被拒；对丙发 /flight abort demo 并推进 60 秒
+    # Then: 甲不待命、通知含 --takeover；乙放弃、通知含重试已用尽、不再提交；丙回复含已取消起飞待命、之后不重试
+    assert_ts_passed("armed-gives-up-and-cancels")
+

@@ -1,5 +1,7 @@
 """flight 合回与收口过程（scenario: flight-integration#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
+import pytest
+
 from test_flight_plugin import assert_ts_passed
 
 
@@ -128,3 +130,13 @@ def test_merges_write_no_records():
     # When: 合回 S1，再以 mergeFix 合回 fix-r1
     # Then: 两次都返回 ok 与 HEAD；全程没有 slice-gate record 与 timeline.py 调用
     assert_ts_passed("merges-write-no-records")
+
+# ---------------------------------------------------------------- flight-armed-takeoff S2（骨架：实现后去掉 xfail 标记）
+
+@pytest.mark.xfail(strict=True, reason="flight-armed-takeoff S2 未实现")
+def test_commit_artifacts_handles_staged_deletion():
+    # Given: a.md 已修改未暂存；S5.md 的删除已暂存（git status 答 D  …/S5.md）
+    # When: commitArtifacts(io, f, [a.md, S5.md])
+    # Then: git add 只含 a.md；git commit 的路径含 a.md 与 S5.md；无错误
+    assert_ts_passed("commit-artifacts-handles-staged-deletion")
+

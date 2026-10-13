@@ -178,3 +178,12 @@ def test_triage_prompt_and_agent():
     assert "model" not in meta, meta
     assert "只读" in body, body
     assert_ts_passed("triage-prompt-and-agent")
+
+# ---------------------------------------------------------------- flight-armed-takeoff S2 护栏（规划时写好，base 上已通过）
+
+def test_integ_prompts_spec_given():
+    # Given: failed 为 spec 原样的多行项「G2 test: exit 1（新增 1 条失败）\ntests/test_x.py::test_y」、base c9
+    # When: 生成 integFixerPrompt
+    # Then: 多行项首行与第二行都在，并含 scenario、xfail、owns、先有失败测试
+    assert_ts_passed("integ-prompts-state-guards/spec-given")
+
