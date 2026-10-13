@@ -798,14 +798,26 @@ async function noteRefusal($: Engine, arm: Arm, text: string): Promise<void> {
   await $.ui.status(armedLine(arm, await $.clock.now()))
 }
 
-/** /opsx-apply、/flight resume、批准带按键共用的起飞：被拒且不是 human / human-key 类时进入待命（design D2）。 */
+/** /opsx-apply、/flight resume、批准带按键共用的起飞：被拒且不是 human / human-key 类时进入待命（design D2）。
+ *  与待命自动重试经 armBusy 互斥：该 change 正在自动重试时不起飞；人工起飞期间 advanceArm 跳过。 */
 async function takeoffArmed($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
-  const text = await takeoffSafe($, args, opts)
   let change = givenOf(args).given
   if (change === undefined) {
     const at = await locate($, undefined)
     change = 'error' in at ? undefined : at.f.change
   }
+  if (change === undefined) return takeoffArmedLocked($, args, opts, undefined)
+  if (armBusy.has(change)) return `flight：${change} 正在自动重试起飞，稍候`
+  armBusy.add(change)
+  try {
+    return await takeoffArmedLocked($, args, opts, change)
+  } finally {
+    armBusy.delete(change)
+  }
+}
+
+async function takeoffArmedLocked($: Engine, args: string[], opts: { resume?: boolean }, change: string | undefined): Promise<string> {
+  const text = await takeoffSafe($, args, opts)
   if (isAirborne(text)) {
     if (change !== undefined) await dropArm($, change)
     return text
