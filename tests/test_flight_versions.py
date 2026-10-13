@@ -1,6 +1,4 @@
 """flight 插件的版本核对（scenario: flight-version-check#*）。versions.ts 是纯函数，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 # ---------------------------------------------------------------- flight-measure
@@ -58,7 +56,6 @@ def test_judges_need_ship_ledger():
 # 骨架：S7 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_judges_need_ledger_records():
     # Given: 判定器 features 缺 ledger-records
     # When: 起飞核对判定器

@@ -471,7 +471,6 @@ def test_per_task_guidance_when_plugin_registers():
 # 骨架：S7 实现后去掉 xfail 标记。
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_dispatch_takes_base_without_start():
     # Given: wave 1 只有 S1；base 打印 b1；另一世界 base 以 1 退出（G0 base）
     # When: drive 派发 S1 执行体
@@ -479,7 +478,6 @@ def test_dispatch_takes_base_without_start():
     assert_ts_passed("dispatch-takes-base-without-start")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_takeoff_reads_engine_model():
     # Given: session.model 分别应答 claude-opus-5-5、gpt-x、抛错 denied
     # When: 分别 /opsx-apply demo，再在第二个世界带 --model=sonnet
@@ -487,7 +485,6 @@ def test_takeoff_reads_engine_model():
     assert_ts_passed("takeoff-reads-engine-model")
 
 
-@pytest.mark.xfail(strict=True, reason="S7：同名 TS 测试尚未实现")
 def test_takeoff_writes_no_timeline():
     # Given: change demo 已批准、从未起飞、工作区干净
     # When: 人发 /opsx-apply demo
