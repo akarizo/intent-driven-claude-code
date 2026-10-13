@@ -318,26 +318,33 @@ sequenceDiagram
 - **改状态机的 S1 与靠 next() 推进的旧用例不同 wave**：
   - `core.test.ts` 的 `core-halts-on-final-red` 由 S1 改为「integ 已用过或不满足条件时停飞」；
   - `landing.test.tsx` 的 `final-red-halts` 由 S4 调整；
-  - `orchestrator.test.tsx` 中 final 红的世界（约 :1829）与「末条事件为 halt」的断言由 S5 调整，S5 新增的诊断员派发会在 halt 之后追加 dispatch。
-  - S4、S5 都依赖 S1。
-- **S4 ∥ S5**：
+  - `orchestrator.test.tsx` 中 final 红的世界由 S5a 调整；「末条事件为 halt」的断言由 S5b 调整，因为 S5b 新增的诊断员派发会在 halt 之后追加 dispatch。
+  - S4、S5a 都依赖 S1。
+- **S4 ∥ S5a**：
   - S4 的 verify 不含 orchestrator 测试；
-  - S5 调整 final 红世界时，只断言状态机层面的结果（账本出现 heal integ 与 slice integ 的 fixer 派发），不断言 S4 才定的提示词与字段；
-  - `ctx.notify` 是可选成员，landing 调 `ctx.notify?.(…)`，S5 合回前后都不抛错。
-- **S6 依赖 S5**：S6 需要 export 的 `takeoff`。S7 文档依赖 S4、S5。
-- **深度**：3（S1/S2/S3 → S4/S5 → S6/S7）。
+  - S5a 调整 final 红世界时，只断言状态机层面的结果（账本出现 heal integ 与 slice integ 的 fixer 派发），不断言 S4 才定的提示词与字段；
+  - `ctx.notify` 是可选成员，landing 调 `ctx.notify?.(…)`，S5b 合回前后都不抛错。
+- **S5 拆为 S5a / S5b**（2026-10-13 attempt 1 之后修订）：
+  - attempt 1 的 S5 派了两个执行体，都用满 maxTurns 40 次模型请求被截断、没提交，S5 被判 blocked；
+  - 原因是工作量超出一个执行体的轮次：6 个 scenario、四类接线、S1 带来的旧用例调整，再加上摸测试世界能力与被包络拒绝浪费的轮次；
+  - 拆分：S5a 负责 heal、看门狗、halt 分类、export takeoff、integ-guard 与 final 红世界；S5b 负责诊断员、triage 与通知；
+  - 两片都改 `orchestrator.tsx`，只能串行：S5b 依赖 S5a；
+  - attempt 1 的半成品存为提交 `c563e41`，两片只读参考。
+- **依赖**：S6 依赖 S5a（需要 export 的 `takeoff`），按 `_interfaces.md` 约定的写法找诊断员，与 S5b 并行。S7 文档依赖 S4、S5a，按 spec 写，与 S5b 并行。
+- **深度**：3（S1/S2/S3 → S4/S5a → S5b/S6/S7）。
 
 ```mermaid
 flowchart LR
   S1["S1 状态机<br/>自愈 · integ · halt kind · 诊断员只读"] --> S4["S4 落地<br/>integ 收口 · 通知 · 事件表"]
   S2["S2 判定器<br/>G9 · 事件 · report"] --> S4
   S3["S3 纯模块<br/>提示词 · 诊断员定义 · 看门狗跟踪"] --> S4
-  S1 --> S5["S5 编排<br/>heal 执行 · 看门狗 · 诊断 · 通知"]
-  S2 --> S5
-  S3 --> S5
-  S5 --> S6["S6 批准带续飞<br/>resume.ts · register"]
+  S1 --> S5a["S5a 编排（一）<br/>heal 执行 · 看门狗 · halt 分类"]
+  S2 --> S5a
+  S3 --> S5a
+  S5a --> S5b["S5b 编排（二）<br/>诊断员 · triage · 通知"]
+  S5a --> S6["S6 批准带续飞<br/>resume.ts · register"]
   S4 --> S7["S7 文档 · 0.9.0"]
-  S5 --> S7
+  S5a --> S7
 ```
 
 ## Risks / Trade-offs
@@ -354,7 +361,7 @@ flowchart LR
 - **[诊断员花 token]** → 只在停飞时派（低频），abort、fingerprint 不派；看门狗对已停飞 attempt 的 agent 直接停。
 - **[一键续飞自动提交工件]** → 按钮旁写明；只提交本 change 工件（现有 `classifyDirty`），工件之外有脏改动照旧拒飞。
 - **[基线跑 2–3 分钟期间人以为没反应]** → 起跑与结束各 toast 一次；面板显示「续飞准备中：基线运行」。
-- **[`turn.step` 在 `claude plugin test` 世界里能否触发未知]** → S3 的跟踪逻辑放纯模块单测；S5 的接线用例若测试世界发不了 `turn.step`，改为经注入点驱动 `StepTracker`，并在切片包里写明。
+- **[`turn.step` 在 `claude plugin test` 世界里能否触发未知]** → S3 的跟踪逻辑放纯模块单测；S5a 的接线用例若测试世界发不了 `turn.step`，改为经注入点驱动 `StepTracker`，并在切片包里写明。attempt 1 已核实：测试一侧可以用 `$.turn.step({agentId, model})` 发出（model 必须非空），由测试世界自己应答，写法见 S5a 切片包。
 
 ## Migration Plan
 
