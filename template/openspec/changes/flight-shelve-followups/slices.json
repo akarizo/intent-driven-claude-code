@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "change": "flight-shelve-followups",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "判定器：账本认识 shelve、起飞守卫拒飞「已搁置」、覆盖率未达标判不可度量",
+      "packet": "slices/S1.md",
+      "owns": [
+        "template/.claude/hooks/ledger.py",
+        "template/.claude/hooks/takeoff-gate.py",
+        "template/.claude/hooks/slice-gate.py",
+        "tests/test_shelve_judges.py",
+        "tests/test_slice_gate_coverage.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_shelve_judges.py tests/test_slice_gate_coverage.py tests/test_ledger.py tests/test_approval_gate.py tests/test_slice_gate.py tests/test_slice_gate_final.py tests/test_slice_gate_reuse_preflight.py",
+      "scenarios": [
+        "flight-band-shelve#shelve-revokes-approval",
+        "flight-band-shelve#later-approve-after-shelve-passes",
+        "test-gate-coverage-failure#final-red-on-coverage-failure",
+        "test-gate-coverage-failure#baseline-red-on-coverage-failure"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S2",
+      "title": "插件起飞：改名行归为工件之外，拒绝信息与起飞回复逐行列出工件",
+      "packet": "slices/S2.md",
+      "owns": [
+        "template/plugins/flight/hooks/land.ts",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_takeoff_dirty_reporting.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_takeoff_dirty_reporting.py tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py",
+      "scenarios": [
+        "takeoff-dirty-reporting#rename-refused-before-any-commit",
+        "takeoff-dirty-reporting#refusal-lists-artifact-paths",
+        "takeoff-dirty-reporting#takeoff-reply-lists-committed-artifacts"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S3",
+      "title": "批准带：「搁置」按钮与按键、读账本用主检出的判定器、逐行列出工件、事件表加 shelve",
+      "packet": "slices/S3.md",
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/types/index.d.ts",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "template/plugins/flight/tests/io.test.ts",
+        "tests/test_flight_band_shelve.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_band_shelve.py tests/test_flight_plugin.py tests/test_flight_resume.py tests/test_flight_io.py tests/test_flight_armed.py",
+      "scenarios": [
+        "flight-band-shelve#shelve-press-writes-event-and-hides",
+        "flight-band-shelve#shelve-hides-halted-flight",
+        "flight-band-shelve#replanned-shelved-change-reappears",
+        "flight-band-shelve#shelve-refused-when-judges-unaware",
+        "flight-band-shelve#band-reads-ledger-with-main-judges",
+        "takeoff-dirty-reporting#band-lists-artifact-paths"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S4",
+      "title": "文档与版本：命令与 skill 写明「搁置」，插件补丁版本 +1",
+      "packet": "slices/S4.md",
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "tests/test_shelve_followups_docs.py",
+        "tests/test_dispatch_origin_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_shelve_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py",
+      "scenarios": [
+        "flight-shelve-followups-docs#docs-describe-shelve",
+        "flight-shelve-followups-docs#plugin-version-bumped"
+      ],
+      "guards": []
+    }
+  ],
+  "scenario_tests": {
+    "flight-band-shelve#shelve-revokes-approval": "tests/test_shelve_judges.py::test_shelve_revokes_approval",
+    "flight-band-shelve#later-approve-after-shelve-passes": "tests/test_shelve_judges.py::test_later_approve_after_shelve_passes",
+    "test-gate-coverage-failure#final-red-on-coverage-failure": "tests/test_slice_gate_coverage.py::test_final_red_on_coverage_failure",
+    "test-gate-coverage-failure#baseline-red-on-coverage-failure": "tests/test_slice_gate_coverage.py::test_baseline_red_on_coverage_failure",
+    "takeoff-dirty-reporting#rename-refused-before-any-commit": "tests/test_takeoff_dirty_reporting.py::test_rename_refused_before_any_commit",
+    "takeoff-dirty-reporting#refusal-lists-artifact-paths": "tests/test_takeoff_dirty_reporting.py::test_refusal_lists_artifact_paths",
+    "takeoff-dirty-reporting#takeoff-reply-lists-committed-artifacts": "tests/test_takeoff_dirty_reporting.py::test_takeoff_reply_lists_committed_artifacts",
+    "flight-band-shelve#shelve-press-writes-event-and-hides": "tests/test_flight_band_shelve.py::test_shelve_press_writes_event_and_hides",
+    "flight-band-shelve#shelve-hides-halted-flight": "tests/test_flight_band_shelve.py::test_shelve_hides_halted_flight",
+    "flight-band-shelve#replanned-shelved-change-reappears": "tests/test_flight_band_shelve.py::test_replanned_shelved_change_reappears",
+    "flight-band-shelve#shelve-refused-when-judges-unaware": "tests/test_flight_band_shelve.py::test_shelve_refused_when_judges_unaware",
+    "flight-band-shelve#band-reads-ledger-with-main-judges": "tests/test_flight_band_shelve.py::test_band_reads_ledger_with_main_judges",
+    "takeoff-dirty-reporting#band-lists-artifact-paths": "tests/test_flight_band_shelve.py::test_band_lists_artifact_paths",
+    "flight-shelve-followups-docs#docs-describe-shelve": "tests/test_shelve_followups_docs.py::test_docs_describe_shelve",
+    "flight-shelve-followups-docs#plugin-version-bumped": "tests/test_shelve_followups_docs.py::test_plugin_version_bumped"
+  }
+}
