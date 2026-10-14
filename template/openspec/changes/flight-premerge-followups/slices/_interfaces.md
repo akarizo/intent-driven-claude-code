@@ -215,3 +215,19 @@ export function integFixerPrompt(x: { change: string; changeDir: string; failed:
 export function integReviewPrompt(x: { change: string; changeDir: string; base: string; commit: string }): string {
 export function triagePrompt(x: { change: string; changeDir: string; hooksDir: string; reason: string; kind: string }): string {
 ```
+
+## S5
+
+### template/plugins/flight/hooks/register.tsx
+```
+export const register: Register = on => {
+```
+
+### template/plugins/flight/types/index.d.ts
+```
+export type FlightItem = {
+export type FlightArmedItem = {
+export type FlightArmed = { items: Record<string, FlightArmedItem> }
+export type FlightBand = {
+export type FlightPanel = {
+```
