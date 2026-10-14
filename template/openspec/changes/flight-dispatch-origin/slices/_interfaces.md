@@ -73,12 +73,32 @@ export function restoreStatusNow(): Promise<void> {
 export function registerOrchestrator(on: On): void {
 ```
 
-## S2 交出（`lease.ts` 增补、`orchestrator.tsx`）
-- `export async function guardedSpawn<T>(lease: Lease | undefined, spawn: () => Promise<T>): Promise<T | { deny: string }>`：`leaseDeny` 有值时返回 `{ deny }`，不调用 spawn。
-- `ctxOf($, lease?: Lease)`：`spawn` 经 `guardedSpawn`。
-- 凭证在下面这些 hook 入口用 `withLease` 取得，沿 `takeoffArmed → runStep → takeoffSafe → takeoff → drive → driveNow → ctxOf` 传下去：
-  - `command.run`（`/opsx-apply`、`/flight`）；
-  - 子 agent 的 `turn.complete`；
-  - 主会话的 `turn.complete`。
+## S2
+
+### template/plugins/flight/hooks/lease.ts
+```
+export type Lease = { readonly alive: boolean }
+export const LEASE_DENY = 'flight：派发须在处理外部事件的 hook 里（定时器或已返回的回调不能派发）'
+export async function withLease<T>(body: (lease: Lease) => Promise<T>): Promise<T> {
+export function leaseDeny(lease: Lease | undefined): string | undefined {
+export async function guardedSpawn<T>(lease: Lease | undefined, spawn: () => Promise<T>): Promise<T | { deny: string }> {
+```
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean; lease?: Lease } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean; lease?: Lease }): Promise<string> {
+export function restoreStatusNow(): Promise<void> {
+export function registerOrchestrator(on: On): void {
+```
+
+### template/plugins/flight/hooks/landing.tsx
+```
+export const FINDINGS_TOOL: { name: 'submit_findings'; description: string; inputSchema: Record<string, unknown> } = {
+export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: string | undefined, input: unknown): Promise<{ result: string } | { deny: string }> {
+export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
+export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Promise<void> {
+```
 
 ## S4
