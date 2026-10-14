@@ -42,3 +42,5 @@ wave 1 = S1 + S4；wave 2 = S3（依赖 S1）；wave 3 = S2（依赖 S1、S3）�
   - `command.run`（`/opsx-apply`、`/flight`）；
   - 子 agent 的 `turn.complete`；
   - 主会话的 `turn.complete`。
+
+## S4
