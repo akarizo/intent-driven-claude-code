@@ -13,5 +13,5 @@
 
 ## 切片
 
-- [ ] S1 插件：读出诊断结论、诊断为改计划即计划缺陷、交主会话修订计划 （deps: - · verify: `python3 -m pytest -q tests/test_flight_replan_handoff.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_orchestrator.py tests/test_flight_core.py tests/test_flight_resume.py tests/test_flight_plan_defect_band.py`）
-- [ ] S2 文档与版本：命令与 skill 写明诊断为改计划时交主会话修订，README 同步；插件 0.13.0 （deps: - · verify: `python3 -m pytest -q tests/test_replan_handoff_docs.py tests/test_premerge_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）
+- [x] S1 插件：读出诊断结论、诊断为改计划即计划缺陷、交主会话修订计划 （deps: - · verify: `python3 -m pytest -q tests/test_flight_replan_handoff.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_orchestrator.py tests/test_flight_core.py tests/test_flight_resume.py tests/test_flight_plan_defect_band.py`）
+- [x] S2 文档与版本：命令与 skill 写明诊断为改计划时交主会话修订，README 同步；插件 0.13.0 （deps: - · verify: `python3 -m pytest -q tests/test_replan_handoff_docs.py tests/test_premerge_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）

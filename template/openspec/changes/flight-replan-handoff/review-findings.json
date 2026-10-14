@@ -1,0 +1,56 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "MEDIUM",
+      "file": "docs/WORKFLOW_zh.md",
+      "line": 194,
+      "summary": "同一说法的兄弟文档没改：docs/WORKFLOW_zh.md 仍写「诊断只供展示、不参与判定」，和本 change 的新行为（诊断结论为「改计划」时判为计划缺陷、交主会话修订）相矛盾。本片改了 README、命令和 skill，却漏了这份面向用户的工作流文档。它不在 S2 的 owns 里，测试只查「不参与任何判定」这几个字，所以门禁查不出来。",
+      "fix": "在本 change 收口前（整合修复，或经人授权追加的 R 任务）把 docs/WORKFLOW_zh.md:194 改成和 README:243 一致的写法：诊断结论为「改计划」时插件交主会话修订计划（只改计划工件、渲染 spec.html、跑 lint，不起飞），人审阅后按「批准修订并续飞」，其他结论只展示。也可以另记 backlog 跟进。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 87,
+      "summary": "文档没写交接的前提条件。按 design D3，只有这次飞行由本会话起飞（最新 takeoff 的 by.session 等于本会话）时才交主会话，否则只发通知；但 opsx-apply.md、SKILL.md 和 README 都写成结论为「改计划」就交主会话。别的会话起飞的停飞，读者会误以为也会自动交接。",
+      "fix": "在命令和 skill 的「诊断员」条（opsx-apply.md:87、SKILL.md:96）以及 README:243，把「第二行结论为「改计划」时」改成「第二行结论为「改计划」且这次飞行由本会话起飞时」，三处措辞保持一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1561,
+      "summary": "handoff 只比对最新 takeoff 的 by.session，没核对这条 triage 所属的 attempt 是不是最新 attempt。takeoff 不因 diagnosing 拒绝续飞，所以人可以在诊断员还没结束时就改好计划、按「批准修订并续飞」，这时 attempt 2 已在飞。随后 attempt 1 的诊断员结束、结论为「改计划」，仍会向主会话提交修订请求，并通知「已交主会话修订计划」，诱导主会话在飞行中改计划工件。planDefect 只看最新 attempt 的 triage，因此续飞拒绝不受影响，两处判据不一致。是否真能并发触发需进一步确认。",
+      "fix": "handoff 条件加上 attempt 一致：const st = reduce(found.events); const handoff = triageVerdict(text) === '改计划' && st.attempt === who.attempt && String(st.takeoff?.by?.session ?? '') === (await $.session.id())；并在 orchestrator.test.tsx 补一个用例：诊断中途写入 attempt 2 的 takeoff，断言 prompt.submit 没有提交。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 381,
+      "summary": "core.ts 新增的 TRIAGE_VERDICTS 数组与 prompts.ts:150 已有的同名字符串常量重复维护同一组处置类别。改一处、漏另一处会导致诊断员按提示写出的结论读不出。",
+      "fix": "prompts.ts 从 core 导入 TRIAGE_VERDICTS，拼成 '「改计划」「修插件」「人工操作」'（verdicts.map(v => `「${v}」`).join('')），删掉本地同名常量；不想动 prompts.ts 的话，至少给 core 的常量改个名，避免同名混淆。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1561,
+      "summary": "交主会话的「本会话起飞」守卫（takeoff.by.session === $.session.id()）是 spec 写明的条件（「且这次飞行由本会话起飞」），但没有任何测试覆盖：other-verdicts-not-handed-over 只测结论不是「改计划」，replan-triage-handed-to-main-session 只测本会话。把守卫删掉，全部用例仍绿；而它挡的是跨会话往别的会话插入修订轮这种副作用，正是 memory 里跨会话起飞类事故的同一类风险。",
+      "fix": "在 orchestrator.test.tsx 追加一个用例：账本里 takeoff 的 by.session 设成别的会话、诊断员回答结论为「改计划」；断言 log.submits 为空、通知不含「已交主会话」。或在 other-verdicts-not-handed-over 的 Given 里再加这一份账本。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1566,
+      "summary": "`void $.prompt.submit(...).catch(err => ctx.notify?.(...))`：notify 本身 reject 时会成为未处理的 rejection。同文件 deferTriage 的写法在最外层再兜一层 `.catch(() => undefined)`；design D3 还要求失败时「只写 log」，这里只发了通知、没写 ctx.log。",
+      "fix": "改为 `void (async () => { try { await $.prompt.submit({ text: prompt }) } catch (err) { await ctx.log(`flight：${f.change} 交主会话失败：${errText(err)}`); await ctx.notify?.(`${f.change} 交主会话失败：${errText(err)}`) } })().catch(() => undefined)`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 781,
+      "summary": "续飞拒绝文案按 defect 文字是否含「在改生产代码之前就已通过」来判断缺陷出自 G5 还是诊断。诊断首行如果恰好引用了这句话，就会误给「标为护栏」的出路。来源判别靠文字启发式，较脆。",
+      "fix": "让 planDefect 返回 `{ source: 'g5' | 'triage', reason }`，或新增一个函数单独暴露来源；orchestrator 按 source 选文案，register.tsx 只取 reason。"
+    }
+  ],
+  "fix": null
+}
