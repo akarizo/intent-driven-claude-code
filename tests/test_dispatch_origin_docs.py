@@ -44,11 +44,11 @@ def test_propose_description_current():
     assert "自己发 /opsx-apply" not in desc, desc
 
 
-def test_plugin_version_0_10_2():
+def test_plugin_version_0_10_4():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
-    # Then: version 为 0.10.2；description 含起飞待命、按下即起飞、自愈、看门狗、续飞
+    # Then: version 为 0.10.4；description 含起飞待命、按下即起飞、自愈、看门狗、续飞
     data = json.loads(_read("template/plugins/flight/.claude-plugin/plugin.json"))
-    assert data["version"] == "0.10.2", data["version"]
+    assert data["version"] == "0.10.4", data["version"]
     for word in ("起飞待命", "按下即起飞", "自愈", "看门狗", "续飞"):
         assert word in data["description"], data["description"]
