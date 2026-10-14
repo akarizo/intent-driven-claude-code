@@ -15,7 +15,11 @@
   - `Arm` 新增字段 `missedTurn: boolean` 与 `submittedAt?: number`。
 - `types/index.d.ts`：`FlightArmedItem` 同步加 `missedTurn: boolean`。
 
-## S2 交出
-- 无对外接口。`register.tsx` 内部新增 `pressing: Set<string>`。
+## S2
+
+### template/plugins/flight/hooks/register.tsx
+```
+export const register: Register = on => {
+```
 
 ## S3
