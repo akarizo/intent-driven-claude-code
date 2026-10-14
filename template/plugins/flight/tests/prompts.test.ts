@@ -6,6 +6,7 @@ import {
   followupReviewPrompt,
   integFixerPrompt,
   integReviewPrompt,
+  premergeResolverPrompt,
   resolverPrompt,
   reviewerPrompt,
   triagePrompt,
@@ -80,6 +81,27 @@ test('prompts-reviewer-resolver-fixer', async () => {
   expect(resolve).toContain('a.py')
   expect(resolve).toContain('git commit --no-edit')
   expect(fix).toContain('空 body 未校验')
+})
+
+test('prompts-premerge-resolver', async () => {
+  // Given: change demo 收口预合并 origin/main 时 a.py 与 b.py 冲突
+  const x = { change: 'demo', changeDir: CHANGE_DIR, ref: 'origin/main', conflicts: ['a.py', 'b.py'] }
+
+  // When: 生成预合并解冲突提示词
+  const prompt = premergeResolverPrompt(x)
+
+  // Then: 全文恰为：目标分支合进 change 分支时冲突、两边意图都保留、只解列出的文件、git add 后 git commit --no-edit、不改其它文件、门禁由控制面跑 final
+  expect(prompt).toBe([
+    '任务四 · 解预合并冲突：OpenSpec change `demo` 收口前把目标分支 origin/main 合进 change 分支时冲突，当前 worktree 处于 git merge 冲突中。',
+    `验收依据：${CHANGE_DIR} 下的 proposal.md、design.md、specs/。`,
+    '冲突文件：',
+    '- a.py',
+    '- b.py',
+    '两边意图都保留：目标分支上已合入的改动与本 change 的改动都不能丢；只解这些文件，不改其它文件。',
+    '解完 `git add` 这些文件，再 `git commit --no-edit`。',
+    '门禁由控制面在你收口时运行（全量 final）：不要自己运行 slice-gate。',
+    '最后一行简述解了哪些文件。',
+  ].join('\n'))
 })
 
 test('prompts-reviewer-diffs-against-first-parent', async () => {

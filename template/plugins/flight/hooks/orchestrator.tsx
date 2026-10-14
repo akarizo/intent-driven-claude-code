@@ -6,7 +6,7 @@ import type { FlightArmed, FlightPanel } from '../types'
 import { abortFlight } from './abort'
 import { WAKE_FOOTER, afterMissedTurn, armOf, armedLine, beforeRetry, classifyRefusal, giveUpText, humanText, nextStep, refusedAgain } from './armed'
 import type { Arm, ArmEvent, ArmStep } from './armed'
-import { agentOf, ev, healVerdict, next as nextActions, reduce, stopVerdict, summarize, summaryLines } from './core'
+import { PREMERGE, agentOf, ev, healVerdict, next as nextActions, planDefect, reduce, stopVerdict, summarize, summaryLines } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
@@ -17,7 +17,7 @@ import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktr
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
-import { executorPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
+import { executorPrompt, premergeResolverPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
 import { SHIP_TOOL, shipPr } from './ship'
 import { checkJudges, checkPluginCopy } from './versions'
 import { StepTracker, WATCHDOG_MS } from './watchdog'
@@ -50,7 +50,9 @@ const AUTHORIZE = '授权提交'
 /** 起飞时接管另一个会话未落地 / 停飞的飞行（design D5）；不是 change 名、不透传 */
 const TAKEOVER = '--takeover'
 const MEASURE_RETRY = 'flight：暂时无法判定你的归属（账本读取失败），稍后重试测量'
-const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover]'
+const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover] · /flight recheck <change>'
+/** slice-gate ship 的这些原因表示落地后 final / 全量评审已过期，/flight recheck 才另起 attempt（design D5） */
+const STALE_HEADS = ['final 过期', '全量评审过期']
 /** 写账本的入口（/opsx-apply、/flight abort、/flight resume）只认人或宿主程序发出的来源：终端、Remote Control、SDK */
 export const HOST_ORIGINS = ['composer', 'bridge', 'sdk']
 // 不变量（design D6）：模型可调用的工具恰为三个（measure、submit_findings、ship）；ship 只认主会话（带 agentId 一律拒绝）；ship 只写 ship 事件。
@@ -415,6 +417,19 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
     if (r.agentId === undefined) return blocked(a.slice, `派发执行体被拒：${r.deny ?? '没有 agentId'}`)
     return record(ev.dispatch(b, { attempt: A, slice: a.slice, role: 'executor', agent: r.agentId, model: f.model, worktree: wt.path, base: st.base, branch: wt.branch }))
   }
+  if (a.kind === 'dispatch' && a.role === 'resolver' && a.slice === PREMERGE) {
+    // 预合并冲突（design D4）：在解冲突 worktree 从 change 分支尖端合并目标分支；premerge 不是计划切片，不调 sliceBase
+    const pm = state.events.filter(e => e.ev === 'premerge' && Number(e.attempt) === A).pop()
+    const ref = String(pm?.ref ?? '')
+    if (ref === '') return blocked(PREMERGE, '预合并事件缺目标分支（ref），无从解冲突')
+    const p = await prepareResolve(io, f, PREMERGE, { branch: ref, attempt: A })
+    if ('error' in p) return blocked(PREMERGE, p.error)
+    const prompt = premergeResolverPrompt({ change: f.change, changeDir: f.changeDir, ref, conflicts: p.conflicts.length ? p.conflicts : a.conflicts })
+    if (await stopped()) return false
+    const r = await ctx.spawn({ f, role: 'resolver', cwd: p.path, prompt, description: `${f.change} 预合并解冲突` })
+    if (r.agentId === undefined) return blocked(PREMERGE, `派发解冲突 agent 被拒：${r.deny ?? '没有 agentId'}`)
+    return record(ev.dispatch(b, { attempt: A, slice: PREMERGE, role: 'resolver', agent: r.agentId, model: f.model, worktree: p.path, branch: p.branch }))
+  }
   if (a.kind === 'dispatch' && a.role === 'resolver') {
     const p = await prepareResolve(io, f, a.slice, { branch: sliceBranch(state, a.slice), attempt: A })
     if ('error' in p) return blocked(a.slice, p.error)
@@ -701,12 +716,15 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
     { changeDir, scenarioFiles: await scenarioFiles(io, `${abs}/slices.json`), artifactFiles: await artifactFiles(io, `${abs}/slices.json`) },
   )
   if (dirty.others.length) {
+    // 改名行不能列进 artifact_files（design D8 · D2）：全是改名行时只给改名出路，混有其他路径时两条都给
+    const renames = dirty.others.filter(p => p.includes(' -> ')).length
     return [
       `flight：工作区不干净，不起飞（工件之外的未提交改动）：`,
       ...dirty.others,
       `「${AUTHORIZE}」只提交本 change 的工件，不覆盖上面这些文件。任选其一：`,
       `- 自行提交或撤销这些文件，再重发 /opsx-apply ${name}`,
-      `- 它们属于本 change（如 scenario 测试的辅助模块、ADR 索引）：逐个列进 slices.json 的 artifact_files，在批准带重新批准后起飞（按键会一并提交）`,
+      ...(renames < dirty.others.length ? [`- 它们属于本 change（如 scenario 测试的辅助模块、ADR 索引）：逐个列进 slices.json 的 artifact_files，在批准带重新批准后起飞（按键会一并提交）`] : []),
+      ...(renames > 0 ? [`- 改名行插件不代为提交，也不能列进工件清单：先 \`git mv\` 回原名，或自行提交这次改名，再重发 /opsx-apply ${name}`] : []),
     ].join('\n')
   }
   if (dirty.artifacts.length && !authorized) {
@@ -758,6 +776,11 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   const fp = fpRun.stdout.trim()
   if (fpRun.exitCode !== 0 || !/^[0-9a-f]{64}$/.test(fp)) {
     return `flight：计算计划指纹失败，不起飞（${firstLine(fpRun.stderr) || firstLine(fpRun.stdout) || '无输出'}）`
+  }
+  // 计划缺陷（design D6）：计划不改，续飞仍会在同一处停飞；不写任何事件。文字不得含「未批准」「计划已变」（起飞待命会误归为等人按键）
+  const defect = opts.resume ? planDefect(state) : undefined
+  if (defect !== undefined && fp === state.takeoff?.fp) {
+    return `flight：${name} 计划需修订：${defect}。计划不改，续飞仍会在同一处停飞；先改计划（如把该 scenario 标为护栏），再在批准带按「批准修订并续飞」`
   }
 
   flights.set(name, flight)
@@ -1257,11 +1280,37 @@ async function inFlight(io: Io, id: string): Promise<boolean> {
   return o.role === 'diagnostician' && diagnosing.has(o.change)
 }
 
-/** /flight 分派：abort / resume 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
+/**
+ * /flight recheck（design D5）：最新 attempt 已落地，且 slice-gate ship 的原因里有 final / 全量评审过期 → 走普通起飞另起 attempt
+ * （切片已合回、已评审，next() 直接进收口）；否则拒绝，不写事件。
+ */
+async function recheck($: Engine, given: string | undefined, lease?: Lease): Promise<string> {
+  const at = await locate($, given)
+  if ('error' in at) return at.error
+  const { f } = at
+  const io = ioHere($)
+  const ledger = await readLedger(io, f)
+  if ('error' in ledger) return `flight：账本读取失败：${firstLine(ledger.error)}`
+  const state = reduce(ledger.events)
+  if (!state.events.some(e => e.ev === 'land' && Number(e.attempt) === state.attempt)) return `flight：${f.change} 尚未落地：在飞或停飞时用 /flight resume ${f.change}`
+  const r = await judge(io, f, 'slice-gate', ['ship', '--change-dir', f.changeDir], f.changeTree)
+  let reasons: unknown
+  try {
+    reasons = (JSON.parse(r.stdout) as { reasons?: unknown } | null)?.reasons
+  } catch {
+    reasons = undefined
+  }
+  if (!Array.isArray(reasons)) return `flight：slice-gate ship 输出无法解析，不重验：${firstLine(r.stdout) || firstLine(r.stderr) || '无输出'}`
+  if (!reasons.some(x => STALE_HEADS.some(h => String(x).startsWith(h)))) return `flight：${f.change} 无需重验：final 与全量评审仍新鲜`
+  return takeoffArmed($, [f.change], { lease })
+}
+
+/** /flight 分派：abort / resume / recheck 只认人发出；status / panel / abort 读账本作答，resume 走起飞流程。 */
 async function flightCommand($: Engine, args: string[], origin: string | undefined, lease?: Lease): Promise<string> {
   const [sub, ...rest] = args
-  if ((sub === 'abort' || sub === 'resume') && !HOST_ORIGINS.includes(origin ?? '')) return originRefusal(`/flight ${sub}`, origin)
+  if ((sub === 'abort' || sub === 'resume' || sub === 'recheck') && !HOST_ORIGINS.includes(origin ?? '')) return originRefusal(`/flight ${sub}`, origin)
   if (sub === 'resume') return takeoffArmed($, rest, { resume: true, lease })
+  if (sub === 'recheck') return recheck($, rest[0], lease)
   if (sub !== 'status' && sub !== 'panel' && sub !== 'abort') return FLIGHT_USAGE
   // 省略 change：本进程只登记了一个 change 且它在飞时取它
   const only = flights.size === 1 ? [...flights.keys()][0] : undefined
@@ -1333,7 +1382,7 @@ export function registerOrchestrator(on: On): void {
       // 注册不了时模型调不到 ship：PR 停在 draft，由人决定
     }
     try {
-      await $.command.register({ name: 'flight', description: '飞行：status | panel | abort | resume' })
+      await $.command.register({ name: 'flight', description: '飞行：status | panel | abort | resume | recheck' })
     } catch {
       // 登记不了时 /flight 不出现在补全里；起飞与驱动不受影响
     }
@@ -1455,7 +1504,8 @@ export function registerOrchestrator(on: On): void {
     if (found === undefined) return next(e)
     const who = agentOf(reduce(found.events), e.agent_id)
     if (who === undefined) return next(e)
-    if (who.role !== 'executor' && who.role !== 'resolver') {
+    // 预合并解冲突 agent 不跑切片门禁：交 onLandingStop 跑 final（design D4）
+    if (who.role !== 'executor' && !(who.role === 'resolver' && who.slice !== PREMERGE)) {
       const r = await onLandingStop(ctx, found, e.agent_id)
       return r?.block ? { ...(await next(e)), block: r.block } : next(e)
     }

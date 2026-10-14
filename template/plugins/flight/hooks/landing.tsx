@@ -1,7 +1,7 @@
 // 评审回收与落地（spec flight-findings-intake · design D5）：submit_findings 的处理、评审员 / 修复 agent 收口、
 // 以及 drive 交来的 dispatch(reviewer|fixer) / final / land / halt。不注册 hook、不碰 $：副作用全经调用方造的 Ctx 闭包。
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
-import { INTEG, agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
+import { INTEG, PREMERGE, agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
 import type { Action, Ctx, Finding, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
 import { appendEvent, freshWorktree, judge, readLedger, stoppedNow } from './io'
 import { closeout, commitRecords, premergeTarget, renderRecords, validateFindings } from './land'
@@ -144,7 +144,7 @@ async function reviewPlan(io: Io, f: Flight, state: State, x: ReviewAction): Pro
   return { prompt: reviewerPrompt({ change: f.change, changeDir: f.changeDir, slice: x.slice, commit: x.commit }), description: `评审 ${x.slice}` }
 }
 
-/** 评审员 / 修复 agent 收口；其他 role 返回 undefined（交给调用方放行） */
+/** 评审员 / 修复 agent / 预合并解冲突 agent 收口；其他 role 返回 undefined（交给调用方放行） */
 export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
   const a = agentOf(reduce(found.events), agentId)
   if (!a) return undefined
@@ -154,7 +154,9 @@ export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Pr
     reminded.add(agentId)
     return { block: REMIND }
   }
-  if (a.role !== 'fixer') return undefined
+  // 预合并解冲突 agent 收口跑全量 final（design D4），不跑切片门禁；其余同修复 agent
+  const pmResolver = a.role === 'resolver' && a.slice === PREMERGE
+  if (a.role !== 'fixer' && !pmResolver) return undefined
   const gate = await runFinal(ctx.io, found.flight, a.worktree, a.slice === INTEG ? { integBase: a.base } : undefined)
   const g = ev.gate(await base(ctx, found.flight), { attempt: a.attempt, agent: agentId, ...gate, slice: a.slice || FIX })
   await appendEvent(ctx.io, found.flight, g)
@@ -245,8 +247,8 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     return
   }
   if (action.kind === 'land') {
-    // 修复合回（fix 与 fix-r<k>）不是 tasks.md 里的切片
-    const isFix = (s: unknown) => s === FIX || /^fix-r\d+$/.test(String(s))
+    // 修复合回（fix 与 fix-r<k>）与预合并解冲突的合回不是 tasks.md 里的切片
+    const isFix = (s: unknown) => s === FIX || s === PREMERGE || /^fix-r\d+$/.test(String(s))
     const merged = [...new Set(state.events.filter(x => x.ev === 'merge' && x.ok === true && !isFix(x.slice)).map(x => String(x.slice)))]
     // 落地顺序（design D3）：收口 → land 事件 → 从账本生成并提交记录 → 飞行记录 → 交接 pr-ship
     const { verdict, reasons } = await closeout(io, f, merged)
