@@ -237,6 +237,8 @@ function useWorld(on: On, w: World) {
       return ok(w.worktrees)
     }
     if (cmd === 'git' && args.includes('status')) return ok(w.status ?? '')
+    // 主会话写入经意图门禁先求 git common dir：以失败作答（找不到判定器即放行），不记入 log.git
+    if (cmd === 'git' && args.includes('--git-common-dir')) return fail('')
     if (cmd !== 'git') throw new Error(`unexpected argv: ${e.argv.join(' ')}`)
     log.git.push({ args, cwd: e.init?.cwd, stdin: e.init?.stdin })
     switch (args[0]) {
@@ -270,6 +272,29 @@ function useWorld(on: On, w: World) {
   return log
 }
 
+/**
+ * 本会话认领 names：逐个用 Write 写 `<该 change 所在 worktree 的 changes 目录>/<name>/proposal.md`，自带 Write 应答（每个用例只调一次）。
+ * 在 session.start 之前调用：批准带未启用，认领不触发重绘，plan_fp 的调用序号不变。
+ */
+async function claim(
+  $: { tool: { call(input: never): Promise<unknown> } },
+  on: On,
+  names: string[],
+  changesOf: (name: string) => string = () => CHANGES,
+): Promise<void> {
+  on('tool.call', { tool: 'Write' }, () => ({ result: {}, text: '' }) as never)
+  for (const name of names) await $.tool.call({ tool: 'Write', file_path: `${changesOf(name)}/${name}/proposal.md`, content: '# p\n' } as never)
+}
+
+/** 主 worktree 里有待批准的 demo 与 beta（都未批准、tasks 未完成、指纹 F）。 */
+function demoBetaWorld(): World {
+  const world = demoWorld(() => F)
+  world.dirs[CHANGES] = ['demo', 'beta', 'archive']
+  world.files[`${CHANGES}/beta/spec.html`] = '<html></html>'
+  world.files[`${CHANGES}/beta/tasks.md`] = '- [ ] 1.1 写代码\n'
+  return world
+}
+
 /** 写账本的 git 子命令（rev-parse 只读，不算）。 */
 function writes(log: { git: GitCall[] }): string[] {
   return log.git.map(c => String(c.args[0])).filter(op => op !== 'rev-parse')
@@ -294,6 +319,7 @@ async function background(log: { clock: { advance(ms: number): unknown; settle()
 test('band-shows-pending-plan', async ($, on) => {
   // Given: 主 worktree /repo 的 template/openspec/changes/demo 有 spec.html、tasks.md 含「- [ ]」，plan_fp 输出 3f9a1c07…，ledger approved 输出空
   useWorld(on, demoWorld(() => F))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域（AbovePrompt）
@@ -331,6 +357,7 @@ test('band-ignores-finished-and-foreign-copies', async ($, on) => {
     fp: () => F,
   }
   const log = useWorld(on, world)
+  await claim($, on, ['old', 'demo'], name => (name === 'demo' ? `${OWN}/template/openspec/changes` : CHANGES))
 
   // When: 会话启动（刷新待批准列表）
   await $.session.start(START)
@@ -345,6 +372,7 @@ test('band-ignores-finished-and-foreign-copies', async ($, on) => {
 test('approve-press-appends-ledger-event', async ($, on) => {
   // Given: 批准带显示 demo 与指纹 F，按下时 plan_fp 仍输出 F；账本链尾不存在
   const log = useWorld(on, demoWorld(() => F))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -372,6 +400,7 @@ test('approve-press-approves-the-drawn-item', async ($, on) => {
   const ZETA = `${CHANGES}/zeta`
   const world = demoWorld((_, dir) => (dir === ZETA ? G : F))
   const log = useWorld(on, world)
+  await claim($, on, ['demo', 'zeta'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   const demoButton = String((await ui.find({ type: 'Button' }))?.key)
@@ -401,6 +430,7 @@ test('approve-press-approves-the-drawn-item', async ($, on) => {
 test('approve-press-refuses-changed-plan', async ($, on) => {
   // Given: 批准带显示指纹 F（第 1 次 plan_fp 输出 F），按下时重算输出 G
   const log = useWorld(on, demoWorld(call => (call === 0 ? F : G)))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -422,6 +452,7 @@ test('approve-press-dedupes-same-fingerprint', async ($, on) => {
   // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 依次为 approve G、takeoff G、approve F（F 之后没有 takeoff）；按下时 plan_fp 仍输出 F
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledger = [ledgerEvent('approve', G), ledgerEvent('takeoff', G), ledgerEvent('approve', F)]
@@ -438,6 +469,7 @@ test('approve-dedupe-prefills-command', async ($, on) => {
   // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 为 approve F（之后没有 takeoff）；按下时 plan_fp 仍输出 F；prompt.fill 应答 isFilled=true
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledger = [ledgerEvent('approve', F)]
@@ -457,6 +489,7 @@ test('approve-press-appends-after-takeoff-with-same-fingerprint', async ($, on) 
   // Given: 批准带已显示 demo 与指纹 F；按下前账本 show 依次为 approve F、takeoff F（takeoff 之后没有 approve）；按下时 plan_fp 仍输出 F
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledger = [ledgerEvent('approve', F), ledgerEvent('takeoff', F)]
@@ -472,6 +505,7 @@ test('approve-press-appends-when-ledger-unreadable', async ($, on) => {
   // Given: 批准带已显示 demo 与指纹 F；按下时 ledger.py show 以 exit 5 失败，plan_fp 仍输出 F
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.showFails = true
@@ -486,6 +520,7 @@ test('approve-press-appends-when-ledger-unreadable', async ($, on) => {
 test('ledger-append-retries-on-conflict', async ($, on) => {
   // Given: 批准带显示 demo 与指纹 F；第 1 次 update-ref 旧值不符失败，第 2 次成功（此时 rev-parse 读到链尾 dddd…）
   const log = useWorld(on, demoWorld(() => F, { updateRefFailures: 1 }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -504,6 +539,7 @@ test('ledger-append-retries-on-conflict', async ($, on) => {
 test('ledger-append-gives-up-after-three-conflicts', async ($, on) => {
   // Given: 批准带显示 demo 与指纹 F；update-ref 每次都旧值不符失败
   const log = useWorld(on, demoWorld(() => F, { updateRefFailures: 99 }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -612,6 +648,7 @@ test('no-model-callable-approval-path', async ($, on) => {
 test('only-findings-tool-registered', async ($, on) => {
   // Given: 插件已加载，仓库里有待批准的 demo，会话已启动；submit_findings、measure 与 ship 各三种输入：主会话（无 agentId）、非飞行 agent X 带 1 条 HIGH、X 伪造 ev=approve 与 fp=F；另有以 composer 来源发出的 /flight status demo、abort demo、resume demo
   const log = useWorld(on, demoWorld(() => F))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const inputs = [
     { findings: [] },
@@ -634,6 +671,7 @@ test('only-findings-tool-registered', async ($, on) => {
 test('tools-and-commands-invariant', async ($, on) => {
   // Given: 插件已加载，仓库里有待批准的 demo（账本为空、未落地），会话已启动；三种输入：主会话（无 agentId）{change: demo, pr: 7}、非飞行 agent X 的 {change: demo, pr: 7}、X 伪造 ev=approve 与 fp=F
   const log = useWorld(on, demoWorld(() => F))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const inputs = [{ change: 'demo', pr: '7' }, { agentId: 'X', change: 'demo', pr: '7' }, { agentId: 'X', ev: 'approve', fp: F }]
   const calls = ['mcp__flight__measure', 'mcp__flight__ship', 'mcp__flight__submit_findings'].flatMap(tool => inputs.map(x => ({ tool, ...x })))
@@ -650,6 +688,7 @@ test('tools-and-commands-invariant', async ($, on) => {
 test('version-floor-disables-band', async ($, on) => {
   // Given: 会话版本 2.1.200，主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { version: '2.1.200' }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域
@@ -664,6 +703,7 @@ test('version-floor-disables-band', async ($, on) => {
 test('version-unreadable-disables-band', async ($, on) => {
   // Given: 读会话版本的调用失败（旧引擎没有该 API），主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 主会话一轮结束后绘制输入框上方区域
@@ -689,6 +729,7 @@ test('band-prefers-approvable-item', async ($, on) => {
   world.files[`${ZETA}/spec.html`] = '<html></html>'
   world.files[`${ZETA}/tasks.md`] = '- [ ] 1.1 写代码\n'
   useWorld(on, world)
+  await claim($, on, ['demo', 'zeta'], name => (name === 'zeta' ? `${ZT}/template/openspec/changes` : CHANGES))
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域
@@ -702,6 +743,7 @@ test('band-prefers-approvable-item', async ($, on) => {
 test('version-unreadable-shows-notice', async ($, on) => {
   // Given: 读会话版本的调用抛错，主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域
@@ -791,6 +833,7 @@ test('band-offers-resume-for-halted', async ($, on) => {
   // Given: 主 worktree 有 alpha（最新 attempt 以 halt 结束、当前指纹 G ≠ 最近批准 F）、beta（halt、当前与批准都为 F）、gamma（账本为空、未批准、指纹 F）；terminal 与 desktop 各挂一个批准带
   const world = haltWorld(['alpha', 'beta', 'gamma'])
   useWorld(on, world)
+  await claim($, on, ['alpha', 'beta', 'gamma'])
   await $.session.start(START)
   const surfaces = [
     await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND }),
@@ -821,6 +864,7 @@ test('press-approves-then-resumes', async ($, on) => {
   world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
   newestIs(world, 'alpha')
   const log = useWorld(on, world)
+  await claim($, on, ['alpha', 'beta'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -856,6 +900,7 @@ test('band-offers-takeoff-for-approved', async ($, on) => {
     gatePasses: true,
   })
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -883,6 +928,8 @@ test('band-counts-declared-artifacts', async ($, on) => {
   })
   world.files[`${DEMO}/slices.json`] = JSON.stringify({ artifact_files: ['tests/helpers.py'] })
   useWorld(on, world)
+  // 批准带只显示本会话认领的 change（0.11.0，design D5）：#59 的用例写于认领之前，补认领，断言不变
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -905,6 +952,7 @@ test('band-ignores-landed-and-aborted', async ($, on) => {
     gamma: [...flown('gamma'), attemptEvent('gamma', 'halt', '10:30:00', { reason: 'S2 blocked', kind: 'blocked' })],
   }
   useWorld(on, world)
+  await claim($, on, ['alpha', 'beta', 'gamma'])
 
   // When: 会话启动（刷新批准带）后绘制
   await $.session.start(START)
@@ -920,6 +968,7 @@ test('band-ignores-landed-and-aborted', async ($, on) => {
 test('band-approve-takes-off', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 demo 的 proposal.md 一个未提交工件；起飞守卫放行，起飞检查走到提交工件之后在 lint 停下；批准带已显示 demo 的「批准起飞」
   const log = useWorld(on, demoWorld(() => F, { status: ' M template/openspec/changes/demo/proposal.md\n', gatePasses: true }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -941,6 +990,7 @@ test('band-resume-takes-off', async ($, on) => {
   world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
   newestIs(world, 'alpha')
   const log = useWorld(on, world)
+  await claim($, on, ['alpha', 'beta'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -965,6 +1015,7 @@ test('band-resume-stops-diagnostician', async ($, on) => {
   world.ledgers!.beta = [...haltedLedger('beta'), attemptEvent('beta', 'dispatch', '10:31:00', { slice: 'S2', agent: 'd1', role: 'diagnostician' })]
   world.agents = [{ id: 'd1', status: 'running' }]
   const log = useWorld(on, world)
+  await claim($, on, ['beta'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -982,6 +1033,7 @@ test('band-shows-busy-while-taking-off', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；takeoff-gate.py 要等 release() 之后才作答；批准带已显示 demo 的「批准起飞」
   let release: () => void = () => undefined
   const log = useWorld(on, demoWorld(() => F, { gateWait: new Promise<void>(r => (release = r)) }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1008,6 +1060,7 @@ test('band-shows-baseline-progress', async ($, on) => {
   world.baselineWait = new Promise<void>(r => (release = r))
   world.files[`${CHANGES}/alpha/slices.json`] = JSON.stringify({ gate: { full_suite_sec: 132 } })
   const log = useWorld(on, world)
+  await claim($, on, ['alpha'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   const progress = () => log.statuses.filter(s => s.includes('基线已跑'))
@@ -1040,6 +1093,7 @@ test('band-dedupe-toast-says-takeoff', async ($, on) => {
   // Given: 批准带已显示 demo 的「批准起飞」（指纹 F）；按下前账本 show 变为 approve F（另一次按键刚写入、之后没有 takeoff）；按下时 plan_fp 仍输出 F
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledger = [ledgerEvent('approve', F)]
@@ -1059,6 +1113,7 @@ test('band-dedupe-toast-says-takeoff', async ($, on) => {
 test('press-takes-off-before-returning', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；起飞守卫以 exit 3「未批准」立即作答；批准带已显示 demo 的「批准起飞」
   const log = useWorld(on, demoWorld(() => F))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1076,6 +1131,7 @@ test('resume-press-takes-off-before-returning', async ($, on) => {
   const world = haltWorld(['alpha'])
   world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
   const log = useWorld(on, world)
+  await claim($, on, ['alpha'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1093,6 +1149,7 @@ test('second-press-while-busy-refused', async ($, on) => {
   let release: () => void = () => undefined
   const world = demoWorld(() => F, { gateWait: new Promise<void>(r => (release = r)) })
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.refreshThrows = 2
@@ -1118,6 +1175,7 @@ test('refresh-failure-clears-busy', async ($, on) => {
   // Given: demo 账本只有 approve F、ledger approved 输出 F、当前指纹 F（已批准、未起飞），批准带显示「起飞」；按下之后第一次批准带重绘读 git worktree list 时抛错一次；已按下 takeoff:demo:<F> 并等按键处理返回（期间不推进时钟）
   const world = demoWorld(() => F, { ledger: [ledgerEvent('approve', F)], approved: { demo: F } })
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.refreshThrows = 1
@@ -1140,6 +1198,7 @@ test('baseline-status-restored', async ($, on) => {
   const world = haltWorld(['alpha'])
   world.baseline = { exitCode: 1, stdout: JSON.stringify({ ok: false, reasons: ['S2 verify 红'] }) }
   const log = useWorld(on, world)
+  await claim($, on, ['alpha'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1154,6 +1213,7 @@ test('baseline-status-restored', async ($, on) => {
 test('replanned-shelved-change-reappears', async ($, on) => {
   // Given: demo 账本依次为 approve F、shelve F；ledger approved 输出空（最新决定是 shelve）；计划改动后 plan_fp 输出 G
   useWorld(on, demoWorld(() => G, { ledger: [ledgerEvent('approve', F), ledgerEvent('shelve', F)], approved: { demo: '' } }))
+  await claim($, on, ['demo'])
 
   // When: 会话启动（刷新批准带）后绘制
   await $.session.start(START)
@@ -1174,6 +1234,7 @@ function writtenEvent(log: { git: GitCall[] }): Record<string, unknown> | undefi
 test('shelve-press-writes-event-and-hides', async ($, on) => {
   // Given: demo 账本只有 approve F（之后从未起飞）、ledger approved 输出 F、当前指纹 F，批准带显示 demo 的「起飞」
   const log = useWorld(on, demoWorld(() => F, { ledger: [ledgerEvent('approve', F)], approved: { demo: F } }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1200,6 +1261,7 @@ test('shelve-hides-halted-flight', async ($, on) => {
     ],
   }
   const log = useWorld(on, world)
+  await claim($, on, ['gamma'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1216,6 +1278,7 @@ test('shelve-hides-halted-flight', async ($, on) => {
 test('shelve-refused-when-judges-unaware', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F，批准带显示 approve:demo:<F> 与 shelve:demo:<F>；ledger.py events 输出 EVENT_TYPES 去掉 shelve
   const log = useWorld(on, demoWorld(() => F, { events: EVENT_TYPES.filter(t => t !== 'shelve') }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
@@ -1248,6 +1311,7 @@ test('band-reads-ledger-with-main-judges', async ($, on) => {
     },
     fp: () => F,
   })
+  await claim($, on, ['demo'], () => `${OWN}/template/openspec/changes`)
 
   // When: 会话启动（刷新批准带）
   await $.session.start(START)
@@ -1261,6 +1325,7 @@ test('band-lists-artifact-paths', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 7 个未跟踪工件 template/openspec/changes/demo/f1.md … f7.md
   const status = [1, 2, 3, 4, 5, 6, 7].map(i => `?? template/openspec/changes/demo/f${i}.md\n`).join('')
   useWorld(on, demoWorld(() => F, { status }))
+  await claim($, on, ['demo'])
 
   // When: 会话启动（刷新批准带）后绘制
   await $.session.start(START)
@@ -1281,6 +1346,7 @@ test('rapid-second-press-refused', async ($, on) => {
   let release: () => void = () => undefined
   const world = demoWorld(() => F)
   const log = useWorld(on, world)
+  await claim($, on, ['demo'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.fpWait = new Promise<void>(r => (release = r))
@@ -1309,6 +1375,7 @@ test('replan-duplicate-resumes', async ($, on) => {
   const world = haltWorld(['alpha'])
   world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
   const log = useWorld(on, world)
+  await claim($, on, ['alpha'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.ledgers!.alpha = [...haltedLedger('alpha'), attemptEvent('alpha', 'approve', '10:40:00', { attempt: undefined, fp: G })]
@@ -1331,6 +1398,7 @@ test('other-baseline-line-kept', async ($, on) => {
   world.baselineWait = new Promise<void>(r => (release = r))
   newestIs(world, 'beta')
   const log = useWorld(on, world)
+  await claim($, on, ['alpha', 'beta'])
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   const beta = ui.press({ key: `replan:beta:${G}` })
@@ -1346,4 +1414,76 @@ test('other-baseline-line-kept', async ($, on) => {
 
   // Then: alpha 续飞返回时最后一次状态行含「续飞准备中 beta」
   expect(last).toContain('续飞准备中 beta')
+})
+
+// ---------------------------------------------------------------- flight-band-session-scope S1：批准带只评估本会话认领的 change
+
+test('band-hides-unclaimed', async ($, on) => {
+  // Given: 主 worktree 里有待批准的 demo（有 spec.html、tasks.md 含「- [ ]」、账本无批准）；本会话没有写过 demo 的目录，也没有发过点名 demo 的命令
+  const log = useWorld(on, demoWorld(() => F))
+
+  // When: 会话启动后在 terminal 上绘制输入框上方区域
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 批准带不显示：没有含 demo 的文字、没有任何按钮；plan_fp.py 没有以 demo 的目录运行
+  expect(await ui.findAll({ text: /demo/ })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(log.fpDirs.filter(d => d === DEMO)).toEqual([])
+})
+
+test('read-does-not-claim', async ($, on) => {
+  // Given: 主 worktree 里有待批准的 demo，会话已启动，批准带不显示；测试在插件之下的 Bash 执行端回答 stdout 为空
+  useWorld(on, demoWorld(() => F))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }) as never)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 本会话用 Bash 运行 `cat <demo>/tasks.md` 与 `grep -n x <demo>/proposal.md`，随后主会话一轮结束
+  await $.tool.call({ tool: 'Bash', command: `cat ${DEMO}/tasks.md` })
+  await $.tool.call({ tool: 'Bash', command: `grep -n x ${DEMO}/proposal.md` })
+  await $.turn.complete(TURN)
+
+  // Then: 批准带仍不显示：没有「待批准飞行计划」文字，没有任何按钮
+  expect(await ui.findAll({ text: /待批准飞行计划/ })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+})
+
+test('write-claims-change', async ($, on) => {
+  // Given: 主 worktree 里有待批准的 demo 与 beta（指纹都为 F），会话已启动，批准带不显示；测试在插件之下的 Write 与 Bash 执行端都以成功作答
+  useWorld(on, demoBetaWorld())
+  on('tool.call', { tool: 'Write' }, () => ({ result: {}, text: '' }) as never)
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }) as never)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 本会话 Write `<demo>/proposal.md`、主会话一轮结束，读出批准带；再用 Bash 运行 `touch <beta>/tasks.md`、主会话一轮结束
+  await $.tool.call({ tool: 'Write', file_path: `${DEMO}/proposal.md`, content: '# p\n' })
+  await $.turn.complete(TURN)
+  const label = (await ui.find({ key: `approve:demo:${F}` }))?.props.label
+  const othersAfterWrite = (await ui.findAll({ text: /另有/ })).length
+  await $.tool.call({ tool: 'Bash', command: `touch ${CHANGES}/beta/tasks.md` })
+  await $.turn.complete(TURN)
+
+  // Then: 第一轮后 demo 的按钮为「批准起飞」，没有「另有」字样；第二轮后批准带有「另有 1 个待批准」
+  expect(label).toBe('批准起飞')
+  expect(othersAfterWrite).toBe(0)
+  expect(await ui.find({ text: /另有 1 个待批准/ })).toBeDefined()
+})
+
+test('command-claims-change', async ($, on) => {
+  // Given: 主 worktree 里有待批准的 demo 与 beta（指纹都为 F），会话已启动，批准带不显示
+  useWorld(on, demoBetaWorld())
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 插件来源（plugin other）发出 /flight status beta，读出按钮数；随后人在终端（composer）发出 /flight status demo 并等它返回（期间没有主会话一轮结束）
+  await $.command.run({ command: 'flight', args: 'status beta', origin: { kind: 'plugin', name: 'other' } } as never)
+  const buttonsAfterPlugin = (await ui.findAll({ type: 'Button' })).length
+  await $.command.run({ command: 'flight', args: 'status demo', origin: { kind: 'composer' } } as never)
+
+  // Then: 插件来源的命令之后没有按钮；人发命令返回后 demo 的按钮为「批准起飞」，没有「另有」字样
+  expect(buttonsAfterPlugin).toBe(0)
+  expect((await ui.find({ key: `approve:demo:${F}` }))?.props.label).toBe('批准起飞')
+  expect(await ui.findAll({ text: /另有/ })).toHaveLength(0)
 })

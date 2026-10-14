@@ -67,6 +67,12 @@ export type FlightPanel = {
 
 declare module 'claude-code' {
   interface PluginState {
-    flight: { band: FlightBand; panel: FlightPanel; armed: FlightArmed }
+    flight: {
+      band: FlightBand
+      panel: FlightPanel
+      armed: FlightArmed
+      /** 本会话认领的 change 名（写入与人发的命令），只在本进程内有效 */
+      claims: string[]
+    }
   }
 }

@@ -1,0 +1,45 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_dispatch_followups_docs.py",
+      "line": 7,
+      "summary": "按切片包把 test_plugin_version_0_10_3 改名为 test_plugin_version_not_below_0_10_3 后，已完成的 change flight-dispatch-followups 里 slices.json、slices/S3.md、spec.html 的 scenario 映射还写着旧函数名，成了悬空指针。之前三次同类改名（0_10_0 / 0_10_1 / 0_10_2）也都留着旧映射，这次是沿用惯例，眼下不影响任何门禁。",
+      "fix": "可选：以后要对历史 change 重跑门禁或做映射一致性检查时，统一处理这类改名留下的旧映射，比如加一条只读的映射别名约定，或者在 CLAUDE.md / backlog 写明历史 change 的映射不随后续改名更新。本切片不用改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 639,
+      "summary": "命令认领 hook 的 .catch 在 next.called 为真（下游已执行且抛错）时统一改答「flight：命令执行出错」。这个 hook 也匹配项目自带的 /opsx-propose 等 markdown 命令，以前 flight 不拦这些命令，下游的原始错误现在会被换成 flight 的笼统文字，错误被算到 flight 头上。D3 只要求「未调 next 时照常 next(e)」，next 已调用这一支没有规定。",
+      "fix": "next.called 为真时不要改写错误：可以把 try 扩到整个 hook 体，只包住 claim 那一段（claim 出错就直接 return next(e)），next(e) 抛出的错误不在这个 hook 里接；也可以在 catch 的这一支里把原始错误文字带进回复。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 456,
+      "summary": "spec 写的是「主循环与子 agent 的调用都算」，口径包括 Write / Edit / NotebookEdit / Bash。新用例只测了主会话的 Write 和 Bash touch，没有用例测子 agent（带 agentId）的写入会认领，也没有测 Edit / NotebookEdit 会认领。现在的实现靠守卫 hook 不区分来源而恰好成立，以后谁在这里按 agentId 分流，不会有测试变红。",
+      "fix": "在 write-claims-change 一组旁边补一条：带 agentId 的 Edit 写 <beta>/tasks.md，主会话一轮结束后批准带出现 beta。也可以不加用例，在 design 里写明这条依赖由守卫 hook 不区分来源来保证。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_dispatch_followups_docs.py",
+      "line": 7,
+      "summary": "test_plugin_version_0_10_3 改名为 test_plugin_version_not_below_0_10_3 之后，template/openspec/changes/flight-dispatch-followups/slices.json:78 的 scenario_tests 还指向旧函数名，成了悬空映射；该 change 的 S3.md / spec.html 也还写着旧名。以前的版本测试改名（0_10_1、0_10_2）同样留下了悬空映射，是仓库已有的惯例，但如果日后对那个 change 重跑门禁会找不到测试。",
+      "fix": "需进一步确认仓库是否接受旧 change 留着悬空映射。如果不接受，就把 flight-dispatch-followups/slices.json 的映射改成新函数名（按铁律它属于别的 change，应另立修复）；或者在 test_dispatch_followups_docs.py 里保留一个旧名的别名函数。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 637,
+      "summary": "命令认领 hook 的 .catch 在 next.called 为真时一律返回 'flight：命令执行出错'。/opsx-propose 这类不归插件处理、透传给宿主的命令，如果内层抛错，原本的错误或宿主的处理会被这条泛化文案换掉，不好排查。refreshQuietly 已经吞掉了重绘异常，所以这个分支只会在内层 next 抛错时触发。",
+      "fix": "next 已调用时把错误首行带进回复，例如 `flight：命令执行出错（<首行>）`；或者只包住 claim 那一步，next(e) 抛的错原样上抛，不改写。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "76a8faade2ba5e3b8b3bc4e4db6779c46efb1c12"
+  }
+}

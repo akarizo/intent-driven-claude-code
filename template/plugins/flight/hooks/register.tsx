@@ -8,7 +8,8 @@ import { readLedger, stoppedNow } from './io'
 import { classifyDirty } from './land'
 import { withLease } from './lease'
 import type { Lease } from './lease'
-import { artifactFiles, registerOrchestrator, restoreStatusNow, scenarioFiles, takeoffNow } from './orchestrator'
+import { toolTargets } from './intent'
+import { HOST_ORIGINS, artifactFiles, originOf, registerOrchestrator, restoreStatusNow, scenarioFiles, takeoffNow } from './orchestrator'
 import { resumeFlight } from './resume'
 import type { ResumeDeps } from './resume'
 
@@ -33,6 +34,25 @@ const ZERO = '0'.repeat(40)
 
 // 初值停用：版本未确认（读版本抛错、hook 被跳过）时批准带与写入不启用
 const band = atom({ plugin: 'flight', key: 'band' } as const, { isDisabled: true, items: [] } as FlightBand)
+// 本会话认领的 change 名（design D1）：热重载后保留，session.start 不重置
+const claims = atom({ plugin: 'flight', key: 'claims' } as const, [] as string[])
+// 写入目标里的 change 名：路径含 openspec/changes/<name>/ 或以 openspec/changes/<name> 结尾
+const CHANGE_IN_PATH = /\/openspec\/changes\/([^/]+)(\/|$)/
+
+/** 把 names 记入认领集合（去掉空串与 archive）；只有出现新名字才写入，返回集合是否变大。 */
+async function claim($: Engine, names: readonly string[]): Promise<boolean> {
+  const have = new Set(await read($, claims))
+  const fresh = [...new Set(names)].filter(n => n !== '' && n !== 'archive' && !have.has(n))
+  if (fresh.length === 0) return false
+  await update($, claims, c => [...c, ...fresh.filter(n => !c.includes(n))])
+  return true
+}
+
+/** 写入认领（design D2）：工具调用写入目标里的 change 名；不重绘。 */
+async function claimWrites($: Engine, e: { readonly tool: unknown }): Promise<void> {
+  const targets = toolTargets(String(e.tool), e as unknown as Record<string, unknown>, await $.session.cwd())
+  await claim($, targets.map(t => CHANGE_IN_PATH.exec(t)?.[1] ?? ''))
+}
 
 /** 按数字逐段比较：a < b。 */
 function isOlder(a: string, b: string): boolean {
@@ -93,13 +113,15 @@ function topItem(items: readonly FlightItem[]): FlightItem | undefined {
 
 type Candidate = { change: string; tree: Tree; changeDir: string; specPath: string }
 
-async function candidatesIn($: Engine, tree: Tree): Promise<Candidate[]> {
+async function candidatesIn($: Engine, tree: Tree, claimed: ReadonlySet<string>): Promise<Candidate[]> {
   const out: Candidate[] = []
   for (const root of CHANGE_ROOTS) {
     const base = `${tree.path}/${root}`
     if (!(await $.fs.exists(base))) continue
     for (const entry of await $.fs.list(base)) {
       if (entry.kind !== 'dir' || entry.name === 'archive') continue
+      // 只评估本会话认领的 change（design D4）
+      if (!claimed.has(entry.name)) continue
       const changeDir = `${base}/${entry.name}`
       const specPath = `${changeDir}/spec.html`
       const tasksPath = `${changeDir}/tasks.md`
@@ -253,9 +275,10 @@ async function refresh($: Engine): Promise<void> {
   const main = trees[0]
   const items: FlightItem[] = []
   if (main !== undefined) {
+    const claimed = new Set(await read($, claims))
     const mainDir = await hooksDirOf($, main)
     const all: Candidate[] = []
-    for (const tree of trees) all.push(...(await candidatesIn($, tree)))
+    for (const tree of trees) all.push(...(await candidatesIn($, tree, claimed)))
     for (const c of dedupe(all, main)) {
       const item = await evaluate($, c, mainDir)
       if (item !== undefined) items.push(item)
@@ -658,8 +681,24 @@ export const register: Register = on => {
     }
   }))
 
-  on('tool.call', { tool: GUARDED_TOOLS }, ($, e, next) => (touchesLedger(e) ? { deny: GUARD_DENY } : next(e))).catch(
-    ($, e, next) => (next.called ? next(e) : touchesLedger(e) ? { deny: GUARD_DENY } : next(e)),
-  )
+  // 放行分支先认领写入目标（design D2）；认领出错时 next 未调，catch 照常放行
+  on('tool.call', { tool: GUARDED_TOOLS }, async ($, e, next) => {
+    if (touchesLedger(e)) return { deny: GUARD_DENY }
+    await claimWrites($, e)
+    return next(e)
+  }).catch(($, e, next) => (next.called ? next(e) : touchesLedger(e) ? { deny: GUARD_DENY } : next(e)))
+
+  // 人发的 /opsx-*、/flight 点名即认领（design D3）；须在 registerOrchestrator 之前（编排器对这两个命令自己作答、不调 next）
+  on('command.run', { command: /^(opsx-.+|flight)$/ }, async ($, e, next) => {
+    if (!HOST_ORIGINS.includes(originOf(e) ?? '')) return next(e)
+    const grew = await claim($, String(e.args ?? '').split(/\s+/).filter(w => w !== '' && !w.startsWith('-')))
+    const r = await next(e)
+    try {
+      if (grew && !(await read($, band)).isDisabled) await refreshQuietly($)
+    } catch {
+      /* 重绘失败不影响命令的回复 */
+    }
+    return r
+  }).catch(($, e, next) => (next.called ? { text: 'flight：命令执行出错' } : next(e)))
   registerOrchestrator(on)
 }
