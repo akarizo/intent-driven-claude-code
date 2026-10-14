@@ -19,6 +19,6 @@
 
 ## 切片
 
-- [ ] S1 orchestrator / armed：排队 drive 计入正在飞、错过的那一轮补发唤醒、abort 区分人工与自动、看门狗唤醒失败留日志、唤醒尾句去重、Arm 类型、补测与 pytest 残留 （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_watchdog.py tests/test_flight_abort.py tests/test_flight_lease.py`）
-- [ ] S2 批准带：按键入口同步登记、批准修订已批准时直接续飞、恢复状态行不冲掉别的基线进度、flight.test 残留 （deps: - · verify: `python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py`）
-- [ ] S3 发布 0.10.3 与文档测试残留 （deps: - · verify: `python3 -m pytest -q tests/test_dispatch_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_flight_land.py tests/test_template_docs.py tests/test_opsx_apply_engine.py`）
+- [x] S1 orchestrator / armed：排队 drive 计入正在飞、错过的那一轮补发唤醒、abort 区分人工与自动、看门狗唤醒失败留日志、唤醒尾句去重、Arm 类型、补测与 pytest 残留 （deps: - · verify: `python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_watchdog.py tests/test_flight_abort.py tests/test_flight_lease.py`）
+- [x] S2 批准带：按键入口同步登记、批准修订已批准时直接续飞、恢复状态行不冲掉别的基线进度、flight.test 残留 （deps: - · verify: `python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py`）
+- [x] S3 发布 0.10.3 与文档测试残留 （deps: - · verify: `python3 -m pytest -q tests/test_dispatch_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_flight_land.py tests/test_template_docs.py tests/test_opsx_apply_engine.py`）
