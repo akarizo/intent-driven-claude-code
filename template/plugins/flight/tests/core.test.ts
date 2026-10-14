@@ -22,6 +22,8 @@ const gate = (attempt: number, agent: string, slice: string, failed: string[]) =
 const ended = (attempt: number, agent: string, model: string | null = OPUS) =>
   ev.ended(B, { attempt, agent, reason: 'completed', model })
 const merged = (attempt: number, slice: string) => ev.merge(B, { attempt, slice, ok: true, commit: `m-${slice}`, failed: [] })
+/** 收口的预合并成功（已包含）：本 attempt 第一次 final 之前必有一条（DRAFT-flight-premerge-before-final） */
+const premergeOk = (attempt: number) => ev.premerge(B, { attempt, ok: true, ref: 'origin/main', target: 't-main', commit: '', conflicts: [], reason: '已包含' })
 /** 执行体 agent 门禁绿、结束、合回 */
 const landed = (attempt: number, slice: string, agent: string) => [
   dispatch(attempt, slice, 'executor', agent),
@@ -143,7 +145,7 @@ test('core-respawns-once-after-silent-end', () => {
 
 test('core-reviews-fixes-then-finals', () => {
   // Given: waves [[S1, S2]] 全部合回；S1 评审 1 条 HIGH，S2 评审 1 条 LOW；三个快照：
-  //   ① 评审全部返回；② 修复 agent X 收口门禁绿、结束、修复合回；③ final 绿
+  //   ① 评审全部返回；② 修复 agent X 收口门禁绿、结束、修复合回，收口预合并成功（第一次 final 前必有，DRAFT-flight-premerge-before-final）；③ final 绿
   const high = { severity: 'HIGH' as const, file: 'a.ts', line: 3, summary: '空指针', fix: '判空' }
   const low = { severity: 'LOW' as const, file: 'b.ts', line: 9, summary: '命名', fix: '改名' }
   const s1 = [
@@ -164,6 +166,7 @@ test('core-reviews-fixes-then-finals', () => {
     gate(1, 'X', 'fix', []),
     ended(1, 'X'),
     ev.merge(B, { attempt: 1, slice: 'fix', ok: true, commit: 'm-fix', failed: [] }),
+    premergeOk(1),
   ]
   const s3 = [...s2, ev.final(B, { attempt: 1, ok: true, commit: 'c-final', failed: [] })]
   const s4 = [
@@ -325,7 +328,8 @@ test('core-waits-reviews-before-halting', () => {
 })
 
 test('core-review-blocked-still-finals', () => {
-  // Given: waves [[S1, S2]] 全部合回；S1 评审为空列表；S2 的评审员 r2 结束未返回，review:S2 记 blocked（infra，评审未返回：r2）
+  // Given: waves [[S1, S2]] 全部合回；S1 评审为空列表；S2 的评审员 r2 结束未返回，review:S2 记 blocked（infra，评审未返回：r2）；
+  //        收口预合并已成功（第一次 final 前必有，DRAFT-flight-premerge-before-final）
   const state = reduce([
     approve,
     takeoff(1, ONE.waves),
@@ -337,6 +341,7 @@ test('core-review-blocked-still-finals', () => {
     dispatch(1, 'S2', 'reviewer', 'r2'),
     ended(1, 'r2'),
     ev.blocked(B, { attempt: 1, slice: 'review:S2', kind: 'infra', reason: '评审未返回：r2' }),
+    premergeOk(1),
   ])
 
   // When: 求下一批动作
@@ -885,4 +890,40 @@ test('halts-carry-kind', () => {
   expect([ga, gb, gc].map(g => g.length)).toEqual([1, 1, 1])
   expect([ga, gb, gc].map(g => (g[0]?.kind === 'halt' ? g[0].haltKind : undefined))).toEqual(['blocked', 'fingerprint', 'final'])
   expect(built).toMatchObject({ ev: 'halt', kind: 'watchdog' })
+})
+
+// design D6：计划缺陷的纯判定（S4 续飞拒绝、S5 批准带使用）
+const G5_PASSED = 'G5 measure: tests/test_s1.py::test_s1 在改生产代码之前就已通过\n第二行细节'
+
+test('plan-defect-from-g5-passed-before-code', () => {
+  // Given: attempt 1 里 S1 记 blocked（gate），reason 为「G5 measure: tests/test_s1.py::test_s1 在改生产代码之前就已通过」加第二行，随后 kind blocked 的 halt
+  const state = reduce([
+    takeoff(1, [['S1']]),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: G5_PASSED }),
+    ev.halt(B, { attempt: 1, reason: '切片 blocked：S1', kind: 'blocked' }),
+  ])
+
+  // When: 求 planDefect
+  const got = core.planDefect(state)
+
+  // Then: 返回该 blocked 原因的首行
+  expect(got).toBe('G5 measure: tests/test_s1.py::test_s1 在改生产代码之前就已通过')
+})
+
+test('plan-defect-undefined-for-other-halts', () => {
+  // Given: 三份账本——甲：同上的 blocked 但 halt 的 kind 为 final；乙：blocked 原因为「G7 demo#s1」、halt kind blocked；
+  //        丙：attempt 1 有同上的 blocked 与 halt（kind blocked），之后 attempt 2 起飞、尚未停飞
+  const g5 = ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: G5_PASSED })
+  const states = [
+    [takeoff(1, [['S1']]), g5, ev.halt(B, { attempt: 1, reason: 'final 未通过', kind: 'final' })],
+    [takeoff(1, [['S1']]), ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G7 demo#s1' }), ev.halt(B, { attempt: 1, reason: '切片 blocked', kind: 'blocked' })],
+    [takeoff(1, [['S1']]), g5, ev.halt(B, { attempt: 1, reason: '切片 blocked', kind: 'blocked' }), takeoff(2, [['S1']])],
+  ].map(evs => reduce(evs))
+
+  // When: 对三份账本各求 planDefect
+  const got = states.map(s => core.planDefect(s))
+
+  // Then: 三份都是 undefined
+  expect(got).toEqual([undefined, undefined, undefined])
 })

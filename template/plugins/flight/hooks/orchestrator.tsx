@@ -457,7 +457,7 @@ async function perform(ctx: Ctx, f: Flight, state: State, a: Action, slices: Rec
   if (a.kind === 'blocked') return record(ev.blocked(b, { attempt: A, slice: a.slice, kind: a.blockKind, reason: a.reason }))
   // 自愈只记 heal：重派由下一轮 next 给出（合回重试为全新派发，另起 worktree）
   if (a.kind === 'heal') return record(ev.heal(b, { attempt: A, kind: a.heal, slice: a.slice, reason: a.reason, ...(a.agent ? { agent: a.agent } : {}) }))
-  // dispatch reviewer / fixer、final、land、halt
+  // dispatch reviewer / fixer、premerge、final、land、halt
   await runLandingAction(ctx, f, a)
   return true
 }

@@ -94,6 +94,8 @@ const EVENTS: Record<string, Record<string, Check>> = {
   blocked: { attempt: ATTEMPT, slice: NONEMPTY, kind: oneOf('gate', 'infra'), reason: STR },
   final: { attempt: ATTEMPT, ok: BOOL, commit: STR, failed: STRS },
   land: { attempt: ATTEMPT, verdict: oneOf('ready', 'draft') },
+  // 收口前预合并目标分支（DRAFT-flight-premerge-before-final）
+  premerge: { attempt: ATTEMPT, ok: BOOL, ref: STR, target: STR, commit: STR, conflicts: STRS, reason: STR },
   halt: { attempt: ATTEMPT, reason: STR },
   measure: {
     attempt: ATTEMPT, slice: NONEMPTY, agent: NONEMPTY, base: NONEMPTY, commit: STR,
@@ -110,7 +112,7 @@ const EVENTS: Record<string, Record<string, Check>> = {
 }
 // 可选字段：缺省不判，出现则须合法（与 ledger.py 的 OPTIONAL 同形）
 const OPTIONAL: Record<string, Record<string, Check>> = {
-  halt: { kind: oneOf('blocked', 'final', 'integ', 'fingerprint', 'control', 'watchdog', 'abort') },
+  halt: { kind: oneOf('blocked', 'final', 'integ', 'fingerprint', 'control', 'watchdog', 'abort', 'premerge') },
 }
 
 /** 写入校验认得的全部事件类型（起飞核对判定器时用）。 */
