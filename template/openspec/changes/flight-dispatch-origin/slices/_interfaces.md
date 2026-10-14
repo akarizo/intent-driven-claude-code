@@ -9,17 +9,45 @@ wave 1 = S1 + S4；wave 2 = S3（依赖 S1）；wave 3 = S2（依赖 S1、S3）�
   - 详见 design.md 的 Context。
 - **测试世界模拟不出 origin**：单测只能断言结构，比如按键返回前已起飞、定时器回调只提交唤醒不派发、没有活凭证就拒绝。
 
-## S1 交出（`armed.ts`、`orchestrator.tsx`、`types/index.d.ts`）
-- `Arm.awaitingWake: boolean`。`armOf` 置为 false，`beforeRetry` 也置回 false。`FlightArmedItem` 同名字段。
-- `ArmStep` 新增 `{ do: 'wake'; text: string }`；`wakePrompt(arm)` 的正文含 change 名与「只回复「收到」」。
-- `nextStep`：
-  - `tick` / `timer` 不再给 `retry`：未唤醒给 `wake`，已唤醒给 `wait`；
-  - `main-turn` 且已唤醒给 `retry`。
-- orchestrator：
-  - `runStep` 处理 `wake`：等待类先 `armReady`，再记 `awaitingWake` 与 `submittedAt`，然后在 `clock.after(0)` 里 `submitWake`；
-  - 主会话 `turn.complete` 推进 `awaitingModel || awaitingWake` 的待命，并派出到期的 `pendingTriage`；
-  - `watchOne` 停飞后改调 `deferTriage`。
-- `submitFix` / `submitWake` 都带上安排它们的那次待命的 `since`，只作用于 `since` 相同的待命。
+## S1
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+export function registerOrchestrator(on: On): void {
+```
+
+### template/plugins/flight/hooks/armed.ts
+```
+export type ArmClass = 'wait-baseline' | 'wait-agents' | 'transient' | 'model' | 'human-key' | 'human'
+export const ARM_BUDGET = 3
+export const ARM_TTL_MS = 1800000
+export const TRANSIENT_DELAY_MS = 10000
+export type Arm = {
+export type ArmEvent = { kind: 'refused' } | { kind: 'agent-ended' } | { kind: 'main-turn' } | { kind: 'tick' } | { kind: 'timer' }
+export type ArmStep =
+export function classifyRefusal(text: string): ArmClass {
+export function armOf(x: { change: string; args: string[]; resume: boolean; text: string; now: number }): Arm {
+export function beforeRetry(arm: Arm): Arm {
+export function refusedAgain(arm: Arm, text: string): Arm {
+export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep {
+export function modelPrompt(arm: Arm): string {
+export function wakePrompt(arm: Arm): string {
+export function armedLine(arm: Arm, now: number): string {
+export function giveUpText(arm: Arm, why: string): string {
+export function humanText(change: string, text: string, cls: 'human' | 'human-key'): string {
+```
+
+### template/plugins/flight/types/index.d.ts
+```
+export type FlightItem = {
+export type FlightArmedItem = {
+export type FlightArmed = { items: Record<string, FlightArmedItem> }
+export type FlightBand = {
+export type FlightPanel = {
+```
 
 ## S3 交出（`lease.ts` 新建、`orchestrator.tsx` 两处、`register.tsx`）
 - `template/plugins/flight/hooks/lease.ts`（纯模块，不 import 运行时值，不含 `$`）：
