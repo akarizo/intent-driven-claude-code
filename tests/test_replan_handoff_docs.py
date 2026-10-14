@@ -2,8 +2,6 @@
 import json
 import pathlib
 
-import pytest
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCS = ("template/.claude/commands/opsx-apply.md", "template/.claude/skills/openspec-apply-change/SKILL.md")
 
@@ -12,7 +10,6 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S2 实现后去掉")
 def test_docs_describe_replan_handoff():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md 与 README.md
     # When: 读取三份全文
@@ -27,7 +24,6 @@ def test_docs_describe_replan_handoff():
         assert "不参与任何判定" not in text, rel
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S2 实现后去掉")
 def test_plugin_version_0_13_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
