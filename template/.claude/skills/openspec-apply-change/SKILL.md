@@ -63,6 +63,7 @@ metadata:
 - **评审、修复与 final**：
   - `flight:reviewer` 评审已合回的切片；阻断 finding 交 `flight:fixer` 批量修复；再跑 final 门禁。有切片 blocked 或 final 未通过 → 停飞，修好后重发 `/opsx-apply <name>` 续飞。
   - final 绿后，控制面派 `flight:reviewer` 做**全量评审**，审整条 change 分支；有 CRITICAL/HIGH 交 `flight:fixer` 自动修，至多 2 轮，每轮修复后重跑 final，再派 `flight:reviewer` 复核本轮修复；仍未闭环就照常落地，由裁决落为 draft。
+- **落地前预合并**：收口阶段第一次 final 之前，插件把目标分支（`origin/HEAD` 指向的分支）合进 change 分支，只在本地，不推送、不碰 main；change 分支已包含目标分支则不合并；有冲突交解冲突 agent，收口后跑 final，解不开即停飞（kind `premerge`），人工合并后发 `/flight resume <change>` 续飞。final 与全量评审都在合并后的提交上做。
 - **续飞另起 worktree**：续飞时同名 worktree 已存在就另起 `<S>-a<attempt>`，旧现场保留，清理由人执行。
 - **落地交 `/flight:pr-ship`**：控制面在 `tasks.md` 勾选门禁绿的切片、记 `apply-done`，按 `slice-gate.py ship`（只读账本）的输出写 `review-findings.json`，由插件从账本生成 `timeline.md` 与 `gate-report.md`，与 `review-findings.json` 一起提交，然后调用 `/flight:pr-ship`。`/flight:pr-ship` 以 draft 建 PR 后调用 `ship` 工具，由插件按账本裁决 draft / ready 并贴评论。主会话不自判 draft。
 
@@ -81,6 +82,7 @@ metadata:
 - `/flight panel [<change>]`：打开飞行面板；起飞时会自动打开。
 - `/flight abort [<change>]`：只中止本会话起飞的飞行；先在账本记停飞，再停下在飞的 agent，它们未提交的改动留在各自 worktree。
 - `/flight resume <change> [--takeover]`：只续未落地的 attempt；再发 `/opsx-apply <change>` 也会从账本续飞。
+- `/flight recheck <change>`：落地后 change 分支 HEAD 又有代码改动（例如人工预合并、解冲突后提交）时，由控制面另起 attempt 重跑预合并、final 与全量评审；final 仍新鲜（HEAD 没有新的代码改动）时拒绝。
 - **来源规则**：`/opsx-apply` 起飞、`/flight abort`、`/flight resume` 只接受终端（composer）、Remote Control（bridge）或 SDK 宿主（sdk）发出；定时任务、别的会话的消息、插件代发一律拒绝，不写账本。
 
 **停飞自愈与续飞（插件执行，不经模型）**
@@ -90,13 +92,14 @@ metadata:
   - **整合修复**：final 红时派修复体 `integ`，经专审评审后合回，再跑 final；每个 attempt 至多一轮。
 - **预算**：每次飞行 3 次、同一处（同 kind 同切片）1 次；先在账本记 heal 再执行；预算用尽即按原行为处理（blocked / 停飞），原因写明「自愈预算已用尽」。
 - **G9 整合护栏**（`slice-gate.py final --integ-base`）：整合修复不改工件与 ADR、不碰 scenario 测试、测试只增不减、不加 xfail / skip；专审评审有 CRITICAL/HIGH 即停飞。
-- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`）；停飞（`abort` 除外）、PR 开出、交接 `/flight:pr-ship` 失败时经 `$.ui.notify` 发终端通知，走你自己的通知通道；通知失败只记日志，不影响停飞、落地与 ship。
+- **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `premerge` / `abort`）；停飞（`abort` 除外）、PR 开出、交接 `/flight:pr-ship` 失败时经 `$.ui.notify` 发终端通知，走你自己的通知通道；通知失败只记日志，不影响停飞、落地与 ship。
 - **诊断员**：停飞后在 change worktree 派 `flight:diagnostician`（会话主模型），只读、不可写任何文件；诊断记为 triage，只供展示（面板与飞行记录），不参与任何判定；人工中止（`abort`）与计划变化（`fingerprint`）不派。
 - **批准带（按下即起飞）**：四个起飞按钮按下即起飞，不再回车，输入框不预填；起飞回复首行经 toast 与终端通知告诉人。
   - 「批准起飞」（当前指纹未批准）：按下 = 批准 + 起飞。
   - 「起飞」（已批准、批准后未起飞）：按下 = 直接起飞，不重新批准。
   - 「批准修订并续飞」（已停飞且计划改过）：按下 = 批准 + 提交本 change 的工件 + 重跑基线 + 续飞；基线红则通知、不续飞。
   - 「续飞」（已停飞且计划未改）：等同 `/flight resume`，不重新批准。
+  - **计划需修订**：上次停飞有切片 G5 判为「在改生产代码之前就已通过」时，计划不改就不显示「续飞」（`/flight resume` 也拒绝），可以搁置；改计划后出现「批准修订并续飞」。
   - 「搁置」（四种模式都有，次要按钮）：按下 = 在账本记 shelve；这份计划不再显示、不能起飞（起飞守卫报「已搁置」），改动计划后重新出现；主检出判定器不认识 shelve 时拒绝、不写账本。
   - 按键起飞一并提交本 change 的工件（说明行写明个数并逐行列出，至多 5 行）；手打 `/opsx-apply <name>` 仍要带 `授权提交` 才提交工件。
   - **只显示本会话认领的 change**：本会话写过其目录（主循环或子 agent 的 Write / Edit / NotebookEdit / Bash 写入），或人发的 `/opsx-*`、`/flight` 命令点名过它，才算本会话认领；只读不算；认领只在本进程内有效。别的会话写的 change、或进程重启之后，发 `/opsx-apply <name>` 即可认领，被拒回复里叫你去按的按钮随即出现。
