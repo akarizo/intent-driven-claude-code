@@ -1,0 +1,77 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_shelve_followups_docs.py",
+      "line": 2,
+      "summary": "去掉 xfail 后，模块 docstring 仍写着「骨架：每个 scenario 一个 strict xfail……去掉标记即解锁」，与现状不符",
+      "fix": "把 docstring 第二行改为描述当前状态（如「切片 S4 已实现，两个 scenario 测试已解锁」），或直接删掉这一行"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 687,
+      "summary": "工件拒绝改为多行后，armed.ts 的 head() 只取首行，所以待命 / 终端通知（humanText、起飞待命说明行）现在只显示「……未提交的只有本 change 的工件（N 个）：」，末尾是一个悬空的冒号。原来首行里的「确认无误后发 /opsx-apply <name> 授权提交」提示在通知里也看不到了。human-key 的「做法」行还是指向批准带，功能不受影响，只是通知文字退化。",
+      "fix": "可选：在 humanText 里，human-key 类时把首行末尾的「：」去掉；或者把授权提示放在首行（比如首行写「……工件（N 个），确认后发 `/opsx-apply <name> 授权提交`：」，再逐行列路径）。如果接受现状，就不用改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/armed.test.ts",
+      "line": 37,
+      "summary": "armed.test.ts 的分类夹具还是旧文案「……工件（2 个）。」，和起飞拒绝的实际新文案（「（N 个）：\\n路径…」）对不上。classifyRefusal 用 includes 判定，所以测试照样绿，但测不到新文案在「不起飞：」之后不会误判成 transient 这条边界（不属于 S2 owns，留作后续）。",
+      "fix": "后续片里把夹具换成新文案的多行形式（例如 'flight：工作区不干净，不起飞：未提交的只有本 change 的工件（2 个）：\\na\\nb\\n确认无误后发 …'），断言它仍归为 human-key。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 188,
+      "summary": "覆盖率标记按子串匹配任一行，被测项目若在失败用例的 Captured stdout/断言信息里打印了这两段文字（例如测试 pytest-cov 集成的项目，本仓 test_slice_gate_coverage 一类用例失败时），整次 gate.test 会被误判为「覆盖率未达标」不可度量，退化为按退出码判。这是切片包第 8 条要求的写法，风险小，所以只作为建议。",
+      "fix": "可选：改成匹配行首。pytest-cov 实际打印的是 `ERROR: Coverage failure: total of ...`（在 runtestloop 中）和 `FAIL Required test coverage of ...`（在 terminal_summary 中），可用 `l.lstrip().startswith(m)` 并把前者写成 \"ERROR: Coverage failure: total of\"；或者保持现状，在注释里注明已知的误报面。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 561,
+      "summary": "绘制顺序让主按钮的说明行与它分开了。批准带（纵向 Box）现在的顺序是：主按钮 →「搁置」按钮 → 搁置说明 →「按下会提交本 change 的 N 个工件并直接起飞」/「按下会提交本 change 的工件、重跑基线…」→ 逐行工件路径。紧跟在「搁置」按钮和它的说明之后，「按下会提交…并直接起飞」读起来像是在说按「搁置」的后果。人恰恰要靠这一段判断按哪个键，容易误解。",
+      "fix": "把「搁置」Button 与搁置说明行挪到主按钮说明行和工件路径行（含「…另 K 个」）之后、「另有 N 个待批准」之前。这样主按钮紧跟它的说明和要提交的工件，「搁置」及其说明自成一组。ui.find({type:'Button'}) 取到的第一个仍是主按钮，现有用例不受影响。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 227,
+      "summary": "evaluate 新增的 isShelved 自己调一次 readLedger。加上 stoppedNow、lastHaltKind、isAlreadyApproved，每个候选 change 每次刷新要跑 4 次 `ledger.py show`（另有 1 次 approved）。按键和基线进度定时器都会触发刷新，change 多时子进程开销成倍增加。切片包写的是「读一次事件」。",
+      "fix": "在 evaluate 里只调一次 readLedger，把 events 交给搁置判定和 lastHaltKind（例如改为接收 events 的纯函数）；stoppedNow 在 io.ts 里，可以另加一个接收 events 的变体，或者留作后续优化。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 492,
+      "summary": "pressShelve 在指纹已变时沿用了 approve 分支的文案「计划已变化，请重新审阅 spec.html 后再批准」。人按的是「搁置」，提示「再批准」与操作不符。",
+      "fix": "把文案改成「flight：<change> 的计划已变化，未搁置；请看批准带当前显示的项」之类，并保留 design D3 第 3 步要求的「计划已变化」字样。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 34,
+      "summary": "「批准指纹」一行把「已搁置」并入「未批准 / 计划已变 / 账本损坏」，后面接的处理办法是「交出 spec.html、在批准带按「批准起飞」即起飞」。可搁置后计划不改，批准带就不显示该项，没有按钮可按；takeoff-gate.py 的实际文案也是「改动计划后批准带会重新显示」。模型照文档转述，会让人去按一个不存在的按钮。SKILL.md:43 同样有这个问题。",
+      "fix": "两份文档同改：把「已搁置」从这一句里拆出来，单列为「已搁置 → 不起飞；改动计划（指纹变化）后批准带才重新出现「批准起飞」」，与 takeoff-gate.py 的拒绝文字一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 732,
+      "summary": "spec takeoff-dirty-reporting「批准带逐行列出将被提交的工件」要求「批准起飞」「起飞」「批准修订并续飞」三种模式都逐行列出。band-lists-artifact-paths 只覆盖了 approve 模式。register.tsx evaluate 里 replan 分支单独调用 artifacts.set（`if (!same)`），这条路径没有任何测试，以后被改坏也不会有测试报红。",
+      "fix": "补一个 TS 用例：用 haltWorld 构造已停飞、计划已改的 change（mode=replan），status 列出若干工件，断言说明行之下逐行列出路径；同时断言 resume 模式不列出。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/timeline.py",
+      "line": 106,
+      "summary": "_note 没有处理新增的 shelve 事件，会落到 return \"\"，飞行记录里的 shelve 行备注为空，看不到搁置了哪个指纹。approve 行显示了「fp <前 8 位>」，两者不对称，也不便审计「搁置作废此前全部批准」。",
+      "fix": "把 approve 分支改为 `if ev in (\"approve\", \"shelve\"):`，返回 \"fp %s\" % fp[:8]。"
+    }
+  ],
+  "fix": null
+}
