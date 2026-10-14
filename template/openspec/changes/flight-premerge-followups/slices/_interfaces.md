@@ -231,3 +231,5 @@ export type FlightArmed = { items: Record<string, FlightArmedItem> }
 export type FlightBand = {
 export type FlightPanel = {
 ```
+
+## S6
