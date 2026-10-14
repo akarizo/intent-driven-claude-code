@@ -741,3 +741,28 @@ def test_stale_submit_keeps_new_arm():
     # Then: 最后一次状态行仍含 demo 与「起飞待命」；没有含「提交修复请求失败」的放弃通知
     assert_ts_passed("stale-submit-keeps-new-arm")
 
+# ---------------------------------------------------------------- flight-dispatch-followups S1
+
+@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S1 未实现")
+def test_queued_drive_counts_as_flying():
+    # Given: 本会话先后起飞 e2 与 demo；e2 的 drive 卡在门禁；demo 的最后一个执行体刚结束，它的 drive 排在 e2 之后；demo 没有活 agent
+    # When: 发 /flight resume demo
+    # Then: 回复含「正在飞」；demo 的账本没有新的 takeoff
+    assert_ts_passed("queued-drive-counts-as-flying")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S1 未实现")
+def test_abort_while_manual_takeoff():
+    # Given: demo 因「基线仍在跑」处于起飞待命；人又发 /opsx-apply demo，这次起飞卡在起飞检查中
+    # When: 发 /flight abort demo
+    # Then: 回复含「正在起飞，结束后再 /flight abort」，不含「正在自动起飞」
+    assert_ts_passed("abort-while-manual-takeoff")
+
+
+@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S1 未实现")
+def test_triage_wake_failure_logged():
+    # Given: 账本预置 3 条 heal；demo 起飞，agent-1 的请求不结束；prompt.submit 会抛错
+    # When: 时钟推进 661 秒（看门狗停飞），随后推进到唤醒提交
+    # Then: ui.log 有一行含 demo 与「唤醒失败」；ui.notify 收到含「未能派诊断员」的通知
+    assert_ts_passed("triage-wake-failure-logged")
+

@@ -41,3 +41,12 @@ def test_timer_steps_never_retry():
     # Then: 前三个都给出 wake（正文含 change 名与「只回复「收到」」）；第四个遇 tick 给 wait、遇 main-turn 给 retry；beforeRetry 后已唤醒标记为假
     assert_ts_passed("timer-steps-never-retry")
 
+# ---------------------------------------------------------------- flight-dispatch-followups S1
+
+@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S1 未实现")
+def test_missed_turn_rewakes_on_tick():
+    # Given: 一个已唤醒的 wait-baseline 待命与一个已提交交模型的 model 待命
+    # When: 分别 afterMissedTurn，各遇一次 tick；已补发唤醒的再遇 tick；对其一 beforeRetry
+    # Then: afterMissedTurn 后已唤醒 / 已提交为假、错过一轮为真；各遇 tick 给 wake（正文含 change 名与「只回复「收到」」）；补发后再遇 tick 给 wait；beforeRetry 后错过一轮为假
+    assert_ts_passed("missed-turn-rewakes-on-tick")
+
