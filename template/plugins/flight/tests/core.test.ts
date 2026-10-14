@@ -143,6 +143,18 @@ test('core-respawns-once-after-silent-end', () => {
   expect(got[3]).toEqual([{ kind: 'blocked', slice: 'S1', blockKind: 'gate', reason: 'G3 test' }])
 })
 
+test('redispatch-without-dispatch-base-unchanged', () => {
+  // Given: waves 只有 [S1]；S1 执行体 A 的派发没有 base 字段（旧账本），A 收口门禁红（G4 GWT）后结束，结束后补跑门禁仍红（G4 GWT）
+  const solo: Plan = { waves: [['S1']], deps: {} }
+  const evs = [approve, takeoff(1, solo.waves), dispatch(1, 'S1', 'executor', 'A'), gate(1, 'A', 'S1', ['G4 GWT']), ended(1, 'A'), gate(1, 'A', 'S1', ['G4 GWT'])]
+
+  // When: 求下一批动作
+  const got = next(reduce(evs), solo, F)
+
+  // Then: 恰为续派 S1 执行体，续接原因「执行体未正常收口」、失败项 G4 GWT，动作不含 base
+  expect(got).toEqual([{ kind: 'dispatch', role: 'executor', slice: 'S1', continuation: { reason: '执行体未正常收口', failed: ['G4 GWT'] } }])
+})
+
 test('core-reviews-fixes-then-finals', () => {
   // Given: waves [[S1, S2]] 全部合回；S1 评审 1 条 HIGH，S2 评审 1 条 LOW；三个快照：
   //   ① 评审全部返回；② 修复 agent X 收口门禁绿、结束、修复合回，收口预合并成功（第一次 final 前必有，DRAFT-flight-premerge-before-final）；③ final 绿
