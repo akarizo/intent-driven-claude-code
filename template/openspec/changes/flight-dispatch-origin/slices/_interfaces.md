@@ -49,19 +49,29 @@ export type FlightBand = {
 export type FlightPanel = {
 ```
 
-## S3 交出（`lease.ts` 新建、`orchestrator.tsx` 两处、`register.tsx`）
-- `template/plugins/flight/hooks/lease.ts`（纯模块，不 import 运行时值，不含 `$`）：
-  ```ts
-  /** 活帧凭证：只在处理外部事件的 hook 里经 withLease 取得；hook 返回（或抛错）即失效（design D4） */
-  export type Lease = { readonly alive: boolean }
-  export const LEASE_DENY = 'flight：派发须在处理外部事件的 hook 里（定时器或已返回的回调不能派发）'
-  export async function withLease<T>(body: (lease: Lease) => Promise<T>): Promise<T>
-  export function leaseDeny(lease: Lease | undefined): string | undefined   // 缺失或失效 → LEASE_DENY
-  ```
-- orchestrator：
-  - `export function takeoffNow(args: string[], opts?: { resume?: boolean; lease?: Lease }): Promise<string>`：`lease` 原样传给 `takeoffArmed` 的 opts。本片只透传，不使用；
-  - `export function restoreStatusNow(): Promise<void>`：session.start 里与 `entry` 一起造的无 `$` 闭包，内部调 `restoreStatus($)`。插件未就绪时直接 resolve。
-- register：`ui.press` 整体包在 `withLease` 里，起飞经 `takeoffNow(args, { lease })`，续飞经 `depsOf($, item, lease)` 把凭证带给 `takeoffNow`。
+## S3
+
+### template/plugins/flight/hooks/register.tsx
+```
+export const register: Register = on => {
+```
+
+### template/plugins/flight/hooks/lease.ts
+```
+export type Lease = { readonly alive: boolean }
+export const LEASE_DENY = 'flight：派发须在处理外部事件的 hook 里（定时器或已返回的回调不能派发）'
+export async function withLease<T>(body: (lease: Lease) => Promise<T>): Promise<T> {
+export function leaseDeny(lease: Lease | undefined): string | undefined {
+```
+
+### template/plugins/flight/hooks/orchestrator.tsx
+```
+export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
+export async function takeoff($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+export function takeoffNow(args: string[], opts?: { resume?: boolean; lease?: Lease }): Promise<string> {
+export function restoreStatusNow(): Promise<void> {
+export function registerOrchestrator(on: On): void {
+```
 
 ## S2 交出（`lease.ts` 增补、`orchestrator.tsx`）
 - `export async function guardedSpawn<T>(lease: Lease | undefined, spawn: () => Promise<T>): Promise<T | { deny: string }>`：`leaseDeny` 有值时返回 `{ deny }`，不调用 spawn。
