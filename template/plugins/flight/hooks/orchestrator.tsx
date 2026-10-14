@@ -52,7 +52,7 @@ const TAKEOVER = '--takeover'
 const MEASURE_RETRY = 'flight：暂时无法判定你的归属（账本读取失败），稍后重试测量'
 const FLIGHT_USAGE = '用法：/flight status|panel|abort [<change>] · /flight resume <change> [--takeover]'
 /** 写账本的入口（/opsx-apply、/flight abort、/flight resume）只认人或宿主程序发出的来源：终端、Remote Control、SDK */
-const HOST_ORIGINS = ['composer', 'bridge', 'sdk']
+export const HOST_ORIGINS = ['composer', 'bridge', 'sdk']
 // 不变量（design D6）：模型可调用的工具恰为三个（measure、submit_findings、ship）；ship 只认主会话（带 agentId 一律拒绝）；ship 只写 ship 事件。
 const SHIP_MAIN_ONLY = 'flight：ship 只接受主会话调用'
 /** --gate=per-task 且 /opsx-apply 由本插件登记（项目没有命令文件）时的回复：无从透传给模型，指给 legacy skill */
@@ -67,7 +67,7 @@ function originRefusal(cmd: string, kind: string | undefined): string {
   return `flight：${cmd} 会写账本，只接受人或宿主程序发出（终端、Remote Control、SDK；本次来源：${kind ?? '未标明'}）`
 }
 
-function originOf(e: unknown): string | undefined {
+export function originOf(e: unknown): string | undefined {
   return (e as { origin?: { kind?: string } }).origin?.kind
 }
 
