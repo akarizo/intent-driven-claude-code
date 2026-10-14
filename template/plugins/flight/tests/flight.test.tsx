@@ -854,6 +854,25 @@ test('band-offers-takeoff-for-approved', async ($, on) => {
   expect(committed(log)).toEqual([[`${DEMO}/proposal.md`, `${DEMO}/design.md`]])
 })
 
+test('band-counts-declared-artifacts', async ($, on) => {
+  // Given: demo 账本只有 approve F（之后从未起飞），ledger approved 输出 F，当前指纹 F；slices.json 的 artifact_files 为 tests/helpers.py；git status 列出 demo 的 proposal.md（已改）、design.md（未跟踪）与 tests/helpers.py（未跟踪）
+  const world = demoWorld(() => F, {
+    ledger: [ledgerEvent('approve', F)],
+    approved: { demo: F },
+    status: ' M template/openspec/changes/demo/proposal.md\n?? template/openspec/changes/demo/design.md\n?? tests/helpers.py\n',
+  })
+  world.files[`${DEMO}/slices.json`] = JSON.stringify({ artifact_files: ['tests/helpers.py'] })
+  useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 读出批准带上 demo 的说明行
+  const note = await ui.find({ text: /提交本 change 的 3 个工件/ })
+
+  // Then: 说明行含「提交本 change 的 3 个工件」
+  expect(note).toBeDefined()
+})
+
 test('band-ignores-landed-and-aborted', async ($, on) => {
   // Given: 计划都未改（当前与最近批准都为 F）的 alpha、beta、gamma：alpha 的 attempt 1 先 land、1 秒后又记 halt；beta 的 attempt 1 以 kind=abort 的 halt 结束；gamma 的 attempt 1 以 kind=blocked 的 halt 结束
   const world = haltWorld(['alpha', 'beta', 'gamma'])

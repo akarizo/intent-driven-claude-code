@@ -37,16 +37,16 @@ export async function commitRecords(io: Io, f: Flight, message: string, extra: r
 
 /**
  * 未提交路径（相对 change worktree 根）的机械分类（design D2）：
- * records = 飞行记录；artifacts = change 目录下其余文件、同一 openspec 根下 adr/DRAFT-*.md、scenario 测试文件；others = 其余（含已编号 ADR、porcelain 改名行）。
+ * records = 飞行记录；artifacts = change 目录下其余文件、同一 openspec 根下 adr/DRAFT-*.md、scenario 测试文件、slices.json 的 artifact_files 声明的文件（精确匹配）；others = 其余（含已编号 ADR、porcelain 改名行）。
  */
-export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
+export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[]; artifactFiles?: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
   const records = new Set(RECORD_FILES.map(r => `${x.changeDir}/${r}`))
   const adr = `${x.changeDir.replace(/\/changes\/[^/]+$/, '')}/adr/`
   const isDraft = (p: string) => p.startsWith(adr) && /^DRAFT-[^/]*\.md$/.test(p.slice(adr.length))
   const out = { records: [] as string[], artifacts: [] as string[], others: [] as string[] }
   for (const p of paths) {
     if (records.has(p)) out.records.push(p)
-    else if (p.startsWith(`${x.changeDir}/`) || isDraft(p) || x.scenarioFiles.includes(p)) out.artifacts.push(p)
+    else if (p.startsWith(`${x.changeDir}/`) || isDraft(p) || x.scenarioFiles.includes(p) || x.artifactFiles?.includes(p)) out.artifacts.push(p)
     else out.others.push(p)
   }
   return out
