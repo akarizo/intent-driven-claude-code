@@ -2905,7 +2905,7 @@ test('watchdog-triage-via-wake', async ($, on) => {
   ]
   const log = useWorld(on, demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
   const isTriage = (x: Record<string, unknown>) => x.ev === 'dispatch' && x.role === 'diagnostician' && x.slice === 'triage'
 
