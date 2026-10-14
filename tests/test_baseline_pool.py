@@ -7,7 +7,6 @@ from conftest import git, write
 from test_baseline_incremental import baseline, full_c, marker, read_bl, read_plan, two_changes
 
 
-@pytest.mark.xfail(strict=True, reason="待 S2 实现基线池")
 def test_cross_change_reuse_same_tree(git_repo):
     # Given: change c 跑过一次全量绿基线（预存红 1 条）；change d 的全量脚本与 c 内容相同、命令只差 change 目录名，还没有基线；
     #        c 的工件与门禁脚本都没有提交
@@ -27,7 +26,6 @@ def test_cross_change_reuse_same_tree(git_repo):
     assert read_plan(d)["gate"]["full_suite_sec"] == bc["test"]["sec"]
 
 
-@pytest.mark.xfail(strict=True, reason="待 S2 实现基线池")
 def test_cross_change_reuse_after_test_only_commit(git_repo):
     # Given: change c 跑过一次全量绿基线；之后提交了一个只新增 tests/test_more.py（用例通过）的 commit；d 的全量脚本与 c 内容相同
     c, d = two_changes(git_repo)
@@ -46,7 +44,6 @@ def test_cross_change_reuse_after_test_only_commit(git_repo):
     assert bd["mode"] == "incremental" and bd["incremental"]["files"] == ["tests/test_more.py"], bd
 
 
-@pytest.mark.xfail(strict=True, reason="待 S2 实现基线池")
 def test_cross_change_ignores_sourced_files(git_repo):
     # Given: change c 跑过一次全量绿基线；d 的全量脚本与 c 内容相同，但两者各自 source 的 verify/_env.sh 内容不同
     c, d = two_changes(git_repo, c_env="OWNED_PY=(a.py)\n", d_env="OWNED_PY=(b.py)\n")
