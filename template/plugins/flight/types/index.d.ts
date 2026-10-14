@@ -21,6 +21,8 @@ export type FlightItem = {
   mode: 'approve' | 'takeoff' | 'replan' | 'resume'
   /** 非空 = 进行中文字（「起飞中…」「基线运行中（已 N 分钟）」），渲染时只显示文字、不渲染按钮。 */
   busy?: string
+  /** 非空 = 计划缺陷（停飞且计划未改，原因首行，design D6）：不画主按钮、只显示「计划需修订：<defect>」，仍可搁置。 */
+  defect?: string
 }
 
 /** 一次起飞待命（字段与 hooks/armed.ts 的 Arm 一一对应）。 */

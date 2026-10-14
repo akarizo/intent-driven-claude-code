@@ -965,6 +965,34 @@ test('band-ignores-landed-and-aborted', async ($, on) => {
   expect(await ui.findAll({ text: /另有/ })).toHaveLength(0)
 })
 
+test('band-shows-plan-defect-without-resume', async ($, on) => {
+  // Given: gamma 当前与最近批准都为 F；账本 approve F → takeoff F（attempt 1）→ S1 的 blocked（原因首行为 G5「在改生产代码之前就已通过」）→ kind=blocked 的 halt；本会话已认领 gamma
+  const world = haltWorld(['gamma'])
+  world.fp = () => F
+  world.approved = { gamma: F }
+  const reason = 'G5 measure: cap#s → tests/test_a.py::test_s 在改生产代码之前就已通过：若它描述的行为在 base 上本已成立，应在计划里标为护栏\n第二行'
+  world.ledgers = {
+    gamma: [
+      attemptEvent('gamma', 'approve', '10:00:00', { attempt: undefined, fp: F }),
+      attemptEvent('gamma', 'takeoff', '10:01:00', { fp: F }),
+      attemptEvent('gamma', 'blocked', '10:20:00', { slice: 'S1', kind: 'gate', reason }),
+      attemptEvent('gamma', 'halt', '10:30:00', { reason: 'S1 blocked', kind: 'blocked' }),
+    ],
+  }
+  useWorld(on, world)
+  await claim($, on, ['gamma'])
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 有含「计划需修订」的文字；没有 key 以 resume: 开头的按钮；有 key 为 shelve:gamma:<F> 的按钮
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.key))
+  expect(await ui.find({ text: /计划需修订/ })).toBeDefined()
+  expect(keys.filter(k => k.startsWith('resume:'))).toEqual([])
+  expect(keys).toContain(`shelve:gamma:${F}`)
+})
+
 test('band-approve-takes-off', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 demo 的 proposal.md 一个未提交工件；起飞守卫放行，起飞检查走到提交工件之后在 lint 停下；批准带已显示 demo 的「批准起飞」
   const log = useWorld(on, demoWorld(() => F, { status: ' M template/openspec/changes/demo/proposal.md\n', gatePasses: true }))
@@ -1486,4 +1514,18 @@ test('command-claims-change', async ($, on) => {
   expect(buttonsAfterPlugin).toBe(0)
   expect((await ui.find({ key: `approve:demo:${F}` }))?.props.label).toBe('批准起飞')
   expect(await ui.findAll({ text: /另有/ })).toHaveLength(0)
+})
+
+test('claim-hook-keeps-downstream-error', async ($, on) => {
+  // Given: 主 worktree 里有待批准的 demo，会话已启动；插件之下没有 /opsx-propose 的任何实现（下游以「no implementation for command.run」拒绝）
+  useWorld(on, demoWorld(() => F))
+  await $.session.start(START)
+
+  // When: 人在终端（composer）发出 /opsx-propose demo
+  const r = await $.command.run({ command: 'opsx-propose', args: 'demo', origin: { kind: 'composer' } } as never)
+
+  // Then: 回复含「flight：命令执行出错」与「no implementation for command.run」
+  const text = JSON.stringify(r)
+  expect(text).toContain('flight：命令执行出错')
+  expect(text).toContain('no implementation for command.run')
 })
