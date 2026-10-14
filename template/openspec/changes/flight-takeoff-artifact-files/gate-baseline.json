@@ -1,13 +1,21 @@
 {
-  "commit": "ed534879d98077b101bb2ad6e39d7170534440c4",
-  "at": "2026-10-14T03:26:28Z",
-  "plan_sha": "cc50aeef7d6765dfe095ff831885f03cb36ba770",
-  "ok": true,
-  "reasons": [],
+  "commit": "c4972242587175a0d5acca22df857850d27b1b22",
+  "at": "2026-10-14T05:00:09Z",
+  "plan_sha": "602f3bc4bc0774d4f82aa58f5ea4e18214984625",
+  "ok": false,
+  "reasons": [
+    "S3 verify 在基线上红（exit 1）：命令不可运行或含既有错误"
+  ],
   "test": {
-    "exit": 0,
-    "sec": 97.6
+    "exit": 1,
+    "sec": 102.7,
+    "failed": [
+      "tests.test_dispatch_origin_docs::test_plugin_version_0_10_2"
+    ]
   },
+  "warnings": [
+    "预存红 1 条已记录，final 按基线差分"
+  ],
   "lint": {
     "exit": 0,
     "lines": []
@@ -21,7 +29,7 @@
       "exit": 0
     },
     "S3": {
-      "exit": 0
+      "exit": 1
     }
   }
 }

@@ -69,7 +69,8 @@ flight：工作区不干净，不起飞（工件之外的未提交改动）：
 
 - [模型借 `artifact_files` 夹带生产代码] → 声明在指纹内、spec.html 单列一节给人看；起飞前只是提交，不绕过 G5/G9 等门禁。
 - [改 `slices.json` 让已批准计划失效] → 预期行为：新增声明须重新批准；拒绝文案已写明。
-- [与 `flight-dispatch-followups` 改同一批文件] → 等它合入后预合并 main、重跑 baseline 再起飞；S3 更新其版本断言。
+- [与 `flight-dispatch-followups` 改同一批文件] → 合入前后都可起飞。先于它起飞（2026-10-14 实际如此）：S3 同时把基线里的 `tests/test_dispatch_origin_docs.py` 版本断言放宽为「不低于 0.10.2」，写法与该分支逐字相同以便日后自动合并；它合入后预合并 main 时，再把 `tests/test_dispatch_followups_docs.py` 的 `0.10.3` 断言改为 0.10.4，并人工解 `orchestrator.tsx` / `register.tsx` / `flight.test.tsx` / `plugin.json` 的冲突。
+- [升版即破坏既有「版本 ==」断言] → S3 的 owns / verify 须覆盖基线里全部断言插件版本的测试文件（attempt 1 停飞根因：漏了 `test_dispatch_origin_docs.py`，修复方受写入范围限制写不进）。
 - [非 ASCII 路径被 git 加引号] → 精确匹配失败、归工件之外（fail-closed，沿用 `flight-takeoff-commit` 的假设）。
 
 ## Migration Plan
