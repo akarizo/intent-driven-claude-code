@@ -3,8 +3,6 @@
 import json
 import pathlib
 
-import pytest
-
 from conftest import git, make_change, run_hook, write
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -15,7 +13,6 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="待 S3 实现 timeline 增量标注")
 def test_timeline_marks_incremental_baseline(tmp_path):
     # Given: gate-baseline.json 为 mode incremental，incremental.from.change 为 c，incremental.files 有 1 个文件
     repo = tmp_path / "repo"
@@ -43,7 +40,6 @@ def test_timeline_marks_incremental_baseline(tmp_path):
     assert any("增量" in l and "c" in l.split("baseline", 1)[1] for l in lines), lines
 
 
-@pytest.mark.xfail(strict=True, reason="待 S3 实现文档")
 def test_propose_docs_describe_incremental():
     # Given: opsx-propose.md、openspec-propose/SKILL.md 与 README.md
     # When: 读取全文
