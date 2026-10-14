@@ -18,6 +18,10 @@ export type Arm = {
   /** 已提交唤醒、尚未重试（design D1）：定时到点只唤醒，重试在主会话那一轮结束时做 */
   awaitingWake: boolean
   transientAgain: boolean
+  /** 唤醒或交模型那一轮撞锁被错过：下一次 tick / 计时到点补发唤醒（design D3） */
+  missedTurn: boolean
+  /** 提交唤醒 / 交模型之前的时刻 T0：只认开始时刻不早于它的那一轮；缺失时按旧行为 */
+  submittedAt?: number
 }
 export type ArmEvent = { kind: 'refused' } | { kind: 'agent-ended' } | { kind: 'main-turn' } | { kind: 'tick' } | { kind: 'timer' }
 export type ArmStep =
@@ -65,6 +69,7 @@ export function armOf(x: { change: string; args: string[]; resume: boolean; text
     awaitingModel: false,
     awaitingWake: false,
     transientAgain: false,
+    missedTurn: false,
   }
 }
 
@@ -73,7 +78,13 @@ function counted(cls: ArmClass): boolean {
 }
 
 export function beforeRetry(arm: Arm): Arm {
-  return { ...arm, tries: counted(arm.cls) ? arm.tries + 1 : arm.tries, awaitingModel: false, awaitingWake: false }
+  return { ...arm, tries: counted(arm.cls) ? arm.tries + 1 : arm.tries, awaitingModel: false, awaitingWake: false, missedTurn: false }
+}
+
+/** 等的那一轮（唤醒 / 交模型）撞锁被错过：清掉已唤醒、已提交，记下错过一轮；不在等那一轮时原样返回 */
+export function afterMissedTurn(arm: Arm): Arm {
+  if (!arm.awaitingWake && !arm.awaitingModel) return arm
+  return { ...arm, awaitingWake: false, awaitingModel: false, missedTurn: true }
 }
 
 export function refusedAgain(arm: Arm, text: string): Arm {
@@ -94,6 +105,8 @@ export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep {
   // 已提交唤醒：那一轮结束才重试（定时器回调里起飞会绕过包络与 measure，design D1）
   if (event.kind === 'main-turn' && arm.awaitingWake) return { do: 'retry' }
   const wake: ArmStep = arm.awaitingWake ? { do: 'wait' } : { do: 'wake', text: wakePrompt(arm) }
+  // 错过的那一轮：任何类别都在下一次 tick / 计时到点补发唤醒（交模型也一样，不再重复提交修复请求）
+  if ((event.kind === 'tick' || event.kind === 'timer') && arm.missedTurn) return wake
   switch (arm.cls) {
     case 'wait-baseline':
       if (event.kind === 'tick') return wake
@@ -124,12 +137,12 @@ export function modelPrompt(arm: Arm): string {
   ].join('\n')
 }
 
+/** 唤醒正文的第二行：起飞待命与看门狗诊断的唤醒共用 */
+export const WAKE_FOOTER = '这一轮只回复「收到」，不要做别的，也不要发 /opsx-apply。'
+
 /** 定时到点的唤醒文本：让主会话跑一轮，插件在那一轮结束时重试起飞 */
 export function wakePrompt(arm: Arm): string {
-  return [
-    `flight：${arm.change} 起飞待命到点（${head(arm.reason)}），插件将在这一轮结束后重试起飞。`,
-    '这一轮只回复「收到」，不要做别的，也不要发 /opsx-apply。',
-  ].join('\n')
+  return [`flight：${arm.change} 起飞待命到点（${head(arm.reason)}），插件将在这一轮结束后重试起飞。`, WAKE_FOOTER].join('\n')
 }
 
 export function armedLine(arm: Arm, now: number): string {
