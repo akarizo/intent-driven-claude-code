@@ -74,10 +74,14 @@ EVENTS = {
     "diag": {"attempt": ATTEMPT, "where": NONEMPTY, "error": STR},  # kind / agent / budget 可选
     "heal": {"attempt": ATTEMPT, "kind": _one_of("merge-retry", "watchdog", "integ"), "slice": NONEMPTY, "reason": STR},
     "triage": {"attempt": ATTEMPT, "agent": NONEMPTY, "text": STR},
+    # 收口前预合并目标分支（DRAFT-flight-premerge-before-final）
+    "premerge": {"attempt": ATTEMPT, "ok": BOOL, "ref": STR, "target": STR, "commit": STR, "conflicts": STRS,
+                 "reason": STR},
 }
 # 可选字段：缺省不判，出现则须合法（与 EVENTS 同形）
 OPTIONAL = {
-    "halt": {"kind": _one_of("blocked", "final", "integ", "fingerprint", "control", "watchdog", "abort")},
+    "halt": {"kind": _one_of("blocked", "final", "integ", "fingerprint", "control", "watchdog", "abort",
+                      "premerge")},
 }
 
 
