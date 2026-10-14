@@ -484,6 +484,18 @@ test('classify-dirty-paths', () => {
   expect(r.others).toEqual(['template/openspec/adr/0001-y.md', 'src/x.py'])
 })
 
+test('classify-declared-artifact-files', () => {
+  // Given: change 目录 template/openspec/changes/demo、声明文件 tests/helpers.py 与 openspec/adr/INDEX.md；未提交 tests/helpers.py、openspec/adr/INDEX.md、tests/helpers.py.bak、src/x.py
+  const paths = ['tests/helpers.py', 'openspec/adr/INDEX.md', 'tests/helpers.py.bak', 'src/x.py']
+
+  // When: 分类
+  const r = classifyDirty(paths, { changeDir: CD, scenarioFiles: [], artifactFiles: ['tests/helpers.py', 'openspec/adr/INDEX.md'] })
+
+  // Then: 工件恰为 tests/helpers.py 与 openspec/adr/INDEX.md；工件之外恰为 tests/helpers.py.bak 与 src/x.py
+  expect(r.artifacts).toEqual(['tests/helpers.py', 'openspec/adr/INDEX.md'])
+  expect(r.others).toEqual(['tests/helpers.py.bak', 'src/x.py'])
+})
+
 test('commit-artifacts-handles-staged-deletion', async () => {
   // Given: 工件 a.md 已修改未暂存；slices/S5.md 的删除已暂存，git status --porcelain 答「 M …/a.md」与「D  …/slices/S5.md」；其余 git 调用退出 0
   const a = `${CD}/a.md`

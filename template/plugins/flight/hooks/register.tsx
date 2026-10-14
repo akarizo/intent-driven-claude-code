@@ -8,7 +8,7 @@ import { readLedger, stoppedNow } from './io'
 import { classifyDirty } from './land'
 import { withLease } from './lease'
 import type { Lease } from './lease'
-import { registerOrchestrator, restoreStatusNow, scenarioFiles, takeoffNow } from './orchestrator'
+import { artifactFiles, registerOrchestrator, restoreStatusNow, scenarioFiles, takeoffNow } from './orchestrator'
 import { resumeFlight } from './resume'
 import type { ResumeDeps } from './resume'
 
@@ -179,7 +179,9 @@ async function artifactCount($: Engine, c: Candidate, f: Flight): Promise<number
     if (st.exitCode !== 0) return 0
     // porcelain 的 XY 列可能以空格开头，不能先 trim
     const paths = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
-    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFiles(ioOf($), `${c.changeDir}/slices.json`) }).artifacts.length
+    const io = ioOf($)
+    const plan = `${c.changeDir}/slices.json`
+    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFiles(io, plan), artifactFiles: await artifactFiles(io, plan) }).artifacts.length
   } catch {
     return 0
   }
