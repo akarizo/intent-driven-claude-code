@@ -1,5 +1,6 @@
 // 合回、冲突交接与快进、findings 校验、落地收口的机械过程（spec flight-integration）。
 // 只依赖 core.ts 的类型与 Io：不 import claude-code 的运行时值，不调用任何 $。git 一律 `git -C <worktree> ...`。
+import { PREMERGE } from './core'
 import type { Finding, Flight, GateJson, Io, RunResult, Severity } from './core'
 import { globMatch } from './envelope'
 import { occupied, worktreePath } from './io'
@@ -136,9 +137,9 @@ async function refreshInterfaces(io: Io, f: Flight, slice: string, owns: readonl
   await io.write(path, `${before}\n\n${section}${after ? `\n${after}\n` : ''}`)
 }
 
-/** 刷新接口摘要、取 HEAD；门禁结果只在账本里，不写记录（design D3）。 */
+/** 刷新接口摘要、取 HEAD；门禁结果只在账本里，不写记录（design D3）。预合并解冲突不是计划切片，不刷新接口摘要（design D4）。 */
 async function afterMerge(io: Io, f: Flight, slice: string, _gate: GateJson, owns: readonly string[]): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
-  await refreshInterfaces(io, f, slice, owns)
+  if (slice !== PREMERGE) await refreshInterfaces(io, f, slice, owns)
   return { ok: true, commit: await head(io, f.changeTree) }
 }
 
@@ -220,7 +221,8 @@ export async function prepareResolve(io: Io, f: Flight, slice: string, x: { bran
   const { path, branch } = at
   const add = await git(io, f.changeTree, 'worktree', 'add', '-b', branch, path, f.branch)
   if (add.exitCode !== 0) return { error: `建解冲突 worktree 失败：${firstLine(add)}` }
-  const m = await git(io, path, 'merge', '--no-ff', x.branch ?? `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
+  const from = x.branch ?? `flight/${f.change}/${slice}`
+  const m = await git(io, path, 'merge', '--no-ff', from, '-m', slice === PREMERGE ? `merge ${from} into ${f.branch}` : `integrate: ${slice}`)
   if (m.exitCode === 0) return { error: '解冲突现场合并意外成功：无需解冲突' }
   const conflicts = await unmerged(io, path)
   if (!conflicts.length) return { error: `git merge 失败：${firstLine(m)}` }

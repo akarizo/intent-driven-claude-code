@@ -1,12 +1,9 @@
 """预合并冲突、落地后重验、计划缺陷拒续飞、改名行出路（scenario: flight-landing-premerge#premerge-conflict-dispatches-resolver / premerge-resolver-red-halts / recheck-after-land-reruns-final-and-review / recheck-refused-when-fresh，flight-plan-defect-halt#resume-refused-on-plan-defect，flight-small-fixes#rename-refusal-advice）。
-`claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
-同名 TS 测试写在 template/plugins/flight/tests/orchestrator.test.tsx；切片 S4 写好 TS 测试并实现后去掉标记。"""
-import pytest
-
+`claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 包装，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
+同名 TS 测试写在 template/plugins/flight/tests/orchestrator.test.tsx。"""
 from test_flight_plugin import assert_ts_passed
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：预合并冲突派解冲突 agent")
 def test_premerge_conflict_dispatches_resolver():
     # Given: 收口时 merge-tree 判 origin/main 与 HEAD 在 a.py 冲突；解冲突 agent 收口时 final 门禁绿
     # When: drive 推进，解冲突 agent 结束
@@ -14,7 +11,6 @@ def test_premerge_conflict_dispatches_resolver():
     assert_ts_passed("premerge-conflict-dispatches-resolver")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：解冲突收口红停飞")
 def test_premerge_resolver_red_halts():
     # Given: 同上，但解冲突 agent 三次收口的 final 门禁都红
     # When: 解冲突 agent 结束
@@ -22,7 +18,6 @@ def test_premerge_resolver_red_halts():
     assert_ts_passed("premerge-resolver-red-halts")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：/flight recheck")
 def test_recheck_after_land_reruns_final_and_review():
     # Given: attempt 1 已落地；slice-gate.py ship 的 reasons 含「final 过期」
     # When: 人发出 /flight recheck demo
@@ -30,7 +25,6 @@ def test_recheck_after_land_reruns_final_and_review():
     assert_ts_passed("recheck-after-land-reruns-final-and-review")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：/flight recheck 判新鲜")
 def test_recheck_refused_when_fresh():
     # Given: attempt 1 已落地；slice-gate.py ship 的 reasons 为空
     # When: 人发出 /flight recheck demo
@@ -38,7 +32,6 @@ def test_recheck_refused_when_fresh():
     assert_ts_passed("recheck-refused-when-fresh")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：计划缺陷拒绝续飞")
 def test_resume_refused_on_plan_defect():
     # Given: attempt 1 以 kind blocked 停飞，S1 的 blocked 原因为 G5「在改生产代码之前就已通过」；计划指纹未变，起飞守卫放行
     # When: 人发出 /flight resume demo
@@ -46,7 +39,6 @@ def test_resume_refused_on_plan_defect():
     assert_ts_passed("resume-refused-on-plan-defect")
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：改名行的拒绝出路")
 def test_rename_refusal_advice():
     # Given: demo 已批准、账本为空；porcelain 只有 `R  <cd>/a.md -> <cd>/b.md` 与 `?? <cd>/proposal.md`
     # When: 人发出 /opsx-apply demo 授权提交
