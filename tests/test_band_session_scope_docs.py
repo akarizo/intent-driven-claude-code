@@ -1,8 +1,6 @@
 """批准带会话作用域：文档与版本（scenario: flight-band-session-scope-docs#docs-describe-session-scope / plugin-version-0-11-0）。
-骨架：S2 改完文档与 plugin.json 后去掉 xfail 标记。"""
+"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
@@ -23,7 +21,6 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-band-session-scope S2 未实现")
 def test_docs_describe_session_scope():
     # Given: opsx-apply 命令与 skill、opsx-propose 命令与 skill、README.md、docs/WORKFLOW_zh.md
     # When: 读取这六个文件
@@ -36,7 +33,6 @@ def test_docs_describe_session_scope():
         assert "批准带没出现 = 未装 flight 插件" not in text, f"{rel} 仍直接断言未装插件"
 
 
-@pytest.mark.xfail(strict=True, reason="flight-band-session-scope S2 未实现")
 def test_plugin_version_0_11_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
