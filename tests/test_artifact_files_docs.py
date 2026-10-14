@@ -1,8 +1,6 @@
 """文档写明 artifact_files 与插件版本（scenario: flight-takeoff-artifact-files#artifact-files-documented / plugin-version-0-10-4）。"""
 import json
 
-import pytest
-
 from conftest import ROOT
 
 CMD = ROOT / "template" / ".claude" / "commands"
@@ -13,7 +11,6 @@ def read(path):
     return path.read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S3 实现后去掉")
 def test_artifact_files_documented():
     # Given: opsx-apply.md、openspec-apply-change/SKILL.md、opsx-propose.md、openspec-propose/SKILL.md、schema.yaml
     apply_docs = [read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")]
@@ -30,7 +27,6 @@ def test_artifact_files_documented():
         assert "artifact_files" in t
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S3 实现后去掉")
 def test_plugin_version_0_10_4():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
