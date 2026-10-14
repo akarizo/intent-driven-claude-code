@@ -40,7 +40,7 @@ metadata:
 `--gate=per-task`（可选）→ 插件不接管，把命令原样交给模型；模型转读 `.claude/skills/legacy/openspec-subagent-apply-change/SKILL.md` 并按它逐 task 守门执行；本 skill 其余段落不适用于该分支。
 
 **起飞检查（插件执行；任一项不过即不起飞，原样回报原因，不问询）**
-- **批准指纹**：起飞时插件以 `takeoff-gate.py --change-dir` 比对账本 `refs/flight/<name>/ledger` 里最新的批准指纹与当前计划指纹；未批准、计划已变或账本损坏 → 不起飞，交出 `openspec/changes/<name>/spec.html` 的路径，请人核对 `spec.html` 顶部的计划指纹、在批准带按「批准起飞」即起飞（按下即起飞，不用再发命令）。
+- **批准指纹**：起飞时插件以 `takeoff-gate.py --change-dir` 比对账本 `refs/flight/<name>/ledger` 里最新的批准指纹与当前计划指纹；未批准、计划已变或账本损坏、已搁置 → 不起飞，交出 `openspec/changes/<name>/spec.html` 的路径，请人核对 `spec.html` 顶部的计划指纹、在批准带按「批准起飞」即起飞（按下即起飞，不用再发命令）。
 - **git 与 Claude Code 版本**：git 低于 2.38（合回用 `merge-tree --write-tree`）或 Claude Code 低于插件下限 → 不起飞。
 - **版本核对**：插件副本须是已安装的版本，判定器（主检出的 `.claude/hooks/`）须认识全部账本事件；不符 → 不起飞，先把主检出更新到与插件同一版本。
 - **跨会话**：最新一次起飞来自另一个会话、尚未落地或停飞 → 拒飞，提示用 `--takeover` 接管。
@@ -91,12 +91,13 @@ metadata:
 - **G9 整合护栏**（`slice-gate.py final --integ-base`）：整合修复不改工件与 ADR、不碰 scenario 测试、测试只增不减、不加 xfail / skip；专审评审有 CRITICAL/HIGH 即停飞。
 - **停飞 kind 与终端通知**：停飞带 kind（`blocked` / `final` / `integ` / `fingerprint` / `control` / `watchdog` / `abort`）；停飞（`abort` 除外）、PR 开出、交接 `/flight:pr-ship` 失败时经 `$.ui.notify` 发终端通知，走你自己的通知通道；通知失败只记日志，不影响停飞、落地与 ship。
 - **诊断员**：停飞后在 change worktree 派 `flight:diagnostician`（会话主模型），只读、不可写任何文件；诊断记为 triage，只供展示（面板与飞行记录），不参与任何判定；人工中止（`abort`）与计划变化（`fingerprint`）不派。
-- **批准带（按下即起飞）**：四个按钮都按下即起飞，不再回车，输入框不预填；起飞回复首行经 toast 与终端通知告诉人。
+- **批准带（按下即起飞）**：四个起飞按钮按下即起飞，不再回车，输入框不预填；起飞回复首行经 toast 与终端通知告诉人。
   - 「批准起飞」（当前指纹未批准）：按下 = 批准 + 起飞。
   - 「起飞」（已批准、批准后未起飞）：按下 = 直接起飞，不重新批准。
   - 「批准修订并续飞」（已停飞且计划改过）：按下 = 批准 + 提交本 change 的工件 + 重跑基线 + 续飞；基线红则通知、不续飞。
   - 「续飞」（已停飞且计划未改）：等同 `/flight resume`，不重新批准。
-  - 按键起飞一并提交本 change 的工件（说明行写明个数）；手打 `/opsx-apply <name>` 仍要带 `授权提交` 才提交工件。
+  - 「搁置」（四种模式都有，次要按钮）：按下 = 在账本记 shelve；这份计划不再显示、不能起飞（起飞守卫报「已搁置」），改动计划后重新出现；主检出判定器不认识 shelve 时拒绝、不写账本。
+  - 按键起飞一并提交本 change 的工件（说明行写明个数并逐行列出，至多 5 行）；手打 `/opsx-apply <name>` 仍要带 `授权提交` 才提交工件。
 - **起飞待命**（会话内状态，不进账本）：人发出的起飞（`/opsx-apply`、`/flight resume`、批准带按键）被拒后，插件按原因处理，不丢掉起飞意图：
   - 等待：基线仍在跑、上一次飞行的 agent 仍在运行 → 等它们结束后自动重试；
   - 重试：偶发失败（起飞异常、账本读取失败、写 takeoff 事件失败等）→ 10 秒后重试一次，仍失败即放弃；
