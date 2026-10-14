@@ -13,6 +13,6 @@
 
 ## 切片
 
-- [ ] S1 判定器：基线内容指纹、同一 change 增量复用、verify 按需重跑、preflight 按内容判过期、--full （deps: - · verify: `python3 -m pytest -q tests/test_baseline_incremental.py tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py tests/test_slice_gate_coverage.py`）
-- [ ] S2 判定器：基线池（git common dir）与跨 change 复用 （deps: S1 · verify: `python3 -m pytest -q tests/test_baseline_pool.py tests/test_baseline_incremental.py tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py`）
-- [ ] S3 记录与文档：timeline 标出增量基线；propose 命令与 skill、README 写明增量基线 （deps: - · verify: `python3 -m pytest -q tests/test_baseline_incremental_docs.py tests/test_timeline_render.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）
+- [x] S1 判定器：基线内容指纹、同一 change 增量复用、verify 按需重跑、preflight 按内容判过期、--full （deps: - · verify: `python3 -m pytest -q tests/test_baseline_incremental.py tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py tests/test_slice_gate_coverage.py`）
+- [x] S2 判定器：基线池（git common dir）与跨 change 复用 （deps: S1 · verify: `python3 -m pytest -q tests/test_baseline_pool.py tests/test_baseline_incremental.py tests/test_slice_gate.py tests/test_slice_gate_reuse_preflight.py tests/test_slice_gate_final.py`）
+- [x] S3 记录与文档：timeline 标出增量基线；propose 命令与 skill、README 写明增量基线 （deps: - · verify: `python3 -m pytest -q tests/test_baseline_incremental_docs.py tests/test_timeline_render.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）
