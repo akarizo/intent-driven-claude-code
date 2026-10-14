@@ -21,3 +21,4 @@
 ## 收口后（2026-10-14，人授权「R1 授权，按此解」）
 
 - [x] R1 预合并 main（#59 0.10.4）解冲突：plugin.json 保留 0.11.0 与本分支 description；register.tsx 合并两边的 import；README 两条都留；test_artifact_files_docs 的版本断言放宽为不低于 0.10.4；#59 的 band-counts-declared-artifacts 在 Given 里补认领 demo（断言不变） （verify: `python3 -m pytest -q tests`）
+- [x] R2 预合并 main（#60 0.10.5 搁置）解冲突：register.tsx 的 refresh 同时保留认领集合与 mainDir；plugin.json 保留 0.11.0，description 合并两边新增的句子；opsx-apply 命令与 skill 的批准带子项两边都留；#60 新增的批准带用例若因未认领变红，只在 Given 里补认领（断言不变） （verify: `python3 -m pytest -q tests`）

@@ -44,6 +44,8 @@ type World = {
   gatePasses?: boolean
   /** 接下来这么多次 `git worktree list`（批准带重绘的第一步读取）抛错，用完自动复原 */
   refreshThrows?: number
+  /** `ledger.py events` 的输出（缺省为 EVENT_TYPES）：模拟不认识某些事件的旧判定器 */
+  events?: string[]
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -119,6 +121,10 @@ function useWorld(on: On, w: World) {
     statuses: [] as string[],
     /** `git -C <tree> add|commit …` 的参数（-C <tree> 之后的部分）：起飞时提交工件 */
     commits: [] as string[][],
+    /** 每次 ledger.py 调用的脚本路径（argv[1]） */
+    ledgerScripts: [] as string[],
+    /** 每次 plan_fp.py 调用的脚本路径（argv[1]） */
+    fpScripts: [] as string[],
     /** mock.clock 的句柄（advance / settle） */
     clock: undefined as unknown as { advance(ms: number): unknown; settle(): unknown },
   }
@@ -190,11 +196,13 @@ function useWorld(on: On, w: World) {
     const [cmd, ...args] = e.argv
     if (cmd === 'python3' && args[0]?.endsWith('/plan_fp.py')) {
       log.fpDirs.push(String(args[2]))
+      log.fpScripts.push(String(args[0]))
       const answer = ok(w.fp(fpCalls++, String(args[2])) + '\n')
       return w.fpWait === undefined ? answer : w.fpWait.then(() => answer)
     }
     if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) {
-      if (args[1] === 'events') return ok(EVENT_TYPES.join('\n') + '\n')
+      log.ledgerScripts.push(String(args[0]))
+      if (args[1] === 'events') return ok((w.events ?? EVENT_TYPES).join('\n') + '\n')
       const name = String(args[3]).split('/').pop() ?? ''
       if (args[1] !== 'show') return ok((w.approved?.[name] ?? log.approved) + '\n')
       if (w.showFails) return { value: { ...fail('git 不可用').value, exitCode: 5 } }
@@ -246,6 +254,15 @@ function useWorld(on: On, w: World) {
       case 'update-ref':
         updateRefCalls += 1
         if (updateRefCalls <= (w.updateRefFailures ?? 0)) return fail('cannot lock ref: is at dddd but expected 0000')
+        // shelve 按 S1 判定器的语义：追加进该 change 的账本（show 读得到），approved 不再输出指纹
+        if (JSON.parse(lastEvent).ev === 'shelve') {
+          const shelved = JSON.parse(lastEvent)
+          if (w.ledgers?.[shelved.change] !== undefined) w.ledgers[shelved.change]!.push(shelved)
+          else w.ledger = [...(w.ledger ?? []), shelved]
+          log.approved = ''
+          if (w.approved) w.approved[shelved.change] = ''
+          return ok('')
+        }
         log.approved = JSON.parse(lastEvent).fp
         if (w.approved) w.approved[JSON.parse(lastEvent).change] = log.approved
         return ok('')
@@ -941,8 +958,10 @@ test('band-ignores-landed-and-aborted', async ($, on) => {
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
-  // Then: 只有一个按钮且为 resume:gamma:<F>；没有「另有 N 个」字样（alpha、beta 都不在带上）
-  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.key))).toEqual([`resume:gamma:${F}`])
+  // Then: 不以 shelve: 开头的按钮恰为 resume:gamma:<F>，另有 gamma 的「搁置」按钮 shelve:gamma:<F>（flight-shelve-followups 起每个可操作项都多画一个「搁置」，故按前缀筛掉再比）；没有「另有 N 个」字样（alpha、beta 都不在带上）
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.key))
+  expect(keys.filter(k => !k.startsWith('shelve:'))).toEqual([`resume:gamma:${F}`])
+  expect(keys).toContain(`shelve:gamma:${F}`)
   expect(await ui.findAll({ text: /另有/ })).toHaveLength(0)
 })
 
@@ -1188,6 +1207,135 @@ test('baseline-status-restored', async ($, on) => {
 
   // Then: 最后一次状态行不含「续飞准备中」
   expect(log.statuses.at(-1) ?? '').not.toContain('续飞准备中')
+})
+
+// flight-shelve-followups 护栏（规划时预写，base 上已成立）：搁置判定只在指纹相同时隐藏，改计划后须重新出现
+test('replanned-shelved-change-reappears', async ($, on) => {
+  // Given: demo 账本依次为 approve F、shelve F；ledger approved 输出空（最新决定是 shelve）；计划改动后 plan_fp 输出 G
+  useWorld(on, demoWorld(() => G, { ledger: [ledgerEvent('approve', F), ledgerEvent('shelve', F)], approved: { demo: '' } }))
+  await claim($, on, ['demo'])
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: key=approve:demo:<G> 的按钮 label 为「批准起飞」
+  expect((await ui.find({ key: `approve:demo:${G}` }))?.props.label).toBe('批准起飞')
+})
+
+// ---------------------------------------------------------------- flight-shelve-followups S3：搁置、读账本用主检出的判定器、逐行列出工件
+
+/** 本次按键写入账本的事件（hash-object 的 stdin）；没有写入时为 undefined。 */
+function writtenEvent(log: { git: GitCall[] }): Record<string, unknown> | undefined {
+  const stdin = log.git.find(c => c.args[0] === 'hash-object')?.stdin
+  return stdin === undefined ? undefined : JSON.parse(stdin)
+}
+
+test('shelve-press-writes-event-and-hides', async ($, on) => {
+  // Given: demo 账本只有 approve F（之后从未起飞）、ledger approved 输出 F、当前指纹 F，批准带显示 demo 的「起飞」
+  const log = useWorld(on, demoWorld(() => F, { ledger: [ledgerEvent('approve', F)], approved: { demo: F } }))
+  await claim($, on, ['demo'])
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 在 terminal 上按下 shelve:demo:<F>
+  await ui.press({ key: `shelve:demo:${F}` })
+
+  // Then: 账本追加的事件 ev=shelve、fp=F、by.surface=terminal；有一条 toast 含「已搁置」；刷新后批准带没有任何按钮；起飞守卫没有运行
+  expect(writtenEvent(log)).toMatchObject({ ev: 'shelve', change: 'demo', fp: F, by: { plugin: 'flight', surface: 'terminal' } })
+  expect(log.toasts.some(t => t.includes('已搁置'))).toBe(true)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(log.gates).toEqual([])
+})
+
+test('shelve-hides-halted-flight', async ($, on) => {
+  // Given: gamma 计划未改（当前与最近批准都为 F），账本为 approve F、attempt 1 的 takeoff、kind=blocked 的 halt；批准带显示 gamma 的「续飞」
+  const world = haltWorld(['gamma'])
+  world.fp = () => F
+  world.approved = { gamma: F }
+  world.ledgers = {
+    gamma: [
+      attemptEvent('gamma', 'approve', '10:00:00', { attempt: undefined, fp: F }),
+      attemptEvent('gamma', 'takeoff', '10:01:00', { fp: F }),
+      attemptEvent('gamma', 'halt', '10:30:00', { reason: 'S2 blocked', kind: 'blocked' }),
+    ],
+  }
+  const log = useWorld(on, world)
+  await claim($, on, ['gamma'])
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 shelve:gamma:<F>
+  await ui.press({ key: `shelve:gamma:${F}` })
+
+  // Then: 账本追加 ev=shelve、fp=F 的事件；刷新后批准带上没有 gamma 的文字；没有跑基线；起飞守卫没有运行
+  expect(writtenEvent(log)).toMatchObject({ ev: 'shelve', change: 'gamma', fp: F })
+  expect(await ui.findAll({ text: /gamma/ })).toHaveLength(0)
+  expect(log.baselines).toEqual([])
+  expect(log.gates).toEqual([])
+})
+
+test('shelve-refused-when-judges-unaware', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F，批准带显示 approve:demo:<F> 与 shelve:demo:<F>；ledger.py events 输出 EVENT_TYPES 去掉 shelve
+  const log = useWorld(on, demoWorld(() => F, { events: EVENT_TYPES.filter(t => t !== 'shelve') }))
+  await claim($, on, ['demo'])
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 shelve:demo:<F>
+  await ui.press({ key: `shelve:demo:${F}` })
+
+  // Then: 有一条 toast 同时含「不认识 shelve」与「未搁置」；没有写账本的 git 调用；批准带仍有 approve:demo:<F>
+  expect(log.toasts.some(t => t.includes('不认识 shelve') && t.includes('未搁置'))).toBe(true)
+  expect(writes(log)).toEqual([])
+  expect(await ui.find({ key: `approve:demo:${F}` })).toBeDefined()
+})
+
+test('band-reads-ledger-with-main-judges', async ($, on) => {
+  // Given: 主 worktree /repo（main）的 /repo/template/.claude/hooks 有 plan_fp.py 与 ledger.py；/repo/.worktrees/demo（worktree-demo）有未完成的 demo，自带 template/.claude/hooks 的 plan_fp.py 与 ledger.py
+  const OWN = '/repo/.worktrees/demo'
+  const OWN_HOOKS = `${OWN}/template/.claude/hooks`
+  const log = useWorld(on, {
+    worktrees: porcelain([
+      [MAIN, 'main'],
+      [OWN, 'worktree-demo'],
+    ]),
+    dirs: { [`${OWN}/template/openspec/changes`]: ['demo'] },
+    files: {
+      [`${HOOKS}/plan_fp.py`]: '',
+      [`${HOOKS}/ledger.py`]: '',
+      [`${OWN}/template/openspec/changes/demo/spec.html`]: '<html></html>',
+      [`${OWN}/template/openspec/changes/demo/tasks.md`]: '- [ ] 1.1 写代码\n',
+      [`${OWN_HOOKS}/plan_fp.py`]: '',
+      [`${OWN_HOOKS}/ledger.py`]: '',
+    },
+    fp: () => F,
+  })
+  await claim($, on, ['demo'], () => `${OWN}/template/openspec/changes`)
+
+  // When: 会话启动（刷新批准带）
+  await $.session.start(START)
+
+  // Then: ledger.py 的脚本路径只有 /repo/template/.claude/hooks/ledger.py；plan_fp.py 的脚本路径只有 worktree 自带的 /repo/.worktrees/demo/template/.claude/hooks/plan_fp.py
+  expect([...new Set(log.ledgerScripts)]).toEqual([`${HOOKS}/ledger.py`])
+  expect([...new Set(log.fpScripts)]).toEqual([`${OWN_HOOKS}/plan_fp.py`])
+})
+
+test('band-lists-artifact-paths', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 7 个未跟踪工件 template/openspec/changes/demo/f1.md … f7.md
+  const status = [1, 2, 3, 4, 5, 6, 7].map(i => `?? template/openspec/changes/demo/f${i}.md\n`).join('')
+  useWorld(on, demoWorld(() => F, { status }))
+  await claim($, on, ['demo'])
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 有含「提交本 change 的 7 个工件」的说明行；f1.md 至 f5.md 各恰有一行文字；有一行文字为「…另 2 个」；没有含 f6.md 或 f7.md 的文字
+  expect(await ui.find({ text: /提交本 change 的 7 个工件/ })).toBeDefined()
+  expect(await Promise.all([1, 2, 3, 4, 5].map(async i => (await ui.findAll({ type: 'Text', text: new RegExp(`f${i}\\.md`) })).length))).toEqual([1, 1, 1, 1, 1])
+  expect(await ui.find({ text: /^…另 2 个$/ })).toBeDefined()
+  expect(await ui.findAll({ text: /f6\.md|f7\.md/ })).toHaveLength(0)
 })
 
 // ---------------------------------------------------------------- flight-dispatch-followups S2：入口同步登记、去重续飞、基线进度行

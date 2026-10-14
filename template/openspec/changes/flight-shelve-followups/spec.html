@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-shelve-followups · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-shelve-followups
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">specs</span><span class="chip" data-state="done">adr</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">计划指纹 d830e5b7</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">2026-10-14 人反馈批准带「一直弹出」<code>flight-review-followups</code> 与 <code>flight-hardening</code>。查明：
+- <code>flight-review-followups</code> 在 2026-10-11 批准后从未起飞。批准带对「已批准、尚未起飞」的项永远显示「起飞」，没有任何撤下入口；它的计划基于 #45，落后 main 12 个 PR，误按会在旧代码上起飞。人只能手动删 change 目录。
+- <code>flight-hardening</code> 只在 0.9.0 及更早的插件下显示（先判停飞、后判落地），0.10.x 已不显示，不在本 change 范围。</p><p class="why-body">删掉的 <code>flight-review-followups</code> 里有 3 个问题在 main（<code>ed53487</code>）上仍未修（其余 2 项已由 #47 做掉或已过时）：</p><p class="why-body">| # | 来源 | 问题 |
+|---|---|---|
+| 1 | #44 评审 MEDIUM | <code>classifyDirty</code> 把 porcelain 改名行（<code>a -&gt; b</code>）当成工件：<code>git add</code> 失败后报「提交工件失败」。<code>flight-dispatch-followups</code> 记进 backlog 的「Y 位改名」是同一类 |
+| 2 | #44 评审 MEDIUM | 人要「确认无误」，却只看得到工件个数：手打命令的拒绝信息、起飞回复、批准带说明行都只写「N 个」 |
+| 3 | #45 评审 MEDIUM | 基线已有预存红时，pytest-cov 覆盖率未达标会被放过：它把退出码改成 1，失败用例数不变，差分后判绿 |</p><p class="why-body">人在 2026-10-14 选定：四项合成一个 change；撤下入口做成批准带上的「搁置」按钮，在账本记事件；与 <code>flight-dispatch-followups</code> 并行，从当前 main 切。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>批准带「搁置」</strong>（新）：</li><li>可操作的项（没有问题、不在进行中）在主按钮旁多一个次要按钮「搁置」；</li><li>按下后，插件在账本记一条 <code>shelve</code> 事件，带当前计划指纹；</li><li>搁置后：这个指纹不再出现在批准带上，此前的批准作废，起飞守卫拒飞并说明「已搁置」；</li><li>计划一改（指纹变化），批准带重新显示「批准起飞」（停飞的显示「批准修订并续飞」）；</li><li>主检出的判定器不认识 <code>shelve</code> 时拒绝搁置，不写账本，避免旧判定器把账本判成损坏。</li><li><strong>批准带读账本改用主检出的判定器</strong>：与起飞一致；主检出没有判定器时沿用 change 所在 worktree 的（同现状）。这样，基于旧 main 的陈旧 worktree 被搁置后，账本不会被它自带的旧 <code>ledger.py</code> 判成损坏。</li><li><strong>改名行归为工件之外</strong>（问题 1）：路径含 <code> -&gt; </code> 的一律归为工件之外（X 位、Y 位都算），起飞按「工件之外」拒绝，不提交任何文件。</li><li><strong>逐行列出工件</strong>（问题 2）：</li><li>手打 <code>/opsx-apply &lt;change&gt;</code> 因只有工件而拒绝时，逐行列出工件；</li><li>经「授权提交」起飞的回复逐行列出已提交的工件；</li><li>批准带说明行之下逐行列出将被提交的工件，最多 5 行，其余写「…另 N 个」。</li><li><strong>覆盖率未达标不可度量</strong>（问题 3）：<code>gate.test</code> 的输出含 pytest-cov 的覆盖率失败标记时，判不可度量、按退出码判红，理由写「覆盖率」并提示 <code>--no-cov</code>。</li><li><strong>文档</strong>：<code>opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill 同改，写明「搁置」与「已搁置」。</li><li><strong>ADR</strong>：新增 <code>DRAFT-approval-revocable-by-shelve</code>，supersede <code>DRAFT-approval-bound-to-plan-fingerprint</code>（批准判据加上「其后未被搁置」）。</li><li>插件补丁版本 +1（不写死版本号；与 <code>flight-dispatch-followups</code> 的 0.10.3 后合者解冲突）。</li></ul><div class="impact"><span class="tag"><strong>判定器</strong>：<code>template/.claude/hooks/ledger.py</code>（<code>shelve</code> 事件、<code>latest_decision</code>）、<code>takeoff-gate.py</code>（「已搁置」）、<code>slice-gate.py</code>（<code>run_test_gate</code>）。</span><span class="tag"><strong>插件</strong>：</span><span class="tag"><code>template/plugins/flight/hooks/register.tsx</code>（搁置按钮与按键、读账本的判定器、列工件）；</span><span class="tag"><code>io.ts</code>（事件表加 <code>shelve</code>）、<code>land.ts</code>（<code>classifyDirty</code>）、<code>orchestrator.tsx</code>（拒绝信息与起飞回复）、<code>types/index.d.ts</code>；</span><span class="tag"><code>.claude-plugin/plugin.json</code>（补丁版本 +1）。</span><span class="tag"><strong>文档</strong>：<code>template/.claude/commands/opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code>。</span><span class="tag"><strong>ADR</strong>：<code>template/openspec/adr/DRAFT-approval-revocable-by-shelve.md</code>。</span><span class="tag"><strong>测试</strong>：新增 5 个 pytest 文件；TS 测试追加在 <code>flight.test.tsx</code>、<code>orchestrator.test.tsx</code>；<code>io.test.ts</code> 的事件类型清单、<code>test_dispatch_origin_docs.py</code> 的版本断言随之更新。</span><span class="tag"><strong>与 <code>flight-dispatch-followups</code>（待批准）重叠</strong>：都改 <code>register.tsx</code>、<code>orchestrator.tsx</code>、<code>types/index.d.ts</code>、<code>plugin.json</code>、<code>test_dispatch_origin_docs.py</code>；后合入的一方预合并 main 时解冲突并重跑 baseline。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-band-shelve</code>：批准带「搁置」；<code>shelve</code> 事件撤销批准；起飞守卫拒飞「已搁置」；改计划后重新出现；判定器不认识时拒绝；批准带读账本用主检出的判定器。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>takeoff-dirty-reporting</code>：改名行归为工件之外；拒绝信息、起飞回复、批准带逐行列出工件。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>test-gate-coverage-failure</code>：pytest-cov 覆盖率未达标时全量测试不可度量、按退出码判红。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-shelve-followups-docs</code>：命令与 skill 写明「搁置」；插件版本高于 0.10.2。</h4><p></p></div><div class="cap-card" data-kind="modified"><span class="cap-kind">Modified</span><h4>无（仓库没有主 specs 目录，以上都以 ADDED 记在本 change 目录）。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-band-shelve <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 搁置撤销批准，起飞守卫拒飞「已搁置」</p><p>账本 SHALL 认识 <code>shelve</code> 事件（必需字段 <code>fp</code>，64 位十六进制）。起飞批准的判据 SHALL 为：账本里最后一条 <code>approve</code> 或 <code>shelve</code>（「最新决定」）是 <code>approve</code>，且其 fp 等于当前计划指纹。最新决定是 <code>shelve</code> 时，<code>takeoff-gate.py</code> SHALL 以 3 退出，stderr 含「已搁置」与搁置的指纹前 8 位，SHALL NOT 含「未批准」或「计划已变」；<code>ledger.py approved</code> SHALL 不输出指纹。</p><p>Feature: 2026-10-14 人反馈批准带一直挂着已批准、从未起飞的 change，没有撤下入口；撤下必须让此前的批准作废，否则手打 <code>/opsx-apply</code> 仍会起飞。起飞待命（<code>armed.ts</code> <code>classifyRefusal</code>）把含「未批准」「计划已变」的拒绝归为「等人按批准带」，而搁置后批准带不显示该项，所以提示文字须避开这两个词，归为「只能人处理」、只通知。</p><div class="scenario"><p class="scenario-name">Scenario: shelve-revokes-approval</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的账本依次有 approve（当前计划指纹 F）与 shelve（指纹 F）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>takeoff-gate.py --change-dir &lt;demo&gt;</code> 与 <code>ledger.py approved --change-dir &lt;demo&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>takeoff-gate 以 3 退出，stderr 含「已搁置」与 F 的前 8 位，不含「未批准」与「计划已变」</span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>ledger.py approved</code> 以 0 退出、stdout 为空</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: later-approve-after-shelve-passes</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的账本依次有 approve（指纹 F）、shelve（指纹 F）；之后计划改动、当前指纹为 G，账本再追加 approve（指纹 G）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>takeoff-gate.py --change-dir &lt;demo&gt;</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>以 0 退出，stdout 含 G 的前 8 位</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 批准带「搁置」按钮</p><p>批准带顶部那一项可操作（没有问题、不在进行中）时，SHALL 在主按钮之后显示次要按钮「搁置」，其 key 为 <code>shelve:&lt;change&gt;:&lt;指纹&gt;</code>。按下且核对通过后，插件 SHALL 在账本追加一条 shelve 事件（fp 为当前指纹，<code>by.plugin</code> 为 flight，<code>by.surface</code> 为按下的绘制面），toast 含「已搁置」，并刷新批准带。账本里最新决定是 shelve、且其指纹等于当前指纹的 change，SHALL NOT 出现在批准带上。</p><p>Feature: 搁置适用于全部四种模式（批准起飞、起飞、批准修订并续飞、续飞）。</p><div class="scenario"><p class="scenario-name">Scenario: shelve-press-writes-event-and-hides</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准（最近 approve 晚于最近 takeoff，指纹 F），批准带显示 demo 的「起飞」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下 key 为 <code>shelve:demo:&lt;F&gt;</code> 的按钮</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本追加了一条 ev 为 shelve、fp 为 F、<code>by.surface</code> 为 terminal 的事件；有一条 toast 含「已搁置」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>刷新后批准带上没有任何按钮；起飞守卫没有因这次按键运行</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: shelve-hides-halted-flight</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>gamma 的最新 attempt 以 kind 为 blocked 的 halt 结束，计划未改，批准带显示 gamma 的「续飞」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下 key 为 <code>shelve:gamma:&lt;F&gt;</code> 的按钮</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本追加了一条 fp 为 F 的 shelve 事件</span></li><li><span class="step-key" data-kw="AND">AND</span><span>刷新后批准带上没有 gamma；没有发生续飞（没有跑基线、起飞守卫没有运行）</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 改动计划后重新出现</p><p>最新决定是 shelve 但其指纹不等于当前计划指纹时，批准带 SHALL 按现有规则显示该 change：未停飞时为「批准起飞」，已停飞时为「批准修订并续飞」。</p><div class="scenario"><p class="scenario-name">Scenario: replanned-shelved-change-reappears</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的账本依次有 approve（指纹 F）与 shelve（指纹 F）；计划改动后当前指纹为 G</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>批准带刷新并绘制</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>出现 key 为 <code>approve:demo:&lt;G&gt;</code>、label 为「批准起飞」的按钮</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 判定器不认识 shelve 时拒绝搁置</p><p>按下「搁置」时，插件 SHALL 先用批准带读账本所用的判定器运行 <code>ledger.py events</code>。退出非 0 或输出里没有 <code>shelve</code> 时，SHALL toast 含「不认识 shelve」与「未搁置」，SHALL NOT 写账本。</p><p>Feature: 读取方不认识的事件写进账本，会让整条账本判损坏、起飞被永久拒绝（PR #39 评审 HIGH 的同类问题）。</p><div class="scenario"><p class="scenario-name">Scenario: shelve-refused-when-judges-unaware</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 未批准（指纹 F），批准带显示 demo 的「批准起飞」与「搁置」；<code>ledger.py events</code> 的输出不含 shelve</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下 key 为 <code>shelve:demo:&lt;F&gt;</code> 的按钮</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>有一条 toast 含「不认识 shelve」与「未搁置」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有任何写账本的 git 调用；批准带仍显示 <code>approve:demo:&lt;F&gt;</code></span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 批准带读账本用主检出的判定器</p><p>批准带对 <code>ledger.py</code> 的全部调用（<code>approved</code>、<code>show</code>、<code>events</code>）SHALL 使用主 worktree 的判定器目录（有 <code>plan_fp.py</code> 的 <code>.claude/hooks</code> 或 <code>template/.claude/hooks</code>）；主 worktree 没有判定器时，SHALL 回退到该 change 所在 worktree 的目录。<code>plan_fp.py</code> 与 <code>slice-gate.py baseline</code> 的来源不变。</p><p>Feature: 账本是共享的 git 引用；起飞已用主检出的判定器读它。基于旧 main 的 worktree 自带的旧 <code>ledger.py</code> 不认识 shelve，会把搁置后的账本判成损坏。</p><div class="scenario"><p class="scenario-name">Scenario: band-reads-ledger-with-main-judges</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>主 worktree /repo 的判定器在 <code>/repo/template/.claude/hooks</code>；/repo/.worktrees/demo（分支 worktree-demo）里有未完成的 demo，也自带一份 <code>template/.claude/hooks</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>会话启动、批准带刷新</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>每次 <code>ledger.py</code> 调用的脚本路径都是 <code>/repo/template/.claude/hooks/ledger.py</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span><code>plan_fp.py</code> 的调用仍是 <code>/repo/.worktrees/demo/template/.claude/hooks/plan_fp.py</code></span></li></ul></div></div></div><div class="spec-card"><h3>flight-shelve-followups-docs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 命令与 skill 写明「搁置」</p><p><code>template/.claude/commands/opsx-apply.md</code> 与 <code>template/.claude/skills/openspec-apply-change/SKILL.md</code> SHALL 同改：都写明批准带的「搁置」（不再显示、不能起飞、改动计划后重新出现），并在「批准指纹」一行写明「已搁置」也不起飞；SHALL NOT 再写「四个按钮都按下即起飞」。</p><div class="scenario"><p class="scenario-name">Scenario: docs-describe-shelve</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取两份全文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两份都含「「搁置」」「改动计划后重新出现」与「已搁置」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>两份都不含「四个按钮都按下即起飞」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 插件补丁版本升级</p><p>插件清单 <code>template/plugins/flight/.claude-plugin/plugin.json</code> 的 version SHALL 高于 0.10.2，description SHALL 含「搁置」。</p><div class="scenario"><p class="scenario-name">Scenario: plugin-version-bumped</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件清单 <code>template/plugins/flight/.claude-plugin/plugin.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>解析其 JSON</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>version 按数字逐段比较高于 0.10.2</span></li><li><span class="step-key" data-kw="AND">AND</span><span>description 含「搁置」</span></li></ul></div></div></div><div class="spec-card"><h3>takeoff-dirty-reporting <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: porcelain 改名行归为工件之外</p><p>插件对 change worktree 未提交路径分类时，路径含 <code> -&gt; </code>（porcelain 的改名行，X 位与 Y 位改名都是这个形状）SHALL 归为工件之外，即使源或目标路径在 change 目录内。起飞因此 SHALL 按「工件之外」拒绝，SHALL NOT 提交任何文件（含遗留飞行记录）。</p><p>Feature: #44 评审 MEDIUM：改名行被当成工件，<code>git add</code> 失败后报「提交工件失败」，之前可能已单独提交了记录；<code>flight-dispatch-followups</code> backlog 的「Y 位改名」同属此类。</p><div class="scenario"><p class="scenario-name">Scenario: rename-refused-before-any-commit</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准、账本为空；<code>git status --porcelain</code> 有三行：<code>R  &lt;change 目录&gt;/a.md -&gt; &lt;change 目录&gt;/b.md</code>、<code> R &lt;change 目录&gt;/c.md -&gt; &lt;change 目录&gt;/d.md</code>、<code>?? &lt;change 目录&gt;/proposal.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo 授权提交</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「工作区不干净」「工件之外」与这两条改名行（去掉 XY 两列后的原文）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有任何 git add 或 git commit；账本没有 takeoff</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 拒绝信息与起飞回复逐行列出工件路径</p><p>未提交改动只有工件、且没有「授权提交」而拒绝起飞时，回复 SHALL 逐行列出这些工件路径。经「授权提交」提交工件后起飞时，回复 SHALL 写明已提交的工件个数，并逐行列出这些路径。有工件之外改动时，拒绝信息仍只列工件之外的路径。</p><p>Feature: #44 评审 MEDIUM：插件让人「确认无误」，却只给个数，人无法核对。</p><div class="scenario"><p class="scenario-name">Scenario: refusal-lists-artifact-paths</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准、账本为空；未提交的只有 <code>&lt;change 目录&gt;/proposal.md</code>、<code>template/openspec/adr/DRAFT-x.md</code> 与 scenario 测试文件 <code>tests/test_s1.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「工作区不干净」、<code>/opsx-apply demo 授权提交</code>，并且这三个路径各占一行</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有提交，账本没有新的 takeoff</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: takeoff-reply-lists-committed-artifacts</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同上</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo 授权提交</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「✈ 起飞」、「已提交工件 3 个文件」，并且这三个路径各占一行</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 批准带逐行列出将被提交的工件</p><p>批准带显示「批准起飞」「起飞」或「批准修订并续飞」且有未提交工件时，说明行「按下会提交本 change 的 N 个工件…」之下 SHALL 逐行列出工件路径，至多 5 行；超过 5 个时，第 6 行 SHALL 为「…另 K 个」（K = N − 5）。</p><div class="scenario"><p class="scenario-name">Scenario: band-lists-artifact-paths</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 未批准；<code>git status</code> 列出 demo 的 7 个未提交工件 <code>&lt;change 目录&gt;/f1.md</code> … <code>&lt;change 目录&gt;/f7.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>批准带刷新并绘制</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>有含「提交本 change 的 7 个工件」的说明行；f1.md 至 f5.md 各有一行文字</span></li><li><span class="step-key" data-kw="AND">AND</span><span>有一行文字为「…另 2 个」；没有含 f6.md 或 f7.md 的文字</span></li></ul></div></div></div><div class="spec-card"><h3>test-gate-coverage-failure <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 覆盖率未达标时全量测试不可度量</p><p><code>gate.test</code> 的输出（去掉 ANSI 后）任一行含 pytest-cov 的覆盖率失败标记（<code>Coverage failure: total of</code> 或 <code>FAIL Required test coverage of</code>）时，本次全量测试结果 SHALL 判为不可度量、按退出码判。理由 SHALL 写明「覆盖率」，并提示门禁不判覆盖率时在 <code>gate.test</code> 加 <code>--no-cov</code>。</p><p>Feature: pytest-cov（7.1.0 源码核实）在 fail-under 未达标时把 <code>session.testsfailed</code> 加 1、退出码变 1，失败用例计数不变；基线有预存红时，原先会被当成「失败全是预存红」判绿（#45 评审 MEDIUM）。</p><div class="scenario"><p class="scenario-name">Scenario: final-red-on-coverage-failure</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>gate.test</code> 为 pytest；基线已生成：<code>test_old</code> 失败（预存红），其余通过</span></li><li><span class="step-key" data-kw="AND">AND</span><span>之后提交了 <code>tests/conftest.py</code>：按 pytest-cov 的做法，在测试跑完后打印两行覆盖率失败标记，并把 <code>session.testsfailed</code> 加 1</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py final</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>ok 为 false</span></li><li><span class="step-key" data-kw="AND">AND</span><span>failed 有一项以「G2 test」开头，含「按退出码判」与「覆盖率」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: baseline-red-on-coverage-failure</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>gate.test</code> 为 pytest；<code>test_old</code> 失败，且 <code>tests/conftest.py</code> 同上</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>运行 <code>slice-gate.py baseline</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>退出 1</span></li><li><span class="step-key" data-kw="AND">AND</span><span>reasons 有一项含「覆盖率」与 <code>--no-cov</code></span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>触发器命中： - <strong>跨模块</strong>：判定器（<code>ledger.py</code>、<code>takeoff-gate.py</code>、<code>slice-gate.py</code>）、插件（<code>register.tsx</code>、<code>io.ts</code>、<code>land.ts</code>、<code>orchestrator.tsx</code>）、文档。 - <strong>数据模型</strong>：账本新增事件类型 <code>shelve</code>，批准判据随之改变（见 ADR）。 - <strong>安全边界</strong>：起飞批准的判据加上撤销规则。</p><p>动机见 proposal。人在 2026-10-14 选定：四项合成一个 change；「搁置」按钮、在账本记事件；与 <code>flight-dispatch-followups</code> 并行。</p><p>现状（读码核实，main @ <code>ed53487</code>，插件 0.10.2）： - <strong>批准带的显示规则</strong>（<code>register.tsx</code> <code>evaluate</code>）：change 目录有 <code>spec.html</code>、<code>tasks.md</code> 含未勾选项，且指纹可算，就进入候选： - 最新 attempt 以非 abort 的 halt 结束 → 「续飞」或「批准修订并续飞」； - 账本批准指纹 ≠ 当前指纹 → 「批准起飞」； - 已批准且最新 approve 晚于最新 takeoff → 「起飞」；已批准且起飞过 → 不显示。 - 没有任何「不打算飞」的出口：已批准、从未起飞的项永远显示「起飞」。 - <strong>判定器来源不一致</strong>： - 起飞（<code>orchestrator.tsx</code> <code>takeoff()</code>）用主检出的判定器（<code>judgesDir(main)</code>）； - 批准带用 change 所在 worktree 自己的 <code>.claude/hooks/</code>（<code>hooksDirOf(tree)</code>）跑 <code>plan_fp.py</code>、<code>ledger.py approved / show</code>、<code>slice-gate.py baseline</code>。 - 陈旧 worktree 的 <code>ledger.py</code> 不认识新事件时，会把整条账本判损坏（exit 4），批准带显示「账本损坏，无法批准」。 - <strong>事件表两份</strong>：<code>ledger.py</code> 的 <code>EVENTS</code>（读取方）与 <code>io.ts</code> 的 <code>EVENTS</code>（写入方），起飞时 <code>checkJudges</code> 要求主检出的 <code>ledger.py events</code> 列出 <code>io.ts</code> 的全部类型。 - <strong>批准判据</strong>（<code>ledger.py</code> <code>latest_approval</code> → <code>takeoff-gate.py</code>）：账本最新一条 approve 的 fp == 当前计划指纹。 - <strong>改名行</strong>：<code>classifyDirty</code> 判工件的条件之一是 <code>p.startsWith(changeDir/)</code>；porcelain 的改名行去掉 XY 两列后是 <code>old -&gt; new</code>，整串满足这个前缀。X 位（<code>R  </code>）、Y 位（<code> R</code>）都一样。 - <strong>工件个数</strong>：<code>takeoff()</code> 的拒绝信息「工件（N 个）」、起飞回复「已提交工件 N 个文件」；批准带说明行「按下会提交本 change 的 N 个工件并直接起飞」，<code>artifacts</code> 只存个数。 - <strong><code>run_test_gate</code> 的可度量条件</strong>：退出码 1、junit 可解析、汇总行恰一行、汇总与 junit 的失败计数一致且非 0。 - <strong>pytest-cov 在覆盖率未达标时的行为</strong>（2026-10-14 下载 7.1.0 wheel，读 <code>pytest_cov/plugin.py</code> 核实）： - 在 <code>pytest_runtestloop</code> 收尾处打印 <code>ERROR: Coverage failure: total of … is less than fail-under=…</code>，并执行 <code>session.testsfailed += 1</code>； - 在 <code>pytest_terminal_summary</code> 打印 <code>FAIL Required test coverage of N% not reached. Total coverage: …</code>（达标时没有 <code>FAIL </code> 前缀）； - 失败用例本身不变，所以汇总行与 junit 的计数仍然一致。 - <strong>按钮</strong>（引擎 2.1.295 类型文件 <code>ButtonProps</code> 核实）：同一处可以有多个 <code>Button</code>；<code>variant</code> 区分 <code>primary</code> 与 <code>secondary</code>，<code>dimColor</code> 画成次要按钮；<code>key</code> 就是 <code>ui.press</code> 的 <code>e.element</code>。</p><p>图（c4-diagrams：目的 = 评审批准带与判定器的改动；格式 = 普通 Mermaid flowchart；严格度 = 轻量，作为假设记录）。</p><p>批准带按「搁置」的动态视图（粗框为本 change 新增）：</p><p>批准判据的读写两侧（容器级，粗框为本 change 改动）：</p><p>图说明： - <strong>边界</strong>：写账本的入口仍只有插件进程内的按键处理；判定器只读。 - <strong>信任</strong>：搁置与批准一样只由人按键触发，模型没有任何入口；搁置只会收回放行，不会放行任何东西（fail-closed 方向）。 - <strong>假设</strong>：同一会话内 <code>$.session.id()</code> 稳定；主检出的 <code>.claude/hooks/</code>（或 <code>template/.claude/hooks/</code>）与插件同版本（起飞时的 <code>checkJudges</code> 已强制这一点）。</p></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals</strong>： - 人能在批准带上把「不打算飞」的计划撤下，撤下后不能误起飞； - 前 3 个遗留问题各有 scenario 测试； - 正常路径（干净工作区、未搁置、无覆盖率门槛）的行为不变。</p><p><strong>Non-Goals</strong>： - <strong>不提供「取消搁置」入口</strong>：恢复 = 改动计划（指纹变化）。搁置的典型对象是陈旧计划，本来就要重写；要不改计划直接恢复，以后另立 change。 - <strong>不统一 <code>plan_fp.py</code> 与 <code>slice-gate.py baseline</code> 的来源</strong>：批准带仍用 change worktree 的判定器算指纹、跑基线。只有读账本改用主检出的。两边指纹算法不同的风险见 Risks。 - <strong>不让起飞待命识别搁置</strong>：搁置时若该 change 正在待命，下一次重试会被起飞守卫以「已搁置」拒绝，按现有「只能人处理」通知收场。 - <strong>不识别 conftest 或其他插件自己改退出码</strong>：只覆盖 pytest-cov，见 Risks。 - <strong>不改 <code>DRAFT-test-gate-baseline-diff</code></strong>：它已 accepted，见 D5。 - <strong><code>commitArtifacts</code> 的 <code>-z</code> 解析不改</strong>：改名行在起飞处已被拒绝，<code>commitArtifacts</code> 收不到改名条目。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><strong>事件</strong></summary><p><code>{&quot;ev&quot;: &quot;shelve&quot;, &quot;fp&quot;: &lt;64 位十六进制&gt;}</code> + 公共字段（<code>v</code> / <code>change</code> / <code>at</code> / <code>by.plugin</code>），<code>by</code> 里带 <code>surface</code> 与 <code>session</code>（同 approve）。<code>ledger.py</code> 与 <code>io.ts</code> 的 <code>EVENTS</code> 同时加这一项。</p></details><details><summary><strong>判据</strong></summary><p>取账本里最后一条 <code>approve</code> 或 <code>shelve</code>，称为「最新决定」：</p></details><details><summary>是 approve，且其 fp == 当前计划指纹 → 批准成立；</summary></details><details><summary>是 shelve → 不成立，<code>takeoff-gate.py</code> 以 3 退出，stderr 写「已搁置」、搁置时间与指纹前 8 位，并说明改动计划后批准带会重新显示「批准起飞」。文字不得含「未批准」「计划已变」</summary><p>起飞待命按这两个词归为「等人按批准带」，搁置后批准带不显示该项，待命会空等到过期；避开后归为「只能人处理」，只通知；</p></details><details><summary>没有 → 「未批准」（同现状）。</summary></details><details><summary><strong>接口</strong></summary><p><code>ledger.py</code> 新增 <code>latest_decision(change_dir) -&gt; (event | None, tip)</code>；<code>latest_approval</code> 改为「最新决定是 approve 才返回它」，<code>approved</code> 子命令随之在搁置后不输出指纹。</p></details><details><summary><strong>搁置作废此前全部批准</strong></summary><p>不比较指纹，最后一条决定说了算。</p></details><details><summary><strong>否决</strong></summary></details><details><summary>只在批准带隐藏、不进账本（换会话又出现；也挡不住手打 <code>/opsx-apply</code>）；</summary></details><details><summary>另开 <code>refs/flight/&lt;change&gt;/shelved</code> 引用（审批记录分散在两处，飞行记录看不到）；</summary></details><details><summary>复用 <code>halt kind abort</code>（halt 必须带 attempt，从未起飞的 change 没有 attempt）。</summary></details><details><summary><strong>做法</strong></summary><p>每次刷新先解析一次主检出的判定器目录（主 worktree 下有 <code>plan_fp.py</code> 的 <code>.claude/hooks</code> 或 <code>template/.claude/hooks</code>）。没有时，回退到该项 change worktree 的目录（同现状）。</p></details><details><summary>批准带对 <code>ledger.py</code> 的全部调用都用这个目录</summary><p><code>approved</code>、<code>show</code>（停飞判定、去重、搁置判定）、<code>events</code>（搁置前核对）。</p></details><details><summary><code>FlightItem</code> 新增 <code>ledgerDir</code> 字段。</summary></details><details><summary><code>plan_fp.py</code> 与 <code>slice-gate.py baseline</code> 仍用 <code>hooksDir</code>，不变。</summary></details><details><summary><strong>理由</strong></summary><p>账本是共享的 git 引用，不属于任何 worktree。用与起飞同一份读取方，陈旧 worktree 才不会因为旧 <code>ledger.py</code> 不认识 <code>shelve</code>，把账本判成损坏。</p></details><details><summary><strong>否决</strong></summary><p>改为全部判定器都取主检出（会改变「worktree 下没有 plan_fp.py → 无法批准」等现有行为与用例，超出本 change）。</p></details><details><summary><strong>显示</strong></summary><p>顶部那一项可以按（<code>problem === &#x27;&#x27;</code> 且不在进行中）时，主按钮之后再画一个 <code>Button</code>：<code>key = shelve:&lt;change&gt;:&lt;fp&gt;</code>、<code>label = 搁置</code>、<code>variant = secondary</code>、<code>dimColor</code>。随后一行 dim 说明：「搁置：这份计划不再显示、不能起飞；改动计划后重新出现」。</p></details><details><summary>有问题、进行中的项不画「搁置」（与现在不画主按钮一致）。</summary></details><details><summary>四种模式都可搁置。</summary></details><details><summary><strong>evaluate</strong></summary><p>算出指纹、账本可读之后，在停飞判定之前：若「最新决定」是 shelve 且其 fp == 当前指纹 → 不显示。</p></details><details><summary><strong>isAlreadyApproved</strong></summary><p>遇到 shelve 与 takeoff 一样清空 <code>last</code>。</p></details><details><summary><strong>按键</strong>（<code>ui.press</code> 的 matcher 加 <code>shelve</code>；<code>PRESS_KEY</code> 加 <code>shelve</code>）</summary></details><details><summary><strong>否决</strong></summary><p>在批准带上加确认步骤（两步按键）。搁置可以经改计划恢复，误按代价小；按键路径保持一步。</p></details><details><summary><strong>改名行</strong></summary><p><code>classifyDirty</code> 循环里先判断，路径含 <code> -&gt; </code> 时放进 <code>others</code>，再走原有判断。起飞走「工件之外」的拒绝分支；这一步在 <code>commitRecords</code> 之前，不会部分提交。X 位与 Y 位改名去掉 XY 两列后形状相同，一并覆盖。</p></details><details><summary><strong>手打命令的拒绝信息</strong></summary><p>在「（N 个）」之后换行逐行列出 <code>dirty.artifacts</code>，再接「确认无误后发 <code>/opsx-apply &lt;change&gt; 授权提交</code>…」。有工件之外改动时照旧只列工件之外的路径（#44 design D4）。</p></details><details><summary><strong>起飞回复</strong></summary><p>「已提交工件 N 个文件」改为「已提交工件 N 个文件：」，后接逐行路径。</p></details><details><summary><strong>批准带</strong></summary><p><code>artifacts</code> 由「个数」改为「路径列表」；说明行「按下会提交本 change 的 N 个工件并直接起飞」不变，其下逐行 dim 列出路径，最多 5 行，超出时第 6 行写「…另 K 个」。「批准修订并续飞」也提交工件，同样列出。</p></details><details><summary><strong>路径口径</strong></summary><p>porcelain 给出的、相对 worktree 根的路径，原样输出。</p></details><details><summary><strong>否决</strong></summary><p>解析改名的源与目标再分别判断（改名本来就不该由插件代为提交，判为工件之外最简单，也是 fail-closed）。</p></details><details><summary><strong>位置</strong></summary><p>在 <code>rc != 1</code> 判断之后、读 junit 之前。</p></details><details><summary><strong>判据</strong></summary><p>去掉 ANSI 的输出里，任一行含 <code>Coverage failure: total of</code> 或 <code>FAIL Required test coverage of</code>。</p></details><details><summary><strong>命中时</strong></summary><p>写 <code>res[&quot;why&quot;] = &quot;覆盖率未达标（pytest-cov fail-under）；门禁不判覆盖率时在 gate.test 加 --no-cov&quot;</code>，<code>failed</code> 保持 None。</p></details><details><summary><strong>效果</strong></summary></details><details><summary>final 走 <code>full_suite_verdict</code> 的「按退出码判」，判红，理由带「覆盖率」；</summary></details><details><summary>baseline 把它写进 reasons 并判红、停下报告。人按提示在 <code>gate.test</code> 加 <code>--no-cov</code>，或者把覆盖率修上去。</summary></details><details><summary><strong>与 ADR 的关系</strong></summary><p><code>DRAFT-test-gate-baseline-diff</code>（accepted）规定的可度量条件，本意是「退出码 1 完全由失败用例解释」。pytest-cov 不增加失败用例就把退出码改成 1，不符合这个本意。本 change 只是加一条更严的实现检查，不改变决策方向，所以不另立 ADR、不 supersede。</p></details><details><summary><strong>否决</strong></summary><p>注入 pytest 插件、自动排除预存红并要求 exit 0（该 ADR 已否决 <code>-p</code> 插件：被测仓库的包装脚本常覆写 <code>PYTHONPATH</code>）。</p></details><details><summary><code>opsx-apply.md</code> 与 <code>openspec-apply-change/SKILL.md</code> 同改</summary></details><details><summary>「批准带（按下即起飞）」一节改写为</summary><p>四个起飞按钮按下即起飞，另有「搁置」；</p></details><details><summary>加一行「搁置」</summary><p>不再显示、不能起飞、改动计划后重新出现，判定器不认识时拒绝；</p></details><details><summary>「批准指纹」一行写明「已搁置」也不起飞。</summary></details><details><summary><code>plugin.json</code></summary><p>version 在执行时 worktree 当前值的基础上升一个补丁号，不写死；description 补「搁置」。<code>test_dispatch_origin_docs.py</code> 的 <code>== &quot;0.10.2&quot;</code> 放宽为「不低于 0.10.2」。</p></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary>[插件升级后，使用方的主检出判定器仍是旧版] → 起飞被 <code>checkJudges</code> 拒绝，提示判定器不认识 <code>shelve</code>（与以往新增事件相同）；搁置也拒绝、不写账本。迁移说明见下。</summary></details><details><summary>[主检出没有判定器，回退到 change worktree 的旧 <code>ledger.py</code>] → 搁置前的 <code>events</code> 核对会发现它不认识 <code>shelve</code> 而拒绝，账本不会被写坏。</summary></details><details><summary>[批准带的 <code>plan_fp.py</code> 仍取 change worktree 的，与起飞的主检出不同] → 两边算法不同时，批准带显示的指纹会与起飞时重算的不一致，起飞报「计划已变」。这是现状就有的问题，本 change 不扩大；记作后续。</summary></details><details><summary>[误按「搁置」] → 只会收回放行；改动计划任一文件即可重新出现、重新批准。</summary></details><details><summary>[pytest-cov 将来改了提示文字] → 识别失效，退回原行为（放行），这一项不是 fail-closed。缓解</summary><p>两行标记任一命中即可；scenario 测试按 7.1.0 的原文构造，升级时对照。</p></details><details><summary>[基线已有预存红时，conftest 或其他插件自己把退出码改成 1，而失败用例不变] → 仍判可度量并放行。从退出码与计数上无法区分，只能识别具体工具的输出；本 change 只覆盖 pytest-cov。</summary></details><details><summary>[与 <code>flight-dispatch-followups</code> 同改 <code>register.tsx</code>（按键入口）、<code>orchestrator.tsx</code>、类型与版本] → 后合入的一方预合并 main 时解冲突、重跑 baseline；计划文件不变则指纹不变。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><ul><li><strong>本仓库</strong>：合入后在主仓库根执行 <code>claude plugin update flight@intent-driven -s project</code>，再 <code>/reload-plugins</code>，确认插件版本为本 change 升出的版本；主检出的 <code>template/.claude/hooks/</code> 随同一次合入更新。</li><li><strong>插件使用方</strong>：升级插件的同时更新主检出的 <code>.claude/hooks/</code>（<code>install.sh --upgrade</code>），否则起飞被拒、搁置被拒。</li><li><strong>门禁判红</strong>：使用 pytest-cov fail-under、且覆盖率当前不达标的仓库，下一次 baseline 会判红，按提示在 <code>gate.test</code> 加 <code>--no-cov</code>。</li><li>不需要数据迁移：旧账本没有 <code>shelve</code>，判据结果不变。回滚即回退提交；回滚前已写入 <code>shelve</code> 的账本会被旧判定器判损坏，须先确认没有搁置过。</li></ul></div><div class="design-block"><h3>Open Questions</h3><ul><li>无。<code>DRAFT-approval-bound-to-plan-fingerprint</code> 的判据由新 ADR <code>DRAFT-approval-revocable-by-shelve</code> supersede（见 ADR）。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart TD
+  P[&quot;人按「搁置」&lt;br&gt;key = shelve:&amp;lt;change&amp;gt;:&amp;lt;fp&amp;gt;&quot;]:::new --&gt; B{&quot;同 change 正在起飞？&quot;}
+  B -- 是 --&gt; T0[&quot;toast：正在起飞，稍候&quot;]
+  B -- 否 --&gt; I{&quot;批准带上仍有这一项、&lt;br&gt;无问题、指纹未变？&quot;}
+  I -- 否 --&gt; T1[&quot;toast：已不在列表 / 计划已变化&quot;]
+  I -- 是 --&gt; E{&quot;主检出 ledger.py events&lt;br&gt;列出 shelve？&quot;}:::new
+  E -- 否 --&gt; T2[&quot;toast：判定器不认识 shelve，未搁置&lt;br&gt;（不写账本）&quot;]:::new
+  E -- 是 --&gt; W[&quot;串行段内追加 shelve 事件&lt;br&gt;fp = 当前指纹&quot;]:::new
+  W --&gt; R[&quot;toast：已搁置；刷新批准带&quot;]:::new
+  R --&gt; H[&quot;evaluate：最新 approve/shelve 是 shelve&lt;br&gt;且指纹 == 当前指纹 → 不显示&quot;]:::new
+  classDef new stroke-width:3px</div><pre class="diagram-fallback">flowchart TD
+  P[&quot;人按「搁置」&lt;br&gt;key = shelve:&amp;lt;change&amp;gt;:&amp;lt;fp&amp;gt;&quot;]:::new --&gt; B{&quot;同 change 正在起飞？&quot;}
+  B -- 是 --&gt; T0[&quot;toast：正在起飞，稍候&quot;]
+  B -- 否 --&gt; I{&quot;批准带上仍有这一项、&lt;br&gt;无问题、指纹未变？&quot;}
+  I -- 否 --&gt; T1[&quot;toast：已不在列表 / 计划已变化&quot;]
+  I -- 是 --&gt; E{&quot;主检出 ledger.py events&lt;br&gt;列出 shelve？&quot;}:::new
+  E -- 否 --&gt; T2[&quot;toast：判定器不认识 shelve，未搁置&lt;br&gt;（不写账本）&quot;]:::new
+  E -- 是 --&gt; W[&quot;串行段内追加 shelve 事件&lt;br&gt;fp = 当前指纹&quot;]:::new
+  W --&gt; R[&quot;toast：已搁置；刷新批准带&quot;]:::new
+  R --&gt; H[&quot;evaluate：最新 approve/shelve 是 shelve&lt;br&gt;且指纹 == 当前指纹 → 不显示&quot;]:::new
+  classDef new stroke-width:3px</pre><div class="caption">批准带按「搁置」的动态视图（粗框为本 change 新增）：</div></div><div class="diagram-frame"><div class="mermaid">flowchart LR
+  Band[&quot;批准带（register.tsx）&lt;br&gt;写 approve / shelve&quot;]:::new -- &quot;git plumbing 追加&quot; --&gt; L[(&quot;refs/flight/&amp;lt;change&amp;gt;/ledger&quot;)]
+  L -- &quot;ledger.py show / approved&lt;br&gt;（主检出的判定器）&quot; --&gt; Band
+  L -- &quot;ledger.py latest_decision&quot; --&gt; G[&quot;takeoff-gate.py&lt;br&gt;最新决定是 approve 且 fp 相同才放行&quot;]:::new
+  G --&gt; O[&quot;起飞 takeoff()&quot;]
+  IO[&quot;io.ts 事件表&lt;br&gt;加 shelve&quot;]:::new -. &quot;checkJudges：主检出须认识全部类型&quot; .-&gt; J[&quot;主检出 ledger.py events&quot;]:::new
+  classDef new stroke-width:3px</div><pre class="diagram-fallback">flowchart LR
+  Band[&quot;批准带（register.tsx）&lt;br&gt;写 approve / shelve&quot;]:::new -- &quot;git plumbing 追加&quot; --&gt; L[(&quot;refs/flight/&amp;lt;change&amp;gt;/ledger&quot;)]
+  L -- &quot;ledger.py show / approved&lt;br&gt;（主检出的判定器）&quot; --&gt; Band
+  L -- &quot;ledger.py latest_decision&quot; --&gt; G[&quot;takeoff-gate.py&lt;br&gt;最新决定是 approve 且 fp 相同才放行&quot;]:::new
+  G --&gt; O[&quot;起飞 takeoff()&quot;]
+  IO[&quot;io.ts 事件表&lt;br&gt;加 shelve&quot;]:::new -. &quot;checkJudges：主检出须认识全部类型&quot; .-&gt; J[&quot;主检出 ledger.py events&quot;]:::new
+  classDef new stroke-width:3px</pre><div class="caption">批准判据的读写两侧（容器级，粗框为本 change 改动）：</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-revocable-by-shelve.md">DRAFT. 起飞批准可由人在批准带「搁置」撤销</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-armed-takeoff.md">DRAFT. 起飞意图被拒后由插件有界地挂起重试；批准带按键即起飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-bounded-self-heal.md">DRAFT. 飞行内自愈有界：只做不改计划的再试，先记 heal 再做，每次飞行至多 3 次</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-dispatch-live-frame.md">DRAFT. 插件只在处理外部事件的 hook 里派发 agent；定时到点先唤醒一轮再派发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-resume-from-band.md">DRAFT. 停飞后的续飞可由批准带按键触发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-single-implementation.md">DRAFT. 飞行只有一套实现：删除 Workflow 旧引擎，铁律 10 改为失效即停飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<style>.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }</style><h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>判定器：账本认识 shelve、起飞守卫拒飞「已搁置」、覆盖率未达标判不可度量</td><td>wave 1</td><td>-</td><td>template/.claude/hooks/ledger.py<br>template/.claude/hooks/takeoff-gate.py<br>template/.claude/hooks/slice-gate.py<br>tests/test_shelve_judges.py<br>tests/test_slice_gate_coverage.py</td><td><code>python3 -m pytest -q tests/test_shelve_judges.py tests/test_slice_gate_coverage.py tests/test_ledger.py tests/test_approval_gate.py tests/test_slice_gate.py tests/test_slice_gate_final.py tests/test_slice_gate_reuse_preflight.py</code></td></tr><tr><td class="mono">S2</td><td>插件起飞：改名行归为工件之外，拒绝信息与起飞回复逐行列出工件</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/land.ts<br>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/tests/orchestrator.test.tsx<br>tests/test_takeoff_dirty_reporting.py</td><td><code>python3 -m pytest -q tests/test_takeoff_dirty_reporting.py tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py</code></td></tr><tr><td class="mono">S3</td><td>批准带：「搁置」按钮与按键、读账本用主检出的判定器、逐行列出工件、事件表加 shelve</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/register.tsx<br>template/plugins/flight/hooks/io.ts<br>template/plugins/flight/types/index.d.ts<br>template/plugins/flight/tests/flight.test.tsx<br>template/plugins/flight/tests/io.test.ts<br>tests/test_flight_band_shelve.py</td><td><code>python3 -m pytest -q tests/test_flight_band_shelve.py tests/test_flight_plugin.py tests/test_flight_resume.py tests/test_flight_io.py tests/test_flight_armed.py</code></td></tr><tr><td class="mono">S4</td><td>文档与版本：命令与 skill 写明「搁置」，插件补丁版本 +1</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>template/plugins/flight/.claude-plugin/plugin.json<br>tests/test_shelve_followups_docs.py<br>tests/test_dispatch_origin_docs.py</td><td><code>python3 -m pytest -q tests/test_shelve_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-band-shelve#shelve-revokes-approval</td><td><code>tests/test_shelve_judges.py::test_shelve_revokes_approval</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#later-approve-after-shelve-passes</td><td><code>tests/test_shelve_judges.py::test_later_approve_after_shelve_passes</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>test-gate-coverage-failure#final-red-on-coverage-failure</td><td><code>tests/test_slice_gate_coverage.py::test_final_red_on_coverage_failure</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>test-gate-coverage-failure#baseline-red-on-coverage-failure</td><td><code>tests/test_slice_gate_coverage.py::test_baseline_red_on_coverage_failure</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-dirty-reporting#rename-refused-before-any-commit</td><td><code>tests/test_takeoff_dirty_reporting.py::test_rename_refused_before_any_commit</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-dirty-reporting#refusal-lists-artifact-paths</td><td><code>tests/test_takeoff_dirty_reporting.py::test_refusal_lists_artifact_paths</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-dirty-reporting#takeoff-reply-lists-committed-artifacts</td><td><code>tests/test_takeoff_dirty_reporting.py::test_takeoff_reply_lists_committed_artifacts</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#shelve-press-writes-event-and-hides</td><td><code>tests/test_flight_band_shelve.py::test_shelve_press_writes_event_and_hides</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#shelve-hides-halted-flight</td><td><code>tests/test_flight_band_shelve.py::test_shelve_hides_halted_flight</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#replanned-shelved-change-reappears</td><td><code>tests/test_flight_band_shelve.py::test_replanned_shelved_change_reappears</code></td><td><span class="chip" data-state="guard">护栏</span><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#shelve-refused-when-judges-unaware</td><td><code>tests/test_flight_band_shelve.py::test_shelve_refused_when_judges_unaware</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-shelve#band-reads-ledger-with-main-judges</td><td><code>tests/test_flight_band_shelve.py::test_band_reads_ledger_with_main_judges</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>takeoff-dirty-reporting#band-lists-artifact-paths</td><td><code>tests/test_flight_band_shelve.py::test_band_lists_artifact_paths</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-shelve-followups-docs#docs-describe-shelve</td><td><code>tests/test_shelve_followups_docs.py::test_docs_describe_shelve</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-shelve-followups-docs#plugin-version-bumped</td><td><code>tests/test_shelve_followups_docs.py::test_plugin_version_bumped</code></td><td><span class="chip" data-state="missing">missing</span></td></tr></tbody></table><h3>飞行记录</h3><p class="placeholder">尚无飞行记录事件。</p>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 判定器：账本认识 shelve、起飞守卫拒飞「已搁置」、覆盖率未达标判不可度量 （deps: - · verify: <code>python3 -m pytest -q tests/test_shelve_judges.py tests/test_slice_gate_coverage.py tests/test_ledger.py tests/test_approval_gate.py tests/test_slice_gate.py tests/test_slice_gate_final.py tests/test_slice_gate_reuse_preflight.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 插件起飞：改名行归为工件之外，拒绝信息与起飞回复逐行列出工件 （deps: - · verify: <code>python3 -m pytest -q tests/test_takeoff_dirty_reporting.py tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 批准带：「搁置」按钮与按键、读账本用主检出的判定器、逐行列出工件、事件表加 shelve （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_band_shelve.py tests/test_flight_plugin.py tests/test_flight_resume.py tests/test_flight_io.py tests/test_flight_armed.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 文档与版本：命令与 skill 写明「搁置」，插件补丁版本 +1 （deps: - · verify: <code>python3 -m pytest -q tests/test_shelve_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-14 05:33 · 章节 9 · 图示 2 · 任务 4
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

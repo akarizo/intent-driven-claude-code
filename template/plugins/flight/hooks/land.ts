@@ -38,6 +38,7 @@ export async function commitRecords(io: Io, f: Flight, message: string, extra: r
 /**
  * 未提交路径（相对 change worktree 根）的机械分类（design D2）：
  * records = 飞行记录；artifacts = change 目录下其余文件、同一 openspec 根下 adr/DRAFT-*.md、scenario 测试文件、slices.json 的 artifact_files 声明的文件（精确匹配）；others = 其余（含已编号 ADR、porcelain 改名行）。
+ * 改名行（含 ` -> `）无论落在哪个目录都归 others：起飞时不代为提交，只列给人看。
  */
 export function classifyDirty(paths: readonly string[], x: { changeDir: string; scenarioFiles: readonly string[]; artifactFiles?: readonly string[] }): { records: string[]; artifacts: string[]; others: string[] } {
   const records = new Set(RECORD_FILES.map(r => `${x.changeDir}/${r}`))
@@ -45,6 +46,11 @@ export function classifyDirty(paths: readonly string[], x: { changeDir: string; 
   const isDraft = (p: string) => p.startsWith(adr) && /^DRAFT-[^/]*\.md$/.test(p.slice(adr.length))
   const out = { records: [] as string[], artifacts: [] as string[], others: [] as string[] }
   for (const p of paths) {
+    // porcelain 改名行（X 位 `R  `、Y 位 ` R` 去掉 XY 两列后同形）：不代为提交，归为工件之外（#44 评审 MEDIUM）
+    if (p.includes(' -> ')) {
+      out.others.push(p)
+      continue
+    }
     if (records.has(p)) out.records.push(p)
     else if (p.startsWith(`${x.changeDir}/`) || isDraft(p) || x.scenarioFiles.includes(p) || x.artifactFiles?.includes(p)) out.artifacts.push(p)
     else out.others.push(p)

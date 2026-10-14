@@ -50,6 +50,8 @@ type World = {
   paths?: string[]
   /** 预置的未提交路径（相对 change worktree 根）：整树 `git status --porcelain` 会报出它们，git commit 后清空 */
   dirty?: string[]
+  /** 整树 `git status --porcelain` 原样返回的输出（给出时代替 dirty 的渲染；用于改名行等），git commit 后清空 */
+  porcelain?: string
   /** 插件之下 tool.check 的引擎判定队列（按调用顺序取；取完后为 ask） */
   checks?: string[]
   /** 已经 integrate 过的切片：第一父链上有以其尖端 tip-<S> 为第二父的合并提交 */
@@ -204,6 +206,7 @@ function useWorld(on: On, w: World) {
   }
   const exists = new Set<string>([`${TREE}/${CD}`, `${HOOKS}/slice-gate.py`, ...(w.trees ?? []).map(n => `${MAIN}/.worktrees/${n}/template/openspec/changes/${n}`), ...(w.paths ?? []), ...Object.keys(files)])
   const dirty = new Set<string>(w.dirty ?? [])
+  let porcelain = w.porcelain
   // worktree add -b 建过的分支（freshWorktree 用 rev-parse --verify refs/heads/<分支> 查占用）
   const branches = new Set<string>()
   let agents = 0
@@ -393,6 +396,7 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, ''))
       case 'status': {
         // 带路径的 status（commitRecords 查飞行记录）只报所列路径里的改动；不带路径的整树检查报全部改动
+        if (porcelain !== undefined && !args.includes('--')) return wrap(res(0, porcelain))
         const paths = args.includes('--') ? args.slice(args.indexOf('--') + 1).map(p => p.slice(`${TREE}/`.length)) : [...dirty]
         return wrap(res(0, paths.filter(p => dirty.has(p)).map(p => ` M ${p}\n`).join('')))
       }
@@ -458,6 +462,7 @@ function useWorld(on: On, w: World) {
       case 'commit':
         log.commits.push({ message: String(args[args.indexOf('-m') + 1]), events: log.events.length })
         dirty.clear()
+        porcelain = undefined
         return wrap(res(0, ''))
       case 'add':
         log.adds.push(args.slice(args.indexOf('--') + 1))
@@ -964,6 +969,54 @@ test('takeoff-refuses-foreign-dirt-even-authorized', async ($, on) => {
   expect(ARTIFACTS.filter(p => r.text.includes(p))).toEqual([])
   expect(log.commits).toEqual([])
   expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+/** 回复里恰好占一整行（去掉首尾空白后全等）的路径 */
+const ownLines = (text: string, paths: readonly string[]) => paths.filter(p => text.split('\n').some(l => l.trim() === p))
+
+test('rename-refused-before-any-commit', async ($, on) => {
+  // Given: demo 已批准、账本为空；porcelain 有 X 位改名 `R  <CD>/a.md -> <CD>/b.md`、Y 位改名 ` R <CD>/c.md -> <CD>/d.md` 与 `?? <CD>/proposal.md`
+  const renames = [`${CD}/a.md -> ${CD}/b.md`, `${CD}/c.md -> ${CD}/d.md`]
+  const log = useWorld(on, demoWorld({ porcelain: `R  ${renames[0]}\n R ${renames[1]}\n?? ${CD}/proposal.md\n` }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 回复含「工作区不干净」「工件之外」与两条改名行（去掉 XY 两列后的原文）；没有任何 git add 与 git commit；账本没有 takeoff
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('工件之外')
+  expect(renames.filter(x => r.text.includes(x))).toEqual(renames)
+  expect(log.adds).toEqual([])
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+test('refusal-lists-artifact-paths', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的只有 <CD>/proposal.md、template/openspec/adr/DRAFT-x.md 与 tests/test_s1.py
+  const log = useWorld(on, demoWorld({ dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo（不带授权词）
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // Then: 回复含「工作区不干净」与 `/opsx-apply demo 授权提交`；三个路径各占一行；没有提交；账本没有 takeoff
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('/opsx-apply demo 授权提交')
+  expect(ownLines(r.text, ARTIFACTS)).toEqual(ARTIFACTS)
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+test('takeoff-reply-lists-committed-artifacts', async ($, on) => {
+  // Given: demo 已批准、账本为空；未提交的只有 <CD>/proposal.md、template/openspec/adr/DRAFT-x.md 与 tests/test_s1.py
+  useWorld(on, demoWorld({ dirty: ARTIFACTS }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 回复含「✈ 起飞」与「已提交工件 3 个文件」；三个路径各占一行
+  expect(r.text).toContain('✈ 起飞')
+  expect(r.text).toContain('已提交工件 3 个文件')
+  expect(ownLines(r.text, ARTIFACTS)).toEqual(ARTIFACTS)
 })
 
 /** slices.json 的 artifact_files 声明的两个周边文件（相对 change worktree 根） */

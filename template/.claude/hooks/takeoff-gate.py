@@ -5,11 +5,12 @@
 #   takeoff-gate.py --change-dir DIR
 #     stdout  批准证据一行：<批准时间> · fp <指纹前 8 位> · ledger <账本 tip 前 8 位>
 #     exit 0  批准成立
-#     exit 3  未批准 / 计划已变 / 账本损坏 / 账本不可读 / 门禁故障；stderr 给 spec.html 绝对路径、批准带与插件安装指引
+#     exit 3  未批准 / 已搁置 / 计划已变 / 账本损坏 / 账本不可读 / 门禁故障；stderr 给 spec.html 绝对路径、批准带与插件安装指引
 #
 # 不带参数：hook 模式已退役，空转兼容仍注册它的 settings（读掉 stdin，不输出，退出 0）。
 #
-# 判据（design D5）：账本 refs/flight/<change>/ledger 最新 approve 事件的 fp == plan_fp.plan_fingerprint(change_dir)。
+# 判据（design D5）：账本 refs/flight/<change>/ledger 最新决定（approve / shelve）是 approve
+#   且其 fp == plan_fp.plan_fingerprint(change_dir)。
 #   tasks.md 勾选等执行记账不在指纹白名单内，不会让批准过期。
 # 只读，不改任何文件。兼容 Python 3.8+，只用标准库。
 import argparse
@@ -37,13 +38,16 @@ def verdict(change_dir):
     except plan_fp.PlanError as e:
         return False, "", "无计划工件，无法计算计划指纹（%s）。%s" % (e, hint)
     try:
-        event, tip = ledger.latest_approval(change_dir)
+        event, tip = ledger.latest_decision(change_dir)
     except ledger.LedgerInvalid as e:
         return False, "", "账本损坏：%s %s。%s" % (e.sha8, e.reason, hint)
     except ledger.LedgerUnreadable as e:
         return False, "", "账本不可读：%s。%s" % (e, hint)
     if event is None:
         return False, "", "未批准：账本里没有这个 change 的批准记录。%s" % hint
+    if event["ev"] == "shelve":  # 不接 remedy()：搁置后批准带上没有「批准起飞」按钮
+        return False, "", ("已搁置：人在批准带搁置了这份计划（%s · fp %s）；改动计划后批准带会重新显示可批准的按钮。%s"
+                           % (event["at"], event["fp"][:8], INSTALL_HINT))
     if event["fp"] != fp:
         return False, "", ("计划已变，需重新批准（批准的是 %s，当前是 %s）。%s"
                            % (event["fp"][:8], fp[:8], hint))
