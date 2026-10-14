@@ -32,5 +32,5 @@ def test_plugin_version_0_10_4():
     # When: 解析其 JSON
     data = json.loads(read(ROOT / "template" / "plugins" / "flight" / ".claude-plugin" / "plugin.json"))
 
-    # Then: version 为 0.10.4
-    assert data["version"] == "0.10.4", data["version"]
+    # Then: version 按数字逐段比较不低于 0.10.4（版本号在后续 change 里继续前进，写死会让每次升版都改这条）
+    assert tuple(int(p) for p in data["version"].split(".")) >= (0, 10, 4), data["version"]

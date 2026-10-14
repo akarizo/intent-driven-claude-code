@@ -710,7 +710,7 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
     ].join('\n')
   }
   if (dirty.artifacts.length && !authorized) {
-    return `flight：工作区不干净，不起飞：未提交的只有本 change 的工件（${dirty.artifacts.length} 个）。确认无误后发 \`/opsx-apply ${name} ${AUTHORIZE}\`，插件只提交这些文件后起飞`
+    return `flight：工作区不干净，不起飞：未提交的只有本 change 的工件（${dirty.artifacts.length} 个）：\n${dirty.artifacts.join('\n')}\n确认无误后发 \`/opsx-apply ${name} ${AUTHORIZE}\`，插件只提交这些文件后起飞`
   }
   if (dirty.records.length) {
     // 上一次飞行遗留的记录（停飞 / 会话中断不提交它们）：先提交再起飞
@@ -769,7 +769,7 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   await drive($, flight, opts.lease)
   // 面板打不开不影响起飞
   void $.ui.open({ id: 'flight', title: `✈ ${name}` }).catch(() => undefined)
-  const committed = dirty.artifacts.length ? `\n已提交工件 ${dirty.artifacts.length} 个文件` : ''
+  const committed = dirty.artifacts.length ? `\n已提交工件 ${dirty.artifacts.length} 个文件：\n${dirty.artifacts.join('\n')}` : ''
   const merged = waves.flat().filter(s => state.events.some(e => e.ev === 'merge' && e.slice === s && e.ok === true)).length
   const resumed = opts.resume ? `续飞 attempt ${attempt}：已合回 ${merged} 片跳过\n` : ''
   return `${resumed}✈ 起飞 ${name}：${waves.flat().length} 片 / ${waves.length} 个 wave · 主模型 ${model} · ${copy.line} · attempt ${attempt}${committed}`

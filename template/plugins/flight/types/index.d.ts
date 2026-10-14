@@ -11,6 +11,8 @@ export type FlightItem = {
   mtimeMs: number
   /** plan_fp.py / ledger.py 所在目录；找不到时为空串。 */
   hooksDir: string
+  /** 读写账本（ledger.py）用的判定器目录：主检出的；主检出没有判定器时同 hooksDir。 */
+  ledgerDir: string
   /** 当前 64 位指纹；problem 非空时可能为空串。 */
   fp: string
   /** 非空 = 该项无法批准的原因（如「找不到 plan_fp.py」「账本损坏」），此时不出按钮。 */

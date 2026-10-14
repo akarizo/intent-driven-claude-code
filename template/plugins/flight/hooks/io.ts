@@ -105,6 +105,8 @@ const EVENTS: Record<string, Record<string, Check>> = {
   diag: { attempt: ATTEMPT, where: NONEMPTY, error: STR },
   heal: { attempt: ATTEMPT, kind: oneOf('merge-retry', 'watchdog', 'integ'), slice: NONEMPTY, reason: STR },
   triage: { attempt: ATTEMPT, agent: NONEMPTY, text: STR },
+  // 人在批准带按「搁置」（DRAFT-approval-revocable-by-shelve）
+  shelve: { fp: FP },
 }
 // 可选字段：缺省不判，出现则须合法（与 ledger.py 的 OPTIONAL 同形）
 const OPTIONAL: Record<string, Record<string, Check>> = {
