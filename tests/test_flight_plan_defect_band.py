@@ -16,7 +16,7 @@ def test_band_shows_plan_defect_without_resume():
 
 @pytest.mark.xfail(strict=True, reason="S5 未实现：认领 hook 保留下游错误")
 def test_claim_hook_keeps_downstream_error():
-    # Given: 插件之下的 /opsx-propose 实现抛出「下游炸了：spec 缺失」
+    # Given: 插件之下没有 /opsx-propose 的实现（下游以「no implementation for command.run」拒绝；引擎会跳过抛错的 hook，不能用抛错的测试 hook 构造）
     # When: 人发出 /opsx-propose demo
-    # Then: 回复含「下游炸了：spec 缺失」
+    # Then: 回复含「flight：命令执行出错」与「no implementation for command.run」
     assert_ts_passed("claim-hook-keeps-downstream-error")
