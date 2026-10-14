@@ -63,6 +63,8 @@ description: 端到端送出本次变更：commit → push → 创建 PR/MR。�
 
 4. **预合并冲突检查**（先与 target 预合并，解决冲突才能提 PR/MR）
 
+   飞行模式下，落地前插件已把目标分支预合并进 change 分支，这里通常无冲突。落地后才出现冲突时：人解完冲突并提交后发 `/flight recheck <change>`，由控制面重跑 final 与全量评审后再执行本命令；不要手工把 PR 转 ready。其余步骤不变。
+
    ```bash
    git fetch origin <target-branch>
    git merge-tree --write-tree --name-only HEAD origin/<target-branch>

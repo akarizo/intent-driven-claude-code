@@ -36,8 +36,8 @@ def test_docs_describe_session_scope():
 def test_plugin_version_0_11_0():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
-    # Then: version 为 0.11.0；description 含起飞待命、按下即起飞、自愈、看门狗、续飞、本会话认领
+    # Then: version 按数字逐段比较不低于 0.11.0（版本号在后续 change 里继续前进，不钉死）；description 含起飞待命、按下即起飞、自愈、看门狗、续飞、本会话认领
     data = json.loads(_read("template/plugins/flight/.claude-plugin/plugin.json"))
-    assert data["version"] == "0.11.0", data["version"]
+    assert tuple(int(p) for p in data["version"].split(".")) >= (0, 11, 0), data["version"]
     for word in ("起飞待命", "按下即起飞", "自愈", "看门狗", "续飞", "本会话认领"):
         assert word in data["description"], data["description"]
