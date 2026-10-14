@@ -927,3 +927,24 @@ test('plan-defect-undefined-for-other-halts', () => {
   // Then: 三份都是 undefined
   expect(got).toEqual([undefined, undefined, undefined])
 })
+
+// flight-replan-handoff 护栏（规划时预写，base 上已成立）：结论不是「改计划」、属于旧 attempt、或已被后一条诊断改判的，都不是计划缺陷
+test('plan-defect-ignores-other-triage', () => {
+  // Given: 三份账本——甲：attempt 1 的 S1 blocked（G1 verify: exit 1）、kind blocked 的 halt，再有 triage「…\n修插件」；
+  //        乙：attempt 1 同上但 triage 结论为「改计划」，之后 attempt 2 起飞、尚未停飞；
+  //        丙：attempt 1 有 halt，先后两条 triage，前一条结论「改计划」、后一条结论「人工操作」
+  const g1 = ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G1 verify: exit 1' })
+  const halt = ev.halt(B, { attempt: 1, reason: '切片 blocked：S1', kind: 'blocked' })
+  const triage = (agent: string, verdict: string) => ev.triage(B, { attempt: 1, agent, text: `S1 的 owns 漏了 tests/test_x.py\n${verdict}\n草案` })
+  const states = [
+    [takeoff(1, [['S1']]), g1, halt, triage('d1', '修插件')],
+    [takeoff(1, [['S1']]), g1, halt, triage('d1', '改计划'), takeoff(2, [['S1']])],
+    [takeoff(1, [['S1']]), g1, halt, triage('d1', '改计划'), triage('d2', '人工操作')],
+  ].map(evs => reduce(evs))
+
+  // When: 对三份账本各求 planDefect
+  const got = states.map(s => core.planDefect(s))
+
+  // Then: 三份都是 undefined
+  expect(got).toEqual([undefined, undefined, undefined])
+})

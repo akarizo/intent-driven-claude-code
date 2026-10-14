@@ -2288,6 +2288,30 @@ test('halt-dispatches-diagnostician/abort-skips', async ($, on) => {
   expect(log.spawns.filter(x => x.subagent_type === 'flight:diagnostician')).toEqual([])
 })
 
+// flight-replan-handoff 护栏（规划时预写，base 上已成立）：诊断结论不是「改计划」时不交主会话
+test('other-verdicts-not-handed-over', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1]]），S1 门禁一律红 [G1 verify: exit 1]；执行体逐个收口、结束直到停飞；诊断员的最终回答为「判定器缺 features 子命令\n修插件」
+  const answer = '判定器缺 features 子命令\n修插件'
+  const w = demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G1 verify: exit 1'] }] } })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (let i = 1; i <= 4 && !log.events.some(x => x.ev === 'halt'); i++) {
+    await $.classic.SubagentStop(subagentStop(`agent-${i}`) as never)
+    await $.turn.complete(ended(`agent-${i}`) as never)
+  }
+  const id = log.spawns.find(x => x.subagent_type === 'flight:diagnostician')?.agentId ?? '没有诊断员'
+  w.answers = { [id]: answer }
+
+  // When: 诊断员结束（turn.complete），时钟推进到 clock.after(0) 到点
+  await $.turn.complete(ended(id) as never)
+  await advance(log, 0)
+
+  // Then: prompt.submit 没有收到提交；有含「判定器缺 features 子命令」的通知，且没有任何通知含「已交主会话」
+  expect(log.submits).toEqual([])
+  expect(notified(log, '判定器缺 features 子命令').length > 0).toBe(true)
+  expect(notified(log, '已交主会话')).toEqual([])
+})
+
 test('notify-uses-terminal-channel', async ($, on) => {
   // Given: demo 已起飞（agent-1 = S1）；之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」；ui.notify 应答 isSent true、channel iterm2
   const w = demoWorld()
