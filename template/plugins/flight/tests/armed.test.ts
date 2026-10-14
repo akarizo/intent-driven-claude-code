@@ -1,7 +1,7 @@
 // scenario 来源：spec flight-armed-takeoff#refusals-classified / armed-budget-and-expiry / armed-decides-next-step。armed.ts 是纯模块，直接调用。
 import { expect, test } from 'claude-code/testing'
 
-import { ARM_BUDGET, ARM_TTL_MS, TRANSIENT_DELAY_MS, beforeRetry, classifyRefusal, giveUpText, nextStep, refusedAgain } from '../hooks/armed'
+import { ARM_BUDGET, ARM_TTL_MS, TRANSIENT_DELAY_MS, afterMissedTurn, beforeRetry, classifyRefusal, giveUpText, nextStep, refusedAgain } from '../hooks/armed'
 import type { Arm, ArmEvent } from '../hooks/armed'
 
 const NOW = 1_000_000_000
@@ -19,6 +19,7 @@ function arm(over: Partial<Arm>): Arm {
     awaitingModel: false,
     awaitingWake: false,
     transientAgain: false,
+    missedTurn: false,
     ...over,
   }
 }
@@ -162,4 +163,25 @@ test('timer-steps-never-retry', () => {
   const texts = got.slice(0, 3).map(s => (s.do === 'wake' ? s.text : ''))
   expect(texts.filter(t => !t.includes('demo') || !t.includes('只回复「收到」'))).toEqual([])
   expect(tried.awaitingWake).toBe(false)
+})
+
+// scenario 来源：spec flight-dispatch-hardening#missed-turn-rewakes-on-tick
+test('missed-turn-rewakes-on-tick', () => {
+  // Given: demo 的 wait-baseline 待命已唤醒（awaitingWake=true）；e2 的 model 待命已提交交模型（awaitingModel=true）；两者都未错过一轮
+  const woken = arm({ cls: 'wait-baseline', reason: 'flight：slice-gate preflight 未通过：基线仍在跑', awaitingWake: true })
+  const submitted = arm({ change: 'e2', args: ['e2'], cls: 'model', reason: 'flight：slice-gate lint 未通过：overlap', awaitingModel: true })
+
+  // When: 对两者分别 afterMissedTurn，各遇一次 tick；补发唤醒后（awaitingWake=true）的 demo 再遇一次 tick；对它调用 beforeRetry
+  const missed = [woken, submitted].map(a => afterMissedTurn(a))
+  const steps = missed.map(a => nextStep(a, { kind: 'tick' }, NOW))
+  const rewoken = { ...missed[0], awaitingWake: true }
+  const again = nextStep(rewoken, { kind: 'tick' }, NOW)
+  const tried = beforeRetry(rewoken)
+
+  // Then: afterMissedTurn 之后两者的已唤醒、已提交为假、错过一轮为真；各遇 tick 都给 wake，正文含各自 change 名与「只回复「收到」」；
+  //       补发后再遇 tick 给 wait；beforeRetry 之后错过一轮为假
+  expect(missed.map(a => [a.awaitingWake, a.awaitingModel, a.missedTurn])).toEqual([[false, false, true], [false, false, true]])
+  expect(steps.map((s, i) => s.do === 'wake' && s.text.includes(missed[i].change) && s.text.includes('只回复「收到」'))).toEqual([true, true])
+  expect(again.do).toBe('wait')
+  expect(tried.missedTurn).toBe(false)
 })

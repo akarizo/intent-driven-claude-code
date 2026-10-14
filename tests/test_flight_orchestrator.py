@@ -1,8 +1,6 @@
 """flight 编排接线（scenario: flight-orchestrator#*）。
 `claude plugin test` 没有 xfail 等价物：每个 scenario 在这里有一个 pytest 骨架，断言插件里同名的 TS 测试通过（沿用 test_flight_plugin.py）。
 骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -524,8 +522,7 @@ def test_panel_refreshes_on_terminal():
     assert_ts_passed("panel-refreshes-on-terminal")
 
 
-# ---------------------------------------------------------------- flight-unattended S5a / S5b（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-unattended S5a / S5b
 
 def test_heal_recorded_then_retried():
     # Given: 单片飞行：S1 第一次合回失败（非冲突），第二次合回成功
@@ -567,8 +564,7 @@ def test_notify_uses_terminal_channel():
     assert_ts_passed("notify-uses-terminal-channel")
     assert_ts_passed("notify-uses-terminal-channel/not-sent")
 
-# ---------------------------------------------------------------- flight-armed-takeoff S3（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-armed-takeoff S3
 def test_diagnostician_reads_auto_allowed():
     # Given: demo 停飞后派出诊断员 d1；引擎对 d1 的工具检查都答 ask
     # When: 检查 d1 的 Read proposal.md、Bash ledger.py show、Bash git log、Write x.md
@@ -636,8 +632,7 @@ def test_armed_gives_up_and_cancels():
     assert_ts_passed("armed-gives-up-and-cancels/budget")
     assert_ts_passed("armed-gives-up-and-cancels/abort")
 
-# ---------------------------------------------------------------- flight-armed-followups S2（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-armed-followups S2
 def test_second_takeoff_refused_while_taking_off():
     # Given: demo 已批准；第一次 /opsx-apply demo 卡在起飞检查中
     # When: 再发一次 /opsx-apply demo，随后放行第一次
@@ -674,8 +669,7 @@ def test_status_line_kept_for_others():
     assert_ts_passed("status-line-kept-for-others")
 
 
-# ---------------------------------------------------------------- flight-armed-followups S4（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-armed-followups S4
 def test_driving_flight_refused():
     # Given: demo 由本会话起飞、attempt 1 未结束、在在飞集合里；agent a1 在引擎里仍在运行
     # When: 分别发 /opsx-apply demo 与 /flight resume demo
@@ -712,8 +706,7 @@ def test_restart_resumes():
     # Then: 不回复「正在飞」，照常续飞
     assert_ts_passed("same-session-unfinished-resumes-after-restart")
 
-# ---------------------------------------------------------------- flight-dispatch-origin S1（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-dispatch-origin S1
 def test_transient_timer_wakes_then_retries():
     # Given: demo 已批准；plan_fp.py 第一次以 1 退出、之后正常；/opsx-apply demo 进入偶发类待命
     # When: 时钟推进 10 秒，随后主会话一轮结束（开始时刻不早于唤醒提交时刻）
@@ -740,4 +733,26 @@ def test_stale_submit_keeps_new_arm():
     # When: 时钟推进 1 秒后人再发 /opsx-apply demo 进入新待命乙；随后放行甲的提交并让它失败
     # Then: 最后一次状态行仍含 demo 与「起飞待命」；没有含「提交修复请求失败」的放弃通知
     assert_ts_passed("stale-submit-keeps-new-arm")
+
+# ---------------------------------------------------------------- flight-dispatch-followups S1
+
+def test_queued_drive_counts_as_flying():
+    # Given: 本会话先后起飞 e2 与 demo；e2 的 drive 卡在门禁；demo 的最后一个执行体刚结束，它的 drive 排在 e2 之后；demo 没有活 agent
+    # When: 发 /flight resume demo
+    # Then: 回复含「正在飞」；demo 的账本没有新的 takeoff
+    assert_ts_passed("queued-drive-counts-as-flying")
+
+
+def test_abort_while_manual_takeoff():
+    # Given: demo 因「基线仍在跑」处于起飞待命；人又发 /opsx-apply demo，这次起飞卡在起飞检查中
+    # When: 发 /flight abort demo
+    # Then: 回复含「正在起飞，结束后再 /flight abort」，不含「正在自动起飞」
+    assert_ts_passed("abort-while-manual-takeoff")
+
+
+def test_triage_wake_failure_logged():
+    # Given: 账本预置 3 条 heal；demo 起飞，agent-1 的请求不结束；prompt.submit 会抛错
+    # When: 时钟推进 661 秒（看门狗停飞），随后推进到唤醒提交
+    # Then: ui.log 有一行含 demo 与「唤醒失败」；ui.notify 收到含「未能派诊断员」的通知
+    assert_ts_passed("triage-wake-failure-logged")
 

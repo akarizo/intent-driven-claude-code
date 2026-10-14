@@ -36,6 +36,8 @@ type World = {
   agents?: { id: string; status: string }[]
   /** takeoff-gate.py 等它 resolve 之后才作答（让起飞「卡住」） */
   gateWait?: Promise<unknown>
+  /** plan_fp.py 等它 resolve 之后才作答（让指纹核对「卡住」） */
+  fpWait?: Promise<unknown>
   /** slice-gate.py baseline 等它 resolve 之后才作答（让基线「卡住」） */
   baselineWait?: Promise<unknown>
   /** takeoff-gate.py 以 exit 0 放行；随后的起飞检查（git --version、ledger.py events、slice-gate.py features）都过，slice-gate.py lint 以 exit 1 停下 */
@@ -188,7 +190,8 @@ function useWorld(on: On, w: World) {
     const [cmd, ...args] = e.argv
     if (cmd === 'python3' && args[0]?.endsWith('/plan_fp.py')) {
       log.fpDirs.push(String(args[2]))
-      return ok(w.fp(fpCalls++, String(args[2])) + '\n')
+      const answer = ok(w.fp(fpCalls++, String(args[2])) + '\n')
+      return w.fpWait === undefined ? answer : w.fpWait.then(() => answer)
     }
     if (cmd === 'python3' && args[0]?.endsWith('/ledger.py')) {
       if (args[1] === 'events') return ok(EVENT_TYPES.join('\n') + '\n')
@@ -260,12 +263,12 @@ function committed(log: { commits: string[][] }): string[][] {
   return log.commits.filter(c => c[0] === 'commit').map(c => c.slice(c.indexOf('--') + 1))
 }
 
-/** 推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完。 */
 /** 轮询到 cond 为真（至多约 1 秒）：用于按键处理尚未返回时等世界里的调用发生 */
 async function until(cond: () => boolean): Promise<void> {
   for (let i = 0; i < 200 && !cond(); i++) await new Promise(r => setTimeout(r, 5))
 }
 
+/** 推进时钟并等定时回调跑完：按键已在处理之内起飞 / 续飞，这里只让剩下的定时回调（如基线进度刷新）跑完。 */
 async function background(log: { clock: { advance(ms: number): unknown; settle(): unknown } }): Promise<void> {
   await log.clock.advance(0)
   await log.clock.settle()
@@ -1080,12 +1083,16 @@ test('refresh-failure-clears-busy', async ($, on) => {
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   world.refreshThrows = 1
-  await ui.press({ key: `takeoff:demo:${F}` }).catch(() => undefined)
+  const pressed = await ui.press({ key: `takeoff:demo:${F}` }).then(
+    () => 'returned',
+    () => 'threw',
+  )
 
   // When: 按键处理返回后，主会话一轮结束让批准带重绘
   await $.turn.complete(TURN)
 
-  // Then: 起飞守卫已以 demo 运行；重绘后的批准带不含「起飞中…」
+  // Then: 按键处理正常返回（没有抛错）；起飞守卫已以 demo 运行；重绘后的批准带不含「起飞中…」
+  expect(pressed).toBe('returned')
   expect(log.gates).toEqual(['demo'])
   expect(await ui.findAll({ text: /起飞中…/ })).toHaveLength(0)
 })
@@ -1103,4 +1110,79 @@ test('baseline-status-restored', async ($, on) => {
 
   // Then: 最后一次状态行不含「续飞准备中」
   expect(log.statuses.at(-1) ?? '').not.toContain('续飞准备中')
+})
+
+// ---------------------------------------------------------------- flight-dispatch-followups S2：入口同步登记、去重续飞、基线进度行
+
+test('rapid-second-press-refused', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；批准带已显示 demo 的「批准起飞」之后，plan_fp.py 要等 release() 之后才作答；
+  //        已按下 approve:demo:<F>（先不 await），并等到 plan_fp.py 已因这次按键被调用（尚未作答）
+  let release: () => void = () => undefined
+  const world = demoWorld(() => F)
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.fpWait = new Promise<void>(r => (release = r))
+  const base = log.fpDirs.length
+  const first = ui.press({ key: `approve:demo:${F}` })
+  await until(() => log.fpDirs.length === base + 1)
+
+  // When: 第一次按键尚未返回时再按一次 approve:demo:<F>，至多等 1 秒看它是否返回，记下此时 plan_fp.py 的调用次数；随后放行、等两次按键都返回（期间都不推进时钟）
+  const secondPress = ui.press({ key: `approve:demo:${F}` })
+  const second = await Promise.race([secondPress.then(() => 'returned'), new Promise<string>(r => setTimeout(() => r('pending'), 1000))])
+  const fpByPress = log.fpDirs.length - base
+  release()
+  await first
+  await secondPress
+
+  // Then: 第二次按键在放行前已返回；有一条 toast 含「flight：demo 正在起飞」；放行前 plan_fp.py 只因按键运行一次；账本只追加一条 approve；起飞守卫只以 demo 运行一次
+  expect(second).toBe('returned')
+  expect(log.toasts.some(t => t.includes('flight：demo 正在起飞'))).toBe(true)
+  expect(fpByPress).toBe(1)
+  expect(log.git.filter(c => c.args[0] === 'hash-object')).toHaveLength(1)
+  expect(log.gates).toEqual(['demo'])
+})
+
+test('replan-duplicate-resumes', async ($, on) => {
+  // Given: alpha 已停飞、计划改过（当前 G、最近批准 F），批准带显示 alpha 的「批准修订并续飞」；按下前账本在 halt 之后追加了一条指纹 G 的 approve（之后没有 takeoff）；slice-gate.py baseline 立即以 exit 0 作答
+  const world = haltWorld(['alpha'])
+  world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.ledgers!.alpha = [...haltedLedger('alpha'), attemptEvent('alpha', 'approve', '10:40:00', { attempt: undefined, fp: G })]
+
+  // When: 按下 replan:alpha:<G> 并等这次按键处理返回
+  await ui.press({ key: `replan:alpha:${G}` })
+
+  // Then: 有一条 toast 含「flight：alpha 已批准（指纹相同），直接续飞」；基线恰对 alpha 运行一次；起飞守卫恰以 alpha 运行一次
+  expect(log.toasts.some(t => t.includes('flight：alpha 已批准（指纹相同），直接续飞'))).toBe(true)
+  expect(log.baselines).toEqual([`${CHANGES}/alpha`])
+  expect(log.gates).toEqual(['alpha'])
+})
+
+test('other-baseline-line-kept', async ($, on) => {
+  // Given: alpha、beta 都已停飞（最近批准都为 F）；beta 计划改过（当前 G），alpha 计划未改（当前 F）；slice-gate.py baseline 要等 release() 之后才作答；
+  //        批准带显示 beta 的「批准修订并续飞」；已按下 replan:beta:<G>（先不 await），并等到 beta 的基线已启动（处于基线相位）；随后 alpha 成为最新一项、批准带重绘为 alpha 的「续飞」
+  let release: () => void = () => undefined
+  const world = haltWorld(['alpha', 'beta'])
+  world.fp = (_, dir) => (dir.endsWith('/beta') ? G : F)
+  world.baselineWait = new Promise<void>(r => (release = r))
+  newestIs(world, 'beta')
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  const beta = ui.press({ key: `replan:beta:${G}` })
+  await until(() => log.baselines.length === 1)
+  newestIs(world, 'alpha')
+  await $.turn.complete(TURN)
+
+  // When: 按下 resume:alpha:<F> 并等它返回，记下此时最后一次状态行；随后放行 beta 的基线、等 beta 的按键返回（收尾）
+  await ui.press({ key: `resume:alpha:${F}` })
+  const last = log.statuses.at(-1) ?? ''
+  release()
+  await beta
+
+  // Then: alpha 续飞返回时最后一次状态行含「续飞准备中 beta」
+  expect(last).toContain('续飞准备中 beta')
 })

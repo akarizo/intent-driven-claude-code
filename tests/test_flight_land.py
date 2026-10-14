@@ -129,7 +129,7 @@ def test_merges_write_no_records():
     # Then: 两次都返回 ok 与 HEAD；全程没有 slice-gate record 与 timeline.py 调用
     assert_ts_passed("merges-write-no-records")
 
-# ---------------------------------------------------------------- flight-armed-takeoff S2（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-armed-takeoff S2
 
 def test_commit_artifacts_handles_staged_deletion():
     # Given: a.md 已修改未暂存；S5.md 的删除已暂存（git status 答 D  …/S5.md）
@@ -137,7 +137,7 @@ def test_commit_artifacts_handles_staged_deletion():
     # Then: git add 只含 a.md；git commit 的路径含 a.md 与 S5.md；无错误
     assert_ts_passed("commit-artifacts-handles-staged-deletion")
 
-# ---------------------------------------------------------------- flight-armed-followups S1（骨架：实现后去掉 xfail 标记）
+# ---------------------------------------------------------------- flight-armed-followups S1
 
 def test_staged_deletion_edge_cases():
     # Given: 甲：切片/S5.md 的删除已暂存、a.md 已修改（porcelain -z）；乙：两个路径都是已暂存删除；丙：git status 以 1 退出

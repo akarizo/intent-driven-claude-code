@@ -119,3 +119,25 @@ def test_baseline_status_restored():
     # Then: 最后一次状态行不含「续飞准备中」
     assert_ts_passed("baseline-status-restored")
 
+# ---------------------------------------------------------------- flight-dispatch-followups S2
+
+def test_rapid_second_press_refused():
+    # Given: demo 未批准，批准带显示「批准起飞」；plan_fp.py 要等放行后才作答
+    # When: 按「批准起飞」，等到 plan_fp.py 已被调用、尚未作答时再按一次同一按钮，随后放行（期间不推进时钟）
+    # Then: 第二次按键在放行前已返回并得到含「正在起飞」的 toast；账本只追加一条 approve，起飞守卫只以 demo 运行一次
+    assert_ts_passed("rapid-second-press-refused")
+
+
+def test_replan_duplicate_resumes():
+    # Given: alpha 已停飞、计划已改（当前 G），批准带显示「批准修订并续飞」；按下前账本在停飞之后已有指纹 G 的 approve；基线立即以 0 退出
+    # When: 按下「批准修订并续飞」并等它返回
+    # Then: 有一条 toast 含「已批准（指纹相同），直接续飞」；基线已对 alpha 运行一次，起飞守卫已以 alpha 运行一次
+    assert_ts_passed("replan-duplicate-resumes")
+
+
+def test_other_baseline_line_kept():
+    # Given: alpha 与 beta 都已停飞；beta 的「批准修订并续飞」已按下、基线迟迟不结束；alpha 计划未改，显示「续飞」
+    # When: 按下 alpha 的「续飞」并等它返回
+    # Then: 最后一次状态行含「续飞准备中 beta」
+    assert_ts_passed("other-baseline-line-kept")
+
