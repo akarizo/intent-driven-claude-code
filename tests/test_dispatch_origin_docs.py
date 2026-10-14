@@ -1,5 +1,4 @@
-"""派发绕过包络的修复：文档与版本（scenario: flight-dispatch-docs#docs-describe-wake-turn / propose-description-current / plugin-version-0-10-2）。
-"""
+"""派发绕过包络的修复：文档与版本（scenario: flight-dispatch-docs#docs-describe-wake-turn / propose-description-current / plugin-version-0-10-2）。"""
 import json
 
 from conftest import ROOT
@@ -44,11 +43,10 @@ def test_propose_description_current():
     assert "自己发 /opsx-apply" not in desc, desc
 
 
-def test_plugin_version_0_10_2():
+def test_plugin_version_not_below_0_10_2():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
-    # Then: version 不低于 0.10.2；description 含起飞待命、按下即起飞、自愈、看门狗、续飞
-    # （版本号在后续 change 里继续前进，写死会让每次升版都改这条，故按数字逐段比较下限）
+    # Then: version 按数字逐段比较不低于 0.10.2；description 仍含起飞待命、按下即起飞、自愈、看门狗、续飞
     data = json.loads(_read("template/plugins/flight/.claude-plugin/plugin.json"))
     assert tuple(int(p) for p in data["version"].split(".")) >= (0, 10, 2), data["version"]
     for word in ("起飞待命", "按下即起飞", "自愈", "看门狗", "续飞"):

@@ -1,0 +1,33 @@
+{
+  "commit": "f944bc9d0ff4572911bf1d3b586723cf91afaa6f",
+  "at": "2026-10-14T05:33:33Z",
+  "plan_sha": "cc50aeef7d6765dfe095ff831885f03cb36ba770",
+  "ok": true,
+  "reasons": [],
+  "test": {
+    "exit": 1,
+    "sec": 135.3,
+    "failed": [
+      "tests.test_dispatch_origin_docs::test_plugin_version_0_10_2"
+    ]
+  },
+  "warnings": [
+    "预存红 1 条已记录，final 按基线差分"
+  ],
+  "lint": {
+    "exit": 0,
+    "lines": []
+  },
+  "typecheck": null,
+  "verify": {
+    "S1": {
+      "exit": 0
+    },
+    "S2": {
+      "exit": 0
+    },
+    "S3": {
+      "exit": 0
+    }
+  }
+}

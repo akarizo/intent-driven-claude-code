@@ -58,6 +58,7 @@ metadata:
 
    - 一次性写出全部该建的工件。
    - tasks 阶段额外产出：`slices.json`、每个切片一份 `slices/<S>.md` 切片包、每个 scenario 一个 `xfail(strict)` 骨架（放进所属切片 owns 的测试文件）、由 `slices.json` 生成的 `tasks.md`。
+   - 周边文件：为 scenario 测试新增或修改的辅助文件、ADR 索引等不在 change 目录、不是 DRAFT ADR、也不是 scenario 测试文件的本 change 文件，逐个列进 `slices.json` 的 `artifact_files`（精确路径、相对 worktree 根），起飞时随工件一并提交；不列则起飞被拒。
    - 护栏 scenario：行为在 base 上已成立的 scenario（保持原行为、不回归）列进所属切片的 `guards`，测试在规划时写完整、不带 xfail、base 上须通过；G5 只豁免 `guards` 里且起点测量已通过的目标（详见 schema）。
    - 随后：
      ```bash

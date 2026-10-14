@@ -2,6 +2,7 @@
 // 账本：git hash-object 的 stdin 即事件 JSON，世界把它存进数组；ledger.py show 按顺序逐行返回。
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { classifyRefusal } from '../hooks/armed'
 import { ev } from '../hooks/core'
 import { EVENT_TYPES } from '../hooks/io'
 
@@ -1016,6 +1017,40 @@ test('takeoff-reply-lists-committed-artifacts', async ($, on) => {
   expect(r.text).toContain('✈ 起飞')
   expect(r.text).toContain('已提交工件 3 个文件')
   expect(ownLines(r.text, ARTIFACTS)).toEqual(ARTIFACTS)
+})
+
+/** slices.json 的 artifact_files 声明的两个周边文件（相对 change worktree 根） */
+const DECLARED = ['tests/helpers.py', 'template/openspec/adr/INDEX.md']
+const declaredFiles = { [`${TREE}/${CD}/slices.json`]: JSON.stringify({ ...SLICES, artifact_files: DECLARED }) }
+
+test('takeoff-commits-declared-artifacts', async ($, on) => {
+  // Given: demo 已批准、账本为空；slices.json 的 artifact_files 为 tests/helpers.py 与 template/openspec/adr/INDEX.md；未提交的有 proposal.md、DRAFT-x.md、tests/test_s1.py 与这两个声明文件
+  const log = useWorld(on, demoWorld({ files: declaredFiles, dirty: [...ARTIFACTS, ...DECLARED] }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 有一次说明含「工件」的提交、发生在 takeoff 事件写入之前（当时账本 0 条）；加入 proposal.md 的那次 git add 路径恰为这 5 个的绝对路径；回复含「✈ 起飞」
+  expect(artifactCommit(log)?.events).toBe(0)
+  expect(log.adds.find(a => a.includes(`${TREE}/${CD}/proposal.md`))).toEqual([...ARTIFACTS, ...DECLARED].map(p => `${TREE}/${p}`))
+  expect(r.text).toContain('✈ 起飞')
+})
+
+test('foreign-dirt-refusal-explains-way-out', async ($, on) => {
+  // Given: demo 已批准、账本为空；slices.json 声明 tests/helpers.py 与 INDEX.md；未提交的有 proposal.md、DRAFT-x.md、tests/test_s1.py，还有未声明的 src/x.py
+  const log = useWorld(on, demoWorld({ files: declaredFiles, dirty: [...ARTIFACTS, 'src/x.py'] }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 回复含「工作区不干净」与 src/x.py、不含任何工件路径；含「授权提交」「不覆盖」「撤销」与 artifact_files；没有提交；账本没有 takeoff；classifyRefusal(回复) 为 human
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('src/x.py')
+  expect(ARTIFACTS.filter(p => r.text.includes(p))).toEqual([])
+  expect(['授权提交', '不覆盖', '撤销', 'artifact_files'].filter(w => !r.text.includes(w))).toEqual([])
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+  expect(classifyRefusal(r.text)).toBe('human')
 })
 
 test('drive-stops-after-terminal-without-fp', async ($, on) => {
@@ -3000,4 +3035,182 @@ test('stale-submit-keeps-new-arm', async ($, on) => {
   // Then: 最后一次状态行含 demo 与「起飞待命」；没有含「提交修复请求失败」的通知
   expect([log.statuses.at(-1)?.includes('demo'), log.statuses.at(-1)?.includes('起飞待命')]).toEqual([true, true])
   expect(notified(log, '提交修复请求失败')).toEqual([])
+})
+
+// ---------------------------------------------------------------- flight-dispatch-followups S1（排队 drive、人工起飞时 abort、看门狗唤醒失败日志）
+
+/** 下一次 slice-gate gate 运行之后，让随后第一次读账本卡住（drive 停在门禁之后），放行函数进 release */
+function holdAfterGate(w: World, release: (() => void)[]): void {
+  w.onRun = argv => {
+    if (!(String(argv[1]).endsWith('/slice-gate.py') && argv[2] === 'gate')) return
+    w.onRun = undefined
+    w.ledgerHold = () => {
+      w.ledgerHold = undefined
+      return new Promise<void>(r => release.push(r))
+    }
+  }
+}
+
+// scenario 来源：spec flight-dispatch-hardening#queued-drive-counts-as-flying
+test('queued-drive-counts-as-flying', async ($, on) => {
+  // Given: 世界另有 change e2，waves [[S1]]，agent.list 为空（没有活 agent）；本会话先后 /opsx-apply e2（派出 agent-1）与 /opsx-apply demo（派出 agent-2）；
+  //        agent-1 结束，e2 的 drive 跑完门禁后读账本卡住；随后 agent-2 结束、demo 的 ended 已写入，它的 drive 排在 e2 之后
+  const release: (() => void)[] = []
+  const w = demoWorld({ trees: ['e2'], waves: [['S1']] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'e2', ...HUMAN } as never)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  holdAfterGate(w, release)
+  const e2Turn = $.turn.complete(ended('agent-1') as never).catch(() => undefined)
+  await until(() => release.length > 0)
+  const demoTurn = $.turn.complete(ended('agent-2') as never).catch(() => undefined)
+  await until(() => log.events.some(x => x.ev === 'ended' && x.agent === 'agent-2'))
+  await flush()
+  const demoTakeoffs = () => takeoffs(log).filter(x => x.change === 'demo').length
+  const before = demoTakeoffs()
+
+  // When: 人发出 /flight resume demo（误判为卡住时续飞会排到 e2 的 drive 之后：等到回复或新 takeoff 出现再放行 e2）
+  let reply: { text?: unknown } | undefined
+  const resume = $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never).then(x => {
+    reply = x as { text?: unknown }
+  })
+  await until(() => reply !== undefined || demoTakeoffs() > before)
+  const after = demoTakeoffs()
+  for (const x of release) x()
+  await resume
+  await e2Turn
+  await demoTurn
+  await flush()
+
+  // Then: 回复含「正在飞」；demo 的账本没有新的 takeoff
+  expect(String(reply?.text)).toContain('正在飞')
+  expect(after).toBe(before)
+})
+
+// scenario 来源：spec flight-dispatch-hardening#abort-while-manual-takeoff
+test('abort-while-manual-takeoff', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），demo 进入起飞待命；人又发 /opsx-apply demo，这次起飞在起飞检查里读账本时卡住（人工起飞持锁）
+  const release: (() => void)[] = []
+  const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
+  useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.ledgerHold = () => {
+    w.ledgerHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const manual = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await until(() => release.length > 0)
+
+  // When: 人发出 /flight abort demo
+  const r = await $.command.run({ command: 'flight', args: 'abort demo', ...HUMAN } as never)
+
+  // Then: 回复含「正在起飞，结束后再 /flight abort」，不含「正在自动起飞」
+  for (const x of release) x()
+  await manual
+  await flush()
+  expect(String(r.text)).toContain('正在起飞，结束后再 /flight abort')
+  expect(String(r.text)).not.toContain('正在自动起飞')
+})
+
+// scenario 来源：spec flight-dispatch-hardening#triage-wake-failure-logged
+test('triage-wake-failure-logged', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 3 条 heal（自愈预算已用尽）；demo 起飞（waves [[S1, S2]]），agent-1、agent-2 在跑；agent-1 的模型请求不结束；prompt.submit 以「提交通道不可用」拒绝
+  const ledger = [
+    ev.heal(B0, { attempt: 1, kind: 'merge-retry', slice: 'S8', reason: '合回失败' }),
+    ev.heal(B0, { attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' }),
+    ev.heal(B0, { attempt: 1, kind: 'watchdog', slice: 'S9', reason: '等待 11 分钟', agent: 'x9' }),
+  ]
+  const w = demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }], submitDeny: '提交通道不可用' })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'agent-1').catch(() => undefined)
+  await flush()
+
+  // When: 时钟推进 661 秒（看门狗停飞），随后推进到 clock.after(0) 到点、提交唤醒
+  await advance(log, 661000)
+  await advance(log, 0)
+  await until(() => notified(log, '未能派诊断员').length > 0)
+
+  // Then: ui.log 有一行含 demo 与「唤醒失败」；ui.notify 收到含「未能派诊断员」的通知
+  expect(log.logs.filter(t => t.includes('demo') && t.includes('唤醒失败')).length).toBeGreaterThan(0)
+  expect(notified(log, '未能派诊断员').length).toBe(1)
+})
+
+// 补测（不是 scenario）：提交结果只记到提交时那一次待命上
+test('stale-submit-keeps-new-arm/fix-succeeds', async ($, on) => {
+  // Given: demo 已批准；slice-gate lint 前两次以 1 退出（overlap）；/opsx-apply demo 进入交模型待命甲，甲的修复请求在 prompt.submit 里被扣住；
+  //        时钟推进 1 秒后人再发 /opsx-apply demo（lint 再红，进入新待命乙，乙的提交尚未到点）；之后放行甲的提交并让它成功
+  const release: (() => void)[] = []
+  const w = demoWorld({ lintRuns: [res(1, '', OVERLAP), res(1, '', OVERLAP)] })
+  w.submitHold = () => {
+    w.submitHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 0)
+  await until(() => release.length > 0)
+  await advance(log, 1000)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (const r of release) r()
+  await flush()
+
+  // When: 主会话一轮结束
+  await $.turn.complete(MAIN_TURN as never)
+  await flush()
+
+  // Then: lint 只运行过 2 次（乙未被标为已提交，没有自动重试）；账本没有 takeoff
+  expect(runsOf(log, 'slice-gate.py', 'lint')).toBe(2)
+  expect(takeoffs(log).length).toBe(0)
+})
+
+// 补测（不是 scenario）：唤醒提交失败时待命已换新，不放弃新待命
+test('stale-submit-keeps-new-arm/wake-fails', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第 1 次报基线仍在跑、第 2 次（tick 前复查）通过、第 3 次又报基线仍在跑；/opsx-apply demo 进入待命甲；
+  //        时钟推进 60 秒，tick 提交唤醒，唤醒在 prompt.submit 里被扣住；时钟再推进 1 秒后人再发 /opsx-apply demo（进入新待命乙）
+  const release: (() => void)[] = []
+  const w = demoWorld({ preflightRuns: [res(1, '', BASELINE), res(0, JSON.stringify([['S1', 'S2'], ['S3']]) + '\n'), res(1, '', BASELINE)] })
+  w.submitHold = () => {
+    w.submitHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 60000)
+  await advance(log, 0)
+  await until(() => release.length > 0)
+  await advance(log, 1000)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 提交改为以「提交通道不可用」失败，并放行甲的唤醒提交
+  w.submitDeny = '提交通道不可用'
+  for (const r of release) r()
+  await flush()
+
+  // Then: 最后一次状态行含 demo 与「起飞待命」；没有含「提交唤醒失败」的通知
+  expect([log.statuses.at(-1)?.includes('demo'), log.statuses.at(-1)?.includes('起飞待命')]).toEqual([true, true])
+  expect(notified(log, '提交唤醒失败')).toEqual([])
+})
+
+// 补测（不是 scenario）：drive 在跑、agent 都已结束时仍算「正在飞」
+test('driving-flight-refused/agents-ended', async ($, on) => {
+  // Given: demo 已起飞（waves [[S1]]，派出 agent-1），agent.list 为空；agent-1 结束，drive 跑完门禁后读账本卡住（drive 在跑）
+  const release: (() => void)[] = []
+  const w = demoWorld({ waves: [['S1']] })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  holdAfterGate(w, release)
+  const turn = $.turn.complete(ended('agent-1') as never).catch(() => undefined)
+  await until(() => release.length > 0)
+
+  // When: 人发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复含「正在飞」；账本仍只有 attempt 1 的 takeoff
+  const attempts = takeoffs(log).map(x => x.attempt)
+  for (const x of release) x()
+  await turn
+  await flush()
+  expect(String(r.text)).toContain('正在飞')
+  expect(attempts).toEqual([1])
 })

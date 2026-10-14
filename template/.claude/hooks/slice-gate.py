@@ -62,6 +62,7 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # pytest-cov 覆盖率未达标的输出标记（pytest-cov 7.1.0 pytest_cov/plugin.py：
 # 前者在 pytest_runtestloop 收尾打印，后者在 pytest_terminal_summary 打印）
 COVERAGE_FAIL_MARKS = ("Coverage failure: total of", "FAIL Required test coverage of")
+NUMBERED_ADR_RE = re.compile(r"(^|/)adr/\d{4}-[^/]*\.md$")
 
 TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec"}
 TEST_FILE_RE = re.compile(r"(^|/)(test_[^/]*\.py|[^/]*_test\.py|[^/]*\.test\.[^/]+|[^/]*\.spec\.[^/]+)$")
@@ -317,6 +318,28 @@ def compute_waves(slices):
     return waves, []
 
 
+def lint_artifact_files(data):
+    """slices.json.artifact_files：缺省不报；须是相对、精确、非已编号 ADR 的路径数组。"""
+    if "artifact_files" not in data:
+        return []
+    files = data["artifact_files"]
+    if not isinstance(files, list):
+        return ["artifact_files: 须是路径数组"]
+    errors = []
+    for f in files:
+        if not isinstance(f, str) or not f:
+            errors.append("artifact_files: %r 须是非空路径字符串" % (f,))
+        elif f.startswith("/"):
+            errors.append("artifact_files: %s 须是相对 worktree 根的路径，不能以 / 开头" % f)
+        elif ".." in f.split("/"):
+            errors.append("artifact_files: %s 不能含 .. 段" % f)
+        elif any(c in f for c in "*?["):
+            errors.append("artifact_files: %s 须是精确路径，不能含通配符" % f)
+        elif NUMBERED_ADR_RE.search(f):
+            errors.append("artifact_files: %s 是已编号 ADR（ADR 不可改，只能 supersede）" % f)
+    return errors
+
+
 def lint_plan(data):
     errors = []
     if not ((data.get("gate") or {}).get("test") or "").strip():
@@ -343,6 +366,7 @@ def lint_plan(data):
                 errors.append("guards: %s 的护栏 %s 不在本片 scenarios 里" % (s.get("id"), g))
             elif not (data.get("scenario_tests") or {}).get(g):
                 errors.append("guards: %s 的护栏 %s 没有 scenario_tests 映射" % (s.get("id"), g))
+    errors.extend(lint_artifact_files(data))
     waves, leftover = compute_waves(slices)
     if leftover:
         errors.append("cycle: 依赖成环 %s" % ", ".join(leftover))

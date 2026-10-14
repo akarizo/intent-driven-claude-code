@@ -1,0 +1,56 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_land.py",
+      "line": 44,
+      "summary": "本片只删了末尾两处分段标题里的「骨架：实现后去掉 xfail 标记」。文件里已经没有任何 pytest.mark.xfail，但第 44 / 91 / 113 / 123 行还留着同类过时注释「# 骨架：S1/S3/S6 实现后去掉 xfail 标记。」。切片包只点名了末尾分段标题，所以不算越界漏做，只是残留没清干净。",
+      "fix": "后续顺手把第 44、91、113、123 行的「骨架：S? 实现后去掉 xfail 标记」注释删掉，或改成纯分段说明。本片不阻断。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 420,
+      "summary": "showOtherBaseline 先取出处于 baseline 相位的项，然后 await $.clock.now() 和 fullSuiteMinutes（要读文件），之后才写状态行，写之前不再核对相位。如果这两次 await 期间 beta 的基线结束了，或 beta 的续飞已走完 finished + restoreStatusNow，这里仍会写入过期的「续飞准备中 beta」，盖掉 beta 刚恢复的状态行，而且没有后续 tick 来纠正，状态行会一直停在这条旧文案上。",
+      "fix": "两次 await 都完成后、调用 statusQuietly 之前，再核对一次：const q = inFlight.get(change); if (q?.phase !== 'baseline' || q.since !== p.since) return;（与 baselineTick 的守卫写法一致）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 473,
+      "summary": "startResume 的 finally 里新增的 await showOtherBaseline($) 没有兜底。statusQuietly 和 fullSuiteMinutes 都吞了异常，但 $.clock.now() 没有；它一旦抛错，异常会从 finally 冒出，导致续飞本已正常结束的按键处理被拒。同一个 finally 里的 restoreStatusNow 都加了 .catch，这里不一致。",
+      "fix": "改成 await showOtherBaseline($).catch(() => undefined)，与上一行 restoreStatusNow 的写法保持一致。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1008,
+      "summary": "错过一轮在 orchestrator 里的接线没有任何用例覆盖：advanceArm 撞锁时 missedTurns.add、takeoffArmed / advanceArm 的 finally 里 markMissedTurn、之后 tick 补发唤醒，这条链只有 armed.ts 纯函数测试（missed-turn-rewakes-on-tick）。把 markMissedTurn 删掉或把 missedTurns.add 的条件写错，现有测试全都发现不了，而这正是本片要修的并发缺陷。",
+      "fix": "在 orchestrator.test.tsx 补一个非 scenario 用例：demo 待命已唤醒（awaitingWake=true），人工 /opsx-apply demo 在 ledgerHold 处持锁，这时投递 MAIN_TURN（开始时刻不早于 T0），然后放行。断言：没有发生自动重试（preflight / lint 次数不变），待命 missedTurn=true、awaitingWake=false；advance 60 秒触发 tick 之后再次提交唤醒（prompt.submit 收到含 WAKE_FOOTER 的正文）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 871,
+      "summary": "markMissedTurn 在锁释放后先 read 再 putArm 整个旧对象，读改写不是原子的。两次 await 之间若有别的事件拿到锁并改写待命（例如 beforeRetry 把 tries+1），这次 put 会用旧快照覆盖 tries、since 等字段。窗口很窄，后续 noteRefusal 一般会覆盖回来，但这仍是一次无条件的旧值回写。",
+      "fix": "改为在单次 update 里原子计算：update($, armedAtom, s => { const a = s.items[change]; return a && (a.awaitingWake || a.awaitingModel) ? { items: { ...s.items, [change]: afterMissedTurn(a) } } : s })，不再先 read 再 put 整个对象。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_armed.py",
+      "line": 2,
+      "summary": "分段标题已去掉骨架字样，但模块 docstring 仍写着「骨架：S1 实现后去掉 xfail 标记」；tests/test_flight_orchestrator.py 第 3 行 docstring「骨架：S7 写同名 TS 测试并实现后逐条去掉 xfail 标记」也一样。两个文件现在已经没有 xfail 了，这两句成了过时描述。",
+      "fix": "把两处 docstring 里的骨架 / xfail 说明删掉，或改为不带骨架字样的说明，例如「断言插件里同名的 TS 测试通过」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 871,
+      "summary": "markMissedTurn 没有核对待命是不是错过那一轮时的同一个，偏离 design D3「待命已被持有者替换或清掉时，什么都不做」。它在 armBusy.delete 之后才执行「先读后写」，这时锁已释放，不受保护。只要待命仍在等那一轮（awaitingWake 或 awaitingModel）就套用 afterMissedTurn。具体场景：人工 /opsx-apply 持锁期间，旧待命 A 的交模型那一轮结束，于是 missedTurns.add。人工起飞再次以 model 类被拒，换成新待命 B，submit 经 clock.after(0) 先行完成，把 B 记成 awaitingModel。finally 里 markMissedTurn 读到的是 B，误把 B 的 awaitingModel 清掉、标成 missedTurn。结果是 B 的修复轮结束时不再重试，要等下一次 tick 多唤醒一轮。另一种情况：锁释放后、putArm 之前，有别的 advanceArm 抢到锁改了待命，markMissedTurn 会用旧快照把它覆盖。",
+      "fix": "missedTurns 改为 Map<string, number>，记下错过时那个待命的 since。advanceAll 调用 advanceArm 时把 arm.since 一并传入，撞锁时写 missedTurns.set(change, since)。markMissedTurn 只在 armOfChange 读到的 arm.since 等于记下的 since、且仍在等那一轮时才 putArm(afterMissedTurn(arm))。markMissedTurn 挪到 finally 里 armBusy.delete 之前执行（仍持锁时完成读写）；释放锁后若 missedTurns 又被加入，留给下一次释放处理。补一条测试：人工起飞持锁期间换成新待命，断言新待命的 awaitingModel 不被清掉。"
+    }
+  ],
+  "fix": null
+}
