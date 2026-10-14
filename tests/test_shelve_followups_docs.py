@@ -3,8 +3,6 @@
 import json
 import pathlib
 
-import pytest
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCS = ("template/.claude/commands/opsx-apply.md", "template/.claude/skills/openspec-apply-change/SKILL.md")
 
@@ -17,7 +15,6 @@ def _version(text):
     return tuple(int(p) for p in text.split("."))
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：命令与 skill 写明搁置")
 def test_docs_describe_shelve():
     # Given: opsx-apply.md 与 openspec-apply-change/SKILL.md
     # When: 读取两份全文
@@ -30,7 +27,6 @@ def test_docs_describe_shelve():
         assert "四个按钮都按下即起飞" not in text, rel
 
 
-@pytest.mark.xfail(strict=True, reason="S4 未实现：插件补丁版本升级")
 def test_plugin_version_bumped():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
