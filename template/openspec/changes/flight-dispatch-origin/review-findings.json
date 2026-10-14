@@ -1,0 +1,84 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "tests/test_dispatch_origin_docs.py",
+      "line": 2,
+      "summary": "去掉骨架说明行后，模块 docstring 的结束引号单独成行（第 1 行正文后紧跟一个只有 \"\"\" 的第 2 行），留下一个多余的空行，属于去骨架标记的残留格式。",
+      "fix": "把第 1-2 行合成单行 docstring：\"\"\"派发绕过包络的修复：文档与版本（scenario: ...）。\"\"\""
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1188,
+      "summary": "deferTriage 唤醒提交失败时只通知人，没有记日志；design D2 写的是「唤醒失败只记一行、通知人」。失败原因只出现在通知里，事后从日志查不到。",
+      "fix": "在 catch 分支 notify 之前补一行 await ctxOf($).log(`flight：${f.change} 看门狗停飞后提交唤醒失败：${errText(err)}`)，写法与 runStep 的 submit / wake 分支一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 975,
+      "summary": "唤醒那一轮的 main-turn 推进经 advanceArm 走，遇 armBusy 时直接跳过且不补发。若这一轮恰好结束在同一 change 的 tick 处理窗口里，待命会一直停在 awaitingWake=true：之后的 tick 都只给 wait，不会再唤醒，只能等 30 分钟 TTL 放弃。窗口很小，awaitingModel 原本也有同样的问题，但唤醒类待命原来每个 tick 都会直接重试，现在多了一条卡住的路。",
+      "fix": "可选做法有两种：(a) advanceArm 遇 armBusy 且事件是 main-turn 时，记一个待补标记，在 finally 里补推一次；(b) nextStep 遇 tick、awaitingWake 为真且 now - submittedAt 超过阈值（例如 2 个 tick）时，重新给出 wake。另补一个用例覆盖这条路。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2928,
+      "summary": "stale-submit-keeps-new-arm 只覆盖「旧提交失败、不放弃新待命」这一支。spec 要求成功时也只给原来那次待命标 awaitingModel，这一支（submitFix 成功后 since 已变，不把 awaitingModel 标到新待命上）没有用例；submitWake 失败按 since 放弃同样没有用例。",
+      "fix": "补一个用例：放行甲的提交并让它成功，断言待命乙的 awaitingModel 仍为 false（例如此后主会话一轮结束时，乙不会以 main-turn 重试）。scenario 不必新增，作为同名子用例或 /success 变体即可。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 532,
+      "summary": "「进行中再按被拒」的检查和登记不是原子操作。检查 inFlight.has(change) 之后，要经过 read、fingerprint（process.run）、serial 写 approve、refreshQuietly 等多次 await，才在 startTakeoff / startResume 里执行 inFlight.set。按键是并发处理的（spec 的 Feature 正是以此为前提），第二次按键落在这段窗口里就能通过检查：approve 模式下它走到 duplicate 分支，toast「已批准（指纹相同），直接起飞」，再次 startTakeoff。这次起飞虽然被 orchestrator 的 armBusy 挡下，但它 finally 里的 finished() 会删掉第一次按键的进行中记录，批准带提前丢掉「起飞中…」，之后再按又能穿过检查。",
+      "fix": "把检查和占位合成一步，中间不留 await。在 inFlight.has 检查之后立即同步登记一个占位，例如 inFlight.set(change, { phase: 'takeoff', since: 0, item })（或另设一个 pressBusy Set）。后续每条提前 return 的路径（不在列表、指纹变化、写入失败、duplicate 且非 approve 模式）都放进 try/finally 删除占位；startTakeoff / startResume 改为覆盖占位而不是新建。另补一个用例：在第一次按键的 fingerprint 尚未返回时再按，断言 fpDirs 只增加一次，并且没有出现「已批准（指纹相同）」的 toast。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 263,
+      "summary": "新加的 until 插在 background 的文档注释和函数之间。原注释「推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完」现在挂在 until 上方，成了孤立注释，而且内容已过时：本片之后按键不再经过 clock.after(0)。",
+      "fix": "把 until 及其注释移到这条注释上方，或者移到 background 之后。同时把 background 的注释改成与现状一致的说法，例如「推进时钟，让定时器回调（基线进度等）跑完」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 1083,
+      "summary": "refresh-failure-clears-busy 用 .catch(() => undefined) 吞掉了按键的异常。按 spec「重绘失败时起飞照常进行」，新实现下按键不应抛错；吞掉之后，即使将来某个重绘错误又从按键处理里冒出来，这个用例也测不出来。",
+      "fix": "去掉 .catch，直接 await ui.press(...)，让按键抛错时用例变红。先测红阶段，旧实现抛错本身就会让用例红，不需要靠吞错。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 532,
+      "summary": "「进行中再按被拒」先查后登记，不是原子操作。ui.press 在顶部查 inFlight.has(change)，但 inFlight.set 要等读批准带、fingerprint（跑 plan_fp 子进程）、写 approve，再进 startTakeoff / startResume 的 await $.clock.now() 之后才执行。按键是并发处理的（design 实测），第二次按键只要落在第一次的 fingerprint 窗口里，两次都会通过检查。approve 模式下第二次走 duplicate 分支，先 toast「已批准（指纹相同），直接起飞」，再进 startTakeoff 覆盖 inFlight；takeoffArmed 的 armBusy 拒绝后，它的 finished() 会删掉第一次仍在进行中的 inFlight 记录，批准带提前恢复按钮。armBusy 挡住了第二次起飞，所以不会双起飞，但 spec 要的「立即回『正在起飞，稍候』」与进行中显示都会失真。",
+      "fix": "在查到未进行中的同一同步段里立即占位，例如模块内加 pressing: Set<string>：if (inFlight.has(change) || pressing.has(change)) { toast; return } pressing.add(change)，在 withLease body 的 finally 里 pressing.delete(change)。也可以在检查处同步写入 inFlight 占位，后续再补全 item 与 phase，校验失败分支负责删除。补一个用例：第一次按键卡在 fingerprint 时再按一次，断言只有一条 approve、toast 含「正在起飞」、第一次返回前批准带仍显示「起飞中…」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 458,
+      "summary": "startResume 结束时调 restoreStatusNow()。restoreStatus 只看待命与在飞的 flight，不认 register.tsx 自己的 inFlight 基线相位。另一个 change 正处于基线相位时，它的「续飞准备中 … 基线已跑 N 分钟」会被清空或换成别的行，要等 60 秒后下一次 baselineTick 才恢复。",
+      "fix": "恢复状态行前先查 inFlight 里有没有其他 phase 为 baseline 的项：有就交给它的 baselineTick，或立即重写它的进度行；没有才调 restoreStatusNow()。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 263,
+      "summary": "新加的 until helper 插在 background 的文档注释与函数之间，「推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完」这行注释悬空在 until 的注释上方。而且本 change 之后按键已不再经 clock.after(0) 起飞，这条注释的内容也过时了。",
+      "fix": "把 until 移到 background 注释之前，或把注释挪回 background 上方；同时改写 background 的注释，例如「推进时钟，让按键之后排的定时回调（基线进度、提交等）跑完」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 1189,
+      "summary": "deferTriage 把唤醒正文第二行「这一轮只回复「收到」，不要做别的，也不要发 /opsx-apply。」写死了一份，与 armed.ts 的 wakePrompt 重复。以后改唤醒措辞，两处容易漂移。",
+      "fix": "在 armed.ts 导出一个 WAKE_TAIL 常量，或加 triageWakePrompt(change) 纯函数，供 wakePrompt 与 deferTriage 共用。"
+    }
+  ],
+  "fix": null
+}
