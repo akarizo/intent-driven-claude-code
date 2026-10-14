@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { FlightBand, FlightItem } from '../types'
-import { reduce } from './core'
+import { planDefect, reduce } from './core'
 import type { Flight, Io } from './core'
 import { readLedger, stoppedNow } from './io'
 import { classifyDirty } from './land'
@@ -256,6 +256,10 @@ async function evaluate($: Engine, c: Candidate, mainDir: string): Promise<Fligh
   if (halted) {
     // 批准修订并续飞也提交工件，同样列出
     if (!same) artifacts.set(c.change, await artifactPaths($, c, f))
+    // 计划未改且是计划缺陷（design D6）：续飞仍会在同一处停飞，带上原因、不给续飞；读不出账本按无缺陷处理
+    const ledger = same ? await readLedger(ioOf($), f).catch(() => ({ error: '' })) : { error: '' }
+    const defect = 'error' in ledger ? undefined : planDefect(reduce(ledger.events))
+    if (defect !== undefined) return { ...base, fp: now.fp, problem: '', mode: 'resume', defect }
     return { ...base, fp: now.fp, problem: '', mode: same ? 'resume' : 'replan' }
   }
   const item: FlightItem = { ...base, fp: now.fp, problem: '' }
@@ -592,6 +596,12 @@ export const register: Register = on => {
         {top.busy ? (
           // 进行中：Button 没有禁用属性，不渲染按钮，只显示文字
           <Text>{top.busy}</Text>
+        ) : top.defect !== undefined ? (
+          // 计划缺陷：不画主按钮（design D6），改计划后由 replan 规则给出「批准修订并续飞」
+          <Box flexDirection="column">
+            <Text>计划需修订：{top.defect}</Text>
+            <Text dimColor>改计划后会出现「批准修订并续飞」</Text>
+          </Box>
         ) : top.problem === '' ? (
           // 引擎要求 Button 带 onPress；真正的处理在下方 ui.press hook（拿得到 e.surface，且不调 next，此闭包不会执行）
           <Button key={pressKey(top)} label={LABEL[top.mode]} variant="primary" onPress={() => undefined} />
@@ -652,6 +662,12 @@ export const register: Register = on => {
         await refreshQuietly($)
         return { element: e.element }
       }
+      // 计划缺陷的项没有续飞按钮；陈旧按键到达时同样不续飞
+      if (item.defect !== undefined) {
+        $.ui.toast(`flight：${change} 计划需修订：${item.defect}`)
+        await refreshQuietly($)
+        return { element: e.element }
+      }
       // 计划未改的续飞：不写 approve（沿用已批准的指纹）
       if (mode === 'resume') {
         await startResume($, item, false, lease)
@@ -699,6 +715,11 @@ export const register: Register = on => {
       /* 重绘失败不影响命令的回复 */
     }
     return r
-  }).catch(($, e, next) => (next.called ? { text: 'flight：命令执行出错' } : next(e)))
+  }).catch(($, e, next) => {
+    if (!next.called) return next(e)
+    // 下游已执行并出错：保留下游错误首行（design D8 · D1，取法同 SubagentStop 的 catch）
+    const first = (next as unknown as { error?: { message?: string } }).error?.message?.split('\n')[0]?.trim() ?? ''
+    return { text: first === '' ? 'flight：命令执行出错' : `flight：命令执行出错：${first}` }
+  })
   registerOrchestrator(on)
 }

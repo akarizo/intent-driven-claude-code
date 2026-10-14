@@ -1,10 +1,10 @@
 // 评审回收与落地（spec flight-findings-intake · design D5）：submit_findings 的处理、评审员 / 修复 agent 收口、
 // 以及 drive 交来的 dispatch(reviewer|fixer) / final / land / halt。不注册 hook、不碰 $：副作用全经调用方造的 Ctx 闭包。
 // 账本只经 io.appendEvent 写入；本模块不写 approve。
-import { INTEG, agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
+import { INTEG, PREMERGE, agentOf, currentAttempt, ev, reduce, routingFindings, stopVerdict } from './core'
 import type { Action, Ctx, Finding, Flight, FlightEvent, Found, GateJson, Io, RunResult, State } from './core'
 import { appendEvent, freshWorktree, judge, readLedger, stoppedNow } from './io'
-import { closeout, commitRecords, renderRecords, validateFindings } from './land'
+import { closeout, commitRecords, premergeTarget, renderRecords, validateFindings } from './land'
 import { fixerPrompt, followupReviewPrompt, integFixerPrompt, integReviewPrompt, reviewerPrompt, wholeReviewPrompt } from './prompts'
 
 const FIX = 'fix'
@@ -99,8 +99,19 @@ export async function onFindings(ctx: Ctx, found: Found | undefined, agentId: st
 type ReviewAction = { slice: string; commit: string; mode?: 'whole' | 'followup' | 'integ'; base?: string; prior?: Finding[] }
 type ReviewPlan = { prompt: string; description: string; range?: { commit: string; base: string } }
 
-/** 全量评审的起点：git merge-base <commit> <主 worktree HEAD>；任一步失败、输出为空或等于 commit 时返回原因。 */
-async function wholeBase(io: Io, f: Flight, commit: string): Promise<{ base: string } | { error: string }> {
+/**
+ * 全量评审的起点（design D3）：本 attempt 最新 premerge 有非空 target，且它 ok 或其后有 slice premerge 的 ok merge（冲突已解并合回），就用它；
+ * 否则 git merge-base <commit> <主 worktree HEAD>。任一步失败、输出为空或等于 commit 时返回原因。
+ */
+async function wholeBase(io: Io, f: Flight, state: State, commit: string): Promise<{ base: string } | { error: string }> {
+  const mine = state.events.filter(e => Number(e.attempt) === state.attempt)
+  const at = mine.findLastIndex(e => e.ev === 'premerge')
+  const pm = at >= 0 ? mine[at] : undefined
+  const settled = pm !== undefined && (pm.ok === true || mine.slice(at + 1).some(e => e.ev === 'merge' && e.slice === PREMERGE && e.ok === true))
+  if (pm && settled && typeof pm.target === 'string' && pm.target !== '') {
+    if (pm.target === commit) return { error: `分叉点就是 ${commit}，没有可审的改动` }
+    return { base: pm.target }
+  }
   const m = await io.run(['git', '-C', f.mainTree, 'rev-parse', 'HEAD'])
   const head = m.stdout.trim()
   if (m.exitCode !== 0 || head === '') return { error: `git rev-parse HEAD 失败：${firstLine(m.stderr) || `exit ${m.exitCode}`}` }
@@ -112,7 +123,7 @@ async function wholeBase(io: Io, f: Flight, commit: string): Promise<{ base: str
 }
 
 /** 按 mode 选提示词：whole 先算起点，followup / integ 用动作给的范围，不带 mode 为切片评审。 */
-async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPlan | { error: string }> {
+async function reviewPlan(io: Io, f: Flight, state: State, x: ReviewAction): Promise<ReviewPlan | { error: string }> {
   const prior = x.prior ?? []
   if (x.mode === 'integ') {
     const base = x.base ?? ''
@@ -121,7 +132,7 @@ async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPla
     return { prompt, description: '专审整合修复', range: { commit: x.commit, base } }
   }
   if (x.mode === 'whole') {
-    const wb = await wholeBase(io, f, x.commit)
+    const wb = await wholeBase(io, f, state, x.commit)
     if ('error' in wb) return { error: `算不出全量评审的起点：${wb.error}` }
     const prompt = wholeReviewPrompt({ change: f.change, changeDir: f.changeDir, hooksDir: f.hooksDir, base: wb.base, commit: x.commit, prior })
     return { prompt, description: '全量评审', range: { commit: x.commit, base: wb.base } }
@@ -136,7 +147,7 @@ async function reviewPlan(io: Io, f: Flight, x: ReviewAction): Promise<ReviewPla
   return { prompt: reviewerPrompt({ change: f.change, changeDir: f.changeDir, slice: x.slice, commit: x.commit }), description: `评审 ${x.slice}` }
 }
 
-/** 评审员 / 修复 agent 收口；其他 role 返回 undefined（交给调用方放行） */
+/** 评审员 / 修复 agent / 预合并解冲突 agent 收口；其他 role 返回 undefined（交给调用方放行） */
 export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Promise<{ block: string } | undefined> {
   const a = agentOf(reduce(found.events), agentId)
   if (!a) return undefined
@@ -146,7 +157,9 @@ export async function onLandingStop(ctx: Ctx, found: Found, agentId: string): Pr
     reminded.add(agentId)
     return { block: REMIND }
   }
-  if (a.role !== 'fixer') return undefined
+  // 预合并解冲突 agent 收口跑全量 final（design D4），不跑切片门禁；其余同修复 agent
+  const pmResolver = a.role === 'resolver' && a.slice === PREMERGE
+  if (a.role !== 'fixer' && !pmResolver) return undefined
   const gate = await runFinal(ctx.io, found.flight, a.worktree, a.slice === INTEG ? { integBase: a.base } : undefined)
   const g = ev.gate(await base(ctx, found.flight), { attempt: a.attempt, agent: agentId, ...gate, slice: a.slice || FIX })
   await appendEvent(ctx.io, found.flight, g)
@@ -172,7 +185,7 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     const x = action as ReviewAction
     // 派发前查停飞（design D8）：动作算出后人可能已停飞或已落地；此时不派发、不追加事件
     if ((await stoppedNow(io, f)) !== undefined) return
-    const plan = await reviewPlan(io, f, x)
+    const plan = await reviewPlan(io, f, state, x)
     if ('error' in plan) {
       await append(ev.blocked(b, { attempt, slice: `review:${x.slice}`, kind: 'infra', reason: plan.error }))
       return
@@ -219,6 +232,12 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     else await append(ev.blocked(b, { attempt, slice, kind: 'infra', reason: `修复 agent 派发被拒：${r.deny ?? '未知原因'}` }))
     return
   }
+  if (action.kind === 'premerge') {
+    // 预合并会改 change 分支：先查停飞（design D8）；停飞由下一轮 next() 按事件给出，这里只记事件
+    if ((await stoppedNow(io, f)) !== undefined) return
+    await append(ev.premerge(b, { attempt, ...(await premergeTarget(io, f)) }))
+    return
+  }
   if (action.kind === 'final') {
     // 先提交飞行记录，否则收口时 ship 会判「final 过期」
     const err = await commitRecords(io, f, 'chore(flight): 记录')
@@ -231,8 +250,8 @@ export async function runLandingAction(ctx: Ctx, f: Flight, action: Action): Pro
     return
   }
   if (action.kind === 'land') {
-    // 修复合回（fix 与 fix-r<k>）不是 tasks.md 里的切片
-    const isFix = (s: unknown) => s === FIX || /^fix-r\d+$/.test(String(s))
+    // 修复合回（fix 与 fix-r<k>）与预合并解冲突的合回不是 tasks.md 里的切片
+    const isFix = (s: unknown) => s === FIX || s === PREMERGE || /^fix-r\d+$/.test(String(s))
     const merged = [...new Set(state.events.filter(x => x.ev === 'merge' && x.ok === true && !isFix(x.slice)).map(x => String(x.slice)))]
     // 落地顺序（design D3）：收口 → land 事件 → 从账本生成并提交记录 → 飞行记录 → 交接 pr-ship
     const { verdict, reasons } = await closeout(io, f, merged)

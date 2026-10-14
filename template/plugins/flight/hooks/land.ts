@@ -1,5 +1,6 @@
 // 合回、冲突交接与快进、findings 校验、落地收口的机械过程（spec flight-integration）。
 // 只依赖 core.ts 的类型与 Io：不 import claude-code 的运行时值，不调用任何 $。git 一律 `git -C <worktree> ...`。
+import { PREMERGE } from './core'
 import type { Finding, Flight, GateJson, Io, RunResult, Severity } from './core'
 import { globMatch } from './envelope'
 import { occupied, worktreePath } from './io'
@@ -136,9 +137,9 @@ async function refreshInterfaces(io: Io, f: Flight, slice: string, owns: readonl
   await io.write(path, `${before}\n\n${section}${after ? `\n${after}\n` : ''}`)
 }
 
-/** 刷新接口摘要、取 HEAD；门禁结果只在账本里，不写记录（design D3）。 */
+/** 刷新接口摘要、取 HEAD；门禁结果只在账本里，不写记录（design D3）。预合并解冲突不是计划切片，不刷新接口摘要（design D4）。 */
 async function afterMerge(io: Io, f: Flight, slice: string, _gate: GateJson, owns: readonly string[]): Promise<{ ok: true; commit: string } | { ok: false; failed: string[] }> {
-  await refreshInterfaces(io, f, slice, owns)
+  if (slice !== PREMERGE) await refreshInterfaces(io, f, slice, owns)
   return { ok: true, commit: await head(io, f.changeTree) }
 }
 
@@ -220,7 +221,8 @@ export async function prepareResolve(io: Io, f: Flight, slice: string, x: { bran
   const { path, branch } = at
   const add = await git(io, f.changeTree, 'worktree', 'add', '-b', branch, path, f.branch)
   if (add.exitCode !== 0) return { error: `建解冲突 worktree 失败：${firstLine(add)}` }
-  const m = await git(io, path, 'merge', '--no-ff', x.branch ?? `flight/${f.change}/${slice}`, '-m', `integrate: ${slice}`)
+  const from = x.branch ?? `flight/${f.change}/${slice}`
+  const m = await git(io, path, 'merge', '--no-ff', from, '-m', slice === PREMERGE ? `merge ${from} into ${f.branch}` : `integrate: ${slice}`)
   if (m.exitCode === 0) return { error: '解冲突现场合并意外成功：无需解冲突' }
   const conflicts = await unmerged(io, path)
   if (!conflicts.length) return { error: `git merge 失败：${firstLine(m)}` }
@@ -248,6 +250,44 @@ export async function mergeFix(io: Io, f: Flight, _note: string, branch?: string
   const m = await mergeNoFf(io, f.changeTree, branch ?? `flight/${f.change}/${slice}`, `integrate: ${slice}`)
   if (!m.ok) return { ok: false, failed: m.failed }
   return { ok: true, commit: await head(io, f.changeTree) }
+}
+
+/** 预合并的结果，字段同 premerge 事件（design D2） */
+export type Premerge = { ok: boolean; ref: string; target: string; commit: string; conflicts: string[]; reason: string }
+
+/**
+ * 收口前在 change worktree 预合并目标分支（design D2 第 1–8 步）：提交飞行记录 → 无 origin 跳过 → 目标为 origin/HEAD 指向的分支
+ * （解析不出用 origin/main）→ fetch → 已是 HEAD 的祖先则不合并 → merge-tree 判冲突 → 无冲突才 merge --no-edit。
+ * 冲突只由 merge-tree 判出，不在 change worktree 留合并现场。
+ */
+export async function premergeTarget(io: Io, f: Flight): Promise<Premerge> {
+  const t = f.changeTree
+  const out = (x: Partial<Premerge> & { ok: boolean }): Premerge => ({ ref: '', target: '', commit: '', conflicts: [], reason: '', ...x })
+  const err = await commitRecords(io, f, 'chore(flight): 记录')
+  if (err) return out({ ok: false, reason: `提交飞行记录失败：${err}` })
+  if ((await git(io, t, 'remote', 'get-url', 'origin')).exitCode !== 0) return out({ ok: true, reason: '无 origin，跳过预合并' })
+  const sym = await git(io, t, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+  const ref = (sym.exitCode === 0 && sym.stdout.trim()) || 'origin/main'
+  const fetch = await git(io, t, 'fetch', 'origin', ref.replace(/^origin\//, ''))
+  if (fetch.exitCode !== 0) return out({ ok: false, ref, reason: `拉取 ${ref} 失败：${firstLine(fetch)}` })
+  const rp = await git(io, t, 'rev-parse', ref)
+  const target = rp.stdout.trim()
+  if (rp.exitCode !== 0 || target === '') return out({ ok: false, ref, reason: `git rev-parse ${ref} 失败：${firstLine(rp)}` })
+  const anc = await git(io, t, 'merge-base', '--is-ancestor', ref, 'HEAD')
+  if (anc.exitCode === 0) return out({ ok: true, ref, target, reason: '已包含' })
+  if (anc.exitCode !== 1) return out({ ok: false, ref, target, reason: `git merge-base --is-ancestor 失败：${firstLine(anc)}` })
+  const mt = await git(io, t, 'merge-tree', '--write-tree', '--name-only', 'HEAD', ref)
+  if (mt.exitCode === 1) {
+    // --name-only：首行为树，其后到第一个空行为冲突文件
+    const rest = mt.stdout.split('\n').slice(1)
+    const end = rest.findIndex(l => l.trim() === '')
+    const conflicts = lines((end < 0 ? rest : rest.slice(0, end)).join('\n'))
+    return out({ ok: false, ref, target, conflicts, reason: `与 ${ref} 冲突：${conflicts.join('、')}` })
+  }
+  if (mt.exitCode !== 0) return out({ ok: false, ref, target, reason: `git merge-tree 失败：${firstLine(mt)}` })
+  const m = await git(io, t, 'merge', '--no-edit', ref)
+  if (m.exitCode !== 0) return out({ ok: false, ref, target, reason: `git merge 失败：${firstLine(m)}` })
+  return out({ ok: true, ref, target, commit: await head(io, t), reason: `已合并 ${ref}` })
 }
 
 export function validateFindings(input: unknown): { ok: true; findings: Finding[] } | { ok: false; error: string } {

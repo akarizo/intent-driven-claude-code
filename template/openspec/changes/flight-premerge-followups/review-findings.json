@@ -1,0 +1,164 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 76,
+      "summary": "`/flight recheck` 的拒绝条件只写了「final 仍新鲜时拒绝」，design D5 的判据是 final 与全量评审都仍新鲜才拒绝（reasons 含「final 过期」或「全量评审过期」任一即继续）。照现在的写法，final 新鲜而全量评审过期时，读者会以为 recheck 会被拒。SKILL.md 第 85 行同文。",
+      "fix": "两处同改为「final 与全量评审都仍新鲜（HEAD 没有新的代码改动）时拒绝」，与 D5 的拒绝回复「无需重验：final 与全量评审仍新鲜」一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 77,
+      "summary": "D5 规定 `/flight recheck` 只认人发出（HOST_ORIGINS），但紧挨着的「来源规则」一行只列了 `/opsx-apply`、`/flight abort`、`/flight resume`，没有 recheck，来源约束在文档里漏了。SKILL.md 第 86 行同。",
+      "fix": "两处来源规则同改，补上 `/flight recheck`（如「`/opsx-apply` 起飞、`/flight abort`、`/flight resume`、`/flight recheck` 只接受…」）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_premerge_docs.py",
+      "line": 2,
+      "summary": "去掉骨架说明行后，模块 docstring 的结束引号单独留在第 2 行，是个空尾行，属于删改留下的痕迹。",
+      "fix": "把结束的 `\"\"\"` 并回第 1 行末尾，单行 docstring 即可。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 269,
+      "summary": "premergeTarget 里 git merge-tree 退出 1 时解析冲突文件列表的分支，以及 core.ts premergeHalt 的「预合并冲突」停飞文案，本片都没有测试覆盖：orchestrator 测试世界里 merge-tree 一律 exit 0，core.test.ts 也没有 ok:false 带 conflicts 的用例。切片包把冲突开关留给 S4，但 S4 会把这条分支换成派解冲突 agent，--name-only 输出的解析（首行是树、到第一个空行为止）一直没人直接测。",
+      "fix": "S4 加冲突开关时，给 merge-tree exit 1 配一段真实的 --name-only 输出（树 OID、两个文件、空行、信息段），断言 conflicts 恰好是这两个文件、不含信息段的行；或者现在就在 core.test.ts 补一个纯函数用例：premerge ok:false 带 conflicts 时 next() 给出 kind 为 premerge 的 halt，原因含文件列表。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 267,
+      "summary": "git fetch origin <分支> 运行时没有关掉交互式凭据提示。HTTPS 没配凭据或 SSH 私钥带口令时，git 可能在 /dev/tty 上等输入，直到 IO_TIMEOUT_MS（30s）超时才失败；超时后的 reason 不会说明是在等凭据，人看了不好定位。",
+      "fix": "fetch 带上 env：{ GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' }（Io.run 支持 env），让 git 立刻失败并给出可读的首行错误。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 273,
+      "summary": "需进一步确认：新增的 HaltKind 'premerge' 不在 orchestrator.tsx 的 NO_TRIAGE（只有 abort、fingerprint）里，所以拉取失败这类停飞也会派诊断员。网络或远端问题模型修不了，派诊断员多半白花 token；design 和 spec 都没说 premerge 停飞要不要分诊。",
+      "fix": "在 design 里说清 premerge 停飞是否分诊；若不分诊，把 'premerge' 加进 NO_TRIAGE（或者只对没有冲突的 premerge 停飞免分诊），并补一个断言。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 420,
+      "summary": "预合并解冲突 agent 的包络 owns 沿用通用 resolver 规则（flyingWho 第 210 行：全部切片 owns 的并集），可预合并冲突的文件不一定落在任何切片 owns 内，比如起飞时经「授权提交」进来的 artifact_files（ADR 索引、scenario 辅助模块），或 change 目录下的工件。遇到这种情况 writeVerdict 会拒绝写入，解冲突 agent 解不开，要红 3 次收口（每次都跑一遍 final）才停飞，白白耗时；提示词也没告诉它哪些文件能写。（需进一步确认：实际 premerge 冲突落在 owns 外的频率有多高）",
+      "fix": "派发前先比对：冲突文件里有任何一个不匹配全部 owns 并集（globMatch）时，不派 agent，直接 blocked(PREMERGE, '冲突文件不在任何切片 owns 内：…')，由 core 的 bk 分支转成带人工合并指引的 premerge 停飞。另一种做法是让 slice 为 premerge 的 resolver 在包络里的 owns 等于其 dispatch 记下的 conflicts 列表。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 283,
+      "summary": "解冲突 agent 收口时已经在解冲突 worktree 跑过一次全量 final 并且绿了，之后 finishResolve 用 --ff-only 快进，change worktree 的树和它完全一样，但 core 随即又给出 { kind: 'final' }。landing 的 final 动作虽然带 --reuse-fix，slice-gate 的 _reusable_fix_gate 只认 fix / fix-r<k> 的 gate，不认 slice=premerge，所以全量要连跑两遍（同仓已记录的「fix 与 final 重复跑」耗时模式又出现了一次）。这个行为符合切片包写明的「ok → final」，归可维护性 / 性能问题。",
+      "fix": "另开 follow-up（slice-gate.py 不在本片 owns 内）：让 _reusable_fix_gate 也接受 slice 为 premerge、ok、非 dirty 且 _final_fresh 的 gate，这样快进后的 final 能直接复用解冲突 agent 的全量结论；或者在 design D4 里写明为什么必须重跑。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 251,
+      "summary": "isFix 现在也把 premerge 排除在外，名字和实际语义（不是 tasks.md 里的计划切片）对不上了，以后读的人容易误以为 premerge 是一种修复。",
+      "fix": "改名为 notPlanSlice（或 offPlan），注释不变。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/core.ts",
+      "line": 283,
+      "summary": "premergeFailed 里「快进失败停飞」「派发 / 合回受阻（bk 分支）停飞」「resolver 未结束返回 []」这三条分支没有用例覆盖；6 个 scenario 用例只测了门禁绿合回和门禁红停飞。",
+      "fix": "在 core.test.ts 补纯函数用例：premerge 冲突之后跟 merge slice=premerge ok=false，断言 halt 原因含「解冲突后快进失败」；跟 blocked slice=premerge，断言 halt 原因含「预合并冲突未解开」及 blocked 原因的首行；有 resolver dispatch 但还没有 ended，断言返回 []。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 260,
+      "summary": "批准带判「计划未改」用的是 same（当前指纹 == 最近 approve 的指纹），S4 的 /flight resume 用的是「当前指纹 == 最新 takeoff 的指纹」（orchestrator.tsx:782），两处判据不一致。有一条现实路径会卡住：人按「批准修订并续飞」后已写入新 approve，但基线红或起飞被拒，没写 takeoff。这时最新 attempt 仍是旧的、带 G5 缺陷的停飞，same 为 true，批准带显示「计划需修订」且不给任何主按钮，还提示「改计划后会出现…」，可计划其实已经改过并批准了；而 /flight resume 判指纹不同，会放行。改之前这条路径显示的是「续飞」。",
+      "fix": "判 defect 时改为与 S4 同一判据：从已读的 ledger 算 const st = reduce(ledger.events)，仅当 planDefect(st) 有值且 now.fp === st.takeoff?.fp 时才带 defect。读账本也不要再以 same 为前提（或者改用 same && 该条件）。再补一个用例：approve F2（新指纹）在 halt 之后、没有新 takeoff，断言批准带有 resume: 按钮、没有「计划需修订」。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/register.tsx",
+      "line": 260,
+      "summary": "切片包要求「账本事件用已有的 readLedger 结果，不另读」，但实现又单独调了一次 readLedger。加上 isShelved、stoppedNow、lastHaltKind 各自读的那几次，每个停飞候选每次刷新要多起一个判定器子进程。",
+      "fix": "在 evaluate 里只读一次账本，把结果传给 isShelved、停飞判断和 planDefect；如果改动面太大，至少给 planDefect 复用 lastHaltKind 那次读取。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/flight.test.tsx",
+      "line": 995,
+      "summary": "按键防御分支（陈旧的 resume: 键到达、项带 defect 时 toast 并且不续飞）没有用例覆盖。新增 TS 用例只测了绘制，没有测 ui.press 这条防御路径。",
+      "fix": "补一个用例：在 band-shows-plan-defect-without-resume 的 world 下 press resume:gamma:<F>，断言 toast 含「计划需修订」，且没有发生 takeoff 或 startResume 的副作用（world 日志里没有 takeoff 调用）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_flight_plugin_suite.py",
+      "line": 27,
+      "summary": "test_plugin_suite_has_no_failures 只断言没有 `(fail)` 行，不看 `claude plugin test` 的退出码，也不确认输出里有汇总行。CLI 崩溃、打包失败或输出格式变化时没有 `(fail)` 行，这条用例会空过。同文件的其他 assert_ts_passed 用例会连带变红，所以整体不至于漏检，但这条用例自身判据偏弱",
+      "fix": "在 Then 里加一条：`re.search(r\"^ \\d+ pass$\", out, re.M)` 必须匹配到，或断言 `test.returncode == 0`。这样能保证这次运行确实跑完，空列表才有意义"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2146,
+      "summary": "10 处 `void step(...).catch(() => undefined)` 吞掉所有拒绝，不只是测试世界拆掉后的 `no implementation for turn.step`。用例运行期间 step 真出错也会静默。写法与同文件后段一致，影响有限",
+      "fix": "可选：只吞拆世界后的那种错误，例如 `.catch(e => { if (!/no implementation for turn.step/.test(String(e))) throw e })`。也可以保持现状，在 step 辅助函数旁加注释说明为什么要吞"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 781,
+      "summary": "计划缺陷的拦截只在 opts.resume 时生效。普通 /opsx-apply <change> 在停飞后照样起新 attempt，计划不改也能绕过（docs 写着「再发 /opsx-apply <change> 也会从账本续飞」）。更糟的是 core.ts:247 的 blocked 停飞原因本身就提示「修好后重发 /opsx-apply <change> 续飞」，把人引向没有拦截的入口，B 要消除的「计划不改、无效续飞」仍会发生。",
+      "fix": "去掉 opts.resume 条件，改为 const defect = planDefect(state)。planDefect 本身已要求最新 attempt 以 kind blocked 停飞，不影响落地后或首次起飞。再在 orchestrator.test.tsx 加一例：同一账本下人发 /opsx-apply demo，回复含「计划需修订」，且没有 attempt 2 的 takeoff。core.ts:247 的停飞提示可酌情补一句「G5 改代码前已通过须先改计划」。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_flight_plugin_suite.py",
+      "line": 36,
+      "summary": "test_plugin_suite_has_no_failures 只解析 `(fail) <名字> [` 行，不看 claude plugin test 的退出码，也不看是否真的跑了用例。某个测试文件加载失败、语法错，或引擎以别的格式报错（没有 (fail) 行）时，suite_failures 返回 []，断言照样通过。没有 pytest 骨架点名的 TS 用例因此仍可能失败而不被看见，与 C「插件 TS 测试的任何失败都会让全量 pytest 变红」的目标不符。",
+      "fix": "在同一测试里追加断言：test.returncode == 0（失败时附原始输出），且 passed 名单非空。也可以再解析汇总行，断言 ` 0 fail` 或不存在 `N fail`（N>0）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 781,
+      "summary": "计划缺陷的拒绝放在 commitRecords、commitArtifacts、slice-gate lint 与 preflight（可能触发基线全量运行）、主模型判定之后。/flight resume 在计划缺陷下仍会先提交记录或工件、跑完这些检查才拒绝，白耗时间且有副作用。",
+      "fix": "读到账本、算出 state 之后，先跑 plan_fp 并做 planDefect 判定，再进入提交与 lint / preflight。也可以把 plan_fp 计算整体前移。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 2146,
+      "summary": "S6 修复未处理拒绝的办法，是给各个 `void step(...)` 加 `.catch(() => undefined)`，把拒绝吞掉，而不是 design D7 优先的「不留后台任务 / 测试世界提供 turn.step 应答」。step 在用例进行中的真实错误也会一并被吞。",
+      "fix": "可接受时在 design D7 或用例注释里说明为何选吞掉拒绝；更好的做法是在用例收尾 await 这些 step promise，或在测试世界里给 turn.step 一个应答，只让拆除之后的那次拒绝被忽略。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-apply.md",
+      "line": 77,
+      "summary": "「来源规则」只列了 /opsx-apply、/flight abort、/flight resume，没有列新增的 /flight recheck，但代码里 recheck 同样只认 HOST_ORIGINS。SKILL.md:86 同样缺这一项。",
+      "fix": "两份文档的来源规则同步补上 `/flight recheck`（命令与 skill 同改）。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/land.ts",
+      "line": 271,
+      "summary": "预合并的 git fetch origin <分支> 没有非交互保护（如 GIT_TERMINAL_PROMPT=0、ssh BatchMode）也没有超时。远端要求凭据或 ssh 口令时可能挂住 drive，看门狗只管 agent，管不到控制面自身的 git 调用。需进一步确认 io.run 是否自带超时。",
+      "fix": "如 io.run 支持 env 与 timeout，fetch 时设 GIT_TERMINAL_PROMPT=0 与 GIT_SSH_COMMAND='ssh -o BatchMode=yes' 并给超时；超时按拉取失败记 premerge ok=false，走停飞。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/landing.tsx",
+      "line": 110,
+      "summary": "上一轮 HIGH 已闭环：冲突路径下最新 premerge 之后有 slice premerge 的 ok merge 时，起点取 pm.target，也有补测。剩一个隐含假设（需进一步确认）：解冲突现场合并的是分支名 ref（land.ts:224-225 prepareResolve 的 from = x.branch，即 origin/main），不是 pm.target 这个 sha。premerge 与 prepareResolve 之间如果 origin/main 被别的会话 fetch 推进（远端跟踪 ref 由各 worktree 共享），实际合入的提交会比 target 新，target..commit 的范围就会混进这段别人的提交。触发窗口很窄。",
+      "fix": "在 orchestrator.tsx 派预合并解冲突 agent 时，把 premerge 事件的 target（sha）传给 prepareResolve 的 branch，替换 ref 名，让实际合入的提交与 wholeBase 用的起点保持一致；也可以在 wholeBase 里改用合回提交的第二父作起点。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "db2dec8d2e26aabb7223d8f038cea427e1273aa1"
+  }
+}

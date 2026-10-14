@@ -5,11 +5,13 @@ export type Role = 'executor' | 'reviewer' | 'fixer' | 'resolver' | 'diagnostici
 /** 自愈的种类（design D3）：合回失败重派 / 看门狗停掉后重派 / final 红后的整合修复 */
 export type HealKind = 'merge-retry' | 'watchdog' | 'integ'
 /** 停飞分类（design D5） */
-export type HaltKind = 'blocked' | 'final' | 'integ' | 'fingerprint' | 'control' | 'watchdog' | 'abort'
+export type HaltKind = 'blocked' | 'final' | 'integ' | 'fingerprint' | 'control' | 'watchdog' | 'abort' | 'premerge'
 /** 每个 attempt 至多自愈几次（用户定 Q4） */
 export const HEAL_BUDGET = 3
 /** 整合修复体与其专审评审的 slice 名（design D4） */
 export const INTEG = 'integ'
+/** 预合并冲突的解冲突 agent 及其合回的 slice 名（design D4）：不是计划切片 */
+export const PREMERGE = 'premerge'
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 export type Finding = { severity: Severity; file: string; line: number; summary: string; fix: string }
 /** slice-gate.py gate / final 打印的 JSON */
@@ -49,6 +51,7 @@ export type Action =
   | { kind: 'gate'; slice: string; agent: string } // 执行体未经收口结束后的补跑门禁
   | { kind: 'regate'; slice: string; base: string; worktree: string } // 续飞：上一 attempt 已绿未合回的切片，以原 base 补跑门禁
   | { kind: 'merge'; slice: string; via: 'branch' | 'resolve' | 'fix' }
+  | { kind: 'premerge' } // 收口前在 change worktree 预合并目标分支（DRAFT-flight-premerge-before-final）
   | { kind: 'final' }
   | { kind: 'land' }
   | { kind: 'halt'; reason: string; haltKind: HaltKind }
@@ -252,11 +255,41 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
       return fixerOutcome(FIX, fx, fresh)
     }
     const fin = last(ofA('final'))
+    // 本 attempt 第一次 final 之前先预合并目标分支，每个 attempt 只做一次（design D1）
+    if (!fin) {
+      const pm = last(ofA('premerge'))
+      if (!pm) return [{ kind: 'premerge' }]
+      if (pm.ok !== true) return premergeFailed(pm)
+    }
     // 整合修复合回之后，最新 final 早于这次合回就再跑 final（design D4 第 4 步）
     const im = last(ofA('merge').filter(e => e.slice === INTEG && e.ok === true))
     if (!fin || (im && fin.seq < im.seq)) return [{ kind: 'final' }]
     if (fin.ok !== true) return finalRed(fin, im)
     return wholeReview(fin)
+  }
+
+  /**
+   * 预合并未成功（design D1 / D4）：无冲突（拉取失败等）即停飞；有冲突则在该 premerge 之后派解冲突 agent →
+   * 等它结束 → 收口门禁绿则快进合回 → 合回成功进 final；门禁红 / 无结论 / 派发受阻 / 快进失败都停飞。
+   */
+  function premergeFailed(pm: Ev): Action[] {
+    const change = str(takeoff, 'change')
+    const ref = str(pm, 'ref')
+    const conflicts = Array.isArray(pm.conflicts) ? (pm.conflicts as string[]) : []
+    if (!conflicts.length) return [halt('premerge', `预合并失败：${str(pm, 'reason')}；处理后发 /flight resume ${change}`)]
+    const after = (e: Ev) => e.seq > pm.seq && e.slice === PREMERGE
+    const unresolved = (why: string) => halt('premerge', `预合并冲突未解开：${conflicts.join('、')}（${why}）；人工在 change worktree 合并 ${ref} 并提交后发 /flight resume ${change}`)
+    const m = last(ofA('merge').filter(after))
+    if (m) return m.ok === true ? [{ kind: 'final' }] : [halt('premerge', `解冲突后快进失败：${joined(m, '未知原因')}；人工合并 ${ref} 并提交后发 /flight resume ${change}`)]
+    const bk = last(ofA('blocked').filter(after))
+    if (bk) return [unresolved(str(bk, 'reason').split('\n')[0])]
+    const r = last(ofA('dispatch').filter(e => after(e) && e.role === 'resolver'))
+    if (!r) return [{ kind: 'dispatch', role: 'resolver', slice: PREMERGE, conflicts }]
+    const { end, closing: cg } = lifecycle(state, str(r, 'agent'))
+    if (!end) return []
+    const g = last(cg)
+    if (g?.ok === true) return [{ kind: 'merge', slice: PREMERGE, via: 'resolve' }]
+    return [unresolved(joined(g, '解冲突 agent 没有收口门禁结论'))]
   }
 
   /** final 红（design D4）：整合修复至多一轮，经专审后合回；不满足条件或失败即停飞。 */
@@ -342,6 +375,18 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   }
   if (reviews.length || all.some(s => mergedOk(s) && !reviewed(s))) return reviews
   return closing()
+}
+
+/**
+ * 计划缺陷（design D6）：最新 attempt 以 kind blocked 的 halt 停飞，且本 attempt 有 blocked 的原因同时含「G5 measure」与
+ * 「在改生产代码之前就已通过」→ 返回该原因首行（计划不改，续飞仍会在同一处停飞）；否则 undefined。
+ */
+export function planDefect(state: State): string | undefined {
+  const inA = (e: Ev) => Number(e.attempt) === state.attempt
+  const h = last(state.events.filter(e => e.ev === 'halt' && inA(e)))
+  if (!h || h.kind !== 'blocked') return undefined
+  const b = state.events.find(e => e.ev === 'blocked' && inA(e) && str(e, 'reason').includes('G5 measure') && str(e, 'reason').includes('在改生产代码之前就已通过'))
+  return b && str(b, 'reason').split('\n')[0]
 }
 
 const findingsOf = (e: Ev | undefined): Finding[] => (Array.isArray(e?.findings) ? (e.findings as Finding[]) : [])
@@ -497,6 +542,8 @@ export const ev: {
   blocked(b: Base, x: { attempt: number; slice: string; kind: 'gate' | 'infra'; reason: string }): FlightEvent
   final(b: Base, x: { attempt: number; ok: boolean; commit: string; failed: string[]; warnings?: string[] }): FlightEvent
   land(b: Base, x: { attempt: number; verdict: 'ready' | 'draft' }): FlightEvent
+  /** 收口前预合并目标分支的结果（DRAFT-flight-premerge-before-final） */
+  premerge(b: Base, x: { attempt: number; ok: boolean; ref: string; target: string; commit: string; conflicts: string[]; reason: string }): FlightEvent
   halt(b: Base, x: { attempt: number; reason: string; kind?: HaltKind }): FlightEvent
   /** 先记 heal 再重派或停 agent（design D3） */
   heal(b: Base, x: { attempt: number; kind: HealKind; slice: string; reason: string; agent?: string }): FlightEvent
@@ -515,6 +562,7 @@ export const ev: {
   blocked: make('blocked'),
   final: make('final'),
   land: make('land'),
+  premerge: make('premerge'),
   halt: make('halt'),
   heal: make('heal'),
   triage: make('triage'),

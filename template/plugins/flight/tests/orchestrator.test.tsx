@@ -16,6 +16,8 @@ const SLICE1 = `${MAIN}/.claude/worktrees/flight-demo-S1`
 const SLICE2 = `${MAIN}/.claude/worktrees/flight-demo-S2`
 const SLICE3 = `${MAIN}/.claude/worktrees/flight-demo-S3`
 const RESOLVE2 = `${MAIN}/.claude/worktrees/flight-demo-S2-resolve`
+/** 预合并冲突的解冲突 worktree */
+const RESOLVE_PM = `${MAIN}/.claude/worktrees/flight-demo-premerge-resolve`
 /** 人在终端发出的命令来源 */
 const HUMAN = { origin: { kind: 'composer' } }
 
@@ -124,6 +126,14 @@ type World = {
   submitDeny?: string
   /** prompt.submit 应答前调用：返回 Promise 时等它，之后再按 submitDeny 作答（用来扣住一次提交再放行） */
   submitHold?: () => Promise<void> | undefined
+  /** `git fetch` 以 128 退出（缺省 0） */
+  fetchFails?: boolean
+  /** `git merge-base --is-ancestor` 以 1 退出：目标分支不是 HEAD 的祖先（缺省 0，即已包含） */
+  notAncestor?: boolean
+  /** 预合并时 `git merge-tree --write-tree --name-only HEAD origin/main` 以 1 退出并列出这些冲突文件（缺省无冲突） */
+  premergeConflicts?: string[]
+  /** slice-gate ship 打印的 JSON（缺省 SHIP_READY） */
+  ship?: string
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -145,6 +155,8 @@ const PLUGIN_ROOT = String(import.meta.dir).replace(/\/tests$/, '')
 
 /** change worktree 的 HEAD（世界里不带分支名的 rev-parse 一律答它） */
 const HEAD = 'd'.repeat(40)
+/** `git rev-parse origin/main` 的作答：预合并的目标提交 */
+const TARGET = '7'.repeat(40)
 const PR_VIEW = JSON.stringify({ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'worktree-demo', headRefOid: HEAD, isDraft: true })
 /** slice-gate ship 的裁决：ready */
 const SHIP_READY = JSON.stringify({ ready: true, commit: HEAD, reasons: [], blocked: [], blocking: [], deferred: [], fix: null, review: { slice: 'whole', agent: 'r9', commit: HEAD } })
@@ -353,7 +365,7 @@ function useWorld(on: On, w: World) {
         return held ? (held.then(show) as never) : show()
       }
       if (script === 'slice-gate.py' && sub === 'features') return wrap(res(0, w.features ?? 'evidence-ledger-only\ng5-per-target\nguards\nship-ledger\nledger-records\ninteg-guard\n'))
-      if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, SHIP_READY))
+      if (script === 'slice-gate.py' && sub === 'ship') return wrap(res(0, w.ship ?? SHIP_READY))
       if (script === 'slice-gate.py' && sub === 'lint' && w.lintRuns?.length) return wrap(w.lintRuns.shift() as Run)
       if (script === 'slice-gate.py' && sub === 'preflight') return wrap(w.preflightRuns?.shift() ?? res(0, JSON.stringify(w.waves ?? [['S1', 'S2'], ['S3']]) + '\n'))
       if (script === 'slice-gate.py' && sub === 'gate') {
@@ -422,6 +434,8 @@ function useWorld(on: On, w: World) {
         if (args.includes('--git-common-dir')) return wrap(res(0, (w.commonDir ?? `${MAIN}/.git`) + '\n'))
         const head = args.find(a => String(a).startsWith('refs/heads/'))
         if (head) return wrap(res(branches.has(String(head).slice('refs/heads/'.length)) ? 0 : 1, ''))
+        // 预合并的目标提交：与 change worktree 的 HEAD、主检出 HEAD 都不同
+        if (args.includes('origin/main')) return wrap(res(0, TARGET + '\n'))
         // 切片分支尖端：tip-<切片>（integrated 的切片据此在第一父链的合并提交里当第二父）
         const ref = args.find(a => String(a).startsWith('flight/demo/'))
         return wrap(res(0, ref ? `tip-${String(ref).split('/').pop()}\n` : 'd'.repeat(40) + '\n'))
@@ -433,7 +447,12 @@ function useWorld(on: On, w: World) {
       case '--version':
         return wrap(res(0, (w.gitVersion ?? 'git version 2.43.0') + '\n'))
       case 'merge-base':
+        if (args[1] === '--is-ancestor') return wrap(res(w.notAncestor ? 1 : 0, ''))
         return wrap(res(0, '0'.repeat(40) + '\n'))
+      case 'symbolic-ref':
+        return wrap(res(0, 'origin/main\n'))
+      case 'fetch':
+        return wrap(w.fetchFails ? res(128, '', "fatal: couldn't find remote ref main") : res(0, ''))
       case 'log': {
         // `git log --first-parent --merges --format=%P tip-<S>..HEAD`：integrated 的切片有一个以 tip-<S> 为第二父的合并提交
         const range = args.find(a => /^tip-.+\.\.HEAD$/.test(String(a)))
@@ -441,11 +460,13 @@ function useWorld(on: On, w: World) {
         return wrap(res(0, args.includes('--merges') && (w.integrated ?? []).includes(s) ? `p1 tip-${s}\n` : ''))
       }
       case 'merge-tree':
+        // --name-only：首行为树，其后到第一个空行为冲突文件
+        if (w.premergeConflicts && args.includes('origin/main')) return wrap(res(1, `${'a'.repeat(40)}\n${w.premergeConflicts.join('\n')}\n\nAuto-merging\n`))
         return wrap(res(0, 'a'.repeat(40) + '\n'))
       case 'rev-list':
         return wrap(res(0, `${'f'.repeat(40)} ${'1'.repeat(40)} ${'2'.repeat(40)}\n`))
       case 'diff':
-        if (cwd === RESOLVE2) return wrap(res(0, w.isResolved ? '' : 'a.py\n'))
+        if (cwd === RESOLVE2 || cwd === RESOLVE_PM) return wrap(res(0, w.isResolved ? '' : 'a.py\n'))
         return wrap(res(0, conflicted))
       case 'merge': {
         const s = String(args[2]).split('/').pop() ?? ''
@@ -455,7 +476,7 @@ function useWorld(on: On, w: World) {
           conflicted = w.conflicts[s].join('\n') + '\n'
           return wrap(res(1, '', 'CONFLICT'))
         }
-        if (args[1] === '--no-ff' && cwd === RESOLVE2) return wrap(res(1, '', 'CONFLICT'))
+        if (args[1] === '--no-ff' && (cwd === RESOLVE2 || cwd === RESOLVE_PM)) return wrap(res(1, '', 'CONFLICT'))
         if (args[1] === '--abort') conflicted = ''
         return wrap(res(0, ''))
       }
@@ -2122,7 +2143,7 @@ test('watchdog-stops-stalled-agent/resumed-fixer', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, paths: [FIX_TREE], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const fixer = log.spawns.find(s => s.cwd === FIX_A2)
-  void step($, fixer?.agentId ?? '没有修复体')
+  void step($, fixer?.agentId ?? '没有修复体').catch(() => undefined)
   await flush()
   await advance(log, 661000)
 
@@ -2139,10 +2160,10 @@ test('watchdog-stops-stalled-agent', async ($, on) => {
   // Given: demo 已起飞（waves [[S1, S2]]，agent-1 = S1、agent-2 = S2，都在跑）；agent-1 的请求在 T0 开始、agent-2 的在 T0+181s 开始，两者都不结束；TaskStop 应答 isError「Task agent-1 is not running」
   const log = useWorld(on, demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2'], stopError: '<tool_use_error>Task agent-1 is not running (status: completed)</tool_use_error>', agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
   await advance(log, 181000)
-  void step($, 'agent-2')
+  void step($, 'agent-2').catch(() => undefined)
   await flush()
 
   // When: 时钟再推进 540s（到 T0+721s：agent-1 请求已等 12 分钟、agent-2 等 9 分钟），看门狗在 agent-1 超时后 tick 两次
@@ -2165,7 +2186,7 @@ test('watchdog-exhausted-halts', async ($, on) => {
   ]
   const log = useWorld(on, demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
 
   // When: 时钟推进 661s，看门狗 tick
@@ -2186,7 +2207,7 @@ test('watchdog-tracks-step-while-pending', async ($, on) => {
   const w = demoWorld({ waves: [['S1']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] })
   w.dispatchHold = async agent => {
     if (agent !== 'agent-1') return
-    void step($, 'agent-1')
+    void step($, 'agent-1').catch(() => undefined)
     await flush()
     await held
   }
@@ -2349,7 +2370,7 @@ test('watchdog-stops-stalled-diagnostician', async ($, on) => {
   const log = useWorld(on, w)
   const d1 = await haltWithDiagnostician($, log)
   w.stalls = [d1]
-  void step($, d1)
+  void step($, d1).catch(() => undefined)
   await flush()
   const heals = log.events.filter(x => x.ev === 'heal').length
 
@@ -2383,7 +2404,7 @@ test('watchdog-halt-drains-queue', async ($, on) => {
   const log = useWorld(on, w)
   const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await entered
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
 
   // When: 时钟推进 661s，看门狗 tick（预算已用尽）；账本写入 halt 之后才放行 agent-2 的 dispatch
@@ -2412,8 +2433,8 @@ test('ticker-not-duplicated', async ($, on) => {
   const w = demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2', 'x'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] })
   const log = useWorld(on, w)
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
-  void step($, 'agent-2')
+  void step($, 'agent-1').catch(() => undefined)
+  void step($, 'agent-2').catch(() => undefined)
   await flush()
   w.ledgerHold = () => {
     w.ledgerHold = undefined
@@ -2423,7 +2444,7 @@ test('ticker-not-duplicated', async ($, on) => {
   await until(() => release.length > 0)
   const jump = log.clock.set(Date.UTC(2026, 9, 9, 12, 14, 0)) as Promise<unknown>
   await flush()
-  void step($, 'x')
+  void step($, 'x').catch(() => undefined)
   await flush()
 
   // When: 时钟再推进 60s，第二个计时器 tick；之后卡住的读账本放行，第一个计时器那次 tick 接着做完
@@ -3213,4 +3234,218 @@ test('driving-flight-refused/agents-ended', async ($, on) => {
   await flush()
   expect(String(r.text)).toContain('正在飞')
   expect(attempts).toEqual([1])
+})
+
+// scenario 来源：spec flight-landing-premerge（落地前预合并目标分支）
+/** demo attempt 1（本会话）：waves [[S1]]，S1 已合回，S1 评审员 r-S1 评审无发现；r-S1 结束即进入收口 */
+const closingLedger = () => [
+  ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
+  ev.merge(B0, { attempt: 1, slice: 'S1', ok: true, commit: 'c'.repeat(40), failed: [] }),
+  ev.dispatch(B0, { attempt: 1, slice: 'S1', role: 'reviewer', agent: 'r-S1', model: 'opus', worktree: TREE }),
+  ev.review(B0, { attempt: 1, slice: 'S1', agent: 'r-S1', findings: [] }),
+]
+/** change worktree 里运行的 git 子命令（去掉 git -C <TREE>） */
+const treeGit = (log: { runs: { argv: string[] }[] }) =>
+  log.runs.filter(x => x.argv[0] === 'git' && x.argv[1] === '-C' && x.argv[2] === TREE).map(x => x.argv.slice(3).join(' '))
+const evIndex = (events: Record<string, unknown>[], pred: (x: Record<string, unknown>) => boolean) => events.findIndex(pred)
+
+test('premerge-clean-merges-then-final', async ($, on) => {
+  // Given: demo 已起飞、S1 已合回且评审无 CRITICAL/HIGH；origin/HEAD 指向 origin/main，origin/main 不是 HEAD 的祖先（merge-base --is-ancestor 退出 1），
+  //        merge-tree 判无冲突（退出 0）；slice-gate final 绿
+  const log = useWorld(on, demoWorld({ ledger: closingLedger(), notAncestor: true, final: { ok: true, failed: [] } }))
+
+  // When: 评审员 r-S1 结束（turn.complete），drive 推进到收口
+  await $.turn.complete(ended('r-S1') as never)
+
+  // Then: change worktree 依次运行了 git fetch origin main、git merge --no-edit origin/main；
+  //       ok 为 true 的 premerge 排在第一条 final 之前；final 之后有 slice whole 的评审员 dispatch
+  const cmds = treeGit(log)
+  expect([cmds.indexOf('fetch origin main') >= 0, cmds.indexOf('fetch origin main') < cmds.indexOf('merge --no-edit origin/main')]).toEqual([true, true])
+  const pm = evIndex(log.events, x => x.ev === 'premerge' && x.ok === true)
+  const fin = evIndex(log.events, x => x.ev === 'final')
+  expect([pm >= 0, pm < fin]).toEqual([true, true])
+  expect(log.events.slice(fin + 1).some(x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'whole')).toBe(true)
+})
+
+test('premerge-up-to-date-skips-merge', async ($, on) => {
+  // Given: 同上，但 origin/main 已是 HEAD 的祖先（merge-base --is-ancestor 退出 0）
+  const log = useWorld(on, demoWorld({ ledger: closingLedger(), final: { ok: true, failed: [] } }))
+
+  // When: 评审员 r-S1 结束（turn.complete），drive 推进到收口
+  await $.turn.complete(ended('r-S1') as never)
+
+  // Then: change worktree 没有运行任何合并 origin/main 的 git merge；账本有 ok 为 true、reason 含「已包含」的 premerge，其后有 final
+  expect(treeGit(log).filter(c => c.startsWith('merge ') && c.includes('origin/main'))).toEqual([])
+  const pm = evIndex(log.events, x => x.ev === 'premerge' && x.ok === true && String(x.reason).includes('已包含'))
+  expect([pm >= 0, log.events.slice(pm + 1).some(x => x.ev === 'final')]).toEqual([true, true])
+})
+
+test('premerge-fetch-failure-halts', async ($, on) => {
+  // Given: 同上，但 git fetch origin main 以 128 退出
+  const log = useWorld(on, demoWorld({ ledger: closingLedger(), fetchFails: true, final: { ok: true, failed: [] } }))
+
+  // When: 评审员 r-S1 结束（turn.complete），drive 推进到收口
+  await $.turn.complete(ended('r-S1') as never)
+
+  // Then: 账本有 ok 为 false、reason 含「拉取」的 premerge，紧随其后是 kind premerge、原因含「/flight resume」的 halt；attempt 1 没有 final
+  const pm = evIndex(log.events, x => x.ev === 'premerge' && x.ok === false && String(x.reason).includes('拉取'))
+  expect(pm >= 0 ? log.events[pm + 1] : undefined).toMatchObject({ ev: 'halt', kind: 'premerge', reason: expect.stringContaining('/flight resume') })
+  expect(log.events.some(x => x.ev === 'final' && x.attempt === 1)).toBe(false)
+})
+
+test('whole-review-base-is-target', async ($, on) => {
+  // Given: demo 收口时预合并成功（已包含），premerge 的 target 为 origin/main 的提交 T=7×40；主检出 HEAD 是另一个提交 d×40；final 绿（commit c×40）
+  const log = useWorld(on, demoWorld({ ledger: closingLedger(), final: { ok: true, failed: [] } }))
+
+  // When: 评审员 r-S1 结束（turn.complete），drive 推进到 final 绿后派全量评审
+  await $.turn.complete(ended('r-S1') as never)
+
+  // Then: 全量评审的 dispatch 事件 base 为 T
+  expect(log.events.find(x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'whole')).toMatchObject({ base: TARGET })
+})
+
+/** 预合并冲突的收口世界：origin/main 不是 HEAD 的祖先，merge-tree 以 1 退出并列出 a.py；解冲突现场的 merge 以 1 退出 */
+const conflictWorld = (final: Gate) => demoWorld({ ledger: closingLedger(), notAncestor: true, premergeConflicts: ['a.py'], final })
+/** 解冲突 worktree 里派发的 agent */
+const pmResolver = (log: { spawns: Spawn[] }) => log.spawns.find(s => s.cwd === RESOLVE_PM)?.agentId ?? '没有预合并解冲突 agent'
+
+test('premerge-conflict-dispatches-resolver', async ($, on) => {
+  // Given: demo 收口（S1 已合回、评审无发现）；merge-tree 判 origin/main 与 HEAD 在 a.py 冲突；评审员 r-S1 结束后派出了预合并解冲突 agent；
+  //        它解完冲突（解冲突 worktree 不再有未合并文件），收口时 final 门禁绿
+  const w = conflictWorld({ ok: true, failed: [] })
+  const log = useWorld(on, w)
+  await $.turn.complete(ended('r-S1') as never)
+  const resolver = pmResolver(log)
+  w.isResolved = true
+  await $.classic.SubagentStop({ ...subagentStop(resolver), agent_type: 'flight:fixer' } as never)
+
+  // When: 解冲突 agent 结束（turn.complete），drive 推进
+  await $.turn.complete(ended(resolver) as never)
+
+  // Then: 账本依次有 ok false、conflicts ["a.py"] 的 premerge；role resolver、slice premerge、worktree 含 premerge-resolve 的 dispatch；
+  //       slice premerge 的 ok merge；final；change worktree 从未运行 git merge --no-edit origin/main
+  const order = [
+    evIndex(log.events, x => x.ev === 'premerge' && x.ok === false && JSON.stringify(x.conflicts) === '["a.py"]'),
+    evIndex(log.events, x => x.ev === 'dispatch' && x.role === 'resolver' && x.slice === 'premerge' && String(x.worktree).includes('premerge-resolve')),
+    evIndex(log.events, x => x.ev === 'merge' && x.slice === 'premerge' && x.ok === true),
+    evIndex(log.events, x => x.ev === 'final'),
+  ]
+  expect([order.every(i => i >= 0), order.every((i, k) => k === 0 || order[k - 1] < i)]).toEqual([true, true])
+  expect(treeGit(log).includes('merge --no-edit origin/main')).toBe(false)
+})
+
+// 补测（不是 scenario）：冲突路径解完冲突后，全量评审的起点也是预合并的目标提交
+test('whole-review-base-is-target/conflict', async ($, on) => {
+  // Given: demo 收口时 merge-tree 判 origin/main（T=7×40）与 HEAD 在 a.py 冲突，premerge 为 ok false；主检出 HEAD 是另一个提交；
+  //        预合并解冲突 agent 解完冲突，收口时 final 门禁绿，合回记为 slice premerge 的 ok merge
+  const w = conflictWorld({ ok: true, failed: [] })
+  const log = useWorld(on, w)
+  await $.turn.complete(ended('r-S1') as never)
+  const resolver = pmResolver(log)
+  w.isResolved = true
+  await $.classic.SubagentStop({ ...subagentStop(resolver), agent_type: 'flight:fixer' } as never)
+
+  // When: 解冲突 agent 结束（turn.complete），drive 推进到 final 绿后派全量评审
+  await $.turn.complete(ended(resolver) as never)
+
+  // Then: slice 为 whole 的评审员 dispatch 的 base 为 T
+  expect(log.events.find(x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'whole')).toMatchObject({ base: TARGET })
+})
+
+test('premerge-resolver-red-halts', async ($, on) => {
+  // Given: 同上，但解冲突 agent 三次收口的 final 门禁都红（G7 demo#s1）
+  const w = conflictWorld({ ok: false, failed: ['G7 demo#s1'] })
+  const log = useWorld(on, w)
+  await $.turn.complete(ended('r-S1') as never)
+  const resolver = pmResolver(log)
+  for (let i = 0; i < 3; i++) await $.classic.SubagentStop({ ...subagentStop(resolver), agent_type: 'flight:fixer' } as never)
+
+  // When: 解冲突 agent 结束（turn.complete），drive 推进
+  await $.turn.complete(ended(resolver) as never)
+
+  // Then: 解冲突 agent 的三次收口各记一条 slice premerge 的红 gate；账本有 kind premerge 的 halt，原因含 a.py 与「/flight resume」；
+  //       没有 slice premerge 的 merge，也没有 final
+  expect(log.events.filter(x => x.ev === 'gate' && x.slice === 'premerge' && x.agent === resolver && x.ok === false).length).toBe(3)
+  expect(log.events.find(x => x.ev === 'halt')).toMatchObject({ kind: 'premerge', reason: expect.stringMatching(/a\.py[\s\S]*\/flight resume/) })
+  expect(log.events.some(x => x.ev === 'merge' && x.slice === 'premerge')).toBe(false)
+  expect(log.events.some(x => x.ev === 'final')).toBe(false)
+})
+
+/** demo attempt 1 已落地：S1 合回与评审、预合并、final、全量评审、land 齐全 */
+const landedLedger = () => [
+  ...closingLedger(),
+  ev.premerge(B0, { attempt: 1, ok: true, ref: 'origin/main', target: TARGET, commit: '', conflicts: [], reason: '已包含' }),
+  ev.final(B0, { attempt: 1, ok: true, commit: 'c'.repeat(40), failed: [] }),
+  ev.dispatch(B0, { attempt: 1, slice: 'whole', role: 'reviewer', agent: 'r-whole', model: 'opus', worktree: TREE, base: TARGET, commit: 'c'.repeat(40) }),
+  ev.review(B0, { attempt: 1, slice: 'whole', agent: 'r-whole', findings: [] }),
+  ev.land(B0, { attempt: 1, verdict: 'ready' }),
+]
+const shipWith = (reasons: string[]) => JSON.stringify({ ready: reasons.length === 0, commit: HEAD, reasons, blocked: [], blocking: [], deferred: [], fix: null, review: { slice: 'whole', agent: 'r-whole', commit: 'c'.repeat(40) } })
+
+test('recheck-after-land-reruns-final-and-review', async ($, on) => {
+  // Given: demo 的 attempt 1 已落地，waves [[S1]]；slice-gate ship 的 reasons 为「final 过期：final 之后 change 分支有新提交」；slice-gate final 绿
+  const log = useWorld(on, demoWorld({ ledger: landedLedger(), waves: [['S1']], ship: shipWith(['final 过期：final 之后 change 分支有新提交']), final: { ok: true, failed: [] } }))
+
+  // When: 人在终端发出 /flight recheck demo
+  await $.command.run({ command: 'flight', args: 'recheck demo', ...HUMAN } as never)
+
+  // Then: 账本追加 attempt 2 的 takeoff，随后依次有 attempt 2 的 premerge、final、slice whole 的评审员 dispatch；attempt 2 没有 role executor 的 dispatch
+  const a2 = log.events.filter(x => x.attempt === 2)
+  const order = [
+    evIndex(a2, x => x.ev === 'takeoff'),
+    evIndex(a2, x => x.ev === 'premerge'),
+    evIndex(a2, x => x.ev === 'final'),
+    evIndex(a2, x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'whole'),
+  ]
+  expect([order.every(i => i >= 0), order.every((i, k) => k === 0 || order[k - 1] < i)]).toEqual([true, true])
+  expect(a2.some(x => x.ev === 'dispatch' && x.role === 'executor')).toBe(false)
+})
+
+test('recheck-refused-when-fresh', async ($, on) => {
+  // Given: demo 的 attempt 1 已落地；slice-gate ship 的 reasons 为空
+  const log = useWorld(on, demoWorld({ ledger: landedLedger(), waves: [['S1']], ship: shipWith([]) }))
+
+  // When: 人在终端发出 /flight recheck demo
+  const r = await $.command.run({ command: 'flight', args: 'recheck demo', ...HUMAN } as never)
+
+  // Then: 回复含「无需重验」；账本仍只有 attempt 1 的那一条 takeoff
+  expect(String(r.text)).toContain('无需重验')
+  expect(log.events.filter(x => x.ev === 'takeoff').length).toBe(1)
+})
+
+test('resume-refused-on-plan-defect', async ($, on) => {
+  // Given: demo 的 attempt 1（本会话、指纹 F）以 kind blocked 的 halt 结束，S1 的 blocked 原因为 G5「在改生产代码之前就已通过」原文；
+  //        当前计划指纹仍为 F，起飞守卫放行
+  const reason = 'G5 measure: cap#s → tests/test_a.py::test_s 在改生产代码之前就已通过：若它描述的行为在 base 上本已成立，应在计划里标为护栏'
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
+    ev.blocked(B0, { attempt: 1, slice: 'S1', kind: 'gate', reason }),
+    ev.halt(B0, { attempt: 1, reason: '切片 blocked：S1', kind: 'blocked' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, waves: [['S1']] }))
+
+  // When: 人在终端发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复含「计划需修订」与「在改生产代码之前就已通过」，不含「未批准」与「计划已变」；账本没有 attempt 2 的 takeoff
+  const text = String(r.text)
+  expect([text.includes('计划需修订'), text.includes('在改生产代码之前就已通过')]).toEqual([true, true])
+  expect([text.includes('未批准'), text.includes('计划已变')]).toEqual([false, false])
+  expect(log.events.some(x => x.ev === 'takeoff' && x.attempt === 2)).toBe(false)
+})
+
+test('rename-refusal-advice', async ($, on) => {
+  // Given: demo 已批准、账本为空；porcelain 只有 `R  <CD>/a.md -> <CD>/b.md` 与 `?? <CD>/proposal.md`
+  const rename = `${CD}/a.md -> ${CD}/b.md`
+  const log = useWorld(on, demoWorld({ porcelain: `R  ${rename}\n?? ${CD}/proposal.md\n` }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 回复含「工件之外」、改名行原文与「git mv」，不含「artifact_files」；没有提交；账本没有 takeoff
+  const text = String(r.text)
+  expect([text.includes('工件之外'), text.includes(rename), text.includes('git mv')]).toEqual([true, true, true])
+  expect(text).not.toContain('artifact_files')
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
 })

@@ -98,6 +98,20 @@ export function resolverPrompt(x: { change: string; changeDir: string; slice: st
   ].join('\n')
 }
 
+/** 预合并冲突：收口前把目标分支合进 change 分支时冲突，解冲突 worktree 处于合并中（design D4）。 */
+export function premergeResolverPrompt(x: { change: string; changeDir: string; ref: string; conflicts: string[] }): string {
+  return [
+    `任务四 · 解预合并冲突：OpenSpec change \`${x.change}\` 收口前把目标分支 ${x.ref} 合进 change 分支时冲突，当前 worktree 处于 git merge 冲突中。`,
+    `验收依据：${x.changeDir} 下的 proposal.md、design.md、specs/。`,
+    '冲突文件：',
+    ...x.conflicts.map(f => `- ${f}`),
+    '两边意图都保留：目标分支上已合入的改动与本 change 的改动都不能丢；只解这些文件，不改其它文件。',
+    '解完 `git add` 这些文件，再 `git commit --no-edit`。',
+    '门禁由控制面在你收口时运行（全量 final）：不要自己运行 slice-gate。',
+    '最后一行简述解了哪些文件。',
+  ].join('\n')
+}
+
 export function fixerPrompt(x: { change: string; changeDir: string; findings: Finding[] }): string {
   return [
     `任务一 · 批量修复：OpenSpec change \`${x.change}\`（${x.changeDir}）评审给出以下 finding：`,

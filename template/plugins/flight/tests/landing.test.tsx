@@ -94,6 +94,9 @@ function answer(w: World, log: Log, argv: string[], opts: { cwd?: string; stdin?
       return w.mergeBase ?? ok('b'.repeat(40) + '\n')
     case 'commit-tree':
       return ok('c'.repeat(40) + '\n')
+    // 没有 origin 远端：收口的预合并跳过（ok true），之后照常 final
+    case 'remote':
+      return { exitCode: 2, stdout: '', stderr: "error: No such remote 'origin'\n" }
     case 'status':
       return ok(` M ${CD}/${w.dirty ?? 'timeline.md'}\n`)
     case 'update-ref':
@@ -182,7 +185,8 @@ async function advance(ctx: Ctx, log: Log): Promise<void> {
       continue
     }
     const integ = (a: Action) => a.kind === 'dispatch' && a.role === 'fixer' && a.slice === 'integ'
-    const acts = all.filter((a: Action) => a.kind === 'final' || a.kind === 'land' || a.kind === 'halt' || integ(a))
+    // 收口的预合并（DRAFT-flight-premerge-before-final）同样交给 runLandingAction
+    const acts = all.filter((a: Action) => a.kind === 'premerge' || a.kind === 'final' || a.kind === 'land' || a.kind === 'halt' || integ(a))
     if (!acts.length) return
     for (const a of acts) await runLandingAction(ctx, FLIGHT, a)
   }
@@ -251,11 +255,13 @@ test('landing-runs-pr-ship', async () => {
   // When: 推进飞行
   await advance(ctx, log)
 
-  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 final（ok true）、全量评审 W 的 dispatch / review / ended 与 land（verdict ready）；状态行被清除；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
+  // Then: 飞行记录的 git commit 先于 slice-gate.py final；账本新增依次为 premerge（ok true，无 origin 跳过；收口第一次 final 前预合并，DRAFT-flight-premerge-before-final）、
+  //       final（ok true）、全量评审 W 的 dispatch / review / ended 与 land（verdict ready）；状态行被清除；运行了 /flight:pr-ship --worktree /repo/.worktrees/demo --change-dir template/openspec/changes/demo --judges /repo/template/.claude/hooks
   const commitAt = log.calls.findIndex(c => c.argv[0] === 'git' && has(c, 'commit', 'chore(flight): 记录'))
   expect(commitAt).toBeGreaterThan(-1)
   expect(commitAt).toBeLessThan(log.calls.indexOf(finals(log)[0]))
   expect(log.ledger.slice(4)).toMatchObject([
+    { ev: 'premerge', ok: true },
     { ev: 'final', ok: true },
     { ev: 'dispatch', role: 'reviewer', slice: 'whole' },
     { ev: 'review', slice: 'whole', findings: [] },
@@ -277,10 +283,10 @@ test('final-red-halts', async () => {
   // When: 两个世界各自推进飞行
   await Promise.all([advance(one.ctx, one.log), advance(two.ctx, two.log)])
 
-  // Then: 世界一账本新增依次为 final（ok false）、heal（kind integ）与整合修复体 FI 的 dispatch（slice integ）；
-  //       世界二账本新增依次为 final（ok false）与 halt（kind final、原因含 G2 lint），提示含「停飞」；两个世界都没有运行任何命令
-  expect(one.log.ledger.slice(4)).toMatchObject([{ ev: 'final', ok: false }, { ev: 'heal', kind: 'integ', slice: 'integ' }, { ev: 'dispatch', role: 'fixer', slice: 'integ', agent: 'FI' }])
-  expect(two.log.ledger.slice(5)).toMatchObject([{ ev: 'final', ok: false }, { ev: 'halt', kind: 'final', reason: expect.stringContaining('G2 lint') }])
+  // Then: 世界一账本新增依次为 premerge（ok true，无 origin 跳过；第一次 final 前预合并，DRAFT-flight-premerge-before-final）、final（ok false）、heal（kind integ）与整合修复体 FI 的 dispatch（slice integ）；
+  //       世界二账本新增依次为 premerge（ok true，同上）、final（ok false）与 halt（kind final、原因含 G2 lint），提示含「停飞」；两个世界都没有运行任何命令
+  expect(one.log.ledger.slice(4)).toMatchObject([{ ev: 'premerge', ok: true }, { ev: 'final', ok: false }, { ev: 'heal', kind: 'integ', slice: 'integ' }, { ev: 'dispatch', role: 'fixer', slice: 'integ', agent: 'FI' }])
+  expect(two.log.ledger.slice(5)).toMatchObject([{ ev: 'premerge', ok: true }, { ev: 'final', ok: false }, { ev: 'halt', kind: 'final', reason: expect.stringContaining('G2 lint') }])
   expect(two.log.toasts.some(t => t.includes('停飞'))).toBe(true)
   expect([...one.log.commands, ...two.log.commands]).toEqual([])
 })
