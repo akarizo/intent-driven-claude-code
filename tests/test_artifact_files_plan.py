@@ -31,7 +31,6 @@ def test_lint_accepts_plan_with_or_without_artifact_files(tmp_path):
         assert p.returncode == 0, p.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S2 实现后去掉")
 def test_lint_rejects_bad_artifact_files(tmp_path):
     # Given: artifact_files 依次为字符串、含数字、含空串、绝对路径、含 .. 段、含通配符、已编号 ADR
     cases = [
@@ -57,7 +56,6 @@ def test_lint_rejects_bad_artifact_files(tmp_path):
             assert shown in p.stderr, (files, p.stderr)
 
 
-@pytest.mark.xfail(strict=True, reason="骨架：S2 实现后去掉")
 def test_approval_page_lists_artifact_files(tmp_path):
     # Given: 一份 slices.json 的 artifact_files 为 tests/helpers.py 与 openspec/adr/INDEX.md，另一份没有该字段
     pages = []
