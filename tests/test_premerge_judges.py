@@ -1,8 +1,5 @@
-"""账本认识预合并事件（scenario: flight-landing-premerge#ledger-knows-premerge）。
-骨架：strict xfail，断言是真实的；切片 S1 实现后去掉标记即解锁。"""
+"""账本认识预合并事件（scenario: flight-landing-premerge#ledger-knows-premerge）。"""
 import json
-
-import pytest
 
 from conftest import ledger_append, make_change, run_hook
 
@@ -16,7 +13,6 @@ PREMERGE = {"attempt": 1, "ok": False, "ref": "origin/main", "target": "a" * 40,
             "conflicts": ["a.py"], "reason": "冲突"}
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：账本认识 premerge 事件与 halt kind premerge")
 def test_ledger_knows_premerge(git_repo):
     # Given: demo 的账本依次有合法的 premerge（ok false、conflicts ["a.py"]）与 kind premerge 的 halt；
     #        other 的账本有一条 conflicts 为字符串 "a.py" 的 premerge
