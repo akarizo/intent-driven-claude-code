@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "change": "flight-dispatch-origin",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 83.4
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "唤醒轮：定时到点只唤醒、看门狗诊断经唤醒、提交绑定待命（armed / orchestrator / 类型）",
+      "packet": "slices/S1.md",
+      "owns": [
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "template/plugins/flight/hooks/armed.ts",
+        "template/plugins/flight/tests/armed.test.ts",
+        "template/plugins/flight/types/index.d.ts",
+        "tests/test_flight_orchestrator.py",
+        "tests/test_flight_armed.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_watchdog.py tests/test_flight_abort.py",
+      "scenarios": [
+        "flight-wake-turn#transient-timer-wakes-then-retries",
+        "flight-wake-turn#baseline-tick-probes-before-waking",
+        "flight-wake-turn#watchdog-triage-via-wake",
+        "flight-wake-turn#stale-submit-keeps-new-arm",
+        "flight-wake-turn#timer-steps-never-retry"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S4",
+      "title": "文档与发布：唤醒轮写进 opsx-apply / README / WORKFLOW，opsx-propose description 去旧字样，插件 0.10.2",
+      "packet": "slices/S4.md",
+      "owns": [
+        "template/.claude/commands/opsx-propose.md",
+        "template/.claude/skills/openspec-propose/SKILL.md",
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "README.md",
+        "docs/WORKFLOW_zh.md",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "tests/test_armed_followups_docs.py",
+        "tests/test_dispatch_origin_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py",
+      "scenarios": [
+        "flight-dispatch-docs#docs-describe-wake-turn",
+        "flight-dispatch-docs#propose-description-current",
+        "flight-dispatch-docs#plugin-version-0-10-2"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S3",
+      "title": "批准带在按键处理之内起飞与续飞：带凭证、进行中再按被拒、重绘失败不留进行中、续飞后恢复状态行（register / lease.ts / orchestrator 两个导出）",
+      "packet": "slices/S3.md",
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "template/plugins/flight/hooks/lease.ts",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "tests/test_flight_resume.py",
+        "tests/test_flight_plugin.py",
+        "tests/test_approval_gate.py"
+      ],
+      "deps": [
+        "S1"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py",
+      "scenarios": [
+        "flight-band-live-takeoff#press-takes-off-before-returning",
+        "flight-band-live-takeoff#resume-press-takes-off-before-returning",
+        "flight-band-live-takeoff#second-press-while-busy-refused",
+        "flight-band-live-takeoff#refresh-failure-clears-busy",
+        "flight-band-live-takeoff#baseline-status-restored"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S2",
+      "title": "派发凭证强制：guardedSpawn、ctxOf 带凭证、hook 入口取凭证并沿起飞 / drive 传下去",
+      "packet": "slices/S2.md",
+      "owns": [
+        "template/plugins/flight/hooks/lease.ts",
+        "template/plugins/flight/tests/lease.test.ts",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "template/plugins/flight/hooks/landing.tsx",
+        "tests/test_flight_lease.py",
+        "tests/test_flight_orchestrator.py"
+      ],
+      "deps": [
+        "S1",
+        "S3"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_lease.py tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_resume.py",
+      "scenarios": [
+        "flight-dispatch-lease#dispatch-refused-after-hook-returns",
+        "flight-dispatch-lease#dispatch-allowed-in-live-hook",
+        "flight-dispatch-lease#command-takeoff-dispatches",
+        "flight-dispatch-lease#agent-end-dispatches-next"
+      ],
+      "guards": [
+        "flight-dispatch-lease#command-takeoff-dispatches",
+        "flight-dispatch-lease#agent-end-dispatches-next"
+      ]
+    }
+  ],
+  "scenario_tests": {
+    "flight-wake-turn#transient-timer-wakes-then-retries": "tests/test_flight_orchestrator.py::test_transient_timer_wakes_then_retries",
+    "flight-wake-turn#baseline-tick-probes-before-waking": "tests/test_flight_orchestrator.py::test_baseline_tick_probes_before_waking",
+    "flight-wake-turn#watchdog-triage-via-wake": "tests/test_flight_orchestrator.py::test_watchdog_triage_via_wake",
+    "flight-wake-turn#stale-submit-keeps-new-arm": "tests/test_flight_orchestrator.py::test_stale_submit_keeps_new_arm",
+    "flight-wake-turn#timer-steps-never-retry": "tests/test_flight_armed.py::test_timer_steps_never_retry",
+    "flight-dispatch-docs#docs-describe-wake-turn": "tests/test_dispatch_origin_docs.py::test_docs_describe_wake_turn",
+    "flight-dispatch-docs#propose-description-current": "tests/test_dispatch_origin_docs.py::test_propose_description_current",
+    "flight-dispatch-docs#plugin-version-0-10-2": "tests/test_dispatch_origin_docs.py::test_plugin_version_0_10_2",
+    "flight-band-live-takeoff#press-takes-off-before-returning": "tests/test_flight_resume.py::test_press_takes_off_before_returning",
+    "flight-band-live-takeoff#resume-press-takes-off-before-returning": "tests/test_flight_resume.py::test_resume_press_takes_off_before_returning",
+    "flight-band-live-takeoff#second-press-while-busy-refused": "tests/test_flight_resume.py::test_second_press_while_busy_refused",
+    "flight-band-live-takeoff#refresh-failure-clears-busy": "tests/test_flight_resume.py::test_refresh_failure_clears_busy",
+    "flight-band-live-takeoff#baseline-status-restored": "tests/test_flight_resume.py::test_baseline_status_restored",
+    "flight-dispatch-lease#dispatch-refused-after-hook-returns": "tests/test_flight_lease.py::test_dispatch_refused_after_hook_returns",
+    "flight-dispatch-lease#dispatch-allowed-in-live-hook": "tests/test_flight_lease.py::test_dispatch_allowed_in_live_hook",
+    "flight-dispatch-lease#command-takeoff-dispatches": "tests/test_flight_orchestrator.py::test_opsx_apply_taken_over",
+    "flight-dispatch-lease#agent-end-dispatches-next": "tests/test_flight_orchestrator.py::test_drive_hands_landing_actions"
+  }
+}

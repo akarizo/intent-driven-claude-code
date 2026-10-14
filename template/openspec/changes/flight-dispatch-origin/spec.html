@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-dispatch-origin · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-dispatch-origin
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">specs</span><span class="chip" data-state="done">adr</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">计划指纹 591e141a</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">flight-armed-followups 是第一次用批准带按键起飞，首轮 S1–S3 的执行体全都调不到 <code>measure</code>，每片都重派了一次。用 spike 复现后（CLI 2.1.296）查清了原因：插件在已经返回的 hook 里、或在定时器回调里调用 <code>$.agent.spawn</code>，引擎把这次派发算作插件自己发起。之后这个 agent 的工具调用 origin 都记成 flight，flight 自己的 <code>tool.call</code> / <code>tool.check</code> hook 一律按 re-entry 跳过。于是能力包络、账本守卫、<code>measure</code> 应答对这些 agent 全部失效。0.10.x 的按下即起飞、续飞、待命定时重试、看门狗派诊断员，这四个入口都是这种写法。</p><p class="why-body">决策页：<code>docs/flight-dispatch-origin.html</code>（主检出，未跟踪），Q1–Q7 全按推荐。按键 hook 长时间挂起时界面不卡，已在交互会话实测通过。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>定时器到点不直接派发（唤醒轮）</strong>：</li><li>起飞待命的定时重试（等待类的 60 秒 tick、偶发类的 10 秒重试）到点时，不再直接起飞。条件满足时，插件提交一轮简短对话，请模型只回复「收到」；这一轮结束时，在主会话 <code>turn.complete</code> 里重试。</li><li>等待类先零 token 检查条件（基线是否跑完、上一次的 agent 是否结束），没满足就不提交。</li><li>看门狗停飞后的诊断员同样经唤醒轮派出。</li><li>agent 结束、主会话一轮结束这些现成触发，照旧直接重试。</li><li><strong>批准带按键在 hook 内起飞</strong>：按「起飞 / 批准起飞」「续飞 / 批准修订并续飞」后，在按键 hook 里 await 起飞或续飞，不再经 <code>clock.after(0)</code> 转到回调里。顺带修 #56 留下的三项：</li><li>进行中再按会被拒；</li><li>重绘失败不再留下「起飞中」；</li><li>基线结束后状态行会恢复。</li><li><strong>派发凭证</strong>：所有派发都须持有「活帧凭证」。凭证只在处理外部事件的 hook 里取得，hook 返回即失效。不持有活凭证的派发当场拒绝，并按铁律 10 停飞、如实记录。</li><li><strong>交模型 / 唤醒的提交绑定待命</strong>：提交的结果只作用于安排它的那次待命；待命换新后，旧提交成功不会把新待命标为已提交，失败也不会放弃新待命（#56 MEDIUM）。</li><li><strong>文档</strong>：</li><li><code>opsx-propose</code> 命令的 description 去掉「起飞需人类自己发 /opsx-apply」（#56 MEDIUM）；</li><li><code>opsx-apply</code> 命令与 skill、README、WORKFLOW 补写唤醒轮。</li><li>插件版本 0.10.2。</li></ul><div class="impact"><span class="tag"><strong>插件代码</strong>：</span><span class="tag"><code>template/plugins/flight/hooks/</code>：<code>orchestrator.tsx</code>、<code>register.tsx</code>、<code>armed.ts</code>，新增 <code>lease.ts</code>；</span><span class="tag"><code>template/plugins/flight/types/index.d.ts</code>；</span><span class="tag">对应的 TS 测试与 pytest 包装。</span><span class="tag"><strong>不改判定器</strong>（<code>.claude/hooks/*.py</code>），账本事件类型不变。</span><span class="tag"><strong>可见行为变化</strong>：</span><span class="tag">定时重试与看门狗诊断会以插件身份发一轮「只回复收到」的对话，每次多一轮主会话；</span><span class="tag">按键后起飞在按键处理中完成，按键 hook 会挂起到起飞或续飞结束（实测不影响输入）。</span><span class="tag"><strong>测试边界</strong>：测试世界模拟不出 origin，单测只能断言结构（定时器只提交唤醒、按键内起飞、无活凭证被拒）。真引擎上的验证靠合入后冒烟。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-wake-turn</code>：定时到点经唤醒轮再起飞 / 派诊断员；纯判定在定时事件上不给出起飞；提交绑定待命。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-band-live-takeoff</code>：批准带按键在 hook 内完成起飞与续飞；进行中再按被拒；重绘失败不留进行中；基线结束后恢复状态行。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-dispatch-lease</code>：派发须持活帧凭证；命令起飞与 agent 结束时的派发照常（护栏）。</h4><p></p></div><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-dispatch-docs</code>：文档写明唤醒轮；<code>opsx-propose</code> 的 description 不再写旧流程；插件 0.10.2。</h4><p></p></div><div class="cap-card" data-kind="modified"><span class="cap-kind">Modified</span><h4>无。仓库没有主 specs 目录，前几个 change 的规格都以 ADDED 记在各自的 change 目录里。本 change 改变了 flight-armed-takeoff 中「tick / 计时到点即重试」的行为，以上面 <code>flight-wake-turn</code> 的 ADDED 要求重述。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-band-live-takeoff <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 批准带按键在按键处理之内完成起飞与续飞</p><p>按「批准起飞」「起飞」「批准修订并续飞」「续飞」后，插件 SHALL 在这次按键处理返回之前完成起飞或续飞（含续飞前的基线），SHALL NOT 转到定时器回调里再做。起飞与续飞 SHALL 带上这次按键取得的派发凭证。</p><p>Feature: 按键处理在定时器回调里起飞时，派出的执行体绕过包络与 measure（flight-armed-followups 首轮实况）。交互实测：按键处理挂起 120 秒，人照常输入。</p><div class="scenario"><p class="scenario-name">Scenario: press-takes-off-before-returning</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 未批准，批准带显示「批准起飞」</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下「批准起飞」，等这次按键处理返回（期间不推进时钟）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>按键返回时，账本已有 approve，起飞守卫（takeoff-gate.py）已以 demo 运行恰一次</span></li><li><span class="step-key" data-kw="AND">AND</span><span>起飞回复的首行已经 toast</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: resume-press-takes-off-before-returning</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>alpha 已停飞、计划已改，批准带显示「批准修订并续飞」；基线判定器立即以 0 退出</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下「批准修订并续飞」，等这次按键处理返回（期间不推进时钟）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>按键返回时，基线已对 alpha 运行恰一次，起飞守卫已以 alpha 运行恰一次</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 起飞或续飞进行中再按被拒</p><p>同一 change 的起飞或续飞尚未结束时，再按它的按钮，SHALL 立即回 toast「flight：&lt;change&gt; 正在起飞，稍候」，SHALL NOT 再起飞一次。</p><p>Feature: PR #56 MEDIUM。实测按键是并发处理的，引擎可能在重绘前就交付旧按钮的按键。</p><div class="scenario"><p class="scenario-name">Scenario: second-press-while-busy-refused</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 未批准，批准带显示「批准起飞」；起飞守卫（takeoff-gate.py）要等放行后才作答</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按「批准起飞」，等到起飞守卫已被调用、尚未作答（第一次按键还没返回），再按一次同一按钮；随后放行起飞守卫。期间都不推进时钟</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第二次按键在放行之前就已返回，并得到含「正在起飞」的 toast</span></li><li><span class="step-key" data-kw="AND">AND</span><span>起飞守卫总共只以 demo 运行一次</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 重绘失败不留下「进行中」</p><p>按键处理里批准带重绘失败时，起飞或续飞 SHALL 照常进行。处理结束时，SHALL 删除该 change 的进行中记录，之后的重绘不再显示「起飞中…」。</p><p>Feature: PR #56 MEDIUM：重绘抛错后，进行中记录永久留着。</p><div class="scenario"><p class="scenario-name">Scenario: refresh-failure-clears-busy</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准、未起飞，批准带显示「起飞」；按键之后的第一次批准带重绘会抛错（测试世界让重绘所用的读取抛错一次）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下「起飞」并等它返回，随后再重绘批准带</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>起飞守卫已以 demo 运行（起飞照常尝试）</span></li><li><span class="step-key" data-kw="AND">AND</span><span>重绘后的批准带不含「起飞中…」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 续飞结束后状态行不再停在基线进度</p><p>续飞结束时（起飞成功、被拒、基线红或抛错），插件 SHALL 按「还有待命就显示其一；否则有在飞的 change 就显示其进度；都没有才清空」恢复状态行，SHALL NOT 留下「续飞准备中」。</p><p>Feature: PR #56 MEDIUM：基线红或起飞被拒后，「flight · 续飞准备中 …」一直留在状态行。</p><div class="scenario"><p class="scenario-name">Scenario: baseline-status-restored</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>alpha 已停飞、计划已改，批准带显示「批准修订并续飞」；基线判定器以 1 退出（基线红）；没有别的待命，也没有在飞的 change</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>按下「批准修订并续飞」并等它返回</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>最后一次状态行不含「续飞准备中」</span></li></ul></div></div></div><div class="spec-card"><h3>flight-dispatch-docs <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 文档写明唤醒轮</p><p><code>opsx-apply</code> 命令与 skill、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code> 讲起飞待命的地方 SHALL 写明「唤醒轮」：
+- 定时到点（等待类的检查、偶发类的重试）与看门狗停飞后的诊断，不直接派发；
+- 而是由插件发一轮只回复「收到」的对话，这一轮结束时再起飞或派发；
+- 原因是插件只能在处理外部事件的 hook 里派发。</p><div class="scenario"><p class="scenario-name">Scenario: docs-describe-wake-turn</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code>、<code>README.md</code>、<code>docs/WORKFLOW_zh.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取这四个文件</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>都含「唤醒轮」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>命令与 skill 两份都含「只回复「收到」」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: opsx-propose 命令的 description 不再写旧起飞流程</p><p><code>template/.claude/commands/opsx-propose.md</code> 的 frontmatter description SHALL 写「按下即起飞」，SHALL NOT 写「自己发 /opsx-apply」。</p><p>Feature: PR #56 MEDIUM：这段 description 显示在斜杠命令菜单里，与正文矛盾。</p><div class="scenario"><p class="scenario-name">Scenario: propose-description-current</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-propose.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取其 frontmatter 的 description</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>含「按下即起飞」，不含「自己发 /opsx-apply」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 插件版本 0.10.2</p><p>flight 插件清单的 version SHALL 为 0.10.2；description SHALL 仍含：起飞待命、按下即起飞、自愈、看门狗、续飞。</p><div class="scenario"><p class="scenario-name">Scenario: plugin-version-0-10-2</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件清单 <code>template/plugins/flight/.claude-plugin/plugin.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>解析其 JSON</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>version 为 0.10.2</span></li><li><span class="step-key" data-kw="AND">AND</span><span>description 含起飞待命、按下即起飞、自愈、看门狗、续飞</span></li></ul></div></div></div><div class="spec-card"><h3>flight-dispatch-lease <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 派发须持有活帧凭证</p><p>插件每次派发 agent（执行体、解冲突、评审员、修复体、诊断员）都 SHALL 持有活帧凭证。凭证只在处理外部事件的 hook 里取得：<code>/opsx-apply</code>、<code>/flight resume</code>、批准带按键、子 agent 结束、主会话一轮结束。取得凭证的 hook 处理返回（或抛错）后，凭证 SHALL 失效。没有凭证或凭证已失效时，派发 SHALL 被拒，拒绝原文含「派发须在处理外部事件的 hook 里」，且 SHALL NOT 调用引擎的派发。各调用点按原有的被拒分支处理：执行体与解冲突记 blocked，进而停飞（铁律 10）。</p><p>Feature: 在已返回的 hook 或定时器回调里派发的 agent，插件的包络与 measure 对它无效，而且不报错。凭证让这类写法当场暴露，而不是悄悄绕过。</p><div class="scenario"><p class="scenario-name">Scenario: dispatch-refused-after-hook-returns</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>在 <code>withLease</code> 的 body 里取得凭证并保存下来，body 已经返回；另有一次请求不带任何凭证</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>分别用失效的凭证和「没有凭证」请求派发（<code>guardedSpawn</code>）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>两次都得到含「派发须在处理外部事件的 hook 里」的拒绝</span></li><li><span class="step-key" data-kw="AND">AND</span><span>派发函数一次都没有被调用</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: dispatch-allowed-in-live-hook</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>withLease</code> 的 body 正在执行</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>body 里用它的凭证请求派发</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>派发函数被调用恰一次，并原样返回它的结果</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: hook 入口的派发照常</p><p><code>/opsx-apply</code> 起飞派出首个 wave，以及子 agent 结束时派出下一步（评审员等），SHALL 照常派发，不因凭证要求被拒。</p><div class="scenario"><p class="scenario-name">Scenario: command-takeoff-dispatches</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准、worktree 干净、lint 与 preflight 绿、waves [[S1, S2], [S3]]</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人发出 <code>/opsx-apply demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>账本依次为 takeoff 与 S1、S2 的 dispatch，两次都以 flight:executor 派出</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: agent-end-dispatches-next</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>/opsx-apply demo</code> 已起飞；S1 的执行体收口时门禁绿，合回无冲突</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>处理该执行体的结束（turn.complete）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>最后一次派发是 cwd 为 change worktree 的 flight:reviewer，账本有 role reviewer、slice S1 的 dispatch</span></li></ul></div></div></div><div class="spec-card"><h3>flight-wake-turn <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 定时到点只唤醒，在唤醒那一轮结束时重试起飞</p><p>起飞待命的定时到点（等待类的 60 秒 tick、偶发类的 10 秒重试）SHALL NOT 直接起飞或派发 agent。条件满足时，插件 SHALL 以自己的名义提交一轮唤醒对话：正文含 change 名与「只回复「收到」」，且不要求模型做任何别的事。提交时刻之后开始的主会话那一轮结束时，插件 SHALL 重试起飞。等待类在唤醒前 SHALL 先零 token 检查条件：基线仍在跑、或上一次的 agent 仍在运行时，不唤醒。同一待命已唤醒、尚未重试时，后续的定时到点 SHALL NOT 再次唤醒。</p><p>Feature: 插件只有在处理外部事件、尚未返回的 hook 里派发，派出的 agent 才经过包络与 measure。定时器回调里派发会绕过它们（flight-armed-followups 实测）。</p><div class="scenario"><p class="scenario-name">Scenario: transient-timer-wakes-then-retries</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 已批准；plan_fp.py 第一次以 1 退出（计算计划指纹失败），之后正常；人发出 <code>/opsx-apply demo</code>，demo 进入偶发类待命</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>时钟推进 10 秒，随后主会话一轮结束（开始时刻不早于唤醒的提交时刻）</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>时钟推进之后、那一轮结束之前：<code>prompt.submit</code> 恰收到一次，正文含 demo 与「只回复「收到」」；plan_fp.py 仍只运行过 1 次；没有派发任何 agent</span></li><li><span class="step-key" data-kw="AND">AND</span><span>那一轮结束之后：账本追加 takeoff，并派出了执行体</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: baseline-tick-probes-before-waking</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 因「基线仍在跑」进入待命；之后 slice-gate preflight 的第一次检查仍报「基线仍在跑」，再往后都通过</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>时钟依次推进 60 秒三次（三次 tick），随后主会话一轮结束</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>第一次 tick 之后没有提交唤醒</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第二次 tick 之后恰提交一次唤醒，第三次 tick 之后仍只有这一次</span></li><li><span class="step-key" data-kw="AND">AND</span><span>那一轮结束之后账本追加 takeoff</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 看门狗停飞后经唤醒轮派诊断员</p><p>看门狗在定时器里停飞时，SHALL NOT 在定时器回调里派诊断员。它 SHALL 记下待派的诊断，并提交一轮唤醒对话（正文含 change 名、「诊断员」与「只回复「收到」」）。提交时刻之后开始的主会话那一轮结束时，插件 SHALL 派出只读诊断员。唤醒提交失败时 SHALL 通知人，SHALL NOT 重试。</p><div class="scenario"><p class="scenario-name">Scenario: watchdog-triage-via-wake</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>账本预置 attempt 1 的 3 条 heal（自愈预算已用尽）；demo 起飞，agent-1 的模型请求一直不结束</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>时钟推进 661 秒（看门狗停飞），随后主会话一轮结束</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>停飞之后、那一轮结束之前：没有派出诊断员；<code>prompt.submit</code> 收到含 demo 与「诊断员」的唤醒</span></li><li><span class="step-key" data-kw="AND">AND</span><span>那一轮结束之后：账本有 role diagnostician、slice triage 的 dispatch</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 交模型与唤醒的提交只作用于安排它的那次待命</p><p>提交修复请求或唤醒文本之后，插件 SHALL 先核对当前待命是否仍是安排这次提交的那一次（同一 since）。成功时，只给那一次标记已提交；失败时，只放弃那一次。待命已被替换时，SHALL NOT 改动或放弃新的待命。</p><p>Feature: PR #56 MEDIUM：提交在安排它的待命之外运行，成功或失败后都按 change 重读待命，可能误标或误弃新待命。</p><div class="scenario"><p class="scenario-name">Scenario: stale-submit-keeps-new-arm</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 因 lint 红进入交模型待命甲；甲的修复请求正在提交中（测试世界扣住 <code>prompt.submit</code>）</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>时钟推进 1 秒后，人再发 <code>/opsx-apply demo</code>，再次因 lint 红进入新待命乙；随后放行甲的提交，并让它失败</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>待命乙仍在：最后一次状态行仍含 demo 与「起飞待命」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>没有含「提交修复请求失败」的放弃通知</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 待命纯判定在定时事件上不给出起飞</p><p><code>armed.ts</code> 的 <code>nextStep</code> 遇 <code>tick</code> 或 <code>timer</code> 事件时 SHALL NOT 给出 <code>retry</code>：
+- 本该重试的，给出 <code>wake</code>（附唤醒正文）；
+- 已唤醒（<code>awaitingWake</code>）的，给出 <code>wait</code>；
+- 遇 <code>main-turn</code> 且已唤醒的，给出 <code>retry</code>。</p><p><code>beforeRetry</code> SHALL 清掉已唤醒标记。</p><div class="scenario"><p class="scenario-name">Scenario: timer-steps-never-retry</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>wait-baseline、wait-agents、transient 三类待命各一个，都未唤醒；另有一个已唤醒的 wait-baseline 待命</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>前三个依次遇 tick、tick、timer；第四个分别遇 tick 与 main-turn，再对它调用 beforeRetry</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前三个都给出 wake，正文含 change 名与「只回复「收到」」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>第四个遇 tick 给出 wait，遇 main-turn 给出 retry；beforeRetry 之后已唤醒标记为假</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><p>### 实测事实（CLI 2.1.296，spike 插件 <code>probespike</code> 与热重载插件 <code>pressspike</code>，2026-10-13）</p><ul><li><strong>会失效的情形</strong>：插件的 <code>$</code> 调用如果不在「处理外部事件、尚未返回的 hook」的异步链里，引擎就把它算作插件自己发起。这样 <code>$.agent.spawn</code> 出的 agent，后续工具调用的 origin 都是插件，插件自己的 hook 一律按 re-entry 跳过（含 <code>.catch</code>）。</li><li>被跳过的 hook：<code>tool.call</code>、<code>tool.check</code>、<code>turn.step</code>、<code>classic.SubagentStop</code>。只有 <code>turn.complete</code> 照常到达。</li><li>debug 日志原文：<code>tool.call skipped: re-entry (the plugin&#x27;s own code raised it; origin probespike)</code>。</li><li>agent 拿到的错误：<code>&lt;plugin&gt; registered the tool X but no tool.call hook answered this call</code>。</li><li><strong>坏的写法</strong>（都已复现）：</li><li>在 <code>clock.after</code> 回调里调用另一个 hook 造的闭包（= 批准带按键起飞）；</li><li>session.start 的 <code>$</code> 在它自己排的定时器里派发（= 看门狗、待命 tick）；</li><li>在 hook 里不 await 地调用，等派发时 hook 已返回。</li><li><strong>好的写法</strong>（都已复现）：</li><li>在活着的 hook 里直接派发，或 await 一条链路再派发（中途 sleep、跨文件闭包都不影响）；</li><li>在 agent 结束的 <code>turn.complete</code> 里派发（= drive 现状）；</li><li>定时器先 <code>$.prompt.submit</code> 一轮，在那一轮主会话的 <code>turn.complete</code> 里派发。</li><li><strong>交互实测</strong>：</li><li><code>ui.press</code> hook 用 <code>process.run</code> 挂起 120 秒，期间人照常输入、发消息；</li><li>期间按别的按钮也照常处理，说明按键是并发的；</li><li>挂起结束后派出的 agent，Bash 守卫与插件工具都生效。</li><li><strong>没有现成的判据区分好坏 agent</strong>：</li><li><code>$.agent.list()</code> 的 <code>spawnedBy</code> 在两种 agent 上都是插件名；</li><li><code>turn.complete</code> 的 usage 里没有工具调用次数。</li><li><code>$.process.run</code> 默认 30 秒超时，上限 10 分钟。</li></ul><p>### 生产证据（flight-armed-followups）</p><ul><li>12:50:57–12:51:21 按键起飞，派出 S1–S3，三个执行体调用 measure 全部失败。</li><li>12:52:32 起，drive 重派的执行体 measure 正常。同一时段，首轮的 S1 仍在失败。</li></ul><p>### 现状代码（0d67541）</p><ul><li><code>register.tsx</code>：</li><li><code>startTakeoff</code>：<code>clock.after(0)</code> → <code>takeoffNow</code>；</li><li><code>startResume</code>：<code>clock.after(0)</code> → <code>resumeFlight</code>；</li><li><code>ui.press</code> 不查进行中；</li><li><code>startTakeoff</code> 里 <code>await refresh($)</code> 未吞错。</li><li><code>orchestrator.tsx</code>：</li><li><code>runStep</code> 的 <code>wait.ms</code>：<code>clock.after(ms)</code> → <code>advanceArm(timer)</code> → 重试起飞；</li><li><code>watchTick</code> 末尾：<code>advanceAll(tick)</code> → 重试起飞；</li><li><code>watchOne</code>：停飞后 <code>triage</code> 派诊断员（在 <code>clock.every</code> 回调里）；</li><li><code>submitFix</code>：成功与失败都按 change 重读待命，没有绑定安排它的那次。</li><li>派发都经 <code>ctxOf($).spawn</code>。调用点有执行体、解冲突、诊断员、评审员、修复体。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals:</strong> - 插件派出的每个飞行 agent，工具调用都经过插件的包络、账本守卫与 measure。 - 定时到点的重试与看门狗诊断仍然无人值守，只是改走唤醒轮。 - 以后新增的派发如果写在回调里，当场被拒并留证据，不会悄悄绕过包络。 - 顺带修 #56 留下的 5 项 MEDIUM（见 D6）。</p><p><strong>Non-Goals:</strong> - 不改判定器与账本事件类型。 - 不做「agent 结束后再对账」的事后检测（见 D5 的否决理由，记入 backlog）。 - 不修「排队中的 drive 不算正在飞」（#56 MEDIUM，与本缺陷无关，留后续）。 - 不改批准语义（铁律 7）：唤醒轮只请模型回复「收到」，模型仍然没有起飞入口。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><strong><code>armed.ts</code> 的纯判定</strong></summary></details><details><summary><code>tick</code> / <code>timer</code> 事件不再给出 <code>retry</code>，改为给出 <code>wake</code>；<code>awaitingWake</code> 已为真时给出 <code>wait</code>，不重复唤醒；</summary></details><details><summary><code>main-turn</code> 事件遇到 <code>awaitingWake</code> 时给出 <code>retry</code>；</summary></details><details><summary><code>beforeRetry</code> 清掉 <code>awaitingWake</code>。</summary></details><details><summary><strong>等待类先查条件</strong>，零 token</summary></details><details><summary><code>wait-baseline</code></summary><p>跑一次 <code>slice-gate.py preflight</code>。stderr 仍含「基线仍在跑」就不唤醒；其余结果（通过或别的失败）都唤醒，让真实的重试给出真实的拒绝。</p></details><details><summary><code>wait-agents</code></summary><p>上一 attempt 派出的 agent 在 <code>$.agent.list()</code> 里仍处于运行态，就不唤醒。</p></details><details><summary><strong>提交顺序</strong></summary></details><details><summary><strong>否决的方案</strong></summary></details><details><summary><strong>借自己的命令拿一个活 hook</strong></summary><p>实测插件调自己注册的命令，自己的 hook 不应答。</p></details><details><summary><strong>等现成事件，不唤醒</strong></summary><p>偶发类就没有触发源了。</p></details><details><summary><strong>定时器只通知人</strong></summary><p>无人值守能力退步。</p></details><details><summary><code>watchOne</code> 停飞后，不再在 tick 里 <code>triage</code>，改为记下待派诊断（模块内 <code>pendingTriage</code></summary><p>change → flight、haltKind、reason、T0），然后提交唤醒文本：「flight：&lt;change&gt; 已被看门狗停飞，插件将在这一轮结束后派只读诊断员。这一轮只回复「收到」…」。</p></details><details><summary>主会话 <code>turn.complete</code> 时，对开始时刻 ≥ T0 的待派项调 <code>triage</code>（<code>triage</code> 本身幂等</summary><p>已派过就不再派）。</p></details><details><summary>唤醒失败只记一行、通知人，不重试。</summary></details><details><summary><code>driveNow</code> 里的停飞诊断本来就在活 hook 里，保持不变。</summary></details><details><summary><code>ui.press</code> 处理里直接 await 起飞或续飞，不再 <code>clock.after(0)</code>。</summary></details><details><summary>按键处理整体包在 <code>withLease</code> 里，取得的凭证传给 <code>takeoffNow(args, { lease })</code>，续飞时经 <code>depsOf</code> 的闭包传入。</summary></details><details><summary><strong>进行中再按</strong></summary><p><code>inFlight</code> 已有该 change，就 toast「flight：&lt;change&gt; 正在起飞，稍候」并返回，不再起第二次（实测按键并发）。</p></details><details><summary><strong>重绘失败</strong></summary><p>按键路径的重绘一律吞错；进行中记录在 <code>finally</code> 里删除。</p></details><details><summary><strong>基线结束后恢复状态行</strong></summary><p>续飞结束（含异常）后调 <code>restoreStatusNow()</code>。它是 orchestrator 在 session.start 里造好的无 <code>$</code> 闭包，复用 #56 的 <code>restoreStatus</code>：</p></details><details><summary>还有待命，就显示其一；</summary></details><details><summary>否则有在飞的 change，就显示它的进度；</summary></details><details><summary>都没有才清空。</summary></details><details><summary><strong>长时间挂起</strong></summary><p>续飞要等基线跑完。<code>process.run</code> 本来就带 <code>BASELINE_TIMEOUT_MS</code>（10 分钟），交互实测挂起期间输入不受影响。</p></details><details><summary>新模块 <code>lease.ts</code>（纯，不含 <code>$</code>）</summary></details><details><summary><code>Lease = { readonly alive: boolean }</code>；</summary></details><details><summary><code>withLease(body)</code> 在 body 返回或抛错时把凭证置为失效；</summary></details><details><summary><code>leaseDeny(lease)</code> 对缺失或失效的凭证给出拒绝文本</summary><p>「flight：派发须在处理外部事件的 hook 里（定时器或已返回的回调不能派发）」；</p></details><details><summary><code>guardedSpawn(lease, spawn)</code> 拒绝时不调用 spawn。</summary></details><details><summary><strong><code>ctxOf($, lease?)</code></strong></summary><p><code>spawn</code> 经 <code>guardedSpawn</code>。各调用点原有的被拒分支照常工作：执行体与解冲突记 blocked，进而停飞并派诊断员；诊断员只记一行；评审员与修复体按原有拒绝处理。</p></details><details><summary><strong>凭证的来源</strong>（只在 hook 入口取得）</summary></details><details><summary><code>command.run</code>（<code>/opsx-apply</code>、<code>/flight resume</code>）；</summary></details><details><summary>子 agent 的 <code>turn.complete</code>（drive、agent-ended 推进）；</summary></details><details><summary>主会话的 <code>turn.complete</code>（main-turn 推进、待派诊断）；</summary></details><details><summary><code>ui.press</code>（S3）。</summary></details><details><summary><strong>凭证的流向</strong></summary><p><code>takeoffArmed</code> → <code>runStep</code> → <code>takeoff</code> → <code>drive</code> → <code>driveNow</code> → <code>ctxOf</code>；<code>triage</code> 用调用方的 ctx。</p></details><details><summary><strong>否决的方案</strong></summary></details><details><summary><strong>静态扫描「回调里不得派发」</strong></summary><p>脆弱，换种写法就漏掉。</p></details><details><summary><strong>只靠文档约定</strong></summary><p>这次的缺陷正是写法正确、语义踩坑，约定挡不住。</p></details><details><summary><strong>原计划</strong></summary><p>agent 结束时，插件 hook 从没见过它的工具调用，就判红停飞。</p></details><details><summary><strong>实测发现的问题</strong></summary></details><details><summary>引擎没有能区分好坏 agent 的字段（<code>spawnedBy</code> 相同，usage 里没有工具次数）；</summary></details><details><summary>只能用「没收到任何 <code>turn.step</code> / <code>tool.call</code>」作信号，但测试世界里几十个用例都是不模拟这些就结束 agent 的，会大面积误判。改测试世界的公共 helper 牵涉 orchestrator / landing / flight 三个测试文件，与本 change 的范围不相称。</summary></details><details><summary><strong>替代</strong></summary><p>D4 的派发时强制。它挡在 agent 出现之前，覆盖的正是这次的缺陷类型：派发不在活 hook 里。</p></details><details><summary><strong>backlog</strong></summary><p>等引擎提供 origin 字段，或测试世界默认模拟 <code>turn.step</code> 之后，再补事后对账。</p></details><details><summary>4 片、3 层。<code>orchestrator.tsx</code> 依次由 S1、S3（只加两个导出）、S2 修改，三片串行，同一 wave 里没有重叠。</summary></details><details><summary>S2 必须在 S3 之后</summary><p>先让按键路径把凭证传过来，再开启强制，否则合回后按键起飞的用例会被拒。</p></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary><strong>[唤醒轮多一轮主会话对话]</strong> → 只在定时到点、且条件已满足时才发，而且每个待命同一时间只有一次。重试预算不变（transient / model 最多 3 次）。正文要求模型只回复「收到」、不要发 <code>/opsx-apply</code>。</summary></details><details><summary><strong>[主会话正忙时唤醒排队]</strong> → 重试推迟到那一轮结束；待命 30 分钟有效期不变，到期照旧放弃并通知。</summary></details><details><summary><strong>[按键 hook 挂起数分钟]</strong> → 已实测输入不受影响；按键并发由 <code>inFlight</code> 拦住。</summary></details><details><summary><strong>[测试世界模拟不出 origin]</strong> → 单测断言结构，包括按键返回前已起飞、定时器只提交不派发、无活凭证被拒。真引擎验证放在合入后冒烟</summary><p>按键起飞，看首轮执行体能否调到 measure。</p></details><details><summary><strong>[凭证可被误用]</strong></summary><p>回调里调用 <code>withLease</code> 自己造一个凭证，就能绕过 → 本 change 不防恶意绕过，只防这次这类无意的写法。<code>lease.ts</code> 的注释与 ADR 写明这条规则。</p></details></div><div class="design-block"><h3>Migration Plan</h3><p>- 插件 0.10.2，合入后：主检出快进 → <code>claude plugin update flight@intent-driven</code> → <code>/reload-plugins</code>。 - 合入后冒烟： 1. 按批准带「批准起飞」，看首轮执行体 measure 正常； 2. 基线还在跑时发 <code>/opsx-apply</code>，看基线跑完后出现一轮「只回复收到」，随后自动起飞。 - 回退：退回 0.10.1。期间起飞与续飞改发命令，不按批准带。</p></div><div class="design-block"><h3>Open Questions</h3><ul><li>无。现行 ADR 的相关条款：</li><li>DRAFT-flight-armed-takeoff 的第 5 条「按键即起飞，经 takeoffNow 闭包」仍成立，本 change 只补充调用时机；</li><li>第 1 至 3 条的有界重试仍成立，只是定时到点改走唤醒轮。</li></ul><p>新约束写入 <code>DRAFT-flight-dispatch-live-frame</code>，不取代既有条款。</p></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">sequenceDiagram
+  participant T as 定时器（tick / 10 秒）
+  participant O as orchestrator
+  participant E as 引擎 / 主会话
+  T-&gt;&gt;O: 到点（无活 hook）
+  O-&gt;&gt;O: 纯判定 nextStep → wake；等待类先零 token 查条件
+  O-&gt;&gt;E: $.prompt.submit「flight：demo 起飞待命到点…只回复「收到」」（先记 T0、awaitingWake）
+  E--&gt;&gt;O: 主会话 turn.complete（开始时刻 ≥ T0）
+  O-&gt;&gt;E: 在该 hook 里重试起飞 → drive → 派发（origin = 会话）</div><pre class="diagram-fallback">sequenceDiagram
+  participant T as 定时器（tick / 10 秒）
+  participant O as orchestrator
+  participant E as 引擎 / 主会话
+  T-&gt;&gt;O: 到点（无活 hook）
+  O-&gt;&gt;O: 纯判定 nextStep → wake；等待类先零 token 查条件
+  O-&gt;&gt;E: $.prompt.submit「flight：demo 起飞待命到点…只回复「收到」」（先记 T0、awaitingWake）
+  E--&gt;&gt;O: 主会话 turn.complete（开始时刻 ≥ T0）
+  O-&gt;&gt;E: 在该 hook 里重试起飞 → drive → 派发（origin = 会话）</pre><div class="caption">### D1 · 唤醒轮：定时到点只唤醒，不起飞（S1）</div></div><div class="diagram-frame"><div class="mermaid">flowchart LR
+  S1[&quot;S1 唤醒轮&lt;br/&gt;armed · orchestrator · types&quot;] --&gt; S3[&quot;S3 批准带在 hook 内起飞&lt;br/&gt;register · lease.ts · orchestrator 两个导出&quot;]
+  S3 --&gt; S2[&quot;S2 派发凭证强制&lt;br/&gt;lease.guardedSpawn · ctxOf · hook 入口取凭证&quot;]
+  S1 --&gt; S2
+  S4[&quot;S4 文档 · 0.10.2&quot;]</div><pre class="diagram-fallback">flowchart LR
+  S1[&quot;S1 唤醒轮&lt;br/&gt;armed · orchestrator · types&quot;] --&gt; S3[&quot;S3 批准带在 hook 内起飞&lt;br/&gt;register · lease.ts · orchestrator 两个导出&quot;]
+  S3 --&gt; S2[&quot;S2 派发凭证强制&lt;br/&gt;lease.guardedSpawn · ctxOf · hook 入口取凭证&quot;]
+  S1 --&gt; S2
+  S4[&quot;S4 文档 · 0.10.2&quot;]</pre><div class="caption">### D7 · 切片编排</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-armed-takeoff.md">DRAFT. 起飞意图被拒后由插件有界地挂起重试；批准带按键即起飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-bounded-self-heal.md">DRAFT. 飞行内自愈有界：只做不改计划的再试，先记 heal 再做，每次飞行至多 3 次</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-dispatch-live-frame.md">DRAFT. 插件只在处理外部事件的 hook 里派发 agent；定时到点先唤醒一轮再派发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-resume-from-band.md">DRAFT. 停飞后的续飞可由批准带按键触发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-single-implementation.md">DRAFT. 飞行只有一套实现：删除 Workflow 旧引擎，铁律 10 改为失效即停飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<style>.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }</style><h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>唤醒轮：定时到点只唤醒、看门狗诊断经唤醒、提交绑定待命（armed / orchestrator / 类型）</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/hooks/armed.ts<br>template/plugins/flight/tests/armed.test.ts<br>template/plugins/flight/types/index.d.ts<br>tests/test_flight_orchestrator.py<br>tests/test_flight_armed.py</td><td><code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_watchdog.py tests/test_flight_abort.py</code></td></tr><tr><td class="mono">S4</td><td>文档与发布：唤醒轮写进 opsx-apply / README / WORKFLOW，opsx-propose description 去旧字样，插件 0.10.2</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-propose.md<br>template/.claude/skills/openspec-propose/SKILL.md<br>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>README.md<br>docs/WORKFLOW_zh.md<br>template/plugins/flight/.claude-plugin/plugin.json<br>tests/test_armed_followups_docs.py<br>tests/test_dispatch_origin_docs.py</td><td><code>python3 -m pytest -q tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py</code></td></tr><tr><td class="mono">S3</td><td>批准带在按键处理之内起飞与续飞：带凭证、进行中再按被拒、重绘失败不留进行中、续飞后恢复状态行（register / lease.ts / orchestrator 两个导出）</td><td>wave 2</td><td>S1</td><td>template/plugins/flight/hooks/register.tsx<br>template/plugins/flight/tests/flight.test.tsx<br>template/plugins/flight/hooks/lease.ts<br>template/plugins/flight/hooks/orchestrator.tsx<br>tests/test_flight_resume.py<br>tests/test_flight_plugin.py<br>tests/test_approval_gate.py</td><td><code>python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py</code></td></tr><tr><td class="mono">S2</td><td>派发凭证强制：guardedSpawn、ctxOf 带凭证、hook 入口取凭证并沿起飞 / drive 传下去</td><td>wave 3</td><td>S1, S3</td><td>template/plugins/flight/hooks/lease.ts<br>template/plugins/flight/tests/lease.test.ts<br>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/hooks/landing.tsx<br>tests/test_flight_lease.py<br>tests/test_flight_orchestrator.py</td><td><code>python3 -m pytest -q tests/test_flight_lease.py tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_resume.py</code></td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-wake-turn#transient-timer-wakes-then-retries</td><td><code>tests/test_flight_orchestrator.py::test_transient_timer_wakes_then_retries</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-wake-turn#baseline-tick-probes-before-waking</td><td><code>tests/test_flight_orchestrator.py::test_baseline_tick_probes_before_waking</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-wake-turn#watchdog-triage-via-wake</td><td><code>tests/test_flight_orchestrator.py::test_watchdog_triage_via_wake</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-wake-turn#stale-submit-keeps-new-arm</td><td><code>tests/test_flight_orchestrator.py::test_stale_submit_keeps_new_arm</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-wake-turn#timer-steps-never-retry</td><td><code>tests/test_flight_armed.py::test_timer_steps_never_retry</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-docs#docs-describe-wake-turn</td><td><code>tests/test_dispatch_origin_docs.py::test_docs_describe_wake_turn</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-docs#propose-description-current</td><td><code>tests/test_dispatch_origin_docs.py::test_propose_description_current</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-docs#plugin-version-0-10-2</td><td><code>tests/test_dispatch_origin_docs.py::test_plugin_version_0_10_2</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-live-takeoff#press-takes-off-before-returning</td><td><code>tests/test_flight_resume.py::test_press_takes_off_before_returning</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-live-takeoff#resume-press-takes-off-before-returning</td><td><code>tests/test_flight_resume.py::test_resume_press_takes_off_before_returning</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-live-takeoff#second-press-while-busy-refused</td><td><code>tests/test_flight_resume.py::test_second_press_while_busy_refused</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-live-takeoff#refresh-failure-clears-busy</td><td><code>tests/test_flight_resume.py::test_refresh_failure_clears_busy</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-band-live-takeoff#baseline-status-restored</td><td><code>tests/test_flight_resume.py::test_baseline_status_restored</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-lease#dispatch-refused-after-hook-returns</td><td><code>tests/test_flight_lease.py::test_dispatch_refused_after_hook_returns</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-lease#dispatch-allowed-in-live-hook</td><td><code>tests/test_flight_lease.py::test_dispatch_allowed_in_live_hook</code></td><td><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-lease#command-takeoff-dispatches</td><td><code>tests/test_flight_orchestrator.py::test_opsx_apply_taken_over</code></td><td><span class="chip" data-state="guard">护栏</span><span class="chip" data-state="missing">missing</span></td></tr><tr><td>flight-dispatch-lease#agent-end-dispatches-next</td><td><code>tests/test_flight_orchestrator.py::test_drive_hands_landing_actions</code></td><td><span class="chip" data-state="guard">护栏</span><span class="chip" data-state="missing">missing</span></td></tr></tbody></table><h3>飞行记录</h3><p class="placeholder">尚无飞行记录事件。</p>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 唤醒轮：定时到点只唤醒、看门狗诊断经唤醒、提交绑定待命（armed / orchestrator / 类型） （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_watchdog.py tests/test_flight_abort.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S4 文档与发布：唤醒轮写进 opsx-apply / README / WORKFLOW，opsx-propose description 去旧字样，插件 0.10.2 （deps: - · verify: <code>python3 -m pytest -q tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_unattended_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_flight_entry_docs.py tests/test_ledger_guards_docs.py tests/test_ship_ledger_docs.py tests/test_retire_workflow_docs.py tests/test_measure_followups_docs.py tests/test_flight_interaction_docs.py tests/test_opsx_apply_engine.py tests/test_measure_strict_docs.py tests/test_takeoff_commit_docs.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S3 批准带在按键处理之内起飞与续飞：带凭证、进行中再按被拒、重绘失败不留进行中、续飞后恢复状态行（register / lease.ts / orchestrator 两个导出） （deps: S1 · verify: <code>python3 -m pytest -q tests/test_flight_resume.py tests/test_flight_plugin.py tests/test_approval_gate.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 派发凭证强制：guardedSpawn、ctxOf 带凭证、hook 入口取凭证并沿起飞 / drive 传下去 （deps: S1, S3 · verify: <code>python3 -m pytest -q tests/test_flight_lease.py tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_resume.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-13 15:55 · 章节 9 · 图示 2 · 任务 4
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>
