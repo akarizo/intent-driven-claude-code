@@ -15,11 +15,15 @@
 #                                              G7 红不跑全量；--reuse-fix：账本最后一条 fix gate 绿、未带 dirty 且其后只有记账改动 → 复用其全量结论；
 #                                              --integ-base：另判 G9 整合护栏（git diff SHA HEAD 不得动工件 / scenario 测试函数、
 #                                              测试只增不减），不依赖全量、G7 红也照判；失败项以「G9 integ:」开头
-#   baseline --change-dir DIR                 起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
+#   baseline --change-dir DIR [--full]        起飞前预检：先把 gate-baseline.json 写成运行标记 {running, pid, started}，
 #                                              再跑 gate.test / lint / typecheck 与每片 verify，结束时整体覆盖为结果；
-#                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok
+#                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok；
+#                                              结果带 change / mode / snapshot / cmd_key；旧基线可复用（cmd_key 相同、Δ 只有 test_*.py
+#                                              且补跑不红）→ mode incremental：不跑 gate.test，verify 只重跑受影响的片；
+#                                              --full 不复用；运行期间已有文件或测试文件被改 → 红
 #   preflight --change-dir DIR                lint_plan + 运行标记识别（仍在跑 / 已中断）+ 基线四项校验（存在 / ok / plan_sha /
-#                                              commit 在分支历史）；通过打印 waves
+#                                              commit 在分支历史）；基线带 snapshot 且账本无 takeoff 时再按内容判过期
+#                                              （Δ 非空 → 基线过期）；通过打印 waves
 #
 # gate / final / baseline 只打印 JSON，不写 gate-report.md / timeline.md（落地记录由 timeline.py 从账本生成）；
 # baseline 仍写 gate-baseline.json（计划工件）。
@@ -1162,45 +1166,93 @@ def cmd_baseline(args):
         die("未配置也未探测到全量测试命令")
     gate["test"] = test_cmd
     sha0 = plan_sha(data)
+    name = os.path.basename(os.path.realpath(args.change_dir))
+    change_rel = _change_rel(root, args.change_dir)
+    # 开跑前（覆盖成运行标记之前）：旧基线（运行标记不算）、开始快照、命令指纹
+    old = load_baseline(args.change_dir)
+    if not isinstance(old, dict) or old.get("running") is True:
+        old = None
+    s0 = _snapshot(root, change_rel)
+    key = cmd_key(root, change_rel, test_cmd)
     # 运行标记：preflight 据此分辨「还在跑」与「跑到一半中断」，不把半成品当缺基线
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump({"running": True, "pid": os.getpid(), "started": now_iso()}, f, ensure_ascii=False)
         f.write("\n")
-    t0 = time.time()
-    tg = run_test_gate(test_cmd, root)
-    rc, out = tg["rc"], tg["out"]
-    gate["full_suite_sec"] = round(time.time() - t0, 1)
-    reasons = []
+    cands = []
+    if not args.full and old is not None and "snapshot" in old:
+        cands.append(dict(old, change=old.get("change") or name))
+    hit, src = None, None
+    for cand in cands:
+        hit, _ = _try_reuse(root, args.change_dir, data, cand, s0, key)
+        if hit is not None:
+            src = cand
+            break
+    reasons, warnings, out = [], [], ""
     bl = {"commit": git(root, "rev-parse", "HEAD"), "at": now_iso(), "plan_sha": None,
-          "ok": None, "reasons": reasons, "test": {"exit": rc, "sec": gate["full_suite_sec"]}}
-    if rc != 0 and tg["failed"] is not None:
-        bl["test"]["failed"] = tg["failed"]
-        bl["warnings"] = ["预存红 %d 条已记录，final 按基线差分" % len(tg["failed"])]
-    elif rc != 0:
-        reasons.append("全量测试在基线上红（exit %d；按退出码判：%s）" % (rc, tg["why"]))
-    for key in ("lint", "typecheck"):
-        cmd = gate.get(key)
+          "ok": None, "reasons": reasons}
+    if hit is not None:
+        ct = src.get("test") or {}
+        bl["test"] = {k: ct[k] for k in ("exit", "sec", "failed") if k in ct}
+        if isinstance(ct.get("failed"), list) and ct["failed"]:
+            warnings.append("预存红 %d 条（沿用 %s 的全量），final 按基线差分" % (len(ct["failed"]), src.get("change")))
+    else:
+        t0 = time.time()
+        tg = run_test_gate(test_cmd, root)
+        rc, out = tg["rc"], tg["out"]
+        gate["full_suite_sec"] = round(time.time() - t0, 1)
+        bl["test"] = {"exit": rc, "sec": gate["full_suite_sec"]}
+        if rc != 0 and tg["failed"] is not None:
+            bl["test"]["failed"] = tg["failed"]
+            warnings.append("预存红 %d 条已记录，final 按基线差分" % len(tg["failed"]))
+        elif rc != 0:
+            reasons.append("全量测试在基线上红（exit %d；按退出码判：%s）" % (rc, tg["why"]))
+    for kind in ("lint", "typecheck"):
+        cmd = gate.get(kind)
         if cmd:
             krc, kout = run_cmd_full(cmd, root)
-            bl[key] = {"exit": krc, "lines": normalize_lines(kout) if krc != 0 else []}
+            bl[kind] = {"exit": krc, "lines": normalize_lines(kout) if krc != 0 else []}
         else:
-            bl[key] = None
+            bl[kind] = None
     bl["verify"] = {}
+    # 增量时只有候选来自本 change 才有上一次的 verify 可沿用（design D7）；跨 change 全部重跑
+    prev = (old.get("verify") or {}) if hit is not None and src.get("change") == name else {}
     for s in data.get("slices") or []:
-        vrc, _ = run_cmd_full(s.get("verify") or "false", root)
-        bl["verify"][s["id"]] = {"exit": vrc}
+        vcmd = s.get("verify")
+        pv = prev.get(s["id"])
+        if hit is not None and not _verify_rerun(root, vcmd, pv, hit["files"]):
+            bl["verify"][s["id"]] = {"exit": pv.get("exit"), "cmd": vcmd, "reused": True}
+            continue
+        vrc, _ = run_cmd_full(vcmd or "false", root)
+        bl["verify"][s["id"]] = {"exit": vrc, "cmd": vcmd}
         if vrc != 0:
             reasons.append("%s verify 在基线上红（exit %d）：命令不可运行或含既有错误" % (s["id"], vrc))
+    # 运行期间的改动（design D6）：开始就存在的或测试文件被改 → 红；新出现的非测试文件 → 副产物，只警告
+    s1 = _snapshot(root, change_rel)
+    moved = sorted(p for p in set(s0) | set(s1) if s0.get(p, "-") != s1.get(p, "-"))
+    at_head = _blobs_at(root, "HEAD", [p for p in moved if p not in s0])
+    for p in moved:
+        if p in s0 or at_head.get(p) is not None or is_test_path(p):
+            reasons.append("基线运行期间 %s 被修改，重跑 baseline" % p)
+        else:
+            warnings.append("基线运行期间新出现 %s（视为运行副产物）" % p)
     # 后台跑期间人可能改了 slices.json：重读当前文件，只写回耗时，不拿开跑时的旧数据整份覆盖
     cur = load_plan(args.change_dir)
     cg = cur.setdefault("gate", {})
     if not cg.get("test"):
         cg["test"] = test_cmd
-    cg["full_suite_sec"] = gate["full_suite_sec"]
+    if hit is None:
+        cg["full_suite_sec"] = gate["full_suite_sec"]
+    elif cg.get("full_suite_sec") is None:  # 增量不改已有耗时；本 change 还没有时写候选的（design D9）
+        cg["full_suite_sec"] = (src.get("test") or {}).get("sec")
     save_plan(args.change_dir, cur)
     bl["plan_sha"] = sha0
     if plan_sha(cur) != sha0:
         reasons.append("基线运行期间 gate / verify 被修改，重跑 baseline")
+    if warnings:
+        bl["warnings"] = warnings
+    bl.update({"change": name, "mode": "incremental" if hit is not None else "full", "snapshot": s1, "cmd_key": key})
+    if hit is not None:
+        bl["incremental"] = hit
     bl["ok"] = not reasons
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump(bl, f, ensure_ascii=False, indent=2)
@@ -1254,11 +1306,235 @@ def cmd_preflight(args):
                        cwd=root, capture_output=True, text=True)
     if p.returncode != 0:
         die("基线 commit 不在当前分支历史：%s（重跑 baseline）" % (bl.get("commit") or "?")[:10])
+    # 按内容判过期（design D8）：只在首次起飞前；旧格式基线（无 snapshot）与已起飞的 change 只做四项校验
+    if isinstance(bl.get("snapshot"), dict) and not _has_takeoff(args.change_dir):
+        change_rel = _change_rel(root, args.change_dir)
+        delta = _delta(root, bl, _snapshot(root, change_rel), git(root, "rev-parse", "HEAD"), change_rel, True)
+        if delta is None or delta:
+            die("基线过期：自基线以来有改动：%s；重跑 baseline（只改了测试文件时走增量）"
+                % (", ".join((delta or [])[:8]) or "基线 commit 不可比"))
     print(json.dumps(waves, ensure_ascii=False))
+
+
+def _has_takeoff(change_dir):
+    """本 change 账本里有没有 takeoff 事件；读不出（含导入失败）按没有处理（更严）。"""
+    try:
+        import ledger  # 同目录模块，惰性导入（与 _reusable_fix_gate 同法）
+        return any(e.get("ev") == "takeoff" for e in ledger.read_events(change_dir))
+    except Exception:
+        return False
 
 
 BOOKKEEPING = ("timeline.md", "gate-report.md", "evidence.log", "review-findings.json", "tasks.md",
                "slices/_interfaces.md")
+
+
+# ---------------------------------------------------------------- 基线内容指纹与增量复用（design D1–D4、D6–D8）
+
+# 本 change 的计划工件：不进 snapshot、不计入 Δ（design D2）
+PLAN_FILES = ("proposal.md", "design.md", "tasks.md", "slices.json", "spec.html", BASELINE, ".openspec.yaml") + BOOKKEEPING
+PLAN_DIRS = ("specs/", "slices/")
+LS_TREE_BATCH = 500
+
+
+def _change_rel(root, change_dir):
+    return os.path.relpath(os.path.realpath(change_dir), os.path.realpath(root)).replace(os.sep, "/")
+
+
+def _plan_file(rel, change_rel):
+    if not rel.startswith(change_rel + "/"):
+        return False
+    rest = rel[len(change_rel) + 1:]
+    return rest in PLAN_FILES or rest.startswith(PLAN_DIRS)
+
+
+def _ignored(rel):
+    """测试副产物：字节码与 .pytest_cache，不影响结果。"""
+    return is_bytecode(rel) or ".pytest_cache" in rel.split("/")
+
+
+def _git_raw(root, args, stdin=None):
+    """不 strip 的 git 调用（-z 输出要原样保留）；非 0 抛 RuntimeError。"""
+    p = subprocess.run(["git", *args], cwd=root, input=stdin, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError("git %s: %s" % (" ".join(args[:3]), p.stderr.strip()))
+    return p.stdout
+
+
+def _hash_paths(root, rels):
+    """一次 git hash-object --stdin-paths 批量取 blob id，与 rels 同序。"""
+    if not rels:
+        return []
+    return _git_raw(root, ["hash-object", "--stdin-paths"], "\n".join(rels) + "\n").split()
+
+
+def _snapshot(root, change_rel):
+    """工作区相对 HEAD 的未提交改动 {路径: blob id | None（删除）}；不含字节码、.pytest_cache 与本 change 的计划工件。"""
+    entries, paths, i = _git_raw(root, ["status", "--porcelain", "-z", "--untracked-files=all"]).split("\0"), set(), 0
+    while i < len(entries):
+        e = entries[i]
+        i += 1
+        if len(e) < 4:
+            continue
+        paths.add(e[3:])
+        if "R" in e[:2] or "C" in e[:2]:  # 改名 / 复制项后随原路径：两边都记，原路径按是否存在取值
+            if i < len(entries) and entries[i]:
+                paths.add(entries[i])
+            i += 1
+    snap, present = {}, []
+    for p in sorted(paths):
+        if _ignored(p) or _plan_file(p, change_rel):
+            continue
+        full = os.path.join(root, p)
+        if os.path.islink(full) or os.path.isfile(full):
+            present.append(p)
+        elif not os.path.exists(full):
+            snap[p] = None
+        # 目录（嵌套仓库 / 子模块）不记
+    for p, b in zip(present, _hash_paths(root, present)):
+        snap[p] = b
+    return snap
+
+
+def _blobs_at(root, commit, paths):
+    """{路径: commit 里的 blob id | None}；ls-tree 每批至多 LS_TREE_BATCH 个路径。"""
+    paths = list(paths)
+    out = {p: None for p in paths}
+    for i in range(0, len(paths), LS_TREE_BATCH):
+        raw = _git_raw(root, ["ls-tree", "-r", "-z", commit, "--", *paths[i:i + LS_TREE_BATCH]])
+        for e in raw.split("\0"):
+            if "\t" not in e:
+                continue
+            meta, path = e.split("\t", 1)
+            if path in out:
+                out[path] = meta.split()[2]
+    return out
+
+
+def _repo_rel(root, tok):
+    """词指向仓库内（相对 root，或 root 之下的绝对路径）时返回仓库相对路径，否则 None；不检查存在。"""
+    if not tok or tok.startswith("-"):
+        return None
+    if os.path.isabs(tok):
+        base, r = os.path.realpath(root), os.path.realpath(tok)
+        if r != base and not r.startswith(base + os.sep):
+            return None
+        rel = os.path.relpath(r, base)
+    else:
+        rel = os.path.normpath(tok)
+    rel = rel.replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../"):
+        return None
+    return rel
+
+
+def cmd_key(root, change_rel, cmd):
+    """全量命令指纹（design D4）：归一命令文本 + 命令里直接写出的仓库内文件的 blob id；切词失败返回 None。"""
+    try:
+        toks = shlex.split(cmd or "")
+    except ValueError:
+        return None
+
+    def norm(s):
+        return s.replace(change_rel, "<change>") if change_rel else s
+
+    files = []
+    for tok in toks:
+        rel = _repo_rel(root, tok)
+        if rel and os.path.isfile(os.path.join(root, rel)):
+            files.append((norm(tok), rel))
+    pairs = [[t, b] for (t, _), b in zip(files, _hash_paths(root, [r for _, r in files]))]
+    return hashlib.sha1(json.dumps([norm(cmd or ""), pairs], ensure_ascii=False, sort_keys=True)
+                        .encode("utf-8")).hexdigest()
+
+
+def _delta(root, cand, cur_snap, head, change_rel, same_change):
+    """候选所测代码树 vs 当前代码树按 blob 比较（design D1、D2）；候选 commit 不是 HEAD 的祖先或 git 失败 → None。"""
+    commit = cand.get("commit")
+    if not isinstance(commit, str) or not commit or not _is_ancestor(root, commit, head):
+        return None
+    old_snap = cand.get("snapshot") or {}
+    try:
+        names = [n for n in _git_raw(root, ["diff", "--name-only", "--no-renames", "-z", commit, head]).split("\0") if n]
+    except RuntimeError:
+        return None
+    changes_root = change_rel.rsplit("/", 1)[0] if "/" in change_rel else ""
+    keep = []
+    for p in set(names) | set(old_snap) | set(cur_snap):
+        if _ignored(p) or _plan_file(p, change_rel):
+            continue
+        if changes_root and p.startswith(changes_root + "/") and not (same_change and p.startswith(change_rel + "/")):
+            continue
+        keep.append(p)
+    try:
+        old_b = _blobs_at(root, commit, [p for p in keep if p not in old_snap])
+        new_b = _blobs_at(root, head, [p for p in keep if p not in cur_snap])
+    except RuntimeError:
+        return None
+    return sorted(p for p in keep
+                  if (old_snap[p] if p in old_snap else old_b.get(p)) != (cur_snap[p] if p in cur_snap else new_b.get(p)))
+
+
+def _try_reuse(root, change_dir, data, cand, cur_snap, key):
+    """复用判定（design D3）：返回 ({"from", "files", "sec"}, None) 或 (None, 不复用的理由)。"""
+    if not isinstance(cand, dict) or cand.get("ok") is not True:
+        return None, "候选基线不是绿"
+    test = cand.get("test") or {}
+    if not (test.get("exit") == 0 or isinstance(test.get("failed"), list)):
+        return None, "候选测试结果不可度量"
+    if not key or cand.get("cmd_key") != key:
+        return None, "cmd_key 不同"
+    change_rel = _change_rel(root, change_dir)
+    same = cand.get("change") == os.path.basename(os.path.realpath(change_dir))
+    delta = _delta(root, cand, cur_snap, git(root, "rev-parse", "HEAD"), change_rel, same)
+    if delta is None:
+        return None, "候选 commit 不是 HEAD 的祖先"
+    other = [p for p in delta if not fnmatch.fnmatchcase(p.rsplit("/", 1)[-1], "test_*.py")]
+    if other:
+        return None, "有非测试文件改动：%s" % ", ".join(other[:8])
+    stems = {p.rsplit("/", 1)[-1][:-3] for p in delta}
+    for f in test.get("failed") or []:
+        if stems & set(str(f).split("::", 1)[0].split(".")):
+            return None, "改动的测试文件有预存红：%s" % f
+    files = [p for p in delta if os.path.isfile(os.path.join(root, p))]
+    sec = 0
+    if files:
+        t0 = time.time()
+        outcomes, rc, _, timed_out = _pytest_outcomes(root, files, data.get("gate") or {})
+        sec = round(time.time() - t0, 1)
+        if timed_out:
+            return None, "补跑超时"
+        bad = [n for n, o in outcomes if o in ("FAILED", "ERROR")]
+        if bad:
+            return None, "补跑红：%s" % ", ".join(bad[:8])
+        if rc not in (0, 5):
+            return None, "补跑 exit %s" % rc
+    return {"from": {"change": cand.get("change"), "commit": cand.get("commit"), "at": cand.get("at")},
+            "files": delta, "sec": sec}, None
+
+
+def _verify_paths(root, cmd, delta):
+    """verify 命令里认得出的路径（design D7）：切词、去掉 :: 之后的部分，仓库内已存在或等于 Δ 路径。"""
+    try:
+        toks = shlex.split(cmd or "")
+    except ValueError:
+        return []
+    out = []
+    for tok in toks:
+        rel = _repo_rel(root, tok.split("::", 1)[0])
+        if rel and (rel in delta or os.path.exists(os.path.join(root, rel))):
+            out.append(rel)
+    return out
+
+
+def _verify_rerun(root, cmd, prev, delta):
+    """增量时这一片要不要重跑 verify：没有上一次记录 / cmd 变了 / 认不出路径 / 路径覆盖到 Δ。"""
+    if not isinstance(prev, dict) or prev.get("cmd") != cmd:
+        return True
+    paths = _verify_paths(root, cmd, delta)
+    if not paths:
+        return True
+    return any(p == "." or f == p or f.startswith(p + "/") for p in paths for f in delta)
 
 
 def _final_fresh(root, change_dir, final_commit):
@@ -1432,6 +1708,8 @@ def main():
             p.add_argument("--reuse-fix", action="store_true",
                            help="账本最后一条 fix gate 绿且其后只有记账改动 → 跳过全量 test，复用其结论")
             p.add_argument("--integ-base", help="整合修复体派发时的 change 分支尖端：另判 G9 整合护栏")
+        if name == "baseline":
+            p.add_argument("--full", action="store_true", help="不复用旧基线，强制跑全量 gate.test")
     p = sub.add_parser("base", help="只读：打印切片区间起点 JSON；不写任何文件")
     p.add_argument("slice")
     p.add_argument("--change-dir", required=True)
