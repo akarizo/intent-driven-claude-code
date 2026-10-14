@@ -948,3 +948,33 @@ test('plan-defect-ignores-other-triage', () => {
   // Then: 三份都是 undefined
   expect(got).toEqual([undefined, undefined, undefined])
 })
+
+test('triage-verdict-parsed', () => {
+  // Given: 七段 triage 文本：甲「根因\n改计划\n草案」、乙「根因\n**改计划**」、丙「根因\n「修插件」」、丁「根因\n\n  人工操作  」、
+  //        戊「根因\n建议改计划」、己「只有一行」、庚「根因\n改计划。」
+  const texts = ['根因\n改计划\n草案', '根因\n**改计划**', '根因\n「修插件」', '根因\n\n  人工操作  ', '根因\n建议改计划', '只有一行', '根因\n改计划。']
+
+  // When: 逐段调用 triageVerdict 读出处置类别
+  const got = texts.map(t => core.triageVerdict(t))
+
+  // Then: 依次为 改计划、改计划、修插件、人工操作、undefined、undefined、undefined
+  expect(got).toEqual(['改计划', '改计划', '修插件', '人工操作', undefined, undefined, undefined])
+})
+
+test('plan-defect-from-triage-replan', () => {
+  // Given: attempt 1 里 S1 记 blocked（gate，原因「G1 verify: exit 1」），随后 kind blocked 的 halt，
+  //        再有一条 triage，文本为「S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py」
+  const state = reduce([
+    takeoff(1, [['S1']]),
+    dispatch(1, 'S1', 'executor', 'a1'),
+    ev.blocked(B, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G1 verify: exit 1' }),
+    ev.halt(B, { attempt: 1, reason: '切片 blocked：S1', kind: 'blocked' }),
+    ev.triage(B, { attempt: 1, agent: 'd1', text: 'S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py' }),
+  ])
+
+  // When: 求 planDefect
+  const got = core.planDefect(state)
+
+  // Then: 结果为该 triage 的首行「S1 的 owns 漏了 tests/test_x.py」
+  expect(got).toBe('S1 的 owns 漏了 tests/test_x.py')
+})

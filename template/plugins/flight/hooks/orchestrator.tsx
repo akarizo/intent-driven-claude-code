@@ -6,7 +6,7 @@ import type { FlightArmed, FlightPanel } from '../types'
 import { abortFlight } from './abort'
 import { WAKE_FOOTER, afterMissedTurn, armOf, armedLine, beforeRetry, classifyRefusal, giveUpText, humanText, nextStep, refusedAgain } from './armed'
 import type { Arm, ArmEvent, ArmStep } from './armed'
-import { PREMERGE, agentOf, ev, healVerdict, next as nextActions, planDefect, reduce, stopVerdict, summarize, summaryLines } from './core'
+import { PREMERGE, agentOf, ev, healVerdict, next as nextActions, planDefect, reduce, stopVerdict, summarize, summaryLines, triageVerdict } from './core'
 import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, State } from './core'
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
@@ -17,7 +17,7 @@ import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktr
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
 import { MEASURE_TOOL, measureSlice, onMeasure } from './measure'
-import { executorPrompt, premergeResolverPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
+import { executorPrompt, premergeResolverPrompt, replanPrompt, resolverPrompt, triagePrompt, worktreeNote } from './prompts'
 import { SHIP_TOOL, shipPr } from './ship'
 import { checkJudges, checkPluginCopy } from './versions'
 import { StepTracker, WATCHDOG_MS } from './watchdog'
@@ -780,7 +780,8 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   // 计划缺陷（design D6）：计划不改，续飞仍会在同一处停飞；不写任何事件。文字不得含「未批准」「计划已变」（起飞待命会误归为等人按键）
   const defect = opts.resume ? planDefect(state) : undefined
   if (defect !== undefined && fp === state.takeoff?.fp) {
-    return `flight：${name} 计划需修订：${defect}。计划不改，续飞仍会在同一处停飞；先改计划（如把该 scenario 标为护栏），再在批准带按「批准修订并续飞」`
+    const how = defect.includes('在改生产代码之前就已通过') ? '先改计划（如把该 scenario 标为护栏）' : '先按诊断改计划'
+    return `flight：${name} 计划需修订：${defect}。计划不改，续飞仍会在同一处停飞；${how}，再在批准带按「批准修订并续飞」`
   }
 
   flights.set(name, flight)
@@ -1556,7 +1557,14 @@ export function registerOrchestrator(on: On): void {
       const answer = String((r as { text?: unknown } | undefined)?.text ?? '').trim()
       const text = answer === '' ? '（无回答）' : answer.slice(0, TRIAGE_MAX)
       await appendEvent(ctx.io, f, ev.triage(b, { attempt: who.attempt, agent: e.agentId, text }))
-      await ctx.notify?.(`${f.change} 停飞诊断：${firstLine(text)}`)
+      // 结论为「改计划」且本会话起飞：交主会话修订计划（flight-replan-handoff D3）；不写事件、不派发、不 drive，人仍须按键批准
+      const handoff = triageVerdict(text) === '改计划' && String(reduce(found.events).takeoff?.by?.session ?? '') === (await $.session.id())
+      await ctx.notify?.(`${f.change} 停飞诊断：${firstLine(text)}${handoff ? '；已交主会话修订计划' : ''}`)
+      if (handoff) {
+        const prompt = replanPrompt({ change: f.change, changeDir: f.changeDir, hooksDir: f.hooksDir, attempt: who.attempt, triage: text })
+        // prompt.submit 只能在 clock.after(0) 回调里调；失败补发通知，不重试
+        await $.clock.after(0, () => void $.prompt.submit({ text: prompt }).catch(err => ctx.notify?.(`${f.change} 交主会话失败：${errText(err)}`)))
+      }
       await refreshFromLedger($, ctx.io, f)
       return r
     }

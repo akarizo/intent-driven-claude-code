@@ -7,6 +7,7 @@ import {
   integFixerPrompt,
   integReviewPrompt,
   premergeResolverPrompt,
+  replanPrompt,
   resolverPrompt,
   reviewerPrompt,
   triagePrompt,
@@ -191,6 +192,33 @@ test('triage-prompt-and-agent', async () => {
     '修插件',
     '人工操作',
     '首行',
+  ])
+    expect(prompt).toContain(s)
+})
+
+test('replan-prompt-states-bounds', async () => {
+  // Given: change demo、change 目录 template/openspec/changes/demo、判定器目录 /repo/template/.claude/hooks、attempt 2、
+  //        triage 文本「S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py」
+  const triage = 'S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py'
+  const x = { change: 'demo', changeDir: CHANGE_DIR, hooksDir: '/repo/template/.claude/hooks', attempt: 2, triage }
+
+  // When: 生成修订请求
+  const prompt = replanPrompt(x)
+
+  // Then: 含 demo、attempt 2 与 triage 全文；含「只改本 change 的计划工件」「不改生产代码」；含 spec_html.py 与 slice-gate.py lint 的全路径命令；
+  //       含「不要发 /opsx-apply」「/flight resume」「批准修订并续飞」与「不硬改」
+  for (const s of [
+    'demo',
+    'attempt 2',
+    triage,
+    '只改本 change 的计划工件',
+    '不改生产代码',
+    `/repo/template/.claude/hooks/spec_html.py --change-dir ${CHANGE_DIR}`,
+    `/repo/template/.claude/hooks/slice-gate.py lint --change-dir ${CHANGE_DIR}`,
+    '不要发 /opsx-apply',
+    '/flight resume',
+    '批准修订并续飞',
+    '不硬改',
   ])
     expect(prompt).toContain(s)
 })
