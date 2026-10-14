@@ -22,8 +22,8 @@ def test_shelve_hides_halted_flight():
     assert_ts_passed("shelve-hides-halted-flight")
 
 
-@pytest.mark.xfail(strict=True, reason="S3 未实现：搁置后改计划重新出现")
 def test_replanned_shelved_change_reappears():
+    # 护栏（规划时预写、base 上已通过、不带 xfail）：搁置判定只在指纹相同时隐藏
     # Given: demo 的账本依次有 approve F 与 shelve F；计划改动后当前指纹为 G
     # When: 批准带刷新并绘制
     # Then: 出现 key=approve:demo:<G>、label=批准起飞 的按钮

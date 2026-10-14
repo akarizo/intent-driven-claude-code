@@ -5,7 +5,7 @@
     "test": "python3 -m pytest -q tests",
     "lint": "python3 -m compileall -q template/.claude/hooks",
     "typecheck": null,
-    "full_suite_sec": 144.2
+    "full_suite_sec": 99.2
   },
   "slices": [
     {
@@ -70,7 +70,9 @@
         "flight-band-shelve#band-reads-ledger-with-main-judges",
         "takeoff-dirty-reporting#band-lists-artifact-paths"
       ],
-      "guards": []
+      "guards": [
+        "flight-band-shelve#replanned-shelved-change-reappears"
+      ]
     },
     {
       "id": "S4",
