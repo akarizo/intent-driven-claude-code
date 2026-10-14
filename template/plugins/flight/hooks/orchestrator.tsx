@@ -588,7 +588,17 @@ export async function scenarioFiles(io: Io, path: string): Promise<string[]> {
   }
 }
 
-type Tree = Awaited<ReturnType<typeof trees>>[number]
+/** slices.json 的 artifact_files（只留字符串项）；读不出 / 不是 JSON / 不是数组时为空，之后的 lint 会报 */
+export async function artifactFiles(io: Io, path: string): Promise<string[]> {
+  try {
+    const files = (JSON.parse((await io.read(path)) ?? '') as { artifact_files?: unknown }).artifact_files
+    return Array.isArray(files) ? files.filter((p): p is string => typeof p === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+type Tree =Awaited<ReturnType<typeof trees>>[number]
 
 /** 解析 change 名（省略时取会话所在 worktree 的分支 worktree-<name>）→ 找 worktree → 找 change 目录 → 找判定器目录 → 构造 Flight（model 为空）。 */
 async function locate($: Engine, given: string | undefined): Promise<{ f: Flight; tree: Tree; main: Tree } | { error: string }> {
@@ -688,9 +698,17 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
   // porcelain 的 XY 列可能以空格开头，不能先 trim
   const dirty = classifyDirty(
     st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3)),
-    { changeDir, scenarioFiles: await scenarioFiles(io, `${abs}/slices.json`) },
+    { changeDir, scenarioFiles: await scenarioFiles(io, `${abs}/slices.json`), artifactFiles: await artifactFiles(io, `${abs}/slices.json`) },
   )
-  if (dirty.others.length) return `flight：工作区不干净，不起飞（工件之外的未提交改动）：\n${dirty.others.join('\n')}`
+  if (dirty.others.length) {
+    return [
+      `flight：工作区不干净，不起飞（工件之外的未提交改动）：`,
+      ...dirty.others,
+      `「${AUTHORIZE}」只提交本 change 的工件，不覆盖上面这些文件。任选其一：`,
+      `- 自行提交或撤销这些文件，再重发 /opsx-apply ${name}`,
+      `- 它们属于本 change（如 scenario 测试的辅助模块、ADR 索引）：逐个列进 slices.json 的 artifact_files，在批准带重新批准后起飞（按键会一并提交）`,
+    ].join('\n')
+  }
   if (dirty.artifacts.length && !authorized) {
     return `flight：工作区不干净，不起飞：未提交的只有本 change 的工件（${dirty.artifacts.length} 个）。确认无误后发 \`/opsx-apply ${name} ${AUTHORIZE}\`，插件只提交这些文件后起飞`
   }

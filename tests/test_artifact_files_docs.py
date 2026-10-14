@@ -1,0 +1,36 @@
+"""文档写明 artifact_files 与插件版本（scenario: flight-takeoff-artifact-files#artifact-files-documented / plugin-version-0-10-4）。"""
+import json
+
+from conftest import ROOT
+
+CMD = ROOT / "template" / ".claude" / "commands"
+SKILLS = ROOT / "template" / ".claude" / "skills"
+
+
+def read(path):
+    return path.read_text(encoding="utf-8")
+
+
+def test_artifact_files_documented():
+    # Given: opsx-apply.md、openspec-apply-change/SKILL.md、opsx-propose.md、openspec-propose/SKILL.md、schema.yaml
+    apply_docs = [read(CMD / "opsx-apply.md"), read(SKILLS / "openspec-apply-change" / "SKILL.md")]
+    others = [read(CMD / "opsx-propose.md"), read(SKILLS / "openspec-propose" / "SKILL.md"),
+              read(ROOT / "template" / "openspec" / "schemas" / "intent-driven" / "schema.yaml")]
+
+    # When: 取 apply 两份里写到 artifact_files 的行
+    lines = [[ln for ln in t.splitlines() if "artifact_files" in ln] for t in apply_docs]
+
+    # Then: 每份都含 artifact_files；apply 两份写到 artifact_files 的行同时写到「授权提交」
+    for found in lines:
+        assert any("授权提交" in ln for ln in found), found
+    for t in others:
+        assert "artifact_files" in t
+
+
+def test_plugin_version_0_10_4():
+    # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
+    # When: 解析其 JSON
+    data = json.loads(read(ROOT / "template" / "plugins" / "flight" / ".claude-plugin" / "plugin.json"))
+
+    # Then: version 按数字逐段比较不低于 0.10.4（版本号在后续 change 里继续前进，写死会让每次升版都改这条）
+    assert tuple(int(p) for p in data["version"].split(".")) >= (0, 10, 4), data["version"]

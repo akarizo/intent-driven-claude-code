@@ -17,3 +17,7 @@
 
 - [x] S1 批准带会话认领：写入与人发命令即认领，refresh 只评估已认领的 change （deps: - · verify: `python3 -m pytest -q tests/test_flight_band_scope.py tests/test_flight_plugin.py tests/test_flight_resume.py tests/test_flight_orchestrator.py tests/test_flight_takeoff_commit.py tests/test_flight_armed.py`）
 - [x] S2 文档写明本会话认领，发布 0.11.0 （deps: - · verify: `python3 -m pytest -q tests/test_band_session_scope_docs.py tests/test_dispatch_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_armed_followups_docs.py tests/test_armed_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_takeoff_commit_docs.py tests/test_measure_strict_docs.py`）
+
+## 收口后（2026-10-14，人授权「R1 授权，按此解」）
+
+- [x] R1 预合并 main（#59 0.10.4）解冲突：plugin.json 保留 0.11.0 与本分支 description；register.tsx 合并两边的 import；README 两条都留；test_artifact_files_docs 的版本断言放宽为不低于 0.10.4；#59 的 band-counts-declared-artifacts 在 Given 里补认领 demo（断言不变） （verify: `python3 -m pytest -q tests`）
