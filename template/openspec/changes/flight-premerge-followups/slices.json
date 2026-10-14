@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "change": "flight-premerge-followups",
+  "gate": {
+    "test": "python3 -m pytest -q tests",
+    "lint": "python3 -m compileall -q template/.claude/hooks",
+    "typecheck": null,
+    "full_suite_sec": 109.9
+  },
+  "slices": [
+    {
+      "id": "S1",
+      "title": "判定器：账本认识 premerge 事件与停飞 kind premerge",
+      "packet": "slices/S1.md",
+      "owns": [
+        "template/.claude/hooks/ledger.py",
+        "tests/test_premerge_judges.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_premerge_judges.py tests/test_ledger.py tests/test_approval_gate.py tests/test_shelve_judges.py tests/test_timeline_render.py",
+      "scenarios": [
+        "flight-landing-premerge#ledger-knows-premerge"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S2",
+      "title": "预合并主路径：收口在第一次 final 前预合并目标分支、拉取失败与冲突停飞、全量评审起点用目标提交、计划缺陷判定函数",
+      "packet": "slices/S2.md",
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/hooks/io.ts",
+        "template/plugins/flight/hooks/land.ts",
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/tests/core.test.ts",
+        "template/plugins/flight/tests/io.test.ts",
+        "template/plugins/flight/tests/landing.test.tsx",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "tests/test_flight_premerge.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_flight_premerge.py tests/test_flight_orchestrator.py tests/test_flight_landing.py tests/test_flight_io.py tests/test_flight_core.py tests/test_flight_plugin.py",
+      "scenarios": [
+        "flight-landing-premerge#premerge-clean-merges-then-final",
+        "flight-landing-premerge#premerge-up-to-date-skips-merge",
+        "flight-landing-premerge#premerge-fetch-failure-halts",
+        "flight-landing-premerge#whole-review-base-is-target"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S3",
+      "title": "文档与版本：命令与 skill 写明预合并、/flight recheck、计划需修订；pr-ship 第 4 步；插件 0.12.0",
+      "packet": "slices/S3.md",
+      "owns": [
+        "template/.claude/commands/opsx-apply.md",
+        "template/.claude/skills/openspec-apply-change/SKILL.md",
+        "template/plugins/flight/commands/pr-ship.md",
+        "template/plugins/flight/.claude-plugin/plugin.json",
+        "tests/test_premerge_docs.py",
+        "tests/test_band_session_scope_docs.py"
+      ],
+      "deps": [],
+      "verify": "python3 -m pytest -q tests/test_premerge_docs.py tests/test_band_session_scope_docs.py tests/test_shelve_followups_docs.py tests/test_artifact_files_docs.py tests/test_dispatch_followups_docs.py tests/test_dispatch_origin_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py",
+      "scenarios": [
+        "flight-premerge-docs#docs-describe-premerge",
+        "flight-premerge-docs#plugin-version-0-12-0"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S4",
+      "title": "预合并冲突交解冲突 agent、/flight recheck、计划缺陷拒绝续飞、改名行的拒绝出路",
+      "packet": "slices/S4.md",
+      "owns": [
+        "template/plugins/flight/hooks/core.ts",
+        "template/plugins/flight/hooks/orchestrator.tsx",
+        "template/plugins/flight/hooks/landing.tsx",
+        "template/plugins/flight/hooks/land.ts",
+        "template/plugins/flight/hooks/prompts.ts",
+        "template/plugins/flight/tests/core.test.ts",
+        "template/plugins/flight/tests/orchestrator.test.tsx",
+        "template/plugins/flight/tests/prompts.test.ts",
+        "tests/test_flight_premerge_resolve.py"
+      ],
+      "deps": [
+        "S2"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_premerge_resolve.py tests/test_flight_premerge.py tests/test_flight_orchestrator.py tests/test_flight_land.py tests/test_flight_landing.py tests/test_flight_takeoff_commit.py tests/test_flight_armed.py tests/test_flight_plugin.py",
+      "scenarios": [
+        "flight-landing-premerge#premerge-conflict-dispatches-resolver",
+        "flight-landing-premerge#premerge-resolver-red-halts",
+        "flight-landing-premerge#recheck-after-land-reruns-final-and-review",
+        "flight-landing-premerge#recheck-refused-when-fresh",
+        "flight-plan-defect-halt#resume-refused-on-plan-defect",
+        "flight-small-fixes#rename-refusal-advice"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S5",
+      "title": "批准带：计划缺陷显示「计划需修订」、不给续飞；命令认领 hook 保留下游错误",
+      "packet": "slices/S5.md",
+      "owns": [
+        "template/plugins/flight/hooks/register.tsx",
+        "template/plugins/flight/types/index.d.ts",
+        "template/plugins/flight/tests/flight.test.tsx",
+        "tests/test_flight_plan_defect_band.py"
+      ],
+      "deps": [
+        "S2"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_plan_defect_band.py tests/test_flight_plugin.py tests/test_flight_resume.py tests/test_flight_band_scope.py tests/test_flight_band_shelve.py tests/test_approval_gate.py",
+      "scenarios": [
+        "flight-plan-defect-halt#band-shows-plan-defect-without-resume",
+        "flight-small-fixes#claim-hook-keeps-downstream-error"
+      ],
+      "guards": []
+    },
+    {
+      "id": "S6",
+      "title": "测试卫生：插件 TS 测试零失败纳入全量 pytest，修掉 orchestrator.test.tsx 收尾的未处理拒绝",
+      "packet": "slices/S6.md",
+      "owns": [
+        "tests/test_flight_plugin.py",
+        "tests/test_flight_plugin_suite.py",
+        "template/plugins/flight/tests/**",
+        "template/plugins/flight/hooks/**"
+      ],
+      "deps": [
+        "S4",
+        "S5"
+      ],
+      "verify": "python3 -m pytest -q tests/test_flight_plugin_suite.py tests/test_flight_plugin.py tests/test_flight_orchestrator.py tests/test_flight_armed.py tests/test_flight_resume.py",
+      "scenarios": [
+        "flight-test-suite-hygiene#suite-failures-parses-file-level-fail",
+        "flight-test-suite-hygiene#plugin-suite-has-no-failures"
+      ],
+      "guards": []
+    }
+  ],
+  "scenario_tests": {
+    "flight-landing-premerge#ledger-knows-premerge": "tests/test_premerge_judges.py::test_ledger_knows_premerge",
+    "flight-landing-premerge#premerge-clean-merges-then-final": "tests/test_flight_premerge.py::test_premerge_clean_merges_then_final",
+    "flight-landing-premerge#premerge-up-to-date-skips-merge": "tests/test_flight_premerge.py::test_premerge_up_to_date_skips_merge",
+    "flight-landing-premerge#premerge-fetch-failure-halts": "tests/test_flight_premerge.py::test_premerge_fetch_failure_halts",
+    "flight-landing-premerge#whole-review-base-is-target": "tests/test_flight_premerge.py::test_whole_review_base_is_target",
+    "flight-landing-premerge#premerge-conflict-dispatches-resolver": "tests/test_flight_premerge_resolve.py::test_premerge_conflict_dispatches_resolver",
+    "flight-landing-premerge#premerge-resolver-red-halts": "tests/test_flight_premerge_resolve.py::test_premerge_resolver_red_halts",
+    "flight-landing-premerge#recheck-after-land-reruns-final-and-review": "tests/test_flight_premerge_resolve.py::test_recheck_after_land_reruns_final_and_review",
+    "flight-landing-premerge#recheck-refused-when-fresh": "tests/test_flight_premerge_resolve.py::test_recheck_refused_when_fresh",
+    "flight-plan-defect-halt#resume-refused-on-plan-defect": "tests/test_flight_premerge_resolve.py::test_resume_refused_on_plan_defect",
+    "flight-small-fixes#rename-refusal-advice": "tests/test_flight_premerge_resolve.py::test_rename_refusal_advice",
+    "flight-plan-defect-halt#band-shows-plan-defect-without-resume": "tests/test_flight_plan_defect_band.py::test_band_shows_plan_defect_without_resume",
+    "flight-small-fixes#claim-hook-keeps-downstream-error": "tests/test_flight_plan_defect_band.py::test_claim_hook_keeps_downstream_error",
+    "flight-test-suite-hygiene#suite-failures-parses-file-level-fail": "tests/test_flight_plugin_suite.py::test_suite_failures_parses_file_level_fail",
+    "flight-test-suite-hygiene#plugin-suite-has-no-failures": "tests/test_flight_plugin_suite.py::test_plugin_suite_has_no_failures",
+    "flight-premerge-docs#docs-describe-premerge": "tests/test_premerge_docs.py::test_docs_describe_premerge",
+    "flight-premerge-docs#plugin-version-0-12-0": "tests/test_premerge_docs.py::test_plugin_version_0_12_0"
+  }
+}
