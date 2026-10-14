@@ -100,12 +100,15 @@ type ReviewAction = { slice: string; commit: string; mode?: 'whole' | 'followup'
 type ReviewPlan = { prompt: string; description: string; range?: { commit: string; base: string } }
 
 /**
- * 全量评审的起点（design D3）：本 attempt 最新 ok 的 premerge 有非空 target 就用它；否则 git merge-base <commit> <主 worktree HEAD>。
- * 任一步失败、输出为空或等于 commit 时返回原因。
+ * 全量评审的起点（design D3）：本 attempt 最新 premerge 有非空 target，且它 ok 或其后有 slice premerge 的 ok merge（冲突已解并合回），就用它；
+ * 否则 git merge-base <commit> <主 worktree HEAD>。任一步失败、输出为空或等于 commit 时返回原因。
  */
 async function wholeBase(io: Io, f: Flight, state: State, commit: string): Promise<{ base: string } | { error: string }> {
-  const pm = state.events.filter(e => e.ev === 'premerge' && Number(e.attempt) === state.attempt).at(-1)
-  if (pm && pm.ok === true && typeof pm.target === 'string' && pm.target !== '') {
+  const mine = state.events.filter(e => Number(e.attempt) === state.attempt)
+  const at = mine.findLastIndex(e => e.ev === 'premerge')
+  const pm = at >= 0 ? mine[at] : undefined
+  const settled = pm !== undefined && (pm.ok === true || mine.slice(at + 1).some(e => e.ev === 'merge' && e.slice === PREMERGE && e.ok === true))
+  if (pm && settled && typeof pm.target === 'string' && pm.target !== '') {
     if (pm.target === commit) return { error: `分叉点就是 ${commit}，没有可审的改动` }
     return { base: pm.target }
   }
