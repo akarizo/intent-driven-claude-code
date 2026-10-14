@@ -20,7 +20,11 @@
 #                                              耗时写回 slices.json.gate.full_suite_sec；退出码按 ok；
 #                                              结果带 change / mode / snapshot / cmd_key；旧基线可复用（cmd_key 相同、Δ 只有 test_*.py
 #                                              且补跑不红）→ mode incremental：不跑 gate.test，verify 只重跑受影响的片；
-#                                              --full 不复用；运行期间已有文件或测试文件被改 → 红
+#                                              --full 不复用；运行期间已有文件或测试文件被改 → 红；
+#                                              候选 = 本 change 旧基线 + 基线池里 cmd_key 相同的最新 10 条（跨 change 时 verify 全部重跑）
+#                                              基线池：$(git rev-parse --git-common-dir)/flight-baseline-pool/，同仓各 worktree 共享；
+#                                              只收 mode full、ok、结果可度量（exit 0 或有 test.failed）的基线，每条一个 JSON，
+#                                              临时文件 + rename 原子写；按 at 保留最新 30 条；写池失败只警告
 #   preflight --change-dir DIR                lint_plan + 运行标记识别（仍在跑 / 已中断）+ 基线四项校验（存在 / ok / plan_sha /
 #                                              commit 在分支历史）；基线带 snapshot 且账本无 takeoff 时再按内容判过期
 #                                              （Δ 非空 → 基线过期）；通过打印 waves
@@ -1181,6 +1185,9 @@ def cmd_baseline(args):
     cands = []
     if not args.full and old is not None and "snapshot" in old:
         cands.append(dict(old, change=old.get("change") or name))
+    own = cands[0] if cands else None
+    if not args.full:  # 本 change 旧基线排在池前面（design D5）
+        cands.extend(_pool_candidates(root, key))
     hit, src = None, None
     for cand in cands:
         hit, _ = _try_reuse(root, args.change_dir, data, cand, s0, key)
@@ -1214,8 +1221,8 @@ def cmd_baseline(args):
         else:
             bl[kind] = None
     bl["verify"] = {}
-    # 增量时只有候选来自本 change 才有上一次的 verify 可沿用（design D7）；跨 change 全部重跑
-    prev = (old.get("verify") or {}) if hit is not None and src.get("change") == name else {}
+    # 增量时只有候选是本 change 的旧基线才有上一次的 verify 可沿用（design D7）；池候选（含跨 change）全部重跑
+    prev = (old.get("verify") or {}) if hit is not None and src is own else {}
     for s in data.get("slices") or []:
         vcmd = s.get("verify")
         pv = prev.get(s["id"])
@@ -1254,6 +1261,12 @@ def cmd_baseline(args):
     if hit is not None:
         bl["incremental"] = hit
     bl["ok"] = not reasons
+    t = bl["test"]
+    if hit is None and bl["ok"] and (t.get("exit") == 0 or isinstance(t.get("failed"), list)):
+        w = _pool_write(root, {k: bl.get(k) for k in ("change", "commit", "at", "ok", "cmd_key", "snapshot", "test")})
+        if w:
+            warnings.append(w)
+            bl["warnings"] = warnings
     with open(os.path.join(args.change_dir, BASELINE), "w", encoding="utf-8") as f:
         json.dump(bl, f, ensure_ascii=False, indent=2)
         f.write("\n")
@@ -1511,6 +1524,80 @@ def _try_reuse(root, change_dir, data, cand, cur_snap, key):
             return None, "补跑 exit %s" % rc
     return {"from": {"change": cand.get("change"), "commit": cand.get("commit"), "at": cand.get("at")},
             "files": delta, "sec": sec}, None
+
+
+# ---------------------------------------------------------------- 基线池（design D5）
+
+POOL_DIR = "flight-baseline-pool"
+POOL_KEEP = 30
+
+
+def _pool_dir(root):
+    """git common dir 下的基线池目录（同仓各 worktree 共享）；相对路径按 root 解析成绝对路径。"""
+    common = git(root, "rev-parse", "--git-common-dir")
+    return os.path.join(common if os.path.isabs(common) else os.path.join(root, common), POOL_DIR)
+
+
+def _pool_order(name, entry):
+    """排序键：at 去掉符号（读不出时用文件名，文件名以它开头），由旧到新可比。"""
+    at = entry.get("at") if isinstance(entry, dict) else None
+    return re.sub(r"[^0-9A-Za-z]", "", at) if isinstance(at, str) and at else name
+
+
+def _pool_read(pdir, name):
+    try:
+        with open(os.path.join(pdir, name), encoding="utf-8") as f:
+            e = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return e if isinstance(e, dict) else None
+
+
+def _pool_write(root, entry):
+    """原子写一条池记录（临时文件 + os.replace），再按 at 只留最新 POOL_KEEP 条；失败返回警告文本，成功返回 None。"""
+    try:
+        pdir = _pool_dir(root)
+        os.makedirs(pdir, exist_ok=True)
+        stamp = re.sub(r"[^0-9A-Za-z]", "", str(entry.get("at") or ""))
+        name = "%s-%s-%s.json" % (stamp, entry.get("change"), str(entry.get("commit") or "")[:12])
+        fd, tmp = tempfile.mkstemp(dir=pdir, prefix=".tmp-", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(entry, f, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, os.path.join(pdir, name))
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+        names = [n for n in os.listdir(pdir) if n.endswith(".json") and not n.startswith(".tmp-")]
+        names.sort(key=lambda n: _pool_order(n, _pool_read(pdir, n)), reverse=True)
+        for n in names[POOL_KEEP:]:
+            try:
+                os.unlink(os.path.join(pdir, n))
+            except FileNotFoundError:  # 别的 worktree 同时在清理
+                pass
+    except (OSError, RuntimeError) as e:
+        return "基线池写入失败（不影响本次基线）：%s" % e
+    return None
+
+
+def _pool_candidates(root, key, limit=10):
+    """池里 cmd_key == key 的条目，按 at 由新到旧取前 limit 个；坏 JSON 跳过，池不可读返回 []。"""
+    if not key:
+        return []
+    try:
+        pdir = _pool_dir(root)
+        names = [n for n in os.listdir(pdir) if n.endswith(".json") and not n.startswith(".tmp-")]
+    except (OSError, RuntimeError):
+        return []
+    hits = []
+    for n in names:
+        e = _pool_read(pdir, n)
+        if e is not None and e.get("cmd_key") == key:
+            hits.append((_pool_order(n, e), e))
+    hits.sort(key=lambda x: x[0], reverse=True)
+    return [e for _, e in hits[:limit]]
 
 
 def _verify_paths(root, cmd, delta):
