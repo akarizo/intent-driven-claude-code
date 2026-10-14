@@ -250,6 +250,44 @@ export async function mergeFix(io: Io, f: Flight, _note: string, branch?: string
   return { ok: true, commit: await head(io, f.changeTree) }
 }
 
+/** 预合并的结果，字段同 premerge 事件（design D2） */
+export type Premerge = { ok: boolean; ref: string; target: string; commit: string; conflicts: string[]; reason: string }
+
+/**
+ * 收口前在 change worktree 预合并目标分支（design D2 第 1–8 步）：提交飞行记录 → 无 origin 跳过 → 目标为 origin/HEAD 指向的分支
+ * （解析不出用 origin/main）→ fetch → 已是 HEAD 的祖先则不合并 → merge-tree 判冲突 → 无冲突才 merge --no-edit。
+ * 冲突只由 merge-tree 判出，不在 change worktree 留合并现场。
+ */
+export async function premergeTarget(io: Io, f: Flight): Promise<Premerge> {
+  const t = f.changeTree
+  const out = (x: Partial<Premerge> & { ok: boolean }): Premerge => ({ ref: '', target: '', commit: '', conflicts: [], reason: '', ...x })
+  const err = await commitRecords(io, f, 'chore(flight): 记录')
+  if (err) return out({ ok: false, reason: `提交飞行记录失败：${err}` })
+  if ((await git(io, t, 'remote', 'get-url', 'origin')).exitCode !== 0) return out({ ok: true, reason: '无 origin，跳过预合并' })
+  const sym = await git(io, t, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+  const ref = (sym.exitCode === 0 && sym.stdout.trim()) || 'origin/main'
+  const fetch = await git(io, t, 'fetch', 'origin', ref.replace(/^origin\//, ''))
+  if (fetch.exitCode !== 0) return out({ ok: false, ref, reason: `拉取 ${ref} 失败：${firstLine(fetch)}` })
+  const rp = await git(io, t, 'rev-parse', ref)
+  const target = rp.stdout.trim()
+  if (rp.exitCode !== 0 || target === '') return out({ ok: false, ref, reason: `git rev-parse ${ref} 失败：${firstLine(rp)}` })
+  const anc = await git(io, t, 'merge-base', '--is-ancestor', ref, 'HEAD')
+  if (anc.exitCode === 0) return out({ ok: true, ref, target, reason: '已包含' })
+  if (anc.exitCode !== 1) return out({ ok: false, ref, target, reason: `git merge-base --is-ancestor 失败：${firstLine(anc)}` })
+  const mt = await git(io, t, 'merge-tree', '--write-tree', '--name-only', 'HEAD', ref)
+  if (mt.exitCode === 1) {
+    // --name-only：首行为树，其后到第一个空行为冲突文件
+    const rest = mt.stdout.split('\n').slice(1)
+    const end = rest.findIndex(l => l.trim() === '')
+    const conflicts = lines((end < 0 ? rest : rest.slice(0, end)).join('\n'))
+    return out({ ok: false, ref, target, conflicts, reason: `与 ${ref} 冲突：${conflicts.join('、')}` })
+  }
+  if (mt.exitCode !== 0) return out({ ok: false, ref, target, reason: `git merge-tree 失败：${firstLine(mt)}` })
+  const m = await git(io, t, 'merge', '--no-edit', ref)
+  if (m.exitCode !== 0) return out({ ok: false, ref, target, reason: `git merge 失败：${firstLine(m)}` })
+  return out({ ok: true, ref, target, commit: await head(io, t), reason: `已合并 ${ref}` })
+}
+
 export function validateFindings(input: unknown): { ok: true; findings: Finding[] } | { ok: false; error: string } {
   const list = (input as { findings?: unknown } | null)?.findings
   if (typeof input !== 'object' || input === null || !Array.isArray(list)) return { ok: false, error: '输入必须是 {findings: [...]}' }
