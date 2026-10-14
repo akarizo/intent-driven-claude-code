@@ -164,3 +164,17 @@ export function triagePrompt(x: { change: string; changeDir: string; hooksDir: s
     '- 其后：需要改计划时，写出 slices.json / spec / 切片包的具体改法草案（只写在回答里，不落盘）。',
   ].join('\n')
 }
+
+/** 诊断为「改计划」时交主会话的修订请求（flight-replan-handoff D3/D4）：边界以文字给出。 */
+export function replanPrompt(x: { change: string; changeDir: string; hooksDir: string; attempt: number; triage: string }): string {
+  return [
+    `flight：${x.change} 停飞（attempt ${x.attempt}），诊断结论为「改计划」。请按下面的诊断修订本 change 的计划，改完结束这一轮：`,
+    x.triage,
+    '',
+    '边界：',
+    `- 只改本 change 的计划工件（${x.changeDir} 下的 proposal / specs / design / slices.json / 切片包 / 门禁脚本、DRAFT ADR，以及计划声明的 scenario 测试骨架与 artifact_files），不改生产代码；`,
+    `- 改完运行 \`python3 ${x.hooksDir}/spec_html.py --change-dir ${x.changeDir}\` 重新渲染审批面板，再运行 \`python3 ${x.hooksDir}/slice-gate.py lint --change-dir ${x.changeDir}\`，红则修到绿；`,
+    '- 不要发 /opsx-apply 或 /flight resume：计划改了须人在批准带按「批准修订并续飞」，插件会重跑基线后续飞；',
+    '- 诊断与代码现状不符时不硬改，写明分歧后结束这一轮。',
+  ].join('\n')
+}

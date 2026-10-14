@@ -2312,6 +2312,35 @@ test('other-verdicts-not-handed-over', async ($, on) => {
   expect(notified(log, '已交主会话')).toEqual([])
 })
 
+test('replan-triage-handed-to-main-session', async ($, on) => {
+  // Given: demo 由本会话起飞（waves [[S1]]），S1 门禁一律红 [G1 verify: exit 1]；执行体逐个收口、结束直到停飞；
+  //        诊断员的最终回答为「S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py」
+  const answer = 'S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py'
+  const w = demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G1 verify: exit 1'] }] } })
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  for (let i = 1; i <= 4 && !log.events.some(x => x.ev === 'halt'); i++) {
+    await $.classic.SubagentStop(subagentStop(`agent-${i}`) as never)
+    await $.turn.complete(ended(`agent-${i}`) as never)
+  }
+  const id = log.spawns.find(x => x.subagent_type === 'flight:diagnostician')?.agentId ?? '没有诊断员'
+  w.answers = { [id]: answer }
+
+  // When: 诊断员结束（turn.complete），时钟推进到 clock.after(0) 到点
+  await $.turn.complete(ended(id) as never)
+  await advance(log, 0)
+
+  // Then: prompt.submit 恰收到一次，正文含诊断全文、「只改本 change 的计划工件」与「不要发 /opsx-apply」；
+  //       有一条通知同时含「S1 的 owns 漏了 tests/test_x.py」与「已交主会话修订计划」；triage 之后账本没有新的 approve、takeoff 与 dispatch
+  expect(log.submits.length).toBe(1)
+  expect(log.submits[0]).toContain(answer)
+  expect(log.submits[0]).toContain('只改本 change 的计划工件')
+  expect(log.submits[0]).toContain('不要发 /opsx-apply')
+  expect(notified(log, 'S1 的 owns 漏了 tests/test_x.py', '已交主会话修订计划').length > 0).toBe(true)
+  const t = log.events.findIndex(x => x.ev === 'triage')
+  expect(t >= 0 && log.events.slice(t + 1).filter(x => ['approve', 'takeoff', 'dispatch'].includes(String(x.ev))).length === 0).toBe(true)
+})
+
 test('notify-uses-terminal-channel', async ($, on) => {
   // Given: demo 已起飞（agent-1 = S1）；之后 plan_fp.py 以 1 退出、stderr「plan_fp 超时」；ui.notify 应答 isSent true、channel iterm2
   const w = demoWorld()
@@ -3455,6 +3484,27 @@ test('resume-refused-on-plan-defect', async ($, on) => {
   const text = String(r.text)
   expect([text.includes('计划需修订'), text.includes('在改生产代码之前就已通过')]).toEqual([true, true])
   expect([text.includes('未批准'), text.includes('计划已变')]).toEqual([false, false])
+  expect(log.events.some(x => x.ev === 'takeoff' && x.attempt === 2)).toBe(false)
+})
+
+test('resume-refused-on-triage-replan', async ($, on) => {
+  // Given: demo 的 attempt 1（本会话、指纹 F）以 kind blocked 的 halt 结束，S1 的 blocked 原因为「G1 verify: exit 1」，
+  //        之后有一条 triage「S1 的 owns 漏了 tests/test_x.py\n改计划\n草案」；当前计划指纹仍为 F，起飞守卫放行
+  const ledger = [
+    ev.takeoff(B0, { attempt: 1, fp: F, branch: 'worktree-demo', waves: [['S1']], model: 'opus' }),
+    ev.blocked(B0, { attempt: 1, slice: 'S1', kind: 'gate', reason: 'G1 verify: exit 1' }),
+    ev.halt(B0, { attempt: 1, reason: '切片 blocked：S1', kind: 'blocked' }),
+    ev.triage(B0, { attempt: 1, agent: 'd1', text: 'S1 的 owns 漏了 tests/test_x.py\n改计划\n草案' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, waves: [['S1']] }))
+
+  // When: 人在终端发出 /flight resume demo
+  const r = await $.command.run({ command: 'flight', args: 'resume demo', ...HUMAN } as never)
+
+  // Then: 回复含「计划需修订」与「S1 的 owns 漏了 tests/test_x.py」，不含「护栏」「未批准」「计划已变」；账本没有 attempt 2 的 takeoff
+  const text = String(r.text)
+  expect([text.includes('计划需修订'), text.includes('S1 的 owns 漏了 tests/test_x.py')]).toEqual([true, true])
+  expect([text.includes('护栏'), text.includes('未批准'), text.includes('计划已变')]).toEqual([false, false, false])
   expect(log.events.some(x => x.ev === 'takeoff' && x.attempt === 2)).toBe(false)
 })
 
