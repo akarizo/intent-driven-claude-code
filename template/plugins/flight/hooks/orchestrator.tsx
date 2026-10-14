@@ -11,6 +11,7 @@ import type { Action, Ctx, Flight, FlightEvent, GateJson, HaltKind, Io, Role, St
 import { bashUpgradable, bashVerdict, bashWritesVerdict, inWorktree, mainSessionVerdict, normalizePath, readUpgradable, spawnVerdict, writeTarget, writeVerdict } from './envelope'
 import type { Deny, Who } from './envelope'
 import { intentVerdict, toolTargets } from './intent'
+import type { Lease } from './lease'
 import { EVENT_TYPES, active, agentType, appendEvent, flightOfAgent, freshWorktree, flights, judge, judgesDir, markPending, ownership, owners, readLedger, stoppedNow, terminals, trees } from './io'
 import { classifyDirty, commitArtifacts, commitRecords, finishResolve, mergeFix, mergeSlice, prepareResolve } from './land'
 import { FINDINGS_TOOL, onFindings, onLandingStop, runLandingAction } from './landing'
@@ -747,11 +748,18 @@ export async function takeoff($: Engine, args: string[], opts: { resume?: boolea
 }
 
 /** 起飞入口闭包：由本文件带 matcher 的 session.start hook 用该会话的 $ 造好（$ 不出文件） */
-let entry: ((args: string[], opts?: { resume?: boolean }) => Promise<string>) | undefined
+let entry: ((args: string[], opts?: { resume?: boolean; lease?: Lease }) => Promise<string>) | undefined
+/** 恢复状态行闭包：与 entry 在同一个 session.start hook 里造（$ 不出文件） */
+let statusEntry: (() => Promise<void>) | undefined
 
-/** 批准带等其他文件起飞用：不收 $；插件尚未经历 session.start 时如实回复。 */
-export function takeoffNow(args: string[], opts?: { resume?: boolean }): Promise<string> {
+/** 批准带等其他文件起飞用：不收 $；插件尚未经历 session.start 时如实回复。lease 原样交给 takeoffArmed。 */
+export function takeoffNow(args: string[], opts?: { resume?: boolean; lease?: Lease }): Promise<string> {
   return entry === undefined ? Promise.resolve('flight：插件尚未就绪，稍后再按') : entry(args, opts)
+}
+
+/** 批准带续飞结束后恢复状态行（同 restoreStatus）；插件尚未就绪时直接 resolve。 */
+export function restoreStatusNow(): Promise<void> {
+  return statusEntry === undefined ? Promise.resolve() : statusEntry()
 }
 
 // ---------------------------------------------------------------- 起飞待命（design D2–D6；判定全在 armed.ts，这里只接线）
@@ -830,7 +838,7 @@ async function noteRefusal($: Engine, arm: Arm, text: string): Promise<void> {
 
 /** /opsx-apply、/flight resume、批准带按键共用的起飞：被拒且不是 human / human-key 类时进入待命（design D2）。
  *  与待命自动重试经 armBusy 互斥：该 change 正在自动重试时不起飞；人工起飞期间 advanceArm 跳过。 */
-async function takeoffArmed($: Engine, args: string[], opts: { resume?: boolean } = {}): Promise<string> {
+async function takeoffArmed($: Engine, args: string[], opts: { resume?: boolean; lease?: Lease } = {}): Promise<string> {
   let change = givenOf(args).given
   if (change === undefined) {
     const at = await locate($, undefined)
@@ -1260,6 +1268,7 @@ export function registerOrchestrator(on: On): void {
   // register.tsx 已有无 matcher 的 session.start；同事件第二个 hook 须带 matcher（3a S8 实测），用恒真的 cwd matcher
   on('session.start', { cwd: /^/ }, async ($, e, next) => {
     entry = (args, opts) => takeoffArmed($, args, opts ?? {})
+    statusEntry = () => restoreStatus($)
     try {
       await $.tool.register({ ...FINDINGS_TOOL, isDeferred: false })
     } catch {
