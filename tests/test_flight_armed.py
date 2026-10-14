@@ -1,7 +1,5 @@
 """起飞待命的纯判定 armed.ts（scenario: flight-armed-takeoff#refusals-classified / armed-budget-and-expiry / armed-decides-next-step）。
 断言插件里同名的 TS 测试通过；骨架：S1 实现后去掉 xfail 标记。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -25,16 +23,14 @@ def test_armed_decides_next_step():
     # Then: retry；wait（10000）与 wake；submit、retry 与 wait；submit 正文含拒绝原文与三段边界文字
     assert_ts_passed("armed-decides-next-step")
 
-# ---------------------------------------------------------------- flight-armed-followups S1（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-armed-followups S1
 def test_relaunch_keeps_args():
     # Given: resume 类待命 args 为 [demo, --takeover]；非 resume 待命 args 为 [demo, 授权提交]
     # When: 分别生成 giveUpText
     # Then: 前者含 /flight resume demo --takeover；后者含 /opsx-apply demo 授权提交
     assert_ts_passed("relaunch-keeps-args")
 
-# ---------------------------------------------------------------- flight-dispatch-origin S1（骨架：实现后去掉 xfail 标记）
-
+# ---------------------------------------------------------------- flight-dispatch-origin S1
 def test_timer_steps_never_retry():
     # Given: wait-baseline、wait-agents、transient 各一个未唤醒的待命；另有一个已唤醒的 wait-baseline 待命
     # When: 前三个依次遇 tick、tick、timer；第四个分别遇 tick 与 main-turn，再对它调 beforeRetry
@@ -43,7 +39,6 @@ def test_timer_steps_never_retry():
 
 # ---------------------------------------------------------------- flight-dispatch-followups S1
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S1 未实现")
 def test_missed_turn_rewakes_on_tick():
     # Given: 一个已唤醒的 wait-baseline 待命与一个已提交交模型的 model 待命
     # When: 分别 afterMissedTurn，各遇一次 tick；已补发唤醒的再遇 tick；对其一 beforeRetry

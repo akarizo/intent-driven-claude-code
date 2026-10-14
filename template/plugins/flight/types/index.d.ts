@@ -42,6 +42,8 @@ export type FlightArmedItem = {
   awaitingWake: boolean
   /** 上一次自动重试的结果也是 transient。 */
   transientAgain: boolean
+  /** 唤醒或交模型那一轮撞锁被错过，下一次 tick 补发唤醒。 */
+  missedTurn: boolean
   /** 交模型那一轮提交前的时刻 T0；缺失时 main-turn 按旧行为推进。 */
   submittedAt?: number
 }
