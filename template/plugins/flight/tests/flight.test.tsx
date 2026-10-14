@@ -1104,3 +1104,16 @@ test('baseline-status-restored', async ($, on) => {
   // Then: 最后一次状态行不含「续飞准备中」
   expect(log.statuses.at(-1) ?? '').not.toContain('续飞准备中')
 })
+
+// flight-shelve-followups 护栏（规划时预写，base 上已成立）：搁置判定只在指纹相同时隐藏，改计划后须重新出现
+test('replanned-shelved-change-reappears', async ($, on) => {
+  // Given: demo 账本依次为 approve F、shelve F；ledger approved 输出空（最新决定是 shelve）；计划改动后 plan_fp 输出 G
+  useWorld(on, demoWorld(() => G, { ledger: [ledgerEvent('approve', F), ledgerEvent('shelve', F)], approved: { demo: '' } }))
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: key=approve:demo:<G> 的按钮 label 为「批准起飞」
+  expect((await ui.find({ key: `approve:demo:${G}` }))?.props.label).toBe('批准起飞')
+})
