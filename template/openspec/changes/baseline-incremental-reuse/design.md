@@ -162,7 +162,7 @@ flowchart TD
 
 ## Migration Plan
 
-- **兼容**：旧格式 `gate-baseline.json` 没有 `snapshot` / `cmd_key`，不作候选，下一次 baseline 跑全量并写成新格式；preflight 对它保持原四项校验。
+- **兼容**：旧格式 `gate-baseline.json` 没有 `snapshot` / `cmd_key`，不作候选，下一次 baseline 跑全量并写成新格式；preflight 对它保持原四项校验。verify 记录新增 `cmd`（复用时还有 `reused`），旧测试里对 verify 的完全相等断言（`tests/test_slice_gate.py::test_baseline_writes_gate_baseline`）放宽为只比 `exit`，由 S1 负责。
 - **升级**：判定器随 `install.sh --upgrade` 下发，插件不需要更新。池目录按需创建，删掉它只会让下一次跑全量。
 - **回退**：`--full` 恒等于旧行为；回滚代码不影响已有 change（新字段会被旧代码忽略）。
 
