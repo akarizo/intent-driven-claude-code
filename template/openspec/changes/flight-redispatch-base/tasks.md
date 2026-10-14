@@ -13,4 +13,4 @@
 
 ## 切片
 
-- [ ] S1 插件：同一 attempt 内续派执行体沿用首个执行体的起点；插件 0.13.1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_redispatch_base.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_core.py tests/test_flight_orchestrator.py tests/test_flight_resume.py`）
+- [x] S1 插件：同一 attempt 内续派执行体沿用首个执行体的起点；插件 0.13.1 （deps: - · verify: `python3 -m pytest -q tests/test_flight_redispatch_base.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_core.py tests/test_flight_orchestrator.py tests/test_flight_resume.py`）
