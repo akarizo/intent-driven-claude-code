@@ -74,7 +74,7 @@ function parseWorktrees(porcelain: string): Tree[] {
 }
 
 // 按钮的地址带着绘制时显示的模式、change 与指纹：按下时以人看到的那一项为准
-const PRESS_KEY = /^(approve|takeoff|replan|resume):(.+):([0-9a-f]{64})$/
+const PRESS_KEY = /^(approve|takeoff|replan|resume|shelve):(.+):([0-9a-f]{64})$/
 const pressKey = (item: FlightItem) => `${item.mode}:${item.change}:${item.fp}`
 const LABEL: Record<FlightItem['mode'], string> = { approve: '批准起飞', takeoff: '起飞', replan: '批准修订并续飞', resume: '续飞' }
 const AUTHORIZE = '授权提交'
@@ -172,21 +172,31 @@ async function lastHaltKind($: Engine, f: Flight): Promise<string> {
   return String(ledger.events.filter(e => e.ev === 'halt' && e.attempt === attempt).pop()?.kind ?? '')
 }
 
-/** 起飞时会被「授权提交」提交的本 change 工件数（classifyDirty 口径）；git status 失败按 0。 */
-async function artifactCount($: Engine, c: Candidate, f: Flight): Promise<number> {
+/** 起飞时会被「授权提交」提交的本 change 工件路径（classifyDirty 口径，porcelain 原样、相对 worktree 根）；git status 失败按空。 */
+async function artifactPaths($: Engine, c: Candidate, f: Flight): Promise<string[]> {
   try {
     const st = await $.process.run(['git', '-C', c.tree.path, 'status', '--porcelain', '--untracked-files=all'])
-    if (st.exitCode !== 0) return 0
+    if (st.exitCode !== 0) return []
     // porcelain 的 XY 列可能以空格开头，不能先 trim
     const paths = st.stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3))
-    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFiles(ioOf($), `${c.changeDir}/slices.json`) }).artifacts.length
+    return classifyDirty(paths, { changeDir: f.changeDir, scenarioFiles: await scenarioFiles(ioOf($), `${c.changeDir}/slices.json`) }).artifacts
   } catch {
-    return 0
+    return []
   }
 }
 
-/** change → 批准带「批准起飞」「起飞」说明行里的未提交工件数；每次刷新重算。 */
-const artifacts: Map<string, number> = new Map()
+/** change → 批准带「批准起飞」「起飞」「批准修订并续飞」说明行下列出的未提交工件；每次刷新重算。 */
+const artifacts: Map<string, string[]> = new Map()
+/** 批准带逐行列出的工件路径上限，超出的合成一行「…另 K 个」（design D4）。 */
+const ARTIFACT_LINES = 5
+
+/** 最后一条 approve / shelve 是 shelve 且指纹即 fp → true（design D3）；读不出账本按未搁置。 */
+async function isShelved($: Engine, f: Flight, fp: string): Promise<boolean> {
+  const ledger = await readLedger(ioOf($), f).catch(() => ({ error: '' }))
+  if ('error' in ledger) return false
+  const last = ledger.events.filter(e => e.ev === 'approve' || e.ev === 'shelve').pop()
+  return last?.ev === 'shelve' && String(last.fp) === fp
+}
 
 type InFlight = { phase: 'takeoff' | 'baseline'; since: number; item: FlightItem }
 /** 进行中表（design D6）：按下起飞 / 续飞时登记（item = 按下的那一项），起飞回复返回后删除；有记录的项只显示进行中文字。 */
@@ -196,31 +206,39 @@ const minutesOf = (ms: number) => Math.floor(ms / MINUTE_MS)
 const busyText = (p: InFlight, now: number) => (p.phase === 'takeoff' ? '起飞中…' : `基线运行中（已 ${minutesOf(now - p.since)} 分钟）`)
 
 /** 显示规则（spec flight-band-takeoff 的表，自上而下取第一条命中）。 */
-async function evaluate($: Engine, c: Candidate): Promise<FlightItem | undefined> {
+async function evaluate($: Engine, c: Candidate, mainDir: string): Promise<FlightItem | undefined> {
   const { mtimeMs } = await $.fs.stat(c.specPath)
-  const base = { change: c.change, worktree: c.tree.path, changeDir: c.changeDir, specPath: c.specPath, mtimeMs, mode: 'approve' as const }
   const hooksDir = await hooksDirOf($, c.tree)
-  if (hooksDir === '') return { ...base, hooksDir, fp: '', problem: '找不到 plan_fp.py' }
+  // 账本只经主检出的判定器读写（design D2）：worktree 自带的判定器可能比插件旧；plan_fp.py 仍取 change 所在 worktree 的
+  const ledgerDir = mainDir !== '' ? mainDir : hooksDir
+  const base = { change: c.change, worktree: c.tree.path, changeDir: c.changeDir, specPath: c.specPath, mtimeMs, mode: 'approve' as const, hooksDir, ledgerDir }
+  if (hooksDir === '') return { ...base, fp: '', problem: '找不到 plan_fp.py' }
   const now = await fingerprint($, hooksDir, c.changeDir, c.tree.path)
   if (now === undefined) return undefined
-  if (now.problem !== '') return { ...base, hooksDir, ...now }
-  const r = await $.process.run(['python3', `${hooksDir}/ledger.py`, 'approved', '--change-dir', c.changeDir], {
+  if (now.problem !== '') return { ...base, ...now }
+  const r = await $.process.run(['python3', `${ledgerDir}/ledger.py`, 'approved', '--change-dir', c.changeDir], {
     cwd: c.tree.path,
   })
-  if (r.exitCode === 4) return { ...base, hooksDir, fp: now.fp, problem: '账本损坏' }
-  if (r.exitCode !== 0) return { ...base, hooksDir, fp: now.fp, problem: '账本读取失败' }
+  if (r.exitCode === 4) return { ...base, fp: now.fp, problem: '账本损坏' }
+  if (r.exitCode !== 0) return { ...base, fp: now.fp, problem: '账本读取失败' }
   const same = r.stdout.trim() === now.fp
-  const f = flightOf({ ...base, hooksDir })
+  const f = flightOf({ ...base, hooksDir: ledgerDir })
+  // 人搁置了这份计划（指纹未变）→ 不显示，停飞的项也一样
+  if (await isShelved($, f, now.fp)) return undefined
   // 最新 attempt 以 halt 结束（同 attempt 无 land）且不是人工 abort 才给续飞；读不出账本按未停飞处理
   const halted = (await stoppedNow(ioOf($), f)) === 'halt' && (await lastHaltKind($, f)) !== 'abort'
-  if (halted) return { ...base, hooksDir, fp: now.fp, problem: '', mode: same ? 'resume' : 'replan' }
-  const item: FlightItem = { ...base, hooksDir, fp: now.fp, problem: '' }
+  if (halted) {
+    // 批准修订并续飞也提交工件，同样列出
+    if (!same) artifacts.set(c.change, await artifactPaths($, c, f))
+    return { ...base, fp: now.fp, problem: '', mode: same ? 'resume' : 'replan' }
+  }
+  const item: FlightItem = { ...base, fp: now.fp, problem: '' }
   // 已批准、尚未起飞 → 起飞；已批准且起飞过（在飞 / 已落地 / abort）→ 不显示
   if (same) {
     if (!(await isAlreadyApproved($, item))) return undefined
     item.mode = 'takeoff'
   }
-  artifacts.set(c.change, await artifactCount($, c, f))
+  artifacts.set(c.change, await artifactPaths($, c, f))
   return item
 }
 
@@ -231,10 +249,11 @@ async function refresh($: Engine): Promise<void> {
   const main = trees[0]
   const items: FlightItem[] = []
   if (main !== undefined) {
+    const mainDir = await hooksDirOf($, main)
     const all: Candidate[] = []
     for (const tree of trees) all.push(...(await candidatesIn($, tree)))
     for (const c of dedupe(all, main)) {
-      const item = await evaluate($, c)
+      const item = await evaluate($, c, mainDir)
       if (item !== undefined) items.push(item)
     }
   }
@@ -259,7 +278,7 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
 /** 最近一次 takeoff 之后最后一条 approve 的指纹即 fp → true；读失败按「不去重」返回 false。 */
 async function isAlreadyApproved($: Engine, item: FlightItem): Promise<boolean> {
   try {
-    const r = await $.process.run(['python3', `${item.hooksDir}/ledger.py`, 'show', '--change-dir', item.changeDir], {
+    const r = await $.process.run(['python3', `${item.ledgerDir}/ledger.py`, 'show', '--change-dir', item.changeDir], {
       cwd: item.worktree,
     })
     if (r.exitCode !== 0) return false
@@ -267,7 +286,7 @@ async function isAlreadyApproved($: Engine, item: FlightItem): Promise<boolean> 
     for (const line of r.stdout.split('\n')) {
       if (line.trim() === '') continue
       const ev = JSON.parse(line) as { ev?: string; fp?: string }
-      if (ev.ev === 'takeoff') last = ''
+      if (ev.ev === 'takeoff' || ev.ev === 'shelve') last = ''
       else if (ev.ev === 'approve') last = String(ev.fp)
     }
     return last === item.fp
@@ -276,13 +295,13 @@ async function isAlreadyApproved($: Engine, item: FlightItem): Promise<boolean> 
   }
 }
 
-/** 追加一条 approve 事件到 refs/flight/<change>/ledger；成功返回 true。 */
-async function appendApprove($: Engine, item: FlightItem, surface: string): Promise<boolean> {
+/** 追加一条 approve / shelve 事件到 refs/flight/<change>/ledger；成功返回 true。 */
+async function appendDecision($: Engine, item: FlightItem, ev: 'approve' | 'shelve', surface: string): Promise<boolean> {
   const git = (args: string[], stdin?: string) =>
     $.process.run(['git', ...args], stdin === undefined ? { cwd: item.worktree } : { cwd: item.worktree, stdin })
   const event = {
     v: 1,
-    ev: 'approve',
+    ev,
     change: item.change,
     fp: item.fp,
     at: new Date(await $.clock.now()).toISOString(),
@@ -301,7 +320,7 @@ async function appendApprove($: Engine, item: FlightItem, surface: string): Prom
       tree.stdout.trim(),
       ...(parent === '' ? [] : ['-p', parent]),
       '-m',
-      `flight: approve ${item.change} ${item.fp.slice(0, 8)}`,
+      `flight: ${ev} ${item.change} ${item.fp.slice(0, 8)}`,
     ])
     if (commit.exitCode !== 0) return false
     const moved = await git(['update-ref', ref, commit.stdout.trim(), parent === '' ? ZERO : parent])
@@ -330,7 +349,8 @@ function toastQuietly($: Engine, text: string): void {
 
 /** resumeFlight 的依赖：都作用于批准带上的这一项；起飞带上这次按键的派发凭证。 */
 function depsOf($: Engine, item: FlightItem, lease: Lease): ResumeDeps {
-  const f = flightOf(item)
+  // 读账本走主检出的判定器（design D2）；基线仍用 item.hooksDir
+  const f = flightOf({ ...item, hooksDir: item.ledgerDir })
   return {
     // $ 不出文件：经 orchestrator 交出的起飞闭包直接起飞
     takeoff: (args, opts) => takeoffNow(args, { ...opts, lease }),
@@ -459,6 +479,34 @@ async function startResume($: Engine, item: FlightItem, replan: boolean, lease: 
   }
 }
 
+/** 按下「搁置」（design D3 第 2–6 步，第 1 步 inFlight 已在按键入口判过）：不区分模式，核对指纹与判定器后追加 shelve。 */
+async function pressShelve($: Engine, items: readonly FlightItem[], change: string, fp: string, surface: string): Promise<void> {
+  const item = items.find(x => x.change === change)
+  if (item === undefined || item.problem !== '' || item.busy) {
+    $.ui.toast(`flight：${change} 已不在可批准列表，请看批准带当前显示的项`)
+    await refreshQuietly($)
+    return
+  }
+  const now = await fingerprint($, item.hooksDir, item.changeDir, item.worktree)
+  if (now === undefined || now.fp !== fp) {
+    $.ui.toast(`flight：${change} 的计划已变化，请重新审阅 spec.html 后再批准`)
+    await refreshQuietly($)
+    return
+  }
+  // 旧判定器不认识 shelve：写进去会让整条账本判损坏，不写
+  const known = await $.process.run(['python3', `${item.ledgerDir}/ledger.py`, 'events'], { cwd: item.worktree }).catch(() => undefined)
+  if (known === undefined || known.exitCode !== 0 || !known.stdout.split('\n').some(s => s.trim() === 'shelve')) {
+    $.ui.toast(`flight：判定器（${item.ledgerDir}）不认识 shelve，未搁置：先把主检出更新到与插件同一版本`)
+    return
+  }
+  if (!(await serial(() => appendDecision($, { ...item, fp }, 'shelve', surface)))) {
+    $.ui.toast(`flight：${change} 账本写入失败（重试 ${MAX_UPDATE_REF} 次），未搁置`)
+    return
+  }
+  $.ui.toast(`flight：已搁置 ${change}（指纹 ${fp.slice(0, 8)}）：不再显示、不能起飞；改动计划后会重新出现`)
+  await refreshQuietly($)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // 热重载后 $.state 保留上次的值：每次启动先停用，确认版本后才启用
@@ -492,6 +540,8 @@ export const register: Register = on => {
     const pending = b.items.filter(x => x.problem === '' && x !== top).length
     const blocked = b.items.filter(x => x.problem !== '' && x !== top).length
     const idle = top.problem === '' && !top.busy
+    // 「批准起飞」「起飞」「批准修订并续飞」起飞前都会提交这些工件
+    const paths = idle && top.mode !== 'resume' ? (artifacts.get(top.change) ?? []) : []
     return (
       <Box flexDirection="column">
         <Text>
@@ -508,14 +558,23 @@ export const register: Register = on => {
         ) : (
           <Text color="red">{top.problem}，无法批准</Text>
         )}
+        {idle && (
+          // 同上：真正的处理在 ui.press hook（mode === 'shelve' 分支）
+          <Button key={'shelve:' + top.change + ':' + top.fp} label="搁置" variant="secondary" dimColor onPress={() => undefined} />
+        )}
+        {idle && <Text dimColor>搁置：这份计划不再显示、不能起飞；改动计划后重新出现</Text>}
         {idle && top.mode === 'replan' && (
           <Text dimColor>按下会提交本 change 的工件、重跑基线，续飞只重派未合回的切片</Text>
         )}
         {idle && (top.mode === 'approve' || top.mode === 'takeoff') && (
-          <Text dimColor>
-            {(artifacts.get(top.change) ?? 0) > 0 ? `按下会提交本 change 的 ${artifacts.get(top.change)} 个工件并直接起飞` : '按下直接起飞'}
-          </Text>
+          <Text dimColor>{paths.length > 0 ? `按下会提交本 change 的 ${paths.length} 个工件并直接起飞` : '按下直接起飞'}</Text>
         )}
+        {paths.slice(0, ARTIFACT_LINES).map(p => (
+          <Text key={'artifact:' + p} dimColor>
+            {p}
+          </Text>
+        ))}
+        {paths.length > ARTIFACT_LINES && <Text dimColor>{`…另 ${paths.length - ARTIFACT_LINES} 个`}</Text>}
         {pending > 0 && <Text dimColor>另有 {pending} 个待批准</Text>}
         {blocked > 0 && <Text dimColor>另有 {blocked} 个无法批准</Text>}
       </Box>
@@ -523,7 +582,7 @@ export const register: Register = on => {
   })
 
   // 按键处理整体包在 withLease 里：起飞 / 续飞在按键返回之前完成，凭证随起飞一路传下（design D3、D4）
-  on('ui.press', { plugin: 'flight', element: /^(approve|takeoff|replan|resume):/ }, async ($, e) => withLease(async lease => {
+  on('ui.press', { plugin: 'flight', element: /^(approve|takeoff|replan|resume|shelve):/ }, async ($, e) => withLease(async lease => {
     const shown = PRESS_KEY.exec(e.element)
     const b = await read($, band)
     if (shown === null || b.isDisabled) return { element: e.element }
@@ -531,6 +590,10 @@ export const register: Register = on => {
     // 按键并发处理：同一 change 的起飞 / 续飞未结束时再按，直接拒绝（在指纹核对与写 approve 之前）
     if (inFlight.has(change!)) {
       toastQuietly($, `flight：${change} 正在起飞，稍候`)
+      return { element: e.element }
+    }
+    if (mode === 'shelve') {
+      await pressShelve($, b.items, change!, fp!, e.surface)
       return { element: e.element }
     }
     const item = b.items.find(x => x.change === change)
@@ -557,7 +620,7 @@ export const register: Register = on => {
     }
     // 去重判定与追加在同一串行段：连按时后一次能读到前一次刚写入的 approve
     const outcome = await serial(async () =>
-      (await isAlreadyApproved($, { ...item, fp })) ? 'duplicate' : (await appendApprove($, { ...item, fp }, e.surface)) ? 'appended' : 'failed',
+      (await isAlreadyApproved($, { ...item, fp })) ? 'duplicate' : (await appendDecision($, { ...item, fp }, 'approve', e.surface)) ? 'appended' : 'failed',
     )
     if (outcome === 'duplicate') {
       $.ui.toast(`flight：${change} 已批准（指纹相同），直接起飞`)
