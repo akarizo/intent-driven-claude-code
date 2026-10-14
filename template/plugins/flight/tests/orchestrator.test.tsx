@@ -3334,6 +3334,24 @@ test('premerge-conflict-dispatches-resolver', async ($, on) => {
   expect(treeGit(log).includes('merge --no-edit origin/main')).toBe(false)
 })
 
+// 补测（不是 scenario）：冲突路径解完冲突后，全量评审的起点也是预合并的目标提交
+test('whole-review-base-is-target/conflict', async ($, on) => {
+  // Given: demo 收口时 merge-tree 判 origin/main（T=7×40）与 HEAD 在 a.py 冲突，premerge 为 ok false；主检出 HEAD 是另一个提交；
+  //        预合并解冲突 agent 解完冲突，收口时 final 门禁绿，合回记为 slice premerge 的 ok merge
+  const w = conflictWorld({ ok: true, failed: [] })
+  const log = useWorld(on, w)
+  await $.turn.complete(ended('r-S1') as never)
+  const resolver = pmResolver(log)
+  w.isResolved = true
+  await $.classic.SubagentStop({ ...subagentStop(resolver), agent_type: 'flight:fixer' } as never)
+
+  // When: 解冲突 agent 结束（turn.complete），drive 推进到 final 绿后派全量评审
+  await $.turn.complete(ended(resolver) as never)
+
+  // Then: slice 为 whole 的评审员 dispatch 的 base 为 T
+  expect(log.events.find(x => x.ev === 'dispatch' && x.role === 'reviewer' && x.slice === 'whole')).toMatchObject({ base: TARGET })
+})
+
 test('premerge-resolver-red-halts', async ($, on) => {
   // Given: 同上，但解冲突 agent 三次收口的 final 门禁都红（G7 demo#s1）
   const w = conflictWorld({ ok: false, failed: ['G7 demo#s1'] })
