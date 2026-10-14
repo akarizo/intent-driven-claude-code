@@ -7,4 +7,4 @@
 
 - [ ] S1 插件：artifact_files 并入工件、批准带计数、工件之外拒绝给出路 （deps: - · verify: `python3 -m pytest -q tests/test_flight_artifact_files.py tests/test_flight_takeoff_commit.py tests/test_flight_land.py tests/test_flight_orchestrator.py tests/test_flight_resume.py tests/test_flight_armed.py tests/test_flight_plugin.py`）
 - [ ] S2 判定器与审批面板：lint 校验 artifact_files，spec.html 列出声明文件 （deps: - · verify: `python3 -m pytest -q tests/test_artifact_files_plan.py tests/test_slice_gate.py tests/test_spec_html.py`）
-- [ ] S3 文档与版本：apply / propose 命令与 skill、schema、README 写明 artifact_files；插件 0.10.4 （deps: - · verify: `python3 -m pytest -q tests/test_artifact_files_docs.py tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_dispatch_origin_docs.py`）
+- [ ] S3 文档与版本：apply / propose 命令与 skill、schema、README 写明 artifact_files；插件 0.10.4 （deps: - · verify: `python3 -m pytest -q tests/test_artifact_files_docs.py tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py`）

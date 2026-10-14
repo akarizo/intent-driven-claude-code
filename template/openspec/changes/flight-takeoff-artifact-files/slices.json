@@ -5,7 +5,7 @@
     "test": "python3 -m pytest -q tests",
     "lint": "python3 -m compileall -q template/.claude/hooks",
     "typecheck": null,
-    "full_suite_sec": 102.7
+    "full_suite_sec": 135.3
   },
   "slices": [
     {
@@ -70,7 +70,7 @@
         "tests/test_dispatch_origin_docs.py"
       ],
       "deps": [],
-      "verify": "python3 -m pytest -q tests/test_artifact_files_docs.py tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py tests/test_dispatch_origin_docs.py",
+      "verify": "python3 -m pytest -q tests/test_artifact_files_docs.py tests/test_takeoff_commit_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py",
       "packet": "slices/S3.md"
     }
   ],
