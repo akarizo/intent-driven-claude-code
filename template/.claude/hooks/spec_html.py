@@ -546,12 +546,21 @@ def render_flight(change_dir):
     else:
         timeline_html = '<h3>飞行记录</h3><p class="placeholder">尚无飞行记录事件。</p>'
 
+    artifact_files = data.get("artifact_files")
+    artifact_html = ""
+    if isinstance(artifact_files, list) and artifact_files:
+        artifact_html = (
+            '<h3>起飞时一并提交的周边文件</h3><table class="flight-table"><thead><tr><th>路径</th></tr></thead>'
+            '<tbody>%s</tbody></table>'
+            % "".join('<tr><td class="mono">%s</td></tr>' % esc(str(f)) for f in artifact_files)
+        )
+
     return GUARD_CHIP_STYLE + (
         '<h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th>'
-        '<th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody>%s</tbody></table>'
+        '<th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody>%s</tbody></table>%s'
         '<h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th>'
         '<th>状态</th></tr></thead><tbody>%s</tbody></table>%s'
-        % ("".join(slice_rows), "".join(scenario_rows), timeline_html)
+        % ("".join(slice_rows), artifact_html, "".join(scenario_rows), timeline_html)
     )
 
 

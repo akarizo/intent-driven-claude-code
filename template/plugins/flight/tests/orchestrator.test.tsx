@@ -2,6 +2,7 @@
 // 账本：git hash-object 的 stdin 即事件 JSON，世界把它存进数组；ledger.py show 按顺序逐行返回。
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { classifyRefusal } from '../hooks/armed'
 import { ev } from '../hooks/core'
 import { EVENT_TYPES } from '../hooks/io'
 
@@ -963,6 +964,40 @@ test('takeoff-refuses-foreign-dirt-even-authorized', async ($, on) => {
   expect(ARTIFACTS.filter(p => r.text.includes(p))).toEqual([])
   expect(log.commits).toEqual([])
   expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+})
+
+/** slices.json 的 artifact_files 声明的两个周边文件（相对 change worktree 根） */
+const DECLARED = ['tests/helpers.py', 'template/openspec/adr/INDEX.md']
+const declaredFiles = { [`${TREE}/${CD}/slices.json`]: JSON.stringify({ ...SLICES, artifact_files: DECLARED }) }
+
+test('takeoff-commits-declared-artifacts', async ($, on) => {
+  // Given: demo 已批准、账本为空；slices.json 的 artifact_files 为 tests/helpers.py 与 template/openspec/adr/INDEX.md；未提交的有 proposal.md、DRAFT-x.md、tests/test_s1.py 与这两个声明文件
+  const log = useWorld(on, demoWorld({ files: declaredFiles, dirty: [...ARTIFACTS, ...DECLARED] }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 有一次说明含「工件」的提交、发生在 takeoff 事件写入之前（当时账本 0 条）；加入 proposal.md 的那次 git add 路径恰为这 5 个的绝对路径；回复含「✈ 起飞」
+  expect(artifactCommit(log)?.events).toBe(0)
+  expect(log.adds.find(a => a.includes(`${TREE}/${CD}/proposal.md`))).toEqual([...ARTIFACTS, ...DECLARED].map(p => `${TREE}/${p}`))
+  expect(r.text).toContain('✈ 起飞')
+})
+
+test('foreign-dirt-refusal-explains-way-out', async ($, on) => {
+  // Given: demo 已批准、账本为空；slices.json 声明 tests/helpers.py 与 INDEX.md；未提交的有 proposal.md、DRAFT-x.md、tests/test_s1.py，还有未声明的 src/x.py
+  const log = useWorld(on, demoWorld({ files: declaredFiles, dirty: [...ARTIFACTS, 'src/x.py'] }))
+
+  // When: 人发出 /opsx-apply demo 授权提交
+  const r = await $.command.run({ command: 'opsx-apply', args: 'demo 授权提交', ...HUMAN } as never)
+
+  // Then: 回复含「工作区不干净」与 src/x.py、不含任何工件路径；含「授权提交」「不覆盖」「撤销」与 artifact_files；没有提交；账本没有 takeoff；classifyRefusal(回复) 为 human
+  expect(r.text).toContain('工作区不干净')
+  expect(r.text).toContain('src/x.py')
+  expect(ARTIFACTS.filter(p => r.text.includes(p))).toEqual([])
+  expect(['授权提交', '不覆盖', '撤销', 'artifact_files'].filter(w => !r.text.includes(w))).toEqual([])
+  expect(log.commits).toEqual([])
+  expect(log.events.filter(x => x.ev === 'takeoff')).toEqual([])
+  expect(classifyRefusal(r.text)).toBe('human')
 })
 
 test('drive-stops-after-terminal-without-fp', async ($, on) => {
