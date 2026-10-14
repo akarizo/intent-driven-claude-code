@@ -1,0 +1,45 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 323,
+      "summary": "lint_artifact_files 不拒绝 `./tests/a.py`、`tests//a.py`、末尾带 `/` 这类含 `.` 段、空段或目录写法的路径。按 D1 要和 porcelain 路径逐字比较，这类写法永远匹配不上，声明会静默失效（D3 没要求拦，属于健壮性建议）。",
+      "fix": "可选：在逐项校验里加一个分支，`f.split('/')` 中出现 '' 或 '.' 段时报 `artifact_files: %s 须是规范化的精确文件路径`，并补一条用例；如果维持 D3 的现有范围，就不用改。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 594,
+      "summary": "顺手改了与本切片无关的既有行：`type Tree = Awaited<...>` 被改成 `type Tree =Awaited<...>`（等号后空格丢失），属于插入新函数时的误伤，违背最小改动",
+      "fix": "恢复为 `type Tree = Awaited<ReturnType<typeof trees>>[number]`，只保留新增的 artifactFiles 函数"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "tests/test_dispatch_origin_docs.py",
+      "line": 47,
+      "summary": "上一轮 HIGH（升版后旧断言必红）已闭环：final 已绿，断言改成了 == \"0.10.4\"。但修法违背了 S3 切片包第 7 条和 design Risks 的明确要求：那里要求改成与 worktree-flight-dispatch-followups 分支逐字相同的 test_plugin_version_not_below_0_10_2（按数字逐段比较 >= (0,10,2)）。现在的写法有三个后果。一是那个分支合入 main 后，本分支预合并 main 时这几行双方都改了且内容不同，必然冲突，与「逐字相同以便自动合上」的设计目的相反。二是再升一次版又会红，正是 design 列出的 attempt 1 停飞根因。三是函数改名为 test_plugin_version_0_10_4，与 tests/test_artifact_files_docs.py 的新 scenario 测试同名同义，而模块 docstring 仍写着 scenario plugin-version-0-10-2，归属混乱。",
+      "fix": "把该函数按 S3.md 第 7 条逐字替换为 def test_plugin_version_not_below_0_10_2():，Then 注释改为「version 按数字逐段比较不低于 0.10.2；description 仍含起飞待命、按下即起飞、自愈、看门狗、续飞」，断言改为 assert tuple(int(p) for p in data[\"version\"].split(\".\")) >= (0, 10, 2), data[\"version\"]，其余几行不动。改完对 worktree-flight-dispatch-followups 跑 git diff，确认该函数这一段与对方逐字一致。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/hooks/orchestrator.tsx",
+      "line": 594,
+      "summary": "S1 在新增 artifactFiles 时顺手把原有的 `type Tree = Awaited<...>` 改成了 `type Tree =Awaited<...>`，等号后少了一个空格。这是无关的格式改动，不符合外科手术原则。",
+      "fix": "恢复为 `type Tree = Awaited<ReturnType<typeof trees>>[number]`。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 63,
+      "summary": "lint_artifact_files 不拦以 `./` 开头、以 `/` 结尾（目录）或含反斜杠的路径。起飞时用精确匹配，而且 porcelain 带 --untracked-files=all 只输出文件路径，这类声明永远匹配不上，结果是人批准之后照样被拒飞，拒绝信息又让他「列进 artifact_files」，容易陷入困惑循环。design D3 没要求拦，属于建议。",
+      "fix": "可选：在 lint_artifact_files 里追加判据：路径段为 `.`、以 `/` 结尾、或含 `\\\\` 时报 `artifact_files: <值> 须是精确文件路径`。spec 不改的话，至少在 opsx-propose 文档里注明「不要写目录或 ./ 前缀」。"
+    }
+  ],
+  "fix": {
+    "ok": true,
+    "commit": "cb45f61645ac0a5aafe38879a235626bd21c12d0"
+  }
+}
