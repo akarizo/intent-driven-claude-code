@@ -628,6 +628,26 @@ test('silent-end-runs-gate-and-respawns', async ($, on) => {
   expect(log.spawns.at(-1)?.prompt).toContain('未正常收口')
 })
 
+test('redispatch-pins-original-base', async ($, on) => {
+  // Given: /opsx-apply demo 已起飞，waves 只有 [S1]；S1 的执行体 A = agent-1 在 S1 worktree 派发，起点 base-flight-demo-S1；A 收口门禁红（G4 GWT），补跑门禁同样红
+  const log = useWorld(on, demoWorld({ waves: [['S1']], gates: { S1: [{ ok: false, failed: ['G4 GWT'] }] } }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await $.classic.SubagentStop(subagentStop('agent-1') as never)
+
+  // When: A 结束（turn.complete），控制面续派 S1 的执行体
+  await $.turn.complete(ended('agent-1') as never)
+
+  // Then: slice-gate base S1 恰两次，第二次带 --base base-flight-demo-S1、在 S1 worktree 运行；第二条 S1 执行体 dispatch 的 base 为 base-flight-demo-S1、其 spawn 的 cwd 为 S1 worktree；agent 为 dispatch 的 S1 起点测量恰一条、base 为 base-flight-demo-S1
+  const bases = log.runs.filter(isBaseS1)
+  expect(bases.length).toBe(2)
+  expect(bases[1]?.argv).toEqual(expect.arrayContaining(['--base', 'base-flight-demo-S1']))
+  expect(bases[1]?.cwd).toBe(SLICE1)
+  const second = log.events.filter(x => x.ev === 'dispatch' && x.role === 'executor' && x.slice === 'S1')[1]
+  expect(second?.base).toBe('base-flight-demo-S1')
+  expect(log.spawns.find(s => s.agentId === second?.agent)?.cwd).toBe(SLICE1)
+  expect(log.events.filter(x => x.ev === 'measure' && x.agent === 'dispatch' && x.slice === 'S1').map(x => x.base)).toEqual(['base-flight-demo-S1'])
+})
+
 test('conflict-spawns-resolver', async ($, on) => {
   // Given: /opsx-apply demo 已起飞（S2 的执行体 B = agent-2）；S2 门禁绿，在 change worktree 合回时 a.py 冲突
   const w = demoWorld({ conflicts: { S2: ['a.py'] } })

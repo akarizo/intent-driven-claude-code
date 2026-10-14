@@ -6,14 +6,11 @@ orchestrator.test.tsx（redispatch-pins-original-base）。
 import json
 import os
 
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-@pytest.mark.xfail(strict=True, reason="待 S1 实现")
 def test_redispatch_carries_dispatch_base():
     # Given: 两份账本，waves [S1]：甲 A 的派发记 base b0、收口门禁红（G4 GWT）后结束、补跑门禁仍红；乙 A 的派发记 base b0、无收口结论就结束、补跑门禁红（G3 test）
     # When: 各求下一批动作
@@ -28,7 +25,6 @@ def test_redispatch_without_dispatch_base_unchanged():
     assert_ts_passed("redispatch-without-dispatch-base-unchanged")
 
 
-@pytest.mark.xfail(strict=True, reason="待 S1 实现")
 def test_redispatch_pins_original_base():
     # Given: /opsx-apply demo 已起飞，waves [S1]；S1 执行体 A 在 S1 worktree 派发，起点 base-flight-demo-S1；A 收口门禁红（G4 GWT）
     # When: A 结束，控制面续派 S1 的执行体
@@ -36,7 +32,6 @@ def test_redispatch_pins_original_base():
     assert_ts_passed("redispatch-pins-original-base")
 
 
-@pytest.mark.xfail(strict=True, reason="待 S1 实现")
 def test_plugin_version_0_13_1():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     with open(os.path.join(ROOT, "template/plugins/flight/.claude-plugin/plugin.json"), encoding="utf-8") as f:
