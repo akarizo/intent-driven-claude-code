@@ -671,6 +671,7 @@ test('tools-and-commands-invariant', async ($, on) => {
 test('version-floor-disables-band', async ($, on) => {
   // Given: 会话版本 2.1.200，主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { version: '2.1.200' }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域
@@ -685,6 +686,7 @@ test('version-floor-disables-band', async ($, on) => {
 test('version-unreadable-disables-band', async ($, on) => {
   // Given: 读会话版本的调用失败（旧引擎没有该 API），主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 主会话一轮结束后绘制输入框上方区域
@@ -724,6 +726,7 @@ test('band-prefers-approvable-item', async ($, on) => {
 test('version-unreadable-shows-notice', async ($, on) => {
   // Given: 读会话版本的调用抛错，主 worktree 里有待批准的 demo
   const log = useWorld(on, demoWorld(() => F, { versionFails: true }))
+  await claim($, on, ['demo'])
   await $.session.start(START)
 
   // When: 在 terminal 上绘制输入框上方区域
