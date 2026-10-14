@@ -4,7 +4,8 @@
   "gate": {
     "test": "python3 -m pytest -q tests",
     "lint": "python3 -m compileall -q template/.claude/hooks",
-    "typecheck": null
+    "typecheck": null,
+    "full_suite_sec": 159.9
   },
   "artifact_files": [
     "template/plugins/flight/tests/core.test.ts"
