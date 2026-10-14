@@ -889,7 +889,15 @@ async function runStep($: Engine, change: string, step: ArmStep): Promise<void> 
   }
   if (step.do === 'submit') {
     // T0 在调用 submit 之前取：提交的那一轮开始时刻比 submit 完成早（design D3）
-    await $.clock.after(0, () => void submitFix($, change, step.text).catch(err => ctx.log(`flight：提交修复请求失败：${errText(err)}`)))
+    await $.clock.after(0, () => void submitFix($, change, step.text, arm.since).catch(err => ctx.log(`flight：提交修复请求失败：${errText(err)}`)))
+    return
+  }
+  if (step.do === 'wake') {
+    // 还要等（基线仍在跑 / agent 仍在运行）就不唤醒，下一个 tick 再看
+    if (!(await armReady($, arm))) return
+    const t0 = await $.clock.now()
+    await putArm($, { ...arm, awaitingWake: true, submittedAt: t0 } as Arm)
+    await $.clock.after(0, () => void submitWake($, change, step.text, arm.since).catch(err => ctx.log(`flight：提交唤醒失败：${errText(err)}`)))
     return
   }
   const tried = beforeRetry(arm)
@@ -909,20 +917,56 @@ async function runStep($: Engine, change: string, step: ArmStep): Promise<void> 
 }
 
 /** 交模型：先取 T0 再提交；成功记 awaitingModel 与 submittedAt，失败放弃待命。只在 clock.after(0) 的回调里调用。 */
-async function submitFix($: Engine, change: string, text: string): Promise<void> {
+async function submitFix($: Engine, change: string, text: string, since: number): Promise<void> {
   const t0 = await $.clock.now()
   try {
     await $.prompt.submit({ text })
   } catch (err) {
-    const arm = await armOfChange($, change)
-    if (arm === undefined) return
-    await dropArm($, change)
-    await ctxOf($).notify?.(giveUpText(arm, `提交修复请求失败（${errText(err)}）`))
-    await restoreStatus($)
+    await giveUpIfSame($, change, since, `提交修复请求失败（${errText(err)}）`)
     return
   }
+  // 提交期间待命被取消或换新（since 变了）：结果不记到新待命上（design D6）
   const arm = await armOfChange($, change)
-  if (arm !== undefined) await putArm($, { ...arm, awaitingModel: true, submittedAt: t0 } as Arm)
+  if (arm?.since === since) await putArm($, { ...arm, awaitingModel: true, submittedAt: t0 } as Arm)
+}
+
+/** 当前待命仍是 since 那一次时才放弃并通知；已被取消或换新时什么都不做。 */
+async function giveUpIfSame($: Engine, change: string, since: number, why: string): Promise<void> {
+  const arm = await armOfChange($, change)
+  if (arm?.since !== since) return
+  await dropArm($, change)
+  await ctxOf($).notify?.(giveUpText(arm, why))
+  await restoreStatus($)
+}
+
+/** 提交唤醒文本（T0 与 awaitingWake 已由 runStep 记好）；失败按 since 放弃。只在 clock.after(0) 的回调里调用。 */
+async function submitWake($: Engine, change: string, text: string, since: number): Promise<void> {
+  try {
+    await $.prompt.submit({ text })
+  } catch (err) {
+    await giveUpIfSame($, change, since, `提交唤醒失败（${errText(err)}）`)
+  }
+}
+
+/** 定时到点前零 token 复查一次是否值得唤醒：wait-baseline 看基线是否仍在跑，wait-agents 看上一次的 agent 是否仍在运行；任何异常按可唤醒处理。 */
+async function armReady($: Engine, arm: Arm): Promise<boolean> {
+  try {
+    if (arm.cls !== 'wait-baseline' && arm.cls !== 'wait-agents') return true
+    const at = await locate($, arm.change)
+    if ('error' in at) return true
+    const io = ioHere($)
+    if (arm.cls === 'wait-baseline') {
+      const pre = await judge(io, at.f, 'slice-gate', ['preflight', '--change-dir', at.f.changeDir], at.tree.path)
+      return !(pre.exitCode !== 0 && pre.stderr.includes('基线仍在跑'))
+    }
+    const ledger = await readLedger(io, at.f)
+    if ('error' in ledger) return true
+    const attempt = reduce(ledger.events).attempt
+    const mine = new Set(ledger.events.filter(e => e.ev === 'dispatch' && Number(e.attempt) === attempt).map(e => String(e.agent)))
+    return !(await $.agent.list()).some(x => mine.has(x.id) && LIVE.includes(String(x.status)))
+  } catch {
+    return true
+  }
 }
 
 /** 以一个事件推进某 change 的待命；没有待命或正在执行一步时跳过。异常只记一行。 */
@@ -1121,7 +1165,32 @@ async function watchOne($: Engine, id: string, waitedMs: number): Promise<void> 
   await queue.then(() => undefined)
   await stopLive()
   await refreshFromLedger($, ctx.io, f)
-  await triage(ctx, f, 'watchdog', reason)
+  await deferTriage($, f, 'watchdog', reason)
+}
+
+/** 待派的诊断员：看门狗停飞发生在定时器回调里，诊断员挪到唤醒那一轮结束时派（design D2）；T0 = 提交唤醒前的时刻 */
+const pendingTriage: Map<string, { f: Flight; haltKind: HaltKind; reason: string; at: number }> = new Map()
+
+/** 记下待派诊断员并提交唤醒；提交失败删掉该项并通知人。 */
+async function deferTriage($: Engine, f: Flight, haltKind: HaltKind, reason: string): Promise<void> {
+  if (NO_TRIAGE.includes(haltKind)) return
+  const at = await $.clock.now()
+  pendingTriage.set(f.change, { f, haltKind, reason, at })
+  const text = [
+    `flight：${f.change} 已被看门狗停飞，插件将在这一轮结束后派只读诊断员。`,
+    '这一轮只回复「收到」，不要做别的，也不要发 /opsx-apply。',
+  ].join('\n')
+  await $.clock.after(0, () => {
+    void (async () => {
+      try {
+        await $.prompt.submit({ text })
+      } catch (err) {
+        if (pendingTriage.get(f.change)?.at !== at) return
+        pendingTriage.delete(f.change)
+        await ctxOf($).notify?.(`flight：${f.change} 看门狗停飞后未能派诊断员（唤醒失败：${errText(err)}）`)
+      }
+    })().catch(() => undefined)
+  })
 }
 
 /** agent 属于在飞的 change，或是在诊断 change 的诊断员；登记中（dispatch 尚未写入）也算：新 agent 的首个模型请求几乎都落在这段窗口里 */
@@ -1396,7 +1465,13 @@ export function registerOrchestrator(on: On): void {
       // 只认提交之后开始的那一轮：开始时刻 = 结束时刻 − durationMs，不早于 T0（缺 T0 按旧行为）
       const startedAt = (await $.clock.now()) - Number(e.durationMs ?? 0)
       const after = (arm: Arm & { submittedAt?: number }) => arm.submittedAt === undefined || startedAt >= arm.submittedAt
-      await advanceAll($, { kind: 'main-turn' }, arm => arm.awaitingModel && after(arm))
+      await advanceAll($, { kind: 'main-turn' }, arm => (arm.awaitingModel || arm.awaitingWake) && after(arm))
+      // 看门狗停飞后待派的诊断员：唤醒那一轮（开始时刻不早于 T0）结束时在这个活的 hook 里派
+      for (const [change, p] of [...pendingTriage]) {
+        if (startedAt < p.at) continue
+        pendingTriage.delete(change)
+        await triage(ctxOf($), p.f, p.haltKind, p.reason)
+      }
     }
     return r
   }).catch(($, e, next) => next(e))

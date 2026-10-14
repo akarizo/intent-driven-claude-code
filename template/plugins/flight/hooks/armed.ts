@@ -15,12 +15,15 @@ export type Arm = {
   since: number
   tries: number
   awaitingModel: boolean
+  /** 已提交唤醒、尚未重试（design D1）：定时到点只唤醒，重试在主会话那一轮结束时做 */
+  awaitingWake: boolean
   transientAgain: boolean
 }
 export type ArmEvent = { kind: 'refused' } | { kind: 'agent-ended' } | { kind: 'main-turn' } | { kind: 'tick' } | { kind: 'timer' }
 export type ArmStep =
   | { do: 'retry' }
   | { do: 'submit'; text: string }
+  | { do: 'wake'; text: string }
   | { do: 'wait'; ms?: number }
   | { do: 'give-up'; reason: string }
 
@@ -60,6 +63,7 @@ export function armOf(x: { change: string; args: string[]; resume: boolean; text
     since: x.now,
     tries: 0,
     awaitingModel: false,
+    awaitingWake: false,
     transientAgain: false,
   }
 }
@@ -69,7 +73,7 @@ function counted(cls: ArmClass): boolean {
 }
 
 export function beforeRetry(arm: Arm): Arm {
-  return { ...arm, tries: counted(arm.cls) ? arm.tries + 1 : arm.tries, awaitingModel: false }
+  return { ...arm, tries: counted(arm.cls) ? arm.tries + 1 : arm.tries, awaitingModel: false, awaitingWake: false }
 }
 
 export function refusedAgain(arm: Arm, text: string): Arm {
@@ -87,16 +91,20 @@ export function nextStep(arm: Arm, event: ArmEvent, now: number): ArmStep {
   if (event.kind === 'refused' && arm.cls === 'transient' && arm.transientAgain) {
     return { do: 'give-up', reason: `偶发失败重试一次后仍失败：${why}` }
   }
+  // 已提交唤醒：那一轮结束才重试（定时器回调里起飞会绕过包络与 measure，design D1）
+  if (event.kind === 'main-turn' && arm.awaitingWake) return { do: 'retry' }
+  const wake: ArmStep = arm.awaitingWake ? { do: 'wait' } : { do: 'wake', text: wakePrompt(arm) }
   switch (arm.cls) {
     case 'wait-baseline':
-      if (event.kind === 'tick') return { do: 'retry' }
+      if (event.kind === 'tick') return wake
       break
     case 'wait-agents':
-      if (event.kind === 'agent-ended' || event.kind === 'tick') return { do: 'retry' }
+      if (event.kind === 'agent-ended') return { do: 'retry' }
+      if (event.kind === 'tick') return wake
       break
     case 'transient':
       if (event.kind === 'refused') return { do: 'wait', ms: TRANSIENT_DELAY_MS }
-      if (event.kind === 'timer') return { do: 'retry' }
+      if (event.kind === 'timer') return wake
       break
     case 'model':
       if (event.kind === 'refused') return { do: 'submit', text: modelPrompt(arm) }
@@ -113,6 +121,14 @@ export function modelPrompt(arm: Arm): string {
     '',
     '边界：只修工作区与本 change 工件；改了计划需要人在批准带重新批准；不要发 /opsx-apply。',
     '插件会在这一轮结束后自动重试起飞。',
+  ].join('\n')
+}
+
+/** 定时到点的唤醒文本：让主会话跑一轮，插件在那一轮结束时重试起飞 */
+export function wakePrompt(arm: Arm): string {
+  return [
+    `flight：${arm.change} 起飞待命到点（${head(arm.reason)}），插件将在这一轮结束后重试起飞。`,
+    '这一轮只回复「收到」，不要做别的，也不要发 /opsx-apply。',
   ].join('\n')
 }
 
