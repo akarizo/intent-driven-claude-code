@@ -1,12 +1,9 @@
-"""派发修复遗留：插件版本（scenario: flight-dispatch-followups-docs#plugin-version-0-10-3）。骨架：S3 改完 plugin.json 后去掉 xfail 标记。"""
+"""派发修复遗留：插件版本（scenario: flight-dispatch-followups-docs#plugin-version-0-10-3）。"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S3 未实现")
 def test_plugin_version_0_10_3():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
