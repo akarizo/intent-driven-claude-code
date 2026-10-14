@@ -1,7 +1,5 @@
 """批准带续飞与 resume.ts（scenario: flight-halt-handoff#band-offers-resume-for-halted / press-approves-then-resumes / resume-flight-sequence）。
 断言插件里同名的 TS 测试通过。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -123,7 +121,6 @@ def test_baseline_status_restored():
 
 # ---------------------------------------------------------------- flight-dispatch-followups S2
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S2 未实现")
 def test_rapid_second_press_refused():
     # Given: demo 未批准，批准带显示「批准起飞」；plan_fp.py 要等放行后才作答
     # When: 按「批准起飞」，等到 plan_fp.py 已被调用、尚未作答时再按一次同一按钮，随后放行（期间不推进时钟）
@@ -131,7 +128,6 @@ def test_rapid_second_press_refused():
     assert_ts_passed("rapid-second-press-refused")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S2 未实现")
 def test_replan_duplicate_resumes():
     # Given: alpha 已停飞、计划已改（当前 G），批准带显示「批准修订并续飞」；按下前账本在停飞之后已有指纹 G 的 approve；基线立即以 0 退出
     # When: 按下「批准修订并续飞」并等它返回
@@ -139,7 +135,6 @@ def test_replan_duplicate_resumes():
     assert_ts_passed("replan-duplicate-resumes")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-followups S2 未实现")
 def test_other_baseline_line_kept():
     # Given: alpha 与 beta 都已停飞；beta 的「批准修订并续飞」已按下、基线迟迟不结束；alpha 计划未改，显示「续飞」
     # When: 按下 alpha 的「续飞」并等它返回
