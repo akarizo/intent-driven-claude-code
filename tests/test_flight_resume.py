@@ -1,7 +1,5 @@
 """批准带续飞与 resume.ts（scenario: flight-halt-handoff#band-offers-resume-for-halted / press-approves-then-resumes / resume-flight-sequence）。
 断言插件里同名的 TS 测试通过。"""
-import pytest
-
 from test_flight_plugin import assert_ts_passed
 
 
@@ -87,7 +85,6 @@ def test_band_dedupe_toast_says_takeoff():
 
 # ---------------------------------------------------------------- flight-dispatch-origin S3（骨架：实现后去掉 xfail 标记）
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S3 未实现")
 def test_press_takes_off_before_returning():
     # Given: demo 未批准，批准带显示「批准起飞」
     # When: 按下「批准起飞」，等按键处理返回（期间不推进时钟）
@@ -95,7 +92,6 @@ def test_press_takes_off_before_returning():
     assert_ts_passed("press-takes-off-before-returning")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S3 未实现")
 def test_resume_press_takes_off_before_returning():
     # Given: alpha 已停飞、计划已改，批准带显示「批准修订并续飞」；基线立即以 0 退出
     # When: 按下「批准修订并续飞」，等按键处理返回（期间不推进时钟）
@@ -103,7 +99,6 @@ def test_resume_press_takes_off_before_returning():
     assert_ts_passed("resume-press-takes-off-before-returning")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S3 未实现")
 def test_second_press_while_busy_refused():
     # Given: demo 未批准，批准带显示「批准起飞」；起飞守卫要等放行才作答
     # When: 按「批准起飞」，等到守卫已被调用、尚未作答时再按一次同一按钮，随后放行（期间不推进时钟）
@@ -111,7 +106,6 @@ def test_second_press_while_busy_refused():
     assert_ts_passed("second-press-while-busy-refused")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S3 未实现")
 def test_refresh_failure_clears_busy():
     # Given: demo 已批准、未起飞，批准带显示「起飞」；按键后的第一次重绘读取抛错一次
     # When: 按下「起飞」并等它返回，随后再重绘批准带
@@ -119,7 +113,6 @@ def test_refresh_failure_clears_busy():
     assert_ts_passed("refresh-failure-clears-busy")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S3 未实现")
 def test_baseline_status_restored():
     # Given: alpha 已停飞、计划已改，批准带显示「批准修订并续飞」；基线以 1 退出；没有别的待命与在飞 change
     # When: 按下「批准修订并续飞」并等它返回

@@ -40,6 +40,8 @@ type World = {
   baselineWait?: Promise<unknown>
   /** takeoff-gate.py 以 exit 0 放行；随后的起飞检查（git --version、ledger.py events、slice-gate.py features）都过，slice-gate.py lint 以 exit 1 停下 */
   gatePasses?: boolean
+  /** 接下来这么多次 `git worktree list`（批准带重绘的第一步读取）抛错，用完自动复原 */
+  refreshThrows?: number
 }
 
 type GitCall = { args: string[]; cwd: string | undefined; stdin: string | undefined }
@@ -216,7 +218,13 @@ function useWorld(on: On, w: World) {
       log.commits.push(args.slice(2))
       return ok('')
     }
-    if (cmd === 'git' && args.includes('worktree')) return ok(w.worktrees)
+    if (cmd === 'git' && args.includes('worktree')) {
+      if ((w.refreshThrows ?? 0) > 0) {
+        w.refreshThrows = (w.refreshThrows ?? 0) - 1
+        throw new Error('git worktree list 读取失败（测试世界）')
+      }
+      return ok(w.worktrees)
+    }
     if (cmd === 'git' && args.includes('status')) return ok(w.status ?? '')
     if (cmd !== 'git') throw new Error(`unexpected argv: ${e.argv.join(' ')}`)
     log.git.push({ args, cwd: e.init?.cwd, stdin: e.init?.stdin })
@@ -253,6 +261,11 @@ function committed(log: { commits: string[][] }): string[][] {
 }
 
 /** 推进时钟，让按键处理经 clock.after(0) 起的后台起飞 / 续飞跑完。 */
+/** 轮询到 cond 为真（至多约 1 秒）：用于按键处理尚未返回时等世界里的调用发生 */
+async function until(cond: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !cond(); i++) await new Promise(r => setTimeout(r, 5))
+}
+
 async function background(log: { clock: { advance(ms: number): unknown; settle(): unknown } }): Promise<void> {
   await log.clock.advance(0)
   await log.clock.settle()
@@ -931,12 +944,13 @@ test('band-shows-busy-while-taking-off', async ($, on) => {
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
 
-  // When: 按下 approve:demo:<F>，推进时钟让后台起飞开始（守卫未答）并读出重绘后的批准带；随后放行守卫，推进时钟让起飞跑完
-  await ui.press({ key: `approve:demo:${F}` })
-  await log.clock.advance(0)
+  // When: 按下 approve:demo:<F>（按键处理等守卫作答，先不 await），等到守卫已被调用后读出重绘后的批准带；随后放行守卫，等按键处理返回
+  const pressed = ui.press({ key: `approve:demo:${F}` })
+  await until(() => log.gates.length === 1)
   const busy = await ui.find({ text: /起飞中…/ })
   const buttons = await ui.findAll({ type: 'Button' })
   release()
+  await pressed
   await background(log)
 
   // Then: 起飞返回前批准带有「起飞中…」且没有按钮；放行后批准带不再有「起飞中…」；以 demo 起飞了一次
@@ -957,14 +971,15 @@ test('band-shows-baseline-progress', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
   const progress = () => log.statuses.filter(s => s.includes('基线已跑'))
 
-  // When: 按下 replan:alpha:<G>，推进时钟 60 秒（基线未结束）后读出状态行与批准带；放行基线让续飞跑完，再推进 120 秒
-  await ui.press({ key: `replan:alpha:${G}` })
-  await log.clock.advance(0)
+  // When: 按下 replan:alpha:<G>（按键处理等基线结束，先不 await），等到基线已启动后推进时钟 60 秒（基线未结束），读出状态行与批准带；放行基线、等按键处理返回，再推进 120 秒
+  const pressed = ui.press({ key: `replan:alpha:${G}` })
+  await until(() => log.baselines.length === 1)
   await log.clock.advance(60000)
   const line = progress().at(-1)
   const band = await ui.find({ text: /基线运行中/ })
   const buttons = await ui.findAll({ type: 'Button' })
   release()
+  await pressed
   await background(log)
   const afterRelease = progress().length
   await log.clock.advance(120000)
@@ -996,4 +1011,96 @@ test('band-dedupe-toast-says-takeoff', async ($, on) => {
   expect(log.toasts.some(t => t.includes('flight：demo 已批准（指纹相同），直接起飞'))).toBe(true)
   expect(log.toasts.filter(t => t.includes('无需重复按'))).toEqual([])
   expect(log.gates).toEqual(['demo'])
+})
+
+// ---------------------------------------------------------------- flight-dispatch-origin S3：按键处理之内起飞与续飞
+
+test('press-takes-off-before-returning', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；起飞守卫以 exit 3「未批准」立即作答；批准带已显示 demo 的「批准起飞」
+  const log = useWorld(on, demoWorld(() => F))
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 approve:demo:<F> 并等这次按键处理返回（期间不推进时钟）
+  await ui.press({ key: `approve:demo:${F}` })
+
+  // Then: 账本已追加 fp=F 的 approve；起飞守卫恰以 demo 运行一次；toast 里已有起飞回复首行（含「起飞守卫未通过」）
+  expect(JSON.parse(String(log.git.find(c => c.args[0] === 'hash-object')?.stdin))).toMatchObject({ ev: 'approve', fp: F })
+  expect(log.gates).toEqual(['demo'])
+  expect(log.toasts.some(t => t.includes('起飞守卫未通过'))).toBe(true)
+})
+
+test('resume-press-takes-off-before-returning', async ($, on) => {
+  // Given: alpha 已停飞、计划改过（当前 G、最近批准 F），批准带显示「批准修订并续飞」；slice-gate.py baseline 立即以 exit 0、{"ok": true} 作答
+  const world = haltWorld(['alpha'])
+  world.baseline = { exitCode: 0, stdout: JSON.stringify({ ok: true, reasons: [] }) }
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 replan:alpha:<G> 并等这次按键处理返回（期间不推进时钟）
+  await ui.press({ key: `replan:alpha:${G}` })
+
+  // Then: 基线恰对 alpha 运行一次；起飞守卫恰以 alpha 运行一次
+  expect(log.baselines).toEqual([`${CHANGES}/alpha`])
+  expect(log.gates).toEqual(['alpha'])
+})
+
+test('second-press-while-busy-refused', async ($, on) => {
+  // Given: demo 未批准（账本为空），当前指纹 F；takeoff-gate.py 要等 release() 之后才作答；批准带已显示 demo 的「批准起飞」；
+  //        按下之后的前两次批准带重绘读取抛错（批准带停在旧的「批准起飞」，模拟引擎在重绘前交付旧按钮的按键）；已按下 approve:demo:<F>（先不 await），并等到起飞守卫已被调用
+  let release: () => void = () => undefined
+  const world = demoWorld(() => F, { gateWait: new Promise<void>(r => (release = r)) })
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.refreshThrows = 2
+  const first = ui.press({ key: `approve:demo:${F}` })
+  await until(() => log.gates.length === 1)
+
+  // When: 第一次按键尚未返回（守卫已被调用、未作答）时再按一次 approve:demo:<F>，至多等 1 秒看它是否返回；随后放行守卫、等第一次按键返回（期间都不推进时钟）
+  const second = await Promise.race([
+    ui.press({ key: `approve:demo:${F}` }).then(() => 'returned'),
+    new Promise<string>(r => setTimeout(() => r('pending'), 1000)),
+  ])
+  release()
+  await first
+
+  // Then: 第二次按键在放行前已返回；有一条 toast 含「flight：demo 正在起飞」；起飞守卫总共只以 demo 运行一次；账本只追加了一条 approve
+  expect(second).toBe('returned')
+  expect(log.toasts.some(t => t.includes('flight：demo 正在起飞'))).toBe(true)
+  expect(log.gates).toEqual(['demo'])
+  expect(log.git.filter(c => c.args[0] === 'hash-object')).toHaveLength(1)
+})
+
+test('refresh-failure-clears-busy', async ($, on) => {
+  // Given: demo 账本只有 approve F、ledger approved 输出 F、当前指纹 F（已批准、未起飞），批准带显示「起飞」；按下之后第一次批准带重绘读 git worktree list 时抛错一次；已按下 takeoff:demo:<F> 并等按键处理返回（期间不推进时钟）
+  const world = demoWorld(() => F, { ledger: [ledgerEvent('approve', F)], approved: { demo: F } })
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+  world.refreshThrows = 1
+  await ui.press({ key: `takeoff:demo:${F}` }).catch(() => undefined)
+
+  // When: 按键处理返回后，主会话一轮结束让批准带重绘
+  await $.turn.complete(TURN)
+
+  // Then: 起飞守卫已以 demo 运行；重绘后的批准带不含「起飞中…」
+  expect(log.gates).toEqual(['demo'])
+  expect(await ui.findAll({ text: /起飞中…/ })).toHaveLength(0)
+})
+
+test('baseline-status-restored', async ($, on) => {
+  // Given: alpha 已停飞、计划改过（当前 G、最近批准 F），批准带显示「批准修订并续飞」；slice-gate.py baseline 以 exit 1、reasons ["S2 verify 红"] 作答；没有别的待命，也没有在飞的 change
+  const world = haltWorld(['alpha'])
+  world.baseline = { exitCode: 1, stdout: JSON.stringify({ ok: false, reasons: ['S2 verify 红'] }) }
+  const log = useWorld(on, world)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // When: 按下 replan:alpha:<G> 并等这次按键处理返回
+  await ui.press({ key: `replan:alpha:${G}` })
+
+  // Then: 最后一次状态行不含「续飞准备中」
+  expect(log.statuses.at(-1) ?? '').not.toContain('续飞准备中')
 })
