@@ -194,7 +194,9 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     return [blocked(s, 'infra', `解冲突未通过：${joined(g, '没有收口门禁结论')}`)]
   }
 
-  function executorOutcome(s: string, agent: string, dispatched: number): Action[] {
+  /** lastExec：本片最后一次执行体派发；同一 attempt 内续派沿用它的起点（取不到不带） */
+  function executorOutcome(s: string, lastExec: Ev, dispatched: number): Action[] {
+    const agent = str(lastExec, 'agent')
     const { end, closing, post } = lifecycle(state, agent)
     if (!end) return []
     const c = last(closing)
@@ -203,7 +205,7 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const p = last(post)
     if (!p) return [{ kind: 'gate', slice: s, agent }]
     if (p.ok === true) return [{ kind: 'merge', slice: s, via: 'branch' }]
-    if (dispatched < 2) return [{ kind: 'dispatch', role: 'executor', slice: s, continuation: { reason: '执行体未正常收口', failed: failedOf(p) } }]
+    if (dispatched < 2) return [{ kind: 'dispatch', role: 'executor', slice: s, continuation: { reason: '执行体未正常收口', failed: failedOf(p) }, ...baseOf(lastExec) }]
     return [blocked(s, 'gate', joined(p, '门禁红'))]
   }
 
@@ -217,7 +219,7 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
     const m = last(ofA('merge').filter(e => e.slice === s && e.seq > lastExec.seq))
     if (m) return afterMergeFailed(s, m)
     const h = last(healsA('merge-retry').filter(e => e.slice === s))
-    return executorOutcome(s, str(lastExec, 'agent'), execs.filter(e => !h || e.seq > h.seq).length)
+    return executorOutcome(s, lastExec, execs.filter(e => !h || e.seq > h.seq).length)
   }
 
   /**
