@@ -18,5 +18,4 @@
 ## S2 交出
 - 无对外接口。`register.tsx` 内部新增 `pressing: Set<string>`。
 
-## S3 交出
-- 无。只改插件版本与文档测试。
+## S3
