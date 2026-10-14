@@ -1,0 +1,21 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 645,
+      "summary": "redispatch-pins-original-base 中「第二条 dispatch 的 base 为 base-flight-demo-S1」和「measure 恰一条」这两条断言区分不出修复前后：测试世界里 slice-gate base 不带 --base 时按 cwd 回退为 base-<worktree 目录名>，结果也是 base-flight-demo-S1。所以续派不带 base 时，这两条照样成立（startMeasure 按相同 base 去重，measure 仍是一条）。真正能区分修复前后的只有 argv 含 --base 这一条。",
+      "fix": "在该用例的世界里让第二次 slice-gate base 不带 --base 时返回别的值，模拟「HEAD 已前移」。例如给 demoWorld 加一个按调用次数出队的 base 应答，或者在第一次派发后把 w.bases[SLICE1] 设成 'base-moved'。这样 dispatch.base 与 measure 两条断言在缺陷存在时也会变红。属于可选的加强，不阻断。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/plugins/flight/tests/orchestrator.test.tsx",
+      "line": 646,
+      "summary": "redispatch-pins-original-base 的后两条断言在修复前也成立，区分不了修复前后：测试世界的 slice-gate base 桩（第 379 行）在没有 --base 时回显 `base-<worktree 目录名>`。续派复用的是同一个 S1 worktree，所以即使不带 --base，第二次也会得到 `base-flight-demo-S1`。结果是「续派 dispatch 的 base 为 base-flight-demo-S1」和「起点测量恰一条」在 0.13.0 上照样通过，真正能区分修复前后的只有第 643 行的 argv 断言。这个世界没有模拟 proposal 里的根因：首个执行体提交后 HEAD 前移。",
+      "fix": "在 When 之前（首个执行体派发之后）模拟 HEAD 前移：给世界设 `w.bases = { [SLICE1]: 'head-after-A' }`，即先 `const w = demoWorld(...)`，再 `useWorld(on, w)`，派发后改 `w.bases`。这样修复前第二次 sliceBase 返回 `head-after-A`，dispatch base 与 measure 断言都会红，三条断言各自都能区分修复前后。"
+    }
+  ],
+  "fix": null
+}
