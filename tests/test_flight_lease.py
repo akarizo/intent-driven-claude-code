@@ -1,11 +1,8 @@
 """派发凭证 lease.ts（scenario: flight-dispatch-lease#dispatch-refused-after-hook-returns / dispatch-allowed-in-live-hook）。
-断言插件里同名的 TS 测试通过；骨架：S2 实现后去掉 xfail 标记。"""
-import pytest
-
+断言插件里同名的 TS 测试通过。"""
 from test_flight_plugin import assert_ts_passed
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S2 未实现")
 def test_dispatch_refused_after_hook_returns():
     # Given: 在 withLease 的 body 里取得凭证并保存，body 已返回；另有一次请求不带凭证
     # When: 分别用失效凭证与「没有凭证」请求派发（guardedSpawn）
@@ -13,7 +10,6 @@ def test_dispatch_refused_after_hook_returns():
     assert_ts_passed("dispatch-refused-after-hook-returns")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S2 未实现")
 def test_dispatch_allowed_in_live_hook():
     # Given: withLease 的 body 正在执行
     # When: body 里用它的凭证请求派发

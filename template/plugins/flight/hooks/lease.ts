@@ -25,3 +25,10 @@ export async function withLease<T>(body: (lease: Lease) => Promise<T>): Promise<
 export function leaseDeny(lease: Lease | undefined): string | undefined {
   return lease?.alive ? undefined : LEASE_DENY
 }
+
+/** 派发闸：凭证缺失或已失效 → { deny }，不调用 spawn；活凭证 → spawn 的结果原样交回。 */
+export async function guardedSpawn<T>(lease: Lease | undefined, spawn: () => Promise<T>): Promise<T | { deny: string }> {
+  const deny = leaseDeny(lease)
+  if (deny !== undefined) return { deny }
+  return spawn()
+}
