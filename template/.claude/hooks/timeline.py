@@ -118,7 +118,15 @@ def _baseline_line(change_dir):
     if not isinstance(bl, dict) or not bl.get("at"):
         return None
     test = bl.get("test") if isinstance(bl.get("test"), dict) else {}
-    note = "exit %s, %ss %s" % (test.get("exit"), test.get("sec"), "ok" if bl.get("ok") else "red")
+    verdict = "ok" if bl.get("ok") else "red"
+    inc = bl.get("incremental")
+    if bl.get("mode") == "incremental" and isinstance(inc, dict):
+        src = inc.get("from") if isinstance(inc.get("from"), dict) else {}
+        files = inc.get("files") if isinstance(inc.get("files"), list) else []
+        note = "增量（复用 %s 的全量 exit %s, %ss；补跑 %d 个测试文件 %ss） %s" % (
+            src.get("change"), test.get("exit"), test.get("sec"), len(files), inc.get("sec"), verdict)
+    else:
+        note = "exit %s, %ss %s" % (test.get("exit"), test.get("sec"), verdict)
     return "%s\tbaseline\t%s" % (_fmt_at(bl["at"]), _flat(note))
 
 
