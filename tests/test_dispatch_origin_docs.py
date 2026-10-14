@@ -1,8 +1,6 @@
 """派发绕过包络的修复：文档与版本（scenario: flight-dispatch-docs#docs-describe-wake-turn / propose-description-current / plugin-version-0-10-2）。
-骨架：S4 改完文档与 plugin.json 后去掉 xfail 标记。"""
+"""
 import json
-
-import pytest
 
 from conftest import ROOT
 
@@ -27,7 +25,6 @@ def _description(rel):
     raise AssertionError(f"{rel} 的 frontmatter 没有 description")
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S4 未实现")
 def test_docs_describe_wake_turn():
     # Given: opsx-apply 命令与 skill、README.md、docs/WORKFLOW_zh.md
     # When: 读取这四个文件
@@ -38,7 +35,6 @@ def test_docs_describe_wake_turn():
         assert "只回复「收到」" in _read(rel), f"{rel} 没写「只回复「收到」」"
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S4 未实现")
 def test_propose_description_current():
     # Given: template/.claude/commands/opsx-propose.md
     # When: 读取其 frontmatter 的 description
@@ -48,7 +44,6 @@ def test_propose_description_current():
     assert "自己发 /opsx-apply" not in desc, desc
 
 
-@pytest.mark.xfail(strict=True, reason="flight-dispatch-origin S4 未实现")
 def test_plugin_version_0_10_2():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
