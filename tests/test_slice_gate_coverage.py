@@ -3,8 +3,6 @@
 COVERAGE_FAIL 按 pytest-cov 7.1.0 源码（pytest_cov/plugin.py）的做法构造：测试跑完后打印两行标记，并让 session.testsfailed 加 1。"""
 import json
 
-import pytest
-
 from conftest import commit_all, write
 from test_slice_gate_final import OLD_RED, PYTEST, _baseline, _final, _repo
 
@@ -21,7 +19,6 @@ COVERAGE_FAIL = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：覆盖率未达标判不可度量")
 def test_final_red_on_coverage_failure(git_repo):
     # Given: gate.test 为 pytest；基线已生成（test_old 预存红，其余通过）；之后提交了按 pytest-cov 做法报覆盖率未达标的 tests/conftest.py
     change = _repo(git_repo, PYTEST, files={"tests/test_old.py": OLD_RED})
@@ -37,7 +34,6 @@ def test_final_red_on_coverage_failure(git_repo):
     assert any(f.startswith("G2 test") and "按退出码判" in f and "覆盖率" in f for f in out["failed"]), out["failed"]
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：覆盖率未达标判不可度量")
 def test_baseline_red_on_coverage_failure(git_repo):
     # Given: gate.test 为 pytest；test_old 失败，且 tests/conftest.py 按 pytest-cov 做法报覆盖率未达标
     change = _repo(git_repo, PYTEST, files={"tests/test_old.py": OLD_RED, "tests/conftest.py": COVERAGE_FAIL})

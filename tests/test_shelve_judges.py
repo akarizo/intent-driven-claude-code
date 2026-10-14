@@ -1,7 +1,5 @@
 """搁置撤销批准：判定器侧（scenario: flight-band-shelve#shelve-revokes-approval / later-approve-after-shelve-passes）。
 骨架：每个 scenario 一个 strict xfail，断言是真实的；切片 S1 实现后去掉标记即解锁。"""
-import pytest
-
 from conftest import approve_event, ledger_append, make_change, run_hook, write
 
 NO_SID = {"CLAUDE_CODE_SESSION_ID": ""}  # 防止实现借环境变量读到当前会话转录
@@ -18,7 +16,6 @@ def current_fp(change_dir):
     return p.stdout.strip()
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：账本认识 shelve，最新决定是 shelve 时拒飞")
 def test_shelve_revokes_approval(git_repo):
     # Given: demo 的账本依次有 approve（当前计划指纹 F）与 shelve（指纹 F）
     d = make_change(git_repo)
@@ -38,7 +35,6 @@ def test_shelve_revokes_approval(git_repo):
     assert approved.stdout.strip() == "", approved.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="S1 未实现：账本认识 shelve，最新决定是 approve 时照常放行")
 def test_later_approve_after_shelve_passes(git_repo):
     # Given: demo 的账本依次有 approve（指纹 F）、shelve（指纹 F）；之后计划改动、当前指纹为 G，账本再追加 approve（指纹 G）
     d = make_change(git_repo)

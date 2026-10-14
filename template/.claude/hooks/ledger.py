@@ -50,6 +50,7 @@ def _outcome(o):
 # 每类事件除公共字段（v / ev / change / at / by.plugin）外的必需字段；允许表外额外字段（spec flight-ledger-events）
 EVENTS = {
     "approve": {"fp": FP},
+    "shelve": {"fp": FP},
     "takeoff": {"attempt": ATTEMPT, "fp": FP, "branch": NONEMPTY, "model": NONEMPTY,
                 "waves": (lambda x: isinstance(x, list) and all(_strs(w) for w in x), "不是字符串数组的数组")},
     "dispatch": {"attempt": ATTEMPT, "slice": NONEMPTY,
@@ -184,13 +185,20 @@ def read_events(change_dir):
     return _read(change_dir)[0]
 
 
-def latest_approval(change_dir):
-    """返回 (最新 approve 事件 | None, 账本 tip sha | None)；tip 与读到的事件出自同一次解析。"""
+def latest_decision(change_dir):
+    """返回 (最后一条 approve 或 shelve 事件 | None, 账本 tip sha | None)；tip 与读到的事件出自同一次解析。"""
     events, tip = _read(change_dir)
     if not events:
         return None, None
-    approvals = [e for e in events if e["ev"] == "approve"]
-    return (approvals[-1] if approvals else None), tip
+    decisions = [e for e in events if e["ev"] in ("approve", "shelve")]
+    return (decisions[-1] if decisions else None), tip
+
+
+def latest_approval(change_dir):
+    """返回 (最新 approve 事件 | None, 账本 tip sha | None)；最新决定是 shelve 时为 None。
+    tip 与读到的事件出自同一次解析。"""
+    event, tip = latest_decision(change_dir)
+    return (event if event is not None and event["ev"] == "approve" else None), tip
 
 
 def main(argv=None):
