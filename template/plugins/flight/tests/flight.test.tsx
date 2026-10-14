@@ -993,6 +993,35 @@ test('band-shows-plan-defect-without-resume', async ($, on) => {
   expect(keys).toContain(`shelve:gamma:${F}`)
 })
 
+test('band-shows-plan-defect-from-triage', async ($, on) => {
+  // Given: gamma 当前与最近批准都为 F；账本 approve F → takeoff F（attempt 1）→ S1 的 blocked（原因「G1 verify: exit 1」）→ kind=blocked 的 halt
+  //        → triage「S1 的 owns 漏了 tests/test_x.py\n改计划\n草案」；本会话已认领 gamma
+  const world = haltWorld(['gamma'])
+  world.fp = () => F
+  world.approved = { gamma: F }
+  world.ledgers = {
+    gamma: [
+      attemptEvent('gamma', 'approve', '10:00:00', { attempt: undefined, fp: F }),
+      attemptEvent('gamma', 'takeoff', '10:01:00', { fp: F }),
+      attemptEvent('gamma', 'blocked', '10:20:00', { slice: 'S1', kind: 'gate', reason: 'G1 verify: exit 1' }),
+      attemptEvent('gamma', 'halt', '10:30:00', { reason: 'S1 blocked', kind: 'blocked' }),
+      attemptEvent('gamma', 'triage', '10:40:00', { agent: 'd1', text: 'S1 的 owns 漏了 tests/test_x.py\n改计划\n草案' }),
+    ],
+  }
+  useWorld(on, world)
+  await claim($, on, ['gamma'])
+
+  // When: 会话启动（刷新批准带）后绘制
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'flight', surface: 'terminal', ...BAND })
+
+  // Then: 有同时含「计划需修订」与「S1 的 owns 漏了 tests/test_x.py」的文字；没有 key 以 resume: 开头的按钮；有 key 为 shelve:gamma:<F> 的按钮
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.key))
+  expect(await ui.find({ text: /计划需修订.*S1 的 owns 漏了 tests\/test_x\.py/ })).toBeDefined()
+  expect(keys.filter(k => k.startsWith('resume:'))).toEqual([])
+  expect(keys).toContain(`shelve:gamma:${F}`)
+})
+
 test('band-approve-takes-off', async ($, on) => {
   // Given: demo 未批准（账本为空），当前指纹 F；git status 列出 demo 的 proposal.md 一个未提交工件；起飞守卫放行，起飞检查走到提交工件之后在 lint 停下；批准带已显示 demo 的「批准起飞」
   const log = useWorld(on, demoWorld(() => F, { status: ' M template/openspec/changes/demo/proposal.md\n', gatePasses: true }))

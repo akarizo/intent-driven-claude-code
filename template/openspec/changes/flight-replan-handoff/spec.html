@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- block:title -->
+flight-replan-handoff · 意图审批面板
+<!-- /block:title --></title>
+<style>
+:root {
+  color-scheme: light dark;
+
+  --font-display: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Han Mono SC", monospace;
+
+  --space-1: clamp(0.25rem, 0.2rem + 0.2vw, 0.4rem);
+  --space-2: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+  --space-3: clamp(0.75rem, 0.6rem + 0.6vw, 1.1rem);
+  --space-4: clamp(1rem, 0.8rem + 0.8vw, 1.5rem);
+  --space-5: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --space-6: clamp(2.25rem, 1.8rem + 1.8vw, 3.5rem);
+  --space-7: clamp(3.5rem, 2.8rem + 2.8vw, 5.5rem);
+
+  --text-xs:   0.78rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.18rem;
+  --text-xl:   1.45rem;
+  --text-2xl:  1.85rem;
+  --text-3xl:  2.4rem;
+  --text-hero: clamp(2.6rem, 1.4rem + 5vw, 5.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --duration-fast: 140ms;
+  --duration-base: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root,
+[data-theme="light"] {
+  --color-bg:        #f7f5ef;
+  --color-surface:   #ffffff;
+  --color-surface-2: #efece3;
+  --color-fg:        #15161a;
+  --color-fg-muted:  #5b5e68;
+  --color-border:    #d9d4c3;
+  --color-border-strong: #1a1b20;
+  --color-accent:    #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-new:       #15803d;
+  --color-new-soft:  #dcfce7;
+  --color-modified:  #b45309;
+  --color-modified-soft: #fef3c7;
+  --color-removed:   #b91c1c;
+  --color-removed-soft: #fee2e2;
+  --color-given:     #1d4ed8;
+  --color-when:      #b45309;
+  --color-then:      #15803d;
+  --shadow-sm: 0 1px 2px rgba(20,21,26,.06);
+  --shadow-md: 0 6px 24px -8px rgba(20,21,26,.16);
+}
+
+[data-theme="dark"] {
+  --color-bg:        #0e0f13;
+  --color-surface:   #16181d;
+  --color-surface-2: #1d2027;
+  --color-fg:        #f3f1e8;
+  --color-fg-muted:  #9a9ea9;
+  --color-border:    #2b2f37;
+  --color-border-strong: #f3f1e8;
+  --color-accent:    #60a5fa;
+  --color-accent-soft: rgba(96,165,250,0.18);
+  --color-new:       #4ade80;
+  --color-new-soft:  rgba(74,222,128,0.16);
+  --color-modified:  #fbbf24;
+  --color-modified-soft: rgba(251,191,36,0.16);
+  --color-removed:   #f87171;
+  --color-removed-soft: rgba(248,113,113,0.18);
+  --color-given:     #93c5fd;
+  --color-when:      #fcd34d;
+  --color-then:      #86efac;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-md: 0 10px 32px -10px rgba(0,0,0,.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg:        #0e0f13;
+    --color-surface:   #16181d;
+    --color-surface-2: #1d2027;
+    --color-fg:        #f3f1e8;
+    --color-fg-muted:  #9a9ea9;
+    --color-border:    #2b2f37;
+    --color-border-strong: #f3f1e8;
+    --color-accent:    #60a5fa;
+    --color-accent-soft: rgba(96,165,250,0.18);
+    --color-new:       #4ade80;
+    --color-new-soft:  rgba(74,222,128,0.16);
+    --color-modified:  #fbbf24;
+    --color-modified-soft: rgba(251,191,36,0.16);
+    --color-removed:   #f87171;
+    --color-removed-soft: rgba(248,113,113,0.18);
+    --color-given:     #93c5fd;
+    --color-when:      #fcd34d;
+    --color-then:      #86efac;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+code, pre { font-family: var(--font-mono); }
+pre {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+:not(pre) > code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+
+/* ── Topbar ──────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--color-bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.topbar .brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.topbar .brand-dot {
+  width: 10px; height: 10px;
+  background: var(--color-border-strong);
+  border-radius: 50%;
+}
+.topbar .change-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+.topbar .chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.chip {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.chip[data-state="done"]    { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="ready"]   { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="blocked"] { color: var(--color-fg-muted); }
+.theme-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--color-border-strong); }
+
+/* ── Layout ──────────────────────────────────────────────── */
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; padding: var(--space-4); }
+  .toc { position: static; max-height: none; }
+}
+
+.toc {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+.toc h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-3);
+}
+.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; margin: var(--space-1) 0; }
+.toc a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.toc a:hover, .toc a[aria-current="true"] {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.toc a::before {
+  content: counter(toc, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+  min-width: 1.7em;
+}
+
+main { min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  margin-bottom: var(--space-7);
+  scroll-margin-top: 100px;
+}
+section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-border-strong);
+}
+section > h2 .eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-2);
+}
+section h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 600;
+}
+section h4 {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+/* Why — 克制层级：粗体衬线，但不放大字号 */
+#why .why-statement {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-fg);
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 60ch;
+}
+#why .why-body {
+  font-size: var(--text-base);
+  color: var(--color-fg-muted);
+  max-width: 60ch;
+}
+
+/* What */
+#what ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+#what li {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+#what .impact {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg);
+}
+
+/* Capabilities — bento */
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.cap-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+.cap-card .cap-kind {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.cap-card[data-kind="new"]      { border-left: 4px solid var(--color-new); }
+.cap-card[data-kind="new"] .cap-kind { background: var(--color-new-soft); color: var(--color-new); }
+.cap-card[data-kind="modified"] { border-left: 4px solid var(--color-modified); }
+.cap-card[data-kind="modified"] .cap-kind { background: var(--color-modified-soft); color: var(--color-modified); }
+.cap-card h4 {
+  margin: 0 0 var(--space-2);
+  padding-right: 5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+.cap-card p { margin: 0; color: var(--color-fg-muted); }
+
+/* Specs — Gherkin */
+.spec-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.spec-card h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.spec-card h3 .delta {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.delta[data-op="added"]    { background: var(--color-new-soft); color: var(--color-new); }
+.delta[data-op="modified"] { background: var(--color-modified-soft); color: var(--color-modified); }
+.delta[data-op="removed"]  { background: var(--color-removed-soft); color: var(--color-removed); }
+
+.requirement {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border);
+}
+.requirement:first-of-type { border-top: 0; padding-top: 0; }
+.requirement-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.scenario {
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin: var(--space-3) 0;
+}
+.scenario-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin: 0 0 var(--space-2);
+}
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li {
+  padding: var(--space-1) 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.step-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 5em;
+  text-align: center;
+}
+.step-key[data-kw="GIVEN"] { color: var(--color-given); background: var(--color-accent-soft); }
+.step-key[data-kw="WHEN"]  { color: var(--color-when);  background: var(--color-modified-soft); }
+.step-key[data-kw="THEN"]  { color: var(--color-then);  background: var(--color-new-soft); }
+.step-key[data-kw="AND"],
+.step-key[data-kw="BUT"]   { color: var(--color-fg-muted); background: var(--color-surface); }
+
+/* Design */
+#design .design-block {
+  margin-bottom: var(--space-5);
+}
+#design details {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#design details summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#design details[open] summary { margin-bottom: var(--space-2); }
+
+/* Mermaid */
+.diagram-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-3) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram-frame .mermaid { font-family: var(--font-body); }
+.diagram-frame .caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+}
+.diagram-fallback {
+  display: none;
+  background: var(--color-surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+}
+body.offline .diagram-fallback { display: block; }
+/* 渲染成功后 Mermaid 会打上 data-processed；未渲染的不外露源码 */
+.diagram-frame .mermaid:not([data-processed]) { display: none; }
+
+/* Mockups */
+.mockup-frame {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin: var(--space-3) 0;
+}
+.mockup-frame .caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ADRs */
+#adrs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+#adrs li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+#adrs .adr-num {
+  font-family: var(--font-mono);
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+  min-width: 4em;
+}
+#adrs .adr-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-left: auto;
+}
+
+/* Tasks */
+#tasks .task-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-2) 0;
+}
+#tasks .task-group summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+#tasks ul { list-style: none; padding: var(--space-2) 0 0; margin: 0; }
+#tasks li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+#tasks input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+#tasks li[data-done="true"] { color: var(--color-fg-muted); text-decoration: line-through; }
+
+/* Flight */
+#flight h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-fg-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.flight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.flight-table th, .flight-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.flight-table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-muted);
+}
+.flight-table td.mono { font-family: var(--font-mono); }
+.flight-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.chip[data-state="unlocked"] { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.chip[data-state="pending"]  { color: var(--color-modified); border-color: var(--color-modified); background: var(--color-modified-soft); }
+.chip[data-state="passed"]   { color: var(--color-new); border-color: var(--color-new); background: var(--color-new-soft); }
+.chip[data-state="missing"]  { color: var(--color-removed); border-color: var(--color-removed); background: var(--color-removed-soft); }
+
+/* Placeholders (rendered as-is when block is not filled) */
+.placeholder {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border-left: 3px dashed var(--color-fg-muted);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-5);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg-muted);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="brand-dot"></span>意图审批面板</div>
+    <span class="change-name"><!-- block:change-name -->
+flight-replan-handoff
+<!-- /block:change-name --></span>
+    <div class="chips">
+      <!-- block:meta-chips -->
+<span class="chip" data-state="done">proposal</span><span class="chip" data-state="done">design</span><span class="chip" data-state="done">tasks</span><span class="chip" data-state="done">specs/flight-replan-handoff</span><span class="chip" data-state="done">计划指纹 ed06f284</span>
+<!-- /block:meta-chips -->
+    </div>
+    <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换主题">切换主题</button>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="toc" aria-label="目录">
+    <h3>章节</h3>
+    <ol>
+      <li><a href="#why">为何而做</a></li>
+      <li><a href="#what">变更范围</a></li>
+      <li><a href="#capabilities">能力清单</a></li>
+      <li><a href="#specs">行为规范</a></li>
+      <li><a href="#design">技术设计</a></li>
+      <li><a href="#diagrams">关键图示</a></li>
+      <li><a href="#mockups">原型示意</a></li>
+      <li><a href="#adrs">架构决策</a></li>
+      <li><a href="#flight">飞行计划</a></li>
+      <li><a href="#tasks">落地任务</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <section id="why">
+      <h2><span class="eyebrow">Why · 01</span>为何而做</h2>
+      <!-- block:why -->
+<p class="why-statement">2026-10-14 afa 的 <code>cparam-native-subhz-layout</code> 起飞后停飞，停下后飞行没有接着往下走：</p><p class="why-body">| 时间（UTC） | 事件 |
+|---|---|
+| 08:44 | 起飞；S1 执行体实现并提交 |
+| 08:51 | S1 门禁红：G1 verify 有 2 条失败，均在 <code>executor/tests/af_validate/test_rpq_diff.py</code>；该文件不在任何切片的 owns 里，执行体写不了 |
+| 08:51–08:56 | 重派执行体：补了 G4，G1 仍红；S1 blocked，S2–S6 跟着 blocked，停飞（kind blocked） |
+| 08:59 | 诊断员回答第二行为「改计划」，并附 owns / <code>verify/_env.sh</code> / 切片包的改法草案 |
+| 之后 | <strong>什么也没发生</strong>：诊断只写进账本并发了一条通知；那个会话一直空闲，批准带还给出「续飞」，按下会在同一处再红 |</p><p class="why-body">flight-unattended 把这一步留给了人：design D6 写「诊断只供展示、不参与任何判定」，DRAFT-flight-resume-from-band 写停飞后人要「看诊断、让主会话改工件、按一次键」。用户要的是自动衔接（2026-10-14 决策）：诊断结论为「改计划」时，由插件把草案交给主会话改计划，人只在批准带按一次「批准修订并续飞」。</p><p class="why-body">#62（0.12.0）已经在 G5「改代码前已通过」这一种原因下判「计划需修订」、不给续飞；判据只认 blocked 原因文字，认不出这次「verify 红在 owns 之外」。诊断员的第二行本来就规定为「改计划」「修插件」「人工操作」三选一，是零 token 可读的信号。</p>
+<!-- /block:why -->
+    </section>
+
+    <section id="what">
+      <h2><span class="eyebrow">What · 02</span>变更范围</h2>
+      <!-- block:what -->
+<ul><li><strong>读出诊断结论</strong>：新增纯函数，从 triage 文本读出处置类别：取第二个非空行，去掉首尾空白、成对的 <code>**</code> 与「」，恰为三者之一才算，否则为未知。</li><li><strong>诊断为「改计划」即计划缺陷</strong>：<code>planDefect</code> 在原有 G5 判据之外，新增一条：最新 attempt 已停飞，且该 attempt 最新一条 triage 的结论为「改计划」→ 计划缺陷，原因取 triage 首行。沿用 #62 的全部效果：</li><li>计划指纹与最新 takeoff 相同时，批准带显示「计划需修订：&lt;原因&gt;」、不画「续飞」，仍可搁置；</li><li><code>/flight resume</code> 拒绝，不写 takeoff；</li><li>改计划后指纹变化，照常出现「批准修订并续飞」。</li><li><strong>交主会话修订计划</strong>：triage 写入后，结论为「改计划」且这次飞行由本会话起飞时，插件经 <code>$.prompt.submit</code> 向主会话提交一次修订请求（诊断全文 + 边界），每条 triage 至多一次：</li><li>只改本 change 的计划工件，不改生产代码；</li><li>改完重新渲染 spec.html、跑 <code>slice-gate.py lint</code> 到绿；</li><li>不发 <code>/opsx-apply</code>、<code>/flight resume</code>；续飞须人在批准带按「批准修订并续飞」（铁律 7 不变）；</li><li>诊断与代码现状不符时不硬改，写明分歧后结束这一轮。</li><li>停飞诊断的通知改为注明「已交主会话修订计划」。</li><li><strong>续飞拒绝文案</strong>：计划缺陷来自诊断时，不再提「把该 scenario 标为护栏」（那是 G5 专用的出路）。</li><li><strong>文档</strong>：<code>opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill 同改，README 同步；删去「诊断只供展示、不参与任何判定」的说法。</li><li><strong>ADR</strong>：新增 <code>DRAFT-flight-triage-replan-handoff</code>。</li><li>插件 0.13.0。</li></ul><div class="impact"><span class="tag">插件：<code>template/plugins/flight/hooks/core.ts</code>（<code>triageVerdict</code>、<code>planDefect</code>）、<code>hooks/prompts.ts</code>（<code>replanPrompt</code>）、<code>hooks/orchestrator.tsx</code>（诊断员结束后交主会话、续飞拒绝文案）、<code>.claude-plugin/plugin.json</code>。</span><span class="tag">批准带 <code>hooks/register.tsx</code> 不改：它已用 <code>planDefect</code> 判定。</span><span class="tag">文档：<code>template/.claude/commands/opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code>、<code>README.md</code>。</span><span class="tag">ADR：<code>template/openspec/adr/DRAFT-flight-triage-replan-handoff.md</code>。</span><span class="tag">测试：新增 <code>tests/test_flight_replan_handoff.py</code>、<code>tests/test_replan_handoff_docs.py</code>；TS 用例追加在 <code>core.test.ts</code>、<code>prompts.test.ts</code>、<code>orchestrator.test.tsx</code>、<code>flight.test.tsx</code>。</span></div>
+<!-- /block:what -->
+    </section>
+
+    <section id="capabilities">
+      <h2><span class="eyebrow">Capabilities · 03</span>能力清单</h2>
+      <!-- block:capabilities -->
+<div class="cap-grid"><div class="cap-card" data-kind="new"><span class="cap-kind">New</span><h4><code>flight-replan-handoff</code>：读出诊断结论；诊断为「改计划」即计划缺陷（批准带、续飞拒绝）；交主会话修订计划；文档与插件版本。</h4><p></p></div></div>
+<!-- /block:capabilities -->
+    </section>
+
+    <section id="specs">
+      <h2><span class="eyebrow">Specs · 04</span>行为规范 (Gherkin)</h2>
+      <!-- block:specs -->
+<div class="spec-card"><h3>flight-replan-handoff <span class="delta" data-op="added">ADDED</span></h3><div class="requirement"><p class="requirement-name">Requirement: 读出诊断结论</p><p>控制面 SHALL 从 triage 文本读出处置类别：取第二个非空行，去掉首尾空白，再去掉成对包住整行的 <code>**</code> 与「」；结果恰为「改计划」「修插件」「人工操作」之一时为该类别，否则为未知。读法 SHALL 是纯文本判定（零 token）。</p><div class="scenario"><p class="scenario-name">Scenario: triage-verdict-parsed</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>七段 triage 文本：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>逐段读出处置类别</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>依次为 改计划、改计划、修插件、人工操作、未知、未知、未知</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 诊断为「改计划」即计划缺陷</p><p>最新 attempt 有 halt，且该 attempt 最新一条 triage 的结论为「改计划」时，控制面 SHALL 判为计划缺陷，原因为该 triage 的首行。原有 G5 判据 SHALL 不变，且两条都命中时取 G5 的原因。判为计划缺陷后沿用 flight-plan-defect-halt 的效果：计划指纹与最新 takeoff 相同时不给续飞，批准带显示「计划需修订：&lt;原因&gt;」、仍可搁置，<code>/flight resume</code> 拒绝且不写 takeoff；计划指纹变化后照常给「批准修订并续飞」。</p><div class="scenario"><p class="scenario-name">Scenario: plan-defect-from-triage-replan</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>attempt 1 里 S1 记 blocked（gate，原因「G1 verify: exit 1」），随后 kind blocked 的 halt，再有一条 triage，文本为 <code>S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>求计划缺陷</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>结果为「S1 的 owns 漏了 tests/test_x.py」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: plan-defect-ignores-other-triage</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>三份账本：</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>对三份账本各求计划缺陷</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>三份都不是计划缺陷</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: band-shows-plan-defect-from-triage</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>gamma 当前与最近批准的指纹都为 F；账本为 approve F → takeoff F（attempt 1）→ S1 的 blocked（原因「G1 verify: exit 1」）→ kind blocked 的 halt → triage，文本为 <code>S1 的 owns 漏了 tests/test_x.py\n改计划\n草案</code>；本会话已认领 gamma</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>批准带刷新并绘制</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>有含「计划需修订」与「S1 的 owns 漏了 tests/test_x.py」的文字，没有 key 以 resume: 开头的按钮</span></li><li><span class="step-key" data-kw="AND">AND</span><span>有 key 为 shelve:gamma:&lt;F&gt; 的按钮</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: resume-refused-on-triage-replan</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 的 attempt 1（本会话、指纹 F）以 kind blocked 的 halt 结束，S1 的 blocked 原因为「G1 verify: exit 1」，之后有一条 triage，文本为 <code>S1 的 owns 漏了 tests/test_x.py\n改计划\n草案</code>；当前计划指纹仍为 F，起飞守卫放行</span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>人在终端发出 <code>/flight resume demo</code></span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>回复含「计划需修订」与「S1 的 owns 漏了 tests/test_x.py」，不含「护栏」「未批准」「计划已变」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>账本没有 attempt 2 的 takeoff</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 诊断为「改计划」时交主会话修订计划</p><p>诊断员结束、triage 写入后，若其结论为「改计划」且这次飞行由本会话起飞，控制面 SHALL 经 <code>$.prompt.submit</code> 向主会话提交一次修订请求，每条 triage 至多一次；结论不是「改计划」时 SHALL NOT 提交。修订请求 SHALL 含诊断全文，并写明边界：只改本 change 的计划工件、不改生产代码；改完重新渲染 spec.html 并跑 <code>slice-gate.py lint</code> 到绿；不发 <code>/opsx-apply</code>、<code>/flight resume</code>，续飞须人在批准带按「批准修订并续飞」；诊断与代码现状不符时不硬改。提交修订请求 SHALL NOT 写 approve 或 takeoff，SHALL NOT 派发 agent。停飞诊断的通知 SHALL 注明是否已交主会话。</p><p>Feature: 铁律 7 不变——模型只改计划，批准仍是人在批准带上的按键。</p><div class="scenario"><p class="scenario-name">Scenario: replan-prompt-states-bounds</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>change demo、change 目录 <code>template/openspec/changes/demo</code>、判定器目录 <code>/repo/template/.claude/hooks</code>、attempt 2、triage 文本 <code>S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>生成修订请求</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>正文含 demo、attempt 2 与 triage 全文</span></li><li><span class="step-key" data-kw="AND">AND</span><span>含「只改本 change 的计划工件」「不改生产代码」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>含 <code>/repo/template/.claude/hooks/spec_html.py --change-dir template/openspec/changes/demo</code> 与 <code>/repo/template/.claude/hooks/slice-gate.py lint --change-dir template/openspec/changes/demo</code></span></li><li><span class="step-key" data-kw="AND">AND</span><span>含「不要发 /opsx-apply」「/flight resume」「批准修订并续飞」与「不硬改」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: replan-triage-handed-to-main-session</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>demo 由本会话起飞（waves [[S1]]），S1 门禁一律红 [G1 verify: exit 1]，执行体逐个收口直到停飞；诊断员的最终回答为 <code>S1 的 owns 漏了 tests/test_x.py\n改计划\nslices.json 的 S1 owns 加 tests/test_x.py</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>诊断员结束（turn.complete），时钟推进到 clock.after(0) 到点</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>prompt.submit 恰收到一次，正文含诊断全文、「只改本 change 的计划工件」与「不要发 /opsx-apply」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>有一条通知同时含「S1 的 owns 漏了 tests/test_x.py」与「已交主会话修订计划」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>triage 之后账本没有新的 approve、takeoff 与 dispatch</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: other-verdicts-not-handed-over</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>同上，但诊断员的最终回答为 <code>判定器缺 features 子命令\n修插件</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>诊断员结束，时钟推进到 clock.after(0) 到点</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>prompt.submit 没有收到任何提交</span></li><li><span class="step-key" data-kw="AND">AND</span><span>有含「判定器缺 features 子命令」的通知，且没有任何通知含「已交主会话」</span></li></ul></div></div><div class="requirement"><p class="requirement-name">Requirement: 文档写明交主会话修订与插件版本</p><p><code>opsx-apply</code> 命令与 <code>openspec-apply-change</code> skill SHALL 同改，写明诊断为「改计划」时插件交主会话修订计划、人按「批准修订并续飞」；两份与 README SHALL NOT 再说诊断「不参与任何判定」。插件版本 SHALL 不低于 0.13.0。</p><div class="scenario"><p class="scenario-name">Scenario: docs-describe-replan-handoff</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span><code>template/.claude/commands/opsx-apply.md</code>、<code>template/.claude/skills/openspec-apply-change/SKILL.md</code> 与 <code>README.md</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>读取三份全文</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>前两份各有一行同时含「改计划」与「主会话」，且都含「批准修订并续飞」</span></li><li><span class="step-key" data-kw="AND">AND</span><span>三份都不含「不参与任何判定」</span></li></ul></div><div class="scenario"><p class="scenario-name">Scenario: plugin-version-0-13-0</p><ul class="steps"><li><span class="step-key" data-kw="GIVEN">GIVEN</span><span>插件清单 <code>template/plugins/flight/.claude-plugin/plugin.json</code></span></li><li><span class="step-key" data-kw="WHEN">WHEN</span><span>解析其 JSON</span></li><li><span class="step-key" data-kw="THEN">THEN</span><span>version 按数字逐段比较不低于 0.13.0，description 含「交主会话修订计划」</span></li></ul></div></div></div>
+<!-- /block:specs -->
+    </section>
+
+    <section id="design">
+      <h2><span class="eyebrow">Design · 05</span>技术设计</h2>
+      <!-- block:design -->
+<div class="design-block"><h3>Context</h3><ul><li><strong>停飞后的现状</strong>（main <code>821448f</code>，插件 0.12.0）：</li><li>halt 之后派只读诊断员（<code>orchestrator.tsx</code> <code>triage()</code>）；它结束时 <code>turn.complete</code>（agentId）hook 写 <code>triage</code> 事件、发通知、刷新批准带，然后返回（<code>orchestrator.tsx:1553</code> 起）。之后没有任何动作。</li><li>诊断员的回答格式由 <code>prompts.ts:150</code> <code>TRIAGE_VERDICTS</code> 与 <code>agents/diagnostician.md</code> 规定：首行根因，第二行恰为「改计划」「修插件」「人工操作」之一，其后为草案。</li><li><code>core.ts:384</code> <code>planDefect</code> 只认 G5「在改生产代码之前就已通过」；批准带（<code>register.tsx:261</code>）与续飞（<code>orchestrator.tsx:781</code>）都经它判定。</li><li>起飞待命已有「交模型」路径：<code>$.clock.after(0, …)</code> 回调里 <code>$.prompt.submit</code>（<code>orchestrator.tsx</code> <code>submitFix</code>），因为 <code>command.run</code> 里调用会被引擎拒绝。</li><li><strong>实测缺口</strong>：afa <code>cparam-native-subhz-layout</code> attempt 1（2026-10-14）停飞后诊断结论「改计划」、附了草案，会话空闲到人回来；批准带给「续飞」，按下必再红。</li><li><strong>约束</strong>：铁律 7（计划批准只能是人按键）、铁律 9（零 token 判定）、铁律 10（控制面失效即停飞）；DRAFT-flight-resume-from-band 第 3 条（不新增模型可达的续飞入口）。</li></ul></div><div class="design-block"><h3>Goals / Non-Goals</h3><p><strong>Goals:</strong> - 诊断结论为「改计划」的停飞，不等人开口：主会话自动拿到草案改计划，人回来只需审 spec.html、按一次键。 - 计划未改时不给必红的「续飞」。</p><p><strong>Non-Goals:</strong> - 不自动批准、不自动续飞（铁律 7）。 - 「修插件」「人工操作」不交模型：前者受铁律 10 约束，后者本就要人。 - 不改诊断员的派发时机、权限与提示词格式。 - 门禁红在 owns 之外时不再重派执行体：本次不做（未被要求），记 Open Questions。 - 不加账本事件类型（判定器不用随之更新）。</p></div><div class="design-block"><h3>Decisions</h3><details><summary><code>core.ts</code> 新增 <code>triageVerdict(text): &#x27;改计划&#x27; | &#x27;修插件&#x27; | &#x27;人工操作&#x27; | undefined</code></summary><p>取第二个非空行，trim，去掉成对包住整行的 <code>**</code> 与「」，再与三者精确比较。</p></details><details><summary>为什么取「非空行」</summary><p>模型常在首行后空一行；为什么严格：「建议改计划」「改计划。」这类不按格式的回答宁可判未知（退回现状：只通知），不误交模型。</p></details><details><summary>否决</summary><p>关键字包含（「改计划」出现在任何位置）——草案正文里常有这三个字，会误判。</p></details><details><summary><code>planDefect</code> 先跑原 G5 判据，命中即返回（保持 #62 行为）；未命中时</summary><p>本 attempt 有 halt，且本 attempt <strong>最新一条</strong> triage 的结论为「改计划」→ 返回其首行。</p></details><details><summary>取最新一条</summary><p>同一 attempt 理论上可能有多条（看门狗补派等），以最后结论为准。</p></details><details><summary>不限 halt kind</summary><p>诊断员只在非 abort / fingerprint 的停飞后派，有 triage 即说明停飞可诊断。</p></details><details><summary>批准带与续飞拒绝无需改判定代码，自动生效；续飞拒绝文案在缺陷不来自 G5 时去掉「标为护栏」的提示。</summary></details><details><summary>位置</summary><p><code>turn.complete</code>（agentId）hook 的 diagnostician 分支，写完 triage、通知之后。该 hook 由外部事件触发、处在活的 hook 链里；<code>prompt.submit</code> 不派发 agent，不涉及派发凭证（DRAFT-flight-dispatch-live-frame 只约束派发）。</p></details><details><summary>守卫</summary><p>最新 takeoff 的 <code>by.session</code> 等于本会话（同 <code>orchestrator.tsx:533</code> 的写法），否则只通知。</p></details><details><summary>至多一次</summary><p>一条 triage 只在其写入时触发一次；不新增持久状态。</p></details><details><summary>正文由 <code>prompts.ts</code> 新增的 <code>replanPrompt({ change, changeDir, hooksDir, attempt, triage })</code> 生成（与 <code>triagePrompt</code> 同处，同用 Flight 上的 <code>changeDir</code> / <code>hooksDir</code>）。</summary></details><details><summary>提交失败（引擎拒绝）</summary><p>只写 log、通知里不写「已交主会话」——通知在提交前发出，因此改为：先排提交，提交回调里失败时补发一条「交主会话失败：&lt;原因&gt;」通知。</p></details><details><summary>否决</summary><p>插件直接改 slices.json（越过模型与人，且诊断草案可能不准）；把草案写进文件（D6 原则：诊断不落盘，避免未审内容进计划）。</p></details><details><summary>主会话写入本就受 intent-gate 与「改计划须重新批准」约束</summary><p>改了计划指纹必变，不经人按键起飞守卫不放行。</p></details><details><summary>因此边界以文字给出（只改计划工件、不改生产代码、不发起飞命令、跑 spec_html 与 lint），不另加 hook。</summary></details></div><div class="design-block"><h3>Risks / Trade-offs</h3><details><summary>[模型按草案改错计划] → 人在 spec.html 审阅后才按「批准修订并续飞」；基线在按键后重跑，计划仍不对会再次停飞并再诊断。</summary></details><details><summary>[人正在主会话里做别的事时被插入一轮] → 只在本会话起飞的飞行上触发，且这次飞行已停飞；与起飞待命「交模型」同一机制，人可随时中断。</summary></details><details><summary>[诊断格式不合规导致不交接] → 退回现状（只通知 + 批准带），不比现在差。</summary></details><details><summary>[诊断结论为「改计划」但计划其实无需改] → 批准带不给「续飞」；人可「搁置」或让主会话做无害改动后批准，也可直接 <code>/flight resume</code> 被拒后按需处理——比必红的续飞代价低。</summary></details></div><div class="design-block"><h3>Migration Plan</h3><ul><li>插件 0.13.0；账本与判定器不变，旧账本照常读。已停飞、带「改计划」triage 的 change 升级后批准带即显示「计划需修订」（不会补交主会话：交接只在 triage 写入时触发）。</li></ul></div><div class="design-block"><h3>Open Questions</h3><ul><li>门禁红且失败测试在本片 owns 之外时，是否直接 blocked、不再重派执行体（本次 afa 白跑约 5 分钟）——另立 change 再定。</li><li>DRAFT-flight-resume-from-band 的 Consequences 写「看诊断、让主会话改工件」，本 change 由 <code>DRAFT-flight-triage-replan-handoff</code> 取代该句（只取代这一点）。</li></ul></div>
+<!-- /block:design -->
+    </section>
+
+    <section id="diagrams">
+      <h2><span class="eyebrow">Diagrams · 06</span>关键图示</h2>
+      <!-- block:diagrams -->
+<div class="diagram-frame"><div class="mermaid">flowchart LR
+  H[&quot;halt（任意 kind，abort / fingerprint 除外）&quot;] --&gt; D[&quot;诊断员（只读）&quot;]
+  D --&gt; T[&quot;triage 事件写入账本&quot;]
+  T --&gt; V{&quot;triageVerdict = 改计划？\n且本会话起飞&quot;}
+  V -- 否 --&gt; N1[&quot;通知：停飞诊断：&lt;首行&gt;&quot;]
+  V -- 是 --&gt; N2[&quot;通知：…；已交主会话修订计划&quot;]
+  N2 --&gt; S[&quot;clock.after(0) → prompt.submit(replanPrompt)&quot;]
+  S --&gt; M[&quot;主会话：只改计划工件 → spec_html → lint&quot;]
+  M --&gt; F[&quot;计划指纹变化&quot;]
+  T --&gt; P[&quot;planDefect：指纹未变 → 批准带「计划需修订」，不给续飞&quot;]
+  F --&gt; B[&quot;批准带「批准修订并续飞」（人按）→ approve → 基线 → 续飞&quot;]</div><pre class="diagram-fallback">flowchart LR
+  H[&quot;halt（任意 kind，abort / fingerprint 除外）&quot;] --&gt; D[&quot;诊断员（只读）&quot;]
+  D --&gt; T[&quot;triage 事件写入账本&quot;]
+  T --&gt; V{&quot;triageVerdict = 改计划？\n且本会话起飞&quot;}
+  V -- 否 --&gt; N1[&quot;通知：停飞诊断：&lt;首行&gt;&quot;]
+  V -- 是 --&gt; N2[&quot;通知：…；已交主会话修订计划&quot;]
+  N2 --&gt; S[&quot;clock.after(0) → prompt.submit(replanPrompt)&quot;]
+  S --&gt; M[&quot;主会话：只改计划工件 → spec_html → lint&quot;]
+  M --&gt; F[&quot;计划指纹变化&quot;]
+  T --&gt; P[&quot;planDefect：指纹未变 → 批准带「计划需修订」，不给续飞&quot;]
+  F --&gt; B[&quot;批准带「批准修订并续飞」（人按）→ approve → 基线 → 续飞&quot;]</pre><div class="caption">- <strong>约束</strong>：铁律 7（计划批准只能是人按键）、铁律 9（零 token 判定）、铁律 10（控制面失效即停飞）；DRAFT-flight-resume-from-band 第 3 条（不新增模型可达的续飞入口）。</div></div>
+<!-- /block:diagrams -->
+    </section>
+
+    <section id="mockups">
+      <h2><span class="eyebrow">Mockups · 07</span>原型示意</h2>
+      <!-- block:mockups -->
+      <p class="placeholder">仅当 capabilities 涉及 UI/UX、数据流、状态机时由 spec-html-render 按需填入；其它情况此段保留占位以示"无原型需求"。</p>
+      <!-- /block:mockups -->
+    </section>
+
+    <section id="adrs">
+      <h2><span class="eyebrow">ADRs · 08</span>架构决策</h2>
+      <!-- block:adrs -->
+<h3>待定号（本次新增）</h3><ul><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-apply-as-flight.md">DRAFT. apply 作为一次飞行：所有权切片 + 确定性调度 + 机械门禁 + 离路径评审</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-bound-to-plan-fingerprint.md">DRAFT. 起飞批准 = 人的按钮按压写入账本，绑定计划内容指纹</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-approval-revocable-by-shelve.md">DRAFT. 起飞批准可由人在批准带「搁置」撤销</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-external-capability-intake.md">DRAFT. 从外部 prompt 工程吸收能力的判据</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-armed-takeoff.md">DRAFT. 起飞意图被拒后由插件有界地挂起重试；批准带按键即起飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-bounded-self-heal.md">DRAFT. 飞行内自愈有界：只做不改计划的再试，先记 heal 再做，每次飞行至多 3 次</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-capability-envelope.md">DRAFT. 飞行 agent 的能力由插件按角色包络强制，飞行中主会话对在飞 worktree 只读</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-control-plane-in-mod.md">DRAFT. 飞行控制面迁入 Claude Code mod，判定器保持纯 Python</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-dispatch-live-frame.md">DRAFT. 插件只在处理外部事件的 hook 里派发 agent；定时到点先唤醒一轮再派发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-envelope-tightening.md">DRAFT. 飞行 agent 的 Bash 固定在自己的 worktree，包络按 #41 评审收紧</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-measure-protocol.md">DRAFT. 飞行中的「先红后绿」由控制面测量写入账本，G5 只认账本</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-orchestrator-state-machine.md">DRAFT. 飞行编排由 flight 插件里的状态机执行，状态是账本事件的归约</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-premerge-before-final.md">DRAFT. 落地前由控制面把目标分支合进 change 分支，final 与全量评审在合并后的提交上做</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-resume-from-band.md">DRAFT. 停飞后的续飞可由批准带按键触发</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-single-implementation.md">DRAFT. 飞行只有一套实现：删除 Workflow 旧引擎，铁律 10 改为失效即停飞</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-flight-triage-replan-handoff.md">DRAFT. 诊断结论「改计划」是机械信号：判计划缺陷并交主会话修订，批准仍由人按键</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-gate-evidence-not-self-reported.md">DRAFT. 门禁判据不得由被门禁的一方提供</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-installer-versioned-with-template.md">DRAFT. 安装器与模板同版本：pipe 模式只做引导，交给目标版本自带的 install.sh</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-memory-as-fifth-resident-carrier.md">DRAFT. memory 是第五记忆载体，按「索引常驻 + 正文按需」纳入分流体系</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-model-routing-defaults-for-template.md">DRAFT. 模板分发的模型路由默认策略</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-review-orchestration-watermark.md">DRAFT. 多守门点的 review 编排采用水位线增量模型</a><span class="adr-status">unknown</span></li><li><span class="adr-num">DRAFT</span><a href="../../adr/DRAFT-test-gate-baseline-diff.md">DRAFT. 全量测试门禁按基线逐条差分</a><span class="adr-status">unknown</span></li></ul>
+<!-- /block:adrs -->
+    </section>
+
+    <section id="flight">
+      <h2><span class="eyebrow">Flight · 09</span>飞行计划</h2>
+      <!-- block:flight -->
+<style>.chip[data-state="guard"] { color: #6d28d9; border-color: #6d28d9; background: #ede9fe; }[data-theme="dark"] .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); }@media (prefers-color-scheme: dark) { :root:not([data-theme]) .chip[data-state="guard"] { color: #c4b5fd; border-color: #c4b5fd; background: rgba(167,139,250,0.18); } }</style><h3>切片</h3><table class="flight-table"><thead><tr><th>切片</th><th>标题</th><th>wave</th><th>deps</th><th>owns</th><th>verify</th></tr></thead><tbody><tr><td class="mono">S1</td><td>插件：读出诊断结论、诊断为改计划即计划缺陷、交主会话修订计划</td><td>wave 1</td><td>-</td><td>template/plugins/flight/hooks/core.ts<br>template/plugins/flight/hooks/prompts.ts<br>template/plugins/flight/hooks/orchestrator.tsx<br>template/plugins/flight/tests/core.test.ts<br>template/plugins/flight/tests/prompts.test.ts<br>template/plugins/flight/tests/orchestrator.test.tsx<br>template/plugins/flight/tests/flight.test.tsx<br>tests/test_flight_replan_handoff.py</td><td><code>python3 -m pytest -q tests/test_flight_replan_handoff.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_orchestrator.py tests/test_flight_core.py tests/test_flight_resume.py tests/test_flight_plan_defect_band.py</code></td></tr><tr><td class="mono">S2</td><td>文档与版本：命令与 skill 写明诊断为改计划时交主会话修订，README 同步；插件 0.13.0</td><td>wave 1</td><td>-</td><td>template/.claude/commands/opsx-apply.md<br>template/.claude/skills/openspec-apply-change/SKILL.md<br>README.md<br>template/plugins/flight/.claude-plugin/plugin.json<br>tests/test_replan_handoff_docs.py</td><td><code>python3 -m pytest -q tests/test_replan_handoff_docs.py tests/test_premerge_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py</code></td></tr></tbody></table><h3>起飞时一并提交的周边文件</h3><table class="flight-table"><thead><tr><th>路径</th></tr></thead><tbody><tr><td class="mono">template/plugins/flight/tests/core.test.ts</td></tr><tr><td class="mono">template/plugins/flight/tests/orchestrator.test.tsx</td></tr></tbody></table><h3>Scenario 状态</h3><table class="flight-table"><thead><tr><th>scenario</th><th>test</th><th>状态</th></tr></thead><tbody><tr><td>flight-replan-handoff#triage-verdict-parsed</td><td><code>tests/test_flight_replan_handoff.py::test_triage_verdict_parsed</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#plan-defect-from-triage-replan</td><td><code>tests/test_flight_replan_handoff.py::test_plan_defect_from_triage_replan</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#plan-defect-ignores-other-triage</td><td><code>tests/test_flight_replan_handoff.py::test_plan_defect_ignores_other_triage</code></td><td><span class="chip" data-state="guard">护栏</span><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-replan-handoff#band-shows-plan-defect-from-triage</td><td><code>tests/test_flight_replan_handoff.py::test_band_shows_plan_defect_from_triage</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#resume-refused-on-triage-replan</td><td><code>tests/test_flight_replan_handoff.py::test_resume_refused_on_triage_replan</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#replan-prompt-states-bounds</td><td><code>tests/test_flight_replan_handoff.py::test_replan_prompt_states_bounds</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#replan-triage-handed-to-main-session</td><td><code>tests/test_flight_replan_handoff.py::test_replan_triage_handed_to_main_session</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#other-verdicts-not-handed-over</td><td><code>tests/test_flight_replan_handoff.py::test_other_verdicts_not_handed_over</code></td><td><span class="chip" data-state="guard">护栏</span><span class="chip" data-state="unlocked">unlocked</span></td></tr><tr><td>flight-replan-handoff#docs-describe-replan-handoff</td><td><code>tests/test_replan_handoff_docs.py::test_docs_describe_replan_handoff</code></td><td><span class="chip" data-state="pending">pending</span></td></tr><tr><td>flight-replan-handoff#plugin-version-0-13-0</td><td><code>tests/test_replan_handoff_docs.py::test_plugin_version_0_13_0</code></td><td><span class="chip" data-state="pending">pending</span></td></tr></tbody></table><h3>飞行记录</h3><p class="placeholder">尚无飞行记录事件。</p>
+<!-- /block:flight -->
+    </section>
+
+    <section id="tasks">
+      <h2><span class="eyebrow">Tasks · 10</span>落地任务</h2>
+      <!-- block:tasks -->
+<details class="task-group" open><summary>切片</summary><ul><li data-done="false"><input type="checkbox" disabled><span>S1 插件：读出诊断结论、诊断为改计划即计划缺陷、交主会话修订计划 （deps: - · verify: <code>python3 -m pytest -q tests/test_flight_replan_handoff.py tests/test_flight_plugin.py tests/test_flight_plugin_suite.py tests/test_flight_orchestrator.py tests/test_flight_core.py tests/test_flight_resume.py tests/test_flight_plan_defect_band.py</code>）</span></li><li data-done="false"><input type="checkbox" disabled><span>S2 文档与版本：命令与 skill 写明诊断为改计划时交主会话修订，README 同步；插件 0.13.0 （deps: - · verify: <code>python3 -m pytest -q tests/test_replan_handoff_docs.py tests/test_premerge_docs.py tests/test_template_docs.py tests/test_docs_iron_rules.py</code>）</span></li></ul></details>
+<!-- /block:tasks -->
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <!-- block:footer -->
+生成于 2026-10-14 13:16 · 章节 9 · 图示 1 · 任务 2
+<!-- /block:footer -->
+</footer>
+
+<script>
+(function () {
+  const KEY = 'spec-html-theme';
+  const root = document.documentElement;
+  const stored = localStorage.getItem(KEY);
+  if (stored === 'light' || stored === 'dark') {
+    root.setAttribute('data-theme', stored);
+  }
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = root.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem(KEY, next);
+  });
+
+  // TOC 当前章节高亮
+  const links = Array.from(document.querySelectorAll('.toc a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = (id) => {
+    links.forEach(a => {
+      a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id);
+    });
+  };
+  const io = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActive(visible.target.id);
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] });
+  sections.forEach(s => io.observe(s));
+})();
+</script>
+
+<script type="module">
+  // Mermaid 通过 jsdelivr CDN 加载；失败/超时给 body 加 .offline 让 .diagram-fallback 显示
+  // ⚠ startOnLoad 必须为 false：动态 import 落地时 window 的 load 事件早已触发，
+  //   Mermaid 挂在 load 上的自动渲染钩子永远不会执行 —— 只能显式 run()
+  const degrade = (e) => {
+    document.body.classList.add('offline');
+    console.warn('[spec-html] Mermaid 渲染失败，已切换降级显示。', e);
+  };
+  const timer = setTimeout(() => degrade(new Error('Mermaid CDN 加载超时')), 10000);
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mod.default.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      fontFamily: 'var(--font-body)'
+    });
+    await mod.default.run();
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    degrade(e);
+  }
+</script>
+
+</body>
+</html>

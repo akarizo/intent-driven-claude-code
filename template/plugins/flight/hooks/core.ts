@@ -377,16 +377,37 @@ export function next(state: State, plan: Plan, fpNow: string): Action[] {
   return closing()
 }
 
+export type TriageVerdict = '改计划' | '修插件' | '人工操作'
+const TRIAGE_VERDICTS: readonly TriageVerdict[] = ['改计划', '修插件', '人工操作']
+
+/** 诊断结论（flight-replan-handoff D1）：第二个非空行，去掉成对包住整行的 `**` 与「」后严格比较；不合格式为 undefined。 */
+export function triageVerdict(text: string): TriageVerdict | undefined {
+  const line = text.split('\n').filter(l => l.trim() !== '')[1]
+  if (line === undefined) return undefined
+  let v = line.trim()
+  if (v.length >= 4 && v.startsWith('**') && v.endsWith('**')) v = v.slice(2, -2)
+  if (v.length >= 2 && v.startsWith('「') && v.endsWith('」')) v = v.slice(1, -1)
+  v = v.trim()
+  return TRIAGE_VERDICTS.find(x => x === v)
+}
+
 /**
- * 计划缺陷（design D6）：最新 attempt 以 kind blocked 的 halt 停飞，且本 attempt 有 blocked 的原因同时含「G5 measure」与
- * 「在改生产代码之前就已通过」→ 返回该原因首行（计划不改，续飞仍会在同一处停飞）；否则 undefined。
+ * 计划缺陷（计划不改，续飞仍会在同一处停飞），两条判据按序：
+ * 1. G5（design D6）：最新 attempt 以 kind blocked 的 halt 停飞，且本 attempt 有 blocked 的原因同时含「G5 measure」与
+ *    「在改生产代码之前就已通过」→ 返回该原因首行；
+ * 2. 诊断（flight-replan-handoff D2）：最新 attempt 有 halt（任意 kind），且本 attempt 最后一条 triage 的结论为「改计划」→ 返回其首行。
+ * 都不命中为 undefined。
  */
 export function planDefect(state: State): string | undefined {
   const inA = (e: Ev) => Number(e.attempt) === state.attempt
   const h = last(state.events.filter(e => e.ev === 'halt' && inA(e)))
-  if (!h || h.kind !== 'blocked') return undefined
-  const b = state.events.find(e => e.ev === 'blocked' && inA(e) && str(e, 'reason').includes('G5 measure') && str(e, 'reason').includes('在改生产代码之前就已通过'))
-  return b && str(b, 'reason').split('\n')[0]
+  if (!h) return undefined
+  if (h.kind === 'blocked') {
+    const b = state.events.find(e => e.ev === 'blocked' && inA(e) && str(e, 'reason').includes('G5 measure') && str(e, 'reason').includes('在改生产代码之前就已通过'))
+    if (b) return str(b, 'reason').split('\n')[0]
+  }
+  const t = last(state.events.filter(e => e.ev === 'triage' && inA(e)))
+  return t && triageVerdict(str(t, 'text')) === '改计划' ? str(t, 'text').split('\n')[0]?.trim() : undefined
 }
 
 const findingsOf = (e: Ev | undefined): Finding[] => (Array.isArray(e?.findings) ? (e.findings as Finding[]) : [])
