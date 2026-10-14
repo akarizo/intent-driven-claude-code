@@ -59,6 +59,9 @@ FEATURES = ("evidence-ledger-only", "g5-per-target", "guards", "ship-ledger", "l
 # verify 只跑测试；typecheck / lint 工具放 gate.typecheck / gate.lint，由门禁按基线差分
 VERIFY_TOOL_RE = re.compile(r"\b(tsc|typecheck|eslint|rustfmt|clippy|ruff|mypy|flake8|golangci)\b")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# pytest-cov 覆盖率未达标的输出标记（pytest-cov 7.1.0 pytest_cov/plugin.py：
+# 前者在 pytest_runtestloop 收尾打印，后者在 pytest_terminal_summary 打印）
+COVERAGE_FAIL_MARKS = ("Coverage failure: total of", "FAIL Required test coverage of")
 
 TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec"}
 TEST_FILE_RE = re.compile(r"(^|/)(test_[^/]*\.py|[^/]*_test\.py|[^/]*\.test\.[^/]+|[^/]*\.spec\.[^/]+)$")
@@ -168,7 +171,8 @@ def _summary_failed(line):
 def run_test_gate(cmd, root):
     """跑 gate.test，经 PYTEST_ADDOPTS 注入 --junitxml。
     返回 {"rc", "out", "failed": [classname::name, ...] | None, "why": str | None}；
-    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致且非 0），why 是不可度量的理由。"""
+    failed 非 None ⇔ 可度量（rc 1、junit 可解析、汇总行恰一行、汇总与 junit 计数一致且非 0，
+    且输出不含 pytest-cov 覆盖率失败标记），why 是不可度量的理由。"""
     with tempfile.TemporaryDirectory() as tmp:
         junit = os.path.join(tmp, "junit.xml")
         env = dict(os.environ)
@@ -180,6 +184,9 @@ def run_test_gate(cmd, root):
             return res
         if rc != 1:
             res["why"] = "exit %d" % rc
+            return res
+        if any(m in l for l in ANSI_RE.sub("", out).splitlines() for m in COVERAGE_FAIL_MARKS):
+            res["why"] = "覆盖率未达标（pytest-cov fail-under）；门禁不判覆盖率时在 gate.test 加 --no-cov"
             return res
         if not os.path.isfile(junit):
             res["why"] = "没有 junit 输出（不是 pytest？）"
