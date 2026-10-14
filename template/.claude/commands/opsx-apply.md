@@ -24,7 +24,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
   - apply 上下文只认目标所在 worktree 的 change：分支为 `worktree-<name>` 或 `flight/<name>/…` 时，只有该 change 的 `tasks.md` 有未勾项才算 apply 上下文。
 
 **Input**：可选指定 change 名（如 `/opsx-apply add-auth`）。留空则取会话所在 worktree 的分支 `worktree-<name>`。
-`授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
+`授权提交`（可选，可以单独写，也可以粘在 change 名后面，如 `/opsx-apply add-auth 授权提交`）→ 起飞守卫通过后，插件只提交本 change 的工件（change 目录、ADR 草稿 `adr/DRAFT-*.md`、`scenario_tests` 映射到的测试文件、`slices.json` 的 `artifact_files` 声明的文件）再起飞；有工件之外的未提交改动仍拒绝起飞。
 `--model=<alias>`（可选）→ 人工指定会话主模型别名 `<main>`，**优先于 `session-model.py` 的判定**；仅用于脚本判定不出、或主模型是第三方 / 自定义 id 的场合。
 `--takeover`（可选）→ 只在「最新一次起飞来自另一个会话、尚未落地或停飞，而且你已确认那个会话已结束」时使用；不加时插件会拒飞并提示。
 起飞的命令来源限制见下文「飞行中的交互」。
@@ -37,6 +37,7 @@ description: 飞行模式 apply：由 flight 插件状态机执行，批准后�
 - **跨会话**：最新一次起飞来自另一个会话、尚未落地或停飞 → 拒飞，提示用 `--takeover` 接管。
 - **本会话本进程正在飞**：最新一次起飞来自本会话、尚未落地或停飞，且本进程正在驱动它 → 拒飞（不进入待命），需要中止用 `/flight abort <name>`；本进程未在驱动（如进程重启后回到原会话）→ 照常续飞。
 - **工作区与「授权提交」**：change worktree 有工件之外的未提交改动 → 拒绝起飞；未提交的只有本 change 工件 → 提示加 `授权提交`；上一次飞行遗留的飞行记录先单独提交。
+  - 工件还含 `slices.json` 的 `artifact_files` 声明的文件（精确路径、相对 worktree 根，如 scenario 测试的辅助模块、ADR 索引），随 `授权提交` / 按键起飞一并提交；有未声明的工件之外改动仍拒绝起飞，按拒绝信息的两条出路处理：自行提交或撤销后重发，或逐个列进 `artifact_files` 后在批准带重新批准再起飞。
 - **lint / preflight**：
   ```bash
   python3 .claude/hooks/slice-gate.py lint --change-dir openspec/changes/<name>
