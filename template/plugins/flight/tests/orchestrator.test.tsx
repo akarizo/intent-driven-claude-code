@@ -119,6 +119,8 @@ type World = {
   trees?: string[]
   /** prompt.submit 以此消息拒绝（插件的 $.prompt.submit 随即抛错） */
   submitDeny?: string
+  /** prompt.submit 应答前调用：返回 Promise 时等它，之后再按 submitDeny 作答（用来扣住一次提交再放行） */
+  submitHold?: () => Promise<void> | undefined
 }
 type Spawn = { subagent_type: string; model: string; cwd: string; prompt: string; agentId: string }
 
@@ -231,7 +233,9 @@ function useWorld(on: On, w: World) {
     log.notifies.push(e)
     return { value: w.notify ?? { isSent: true, channel: 'iterm2' } } as never
   })
-  on('prompt.submit', ($, e) => {
+  on('prompt.submit', async ($, e) => {
+    const held = w.submitHold?.()
+    if (held) await held
     // 抛错的测试 hook 被引擎跳过，其下没有实现：插件的 $.prompt.submit 随即抛错
     if (w.submitDeny) throw new Error(w.submitDeny)
     const text = String((e as { text?: unknown }).text ?? '')
@@ -2379,8 +2383,10 @@ test('wait-retries-takeoff', async ($, on) => {
   const log = useWorld(on, demoWorld({ preflightRuns: [res(1, '', BASELINE)] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
 
-  // When: 时钟推进 60 秒，看门狗计时器 tick
+  // When: 时钟推进 60 秒，看门狗计时器 tick（只提交唤醒），随后主会话一轮结束
   await advance(log, 60000)
+  await advance(log, 0)
+  await $.turn.complete(MAIN_TURN as never)
   await until(() => takeoffs(log).length > 0 && log.notifies.length > 1)
 
   // Then: 账本追加了 takeoff；最后一次状态行不含「起飞待命」；ui.notify 收到含 demo 与「已起飞」的通知
@@ -2432,15 +2438,18 @@ test('model-fix-submits-then-retries', async ($, on) => {
 })
 
 test('transient-retries-once-with-diag', async ($, on) => {
-  // Given: demo 已批准；plan_fp.py 前两次以 1 退出、stderr「plan_fp 超时」，之后正常；人已发出 /opsx-apply demo，时钟已推进 10 秒（重试过一次）
+  // Given: demo 已批准；plan_fp.py 前两次以 1 退出、stderr「plan_fp 超时」，之后正常；人已发出 /opsx-apply demo，时钟已推进 10 秒（唤醒）、主会话随后一轮结束（重试过一次）
   const fail = res(1, '', 'plan_fp 超时')
   const log = useWorld(on, demoWorld({ fpRuns: [fail, fail] }))
   const r = await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await advance(log, 10000)
+  await advance(log, 0)
+  await $.turn.complete(MAIN_TURN as never)
   await until(() => notified(log, '放弃').length > 0)
 
-  // When: 时钟再推进 10 秒
+  // When: 时钟再推进 10 秒，随后主会话又一轮结束
   await advance(log, 10000)
+  await $.turn.complete({ ...MAIN_TURN, turnId: 't2' } as never)
 
   // Then: 起飞回复含「已进入起飞待命」；账本有 where takeoff、error 含「计算计划指纹失败」的 diag；plan_fp.py 恰运行 2 次；ui.notify 收到含 demo 与「放弃」的通知；账本没有 takeoff
   expect(String(r.text)).toContain('已进入起飞待命')
@@ -2505,16 +2514,22 @@ test('armed-gives-up-and-cancels/abort', async ($, on) => {
 
 test('human-takeoff-skipped-while-arm-retrying', async ($, on) => {
   // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），之后通过；/opsx-apply demo 已进入待命；
-  //        时钟推进 60 秒，看门狗 tick 触发自动重试，重试读账本时卡住（重试持有 armBusy）
+  //        时钟推进 60 秒，看门狗 tick 提交唤醒；主会话随后一轮结束触发自动重试，重试在起飞检查里读账本时卡住（重试持有 armBusy）
   const release: (() => void)[] = []
   const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
   const log = useWorld(on, w)
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  w.ledgerHold = () => {
-    w.ledgerHold = undefined
-    return new Promise<void>(r => release.push(r))
+  await advance(log, 60000)
+  await advance(log, 0)
+  w.onRun = argv => {
+    if (!String(argv[1]).endsWith('/takeoff-gate.py')) return
+    w.onRun = undefined
+    w.ledgerHold = () => {
+      w.ledgerHold = undefined
+      return new Promise<void>(r => release.push(r))
+    }
   }
-  const retry = advance(log, 60000)
+  const retry = $.turn.complete(MAIN_TURN as never)
   await until(() => release.length > 0)
 
   // When: 人在重试卡住期间再发 /opsx-apply demo；之后卡住的读账本放行，重试接着做完
@@ -2561,16 +2576,22 @@ test('second-takeoff-refused-while-taking-off', async ($, on) => {
 
 test('abort-waits-for-retry', async ($, on) => {
   // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），之后通过；/opsx-apply demo 已进入待命；
-  //        时钟推进 60 秒，tick 触发的自动重试读账本时卡住（持有起飞锁）
+  //        时钟推进 60 秒，tick 提交唤醒；主会话随后一轮结束触发的自动重试在起飞检查里读账本时卡住（持有起飞锁）
   const release: (() => void)[] = []
   const w = demoWorld({ preflightRuns: [res(1, '', BASELINE)] })
   const log = useWorld(on, w)
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  w.ledgerHold = () => {
-    w.ledgerHold = undefined
-    return new Promise<void>(r => release.push(r))
+  await advance(log, 60000)
+  await advance(log, 0)
+  w.onRun = argv => {
+    if (!String(argv[1]).endsWith('/takeoff-gate.py')) return
+    w.onRun = undefined
+    w.ledgerHold = () => {
+      w.ledgerHold = undefined
+      return new Promise<void>(r => release.push(r))
+    }
   }
-  const retry = advance(log, 60000)
+  const retry = $.turn.complete(MAIN_TURN as never)
   await until(() => release.length > 0)
 
   // When: 重试卡住期间人发 /flight abort demo；之后放行，重试起飞成功
@@ -2825,4 +2846,105 @@ test('stuck-flight-resumes', async ($, on) => {
   // Then: 回复不含「正在飞」；账本的 takeoff 依次为 attempt 1、attempt 2
   expect(String(r.text)).not.toContain('正在飞')
   expect(takeoffs(log).map(x => x.attempt)).toEqual([1, 2])
+})
+
+// ---------------------------------------------------------------- flight-dispatch-origin S1（唤醒轮：定时到点只唤醒、看门狗诊断经唤醒、提交绑定待命）
+
+const WAKE_ONLY = '只回复「收到」'
+
+test('transient-timer-wakes-then-retries', async ($, on) => {
+  // Given: demo 已批准；plan_fp.py 第一次以 1 退出（stderr「plan_fp 超时」，计算计划指纹失败），之后正常；人已发出 /opsx-apply demo，demo 进入偶发类待命
+  const log = useWorld(on, demoWorld({ fpRuns: [res(1, '', 'plan_fp 超时')] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 时钟推进 10 秒（到点后 clock.after(0) 也到点），记下此时的提交、plan_fp 次数与派发数；随后主会话一轮结束（durationMs 0，开始时刻不早于唤醒的提交时刻）
+  await advance(log, 10000)
+  await advance(log, 0)
+  await until(() => log.submits.length > 0)
+  const submits = [...log.submits]
+  const fpBefore = runsOf(log, 'plan_fp.py')
+  const spawnsBefore = log.spawns.length
+  await $.turn.complete(MAIN_TURN as never)
+  await until(() => takeoffs(log).length > 0)
+
+  // Then: 那一轮结束之前 prompt.submit 恰一次、正文含 demo 与「只回复「收到」」；plan_fp.py 只运行过 1 次；没有派发；那一轮结束之后账本追加 takeoff，并派出了 flight:executor
+  expect(submits.length).toBe(1)
+  expect([submits[0]?.includes('demo'), submits[0]?.includes(WAKE_ONLY)]).toEqual([true, true])
+  expect(fpBefore).toBe(1)
+  expect(spawnsBefore).toBe(0)
+  expect(takeoffs(log).length).toBe(1)
+  expect(log.spawns.some(s => s.subagent_type === 'flight:executor')).toBe(true)
+})
+
+test('baseline-tick-probes-before-waking', async ($, on) => {
+  // Given: demo 已批准；slice-gate preflight 第一次以 1 退出（基线仍在跑），demo 进入待命；之后 preflight 的第一次检查（第 2 次运行）仍报「基线仍在跑」，再往后都通过
+  const log = useWorld(on, demoWorld({ preflightRuns: [res(1, '', BASELINE), res(1, '', BASELINE)] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+
+  // When: 时钟依次推进 60 秒三次（三次 tick，每次之后 clock.after(0) 也到点），各记下提交数；随后主会话一轮结束
+  const counts: number[] = []
+  for (let i = 0; i < 3; i++) {
+    await advance(log, 60000)
+    await advance(log, 0)
+    counts.push(log.submits.length)
+  }
+  await $.turn.complete(MAIN_TURN as never)
+  await until(() => takeoffs(log).length > 0)
+
+  // Then: 第一次 tick 之后没有唤醒；第二次 tick 之后恰一次唤醒、第三次之后仍只有一次；那一轮结束之后账本追加 takeoff
+  expect(counts).toEqual([0, 1, 1])
+  expect(takeoffs(log).length).toBe(1)
+})
+
+test('watchdog-triage-via-wake', async ($, on) => {
+  // Given: 账本预置 attempt 1 的 3 条 heal（自愈预算已用尽）；demo 起飞（waves [[S1, S2]]），agent-1、agent-2 都在跑；agent-1 的模型请求在 T0 开始且一直不结束
+  const ledger = [
+    ev.heal(B0, { attempt: 1, kind: 'merge-retry', slice: 'S8', reason: '合回失败' }),
+    ev.heal(B0, { attempt: 1, kind: 'integ', slice: 'integ', reason: 'final 红' }),
+    ev.heal(B0, { attempt: 1, kind: 'watchdog', slice: 'S9', reason: '等待 11 分钟', agent: 'x9' }),
+  ]
+  const log = useWorld(on, demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  void step($, 'agent-1').catch(() => undefined)
+  await flush()
+  const isTriage = (x: Record<string, unknown>) => x.ev === 'dispatch' && x.role === 'diagnostician' && x.slice === 'triage'
+
+  // When: 时钟推进 661 秒（看门狗停飞，之后 clock.after(0) 也到点），记下此时的诊断员派发与提交；随后主会话一轮结束
+  await advance(log, 661000)
+  await advance(log, 0)
+  await until(() => log.submits.length > 0)
+  const diagBefore = log.spawns.filter(s => s.subagent_type === 'flight:diagnostician').length
+  const submits = [...log.submits]
+  await $.turn.complete(MAIN_TURN as never)
+  await until(() => log.events.some(isTriage))
+
+  // Then: 那一轮结束之前没有派出诊断员，prompt.submit 收到含 demo 与「诊断员」的唤醒；那一轮结束之后账本有 role diagnostician、slice triage 的 dispatch
+  expect(diagBefore).toBe(0)
+  expect(submits.filter(t => t.includes('demo') && t.includes('诊断员')).length).toBe(1)
+  expect(log.events.some(isTriage)).toBe(true)
+})
+
+test('stale-submit-keeps-new-arm', async ($, on) => {
+  // Given: demo 已批准；slice-gate lint 前两次以 1 退出（overlap）；/opsx-apply demo 进入交模型待命甲；clock.after(0) 到点后甲的修复请求在 prompt.submit 里被扣住
+  const release: (() => void)[] = []
+  const w = demoWorld({ lintRuns: [res(1, '', OVERLAP), res(1, '', OVERLAP)] })
+  w.submitHold = () => {
+    w.submitHold = undefined
+    return new Promise<void>(r => release.push(r))
+  }
+  const log = useWorld(on, w)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  await advance(log, 0)
+  await until(() => release.length > 0)
+
+  // When: 时钟推进 1 秒后人再发 /opsx-apply demo（再次 lint 红，进入新待命乙）；随后让提交以「提交通道不可用」失败并放行甲的提交
+  await advance(log, 1000)
+  await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
+  w.submitDeny = '提交通道不可用'
+  for (const r of release) r()
+  await flush()
+
+  // Then: 最后一次状态行含 demo 与「起飞待命」；没有含「提交修复请求失败」的通知
+  expect([log.statuses.at(-1)?.includes('demo'), log.statuses.at(-1)?.includes('起飞待命')]).toEqual([true, true])
+  expect(notified(log, '提交修复请求失败')).toEqual([])
 })

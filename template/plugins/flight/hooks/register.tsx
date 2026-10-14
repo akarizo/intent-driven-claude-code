@@ -6,7 +6,9 @@ import { reduce } from './core'
 import type { Flight, Io } from './core'
 import { readLedger, stoppedNow } from './io'
 import { classifyDirty } from './land'
-import { registerOrchestrator, scenarioFiles, takeoffNow } from './orchestrator'
+import { withLease } from './lease'
+import type { Lease } from './lease'
+import { registerOrchestrator, restoreStatusNow, scenarioFiles, takeoffNow } from './orchestrator'
 import { resumeFlight } from './resume'
 import type { ResumeDeps } from './resume'
 
@@ -326,12 +328,12 @@ function toastQuietly($: Engine, text: string): void {
   }
 }
 
-/** resumeFlight 的依赖：都作用于批准带上的这一项。 */
-function depsOf($: Engine, item: FlightItem): ResumeDeps {
+/** resumeFlight 的依赖：都作用于批准带上的这一项；起飞带上这次按键的派发凭证。 */
+function depsOf($: Engine, item: FlightItem, lease: Lease): ResumeDeps {
   const f = flightOf(item)
   return {
     // $ 不出文件：经 orchestrator 交出的起飞闭包直接起飞
-    takeoff: (args, opts) => takeoffNow(args, opts),
+    takeoff: (args, opts) => takeoffNow(args, { ...opts, lease }),
     async baseline() {
       const r = await $.process.run(['python3', `${item.hooksDir}/slice-gate.py`, 'baseline', '--change-dir', item.changeDir], {
         cwd: item.worktree,
@@ -384,7 +386,7 @@ async function statusQuietly($: Engine, text: string): Promise<void> {
   }
 }
 
-/** 批准带重绘失败吞掉：只用在后台回调里，避免无人处理的拒绝。 */
+/** 批准带重绘失败吞掉：按键路径与后台回调都用它，重绘失败不打断起飞、不留下进行中记录。 */
 async function refreshQuietly($: Engine): Promise<void> {
   await refresh($).catch(() => undefined)
 }
@@ -424,34 +426,37 @@ async function leaveBaseline($: Engine, change: string): Promise<void> {
   await refreshQuietly($)
 }
 
-/** 按键处理里起后台起飞（不阻塞按键）：登记进行中，以 [change, 授权提交] 起飞，回复首行经 toast 与通知告诉人。 */
-async function startTakeoff($: Engine, item: FlightItem): Promise<void> {
+/** 按键处理之内起飞（design D3：不转到定时器回调，派出的执行体才经过包络）：登记进行中，带凭证以 [change, 授权提交] 起飞，回复首行经 toast 与通知告诉人。 */
+async function startTakeoff($: Engine, item: FlightItem, lease: Lease): Promise<void> {
   const change = item.change
   inFlight.set(change, { phase: 'takeoff', since: await $.clock.now(), item })
-  await refresh($)
-  await $.clock.after(0, () =>
-    void takeoffNow([change, AUTHORIZE])
-      .then(async text => {
-        toastQuietly($, firstLine(text))
-        await notifyQuietly($, firstLine(text))
-      })
-      .catch(err => notifyQuietly($, `flight：${change} 起飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`))
-      .finally(() => finished($, change)),
-  )
+  try {
+    await refreshQuietly($)
+    const text = await takeoffNow([change, AUTHORIZE], { lease })
+    toastQuietly($, firstLine(text))
+    await notifyQuietly($, firstLine(text))
+  } catch (err) {
+    await notifyQuietly($, `flight：${change} 起飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`)
+  } finally {
+    await finished($, change)
+  }
 }
 
-/** 按键处理里起后台续飞，不阻塞按键：登记进行中（replan 先进基线相位并显示进度）；续飞抛错时通知原因。 */
-async function startResume($: Engine, item: FlightItem, replan: boolean): Promise<void> {
+/** 按键处理之内续飞：登记进行中（replan 先进基线相位并显示进度）；续飞抛错时通知原因；结束后恢复状态行。 */
+async function startResume($: Engine, item: FlightItem, replan: boolean, lease: Lease): Promise<void> {
   const change = item.change
   const since = await $.clock.now()
   inFlight.set(change, { phase: replan ? 'baseline' : 'takeoff', since, item })
-  if (replan) await baselineTick($, change, since, await fullSuiteMinutes($, item.changeDir))
-  else await refresh($)
-  await $.clock.after(0, () =>
-    void resumeFlight(depsOf($, item), change, { replan })
-      .catch(err => notifyQuietly($, `flight：${change} 续飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`))
-      .finally(() => finished($, change)),
-  )
+  try {
+    if (replan) await baselineTick($, change, since, await fullSuiteMinutes($, item.changeDir))
+    else await refreshQuietly($)
+    await resumeFlight(depsOf($, item, lease), change, { replan })
+  } catch (err) {
+    await notifyQuietly($, `flight：${change} 续飞失败：${firstLine(err instanceof Error ? err.message : String(err))}`)
+  } finally {
+    await finished($, change)
+    await restoreStatusNow().catch(() => undefined)
+  }
 }
 
 export const register: Register = on => {
@@ -517,31 +522,37 @@ export const register: Register = on => {
     )
   })
 
-  on('ui.press', { plugin: 'flight', element: /^(approve|takeoff|replan|resume):/ }, async ($, e) => {
+  // 按键处理整体包在 withLease 里：起飞 / 续飞在按键返回之前完成，凭证随起飞一路传下（design D3、D4）
+  on('ui.press', { plugin: 'flight', element: /^(approve|takeoff|replan|resume):/ }, async ($, e) => withLease(async lease => {
     const shown = PRESS_KEY.exec(e.element)
     const b = await read($, band)
     if (shown === null || b.isDisabled) return { element: e.element }
     const [, mode, change, fp] = shown
+    // 按键并发处理：同一 change 的起飞 / 续飞未结束时再按，直接拒绝（在指纹核对与写 approve 之前）
+    if (inFlight.has(change!)) {
+      toastQuietly($, `flight：${change} 正在起飞，稍候`)
+      return { element: e.element }
+    }
     const item = b.items.find(x => x.change === change)
     if (item === undefined || item.problem !== '' || item.mode !== mode) {
       $.ui.toast(`flight：${change} 已不在可批准列表，请看批准带当前显示的项`)
-      await refresh($)
+      await refreshQuietly($)
       return { element: e.element }
     }
     const now = await fingerprint($, item.hooksDir, item.changeDir, item.worktree)
     if (now === undefined || now.fp !== fp) {
       $.ui.toast(`flight：${change} 的计划已变化，请重新审阅 spec.html 后再批准`)
-      await refresh($)
+      await refreshQuietly($)
       return { element: e.element }
     }
     // 计划未改的续飞：不写 approve（沿用已批准的指纹）
     if (mode === 'resume') {
-      await startResume($, item, false)
+      await startResume($, item, false, lease)
       return { element: e.element }
     }
-    // 已批准、尚未起飞：不写 approve，直接后台起飞
+    // 已批准、尚未起飞：不写 approve，直接起飞
     if (mode === 'takeoff') {
-      await startTakeoff($, item)
+      await startTakeoff($, item, lease)
       return { element: e.element }
     }
     // 去重判定与追加在同一串行段：连按时后一次能读到前一次刚写入的 approve
@@ -550,21 +561,21 @@ export const register: Register = on => {
     )
     if (outcome === 'duplicate') {
       $.ui.toast(`flight：${change} 已批准（指纹相同），直接起飞`)
-      await refresh($)
+      await refreshQuietly($)
       // 指纹相同的已批准项按「起飞」处理
-      if (mode === 'approve') await startTakeoff($, { ...item, fp })
+      if (mode === 'approve') await startTakeoff($, { ...item, fp }, lease)
       return { element: e.element }
     }
     if (outcome === 'failed') {
       $.ui.toast(`flight：${change} 账本写入失败（重试 ${MAX_UPDATE_REF} 次），未批准`)
       return { element: e.element }
     }
-    await refresh($)
-    // 批准修订并续飞：后台续飞；批准起飞：后台起飞
-    if (mode === 'replan') await startResume($, { ...item, fp }, true)
-    else await startTakeoff($, { ...item, fp })
+    await refreshQuietly($)
+    // 批准修订并续飞：续飞；批准起飞：起飞
+    if (mode === 'replan') await startResume($, { ...item, fp }, true, lease)
+    else await startTakeoff($, { ...item, fp }, lease)
     return { element: e.element }
-  })
+  }))
 
   on('tool.call', { tool: GUARDED_TOOLS }, ($, e, next) => (touchesLedger(e) ? { deny: GUARD_DENY } : next(e))).catch(
     ($, e, next) => (next.called ? next(e) : touchesLedger(e) ? { deny: GUARD_DENY } : next(e)),

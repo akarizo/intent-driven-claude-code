@@ -17,6 +17,7 @@ function arm(over: Partial<Arm>): Arm {
     since: NOW - MIN,
     tries: 0,
     awaitingModel: false,
+    awaitingWake: false,
     transientAgain: false,
     ...over,
   }
@@ -60,8 +61,8 @@ test('armed-budget-and-expiry', () => {
   // When: 甲、丁遇 refused，乙、丙遇 tick，分别求 nextStep
   const got = cases.map(([a, e]) => nextStep(a, e, NOW))
 
-  // Then: 甲 give-up 且原因含「重试已用尽」；乙 retry；丙 give-up 且原因含「已过期」；丁 give-up；ARM_TTL_MS 为 30 分钟
-  expect(got.map(s => s.do)).toEqual(['give-up', 'retry', 'give-up', 'give-up'])
+  // Then: 甲 give-up 且原因含「重试已用尽」；乙 wake（定时到点只唤醒，不过期、不计预算）；丙 give-up 且原因含「已过期」；丁 give-up；ARM_TTL_MS 为 30 分钟
+  expect(got.map(s => s.do)).toEqual(['give-up', 'wake', 'give-up', 'give-up'])
   expect(got[0].do === 'give-up' ? got[0].reason : '').toContain('重试已用尽')
   expect(got[2].do === 'give-up' ? got[2].reason : '').toContain('已过期')
   expect(ARM_TTL_MS).toBe(30 * MIN)
@@ -84,9 +85,9 @@ test('armed-decides-next-step', () => {
   // When: 逐个求 nextStep
   const got = cases.map(([a, e]) => nextStep(a, e, NOW))
 
-  // Then: 依次为 retry、wait(10000)、retry、submit、retry、wait（不带 ms）；submit 正文含拒绝原文与三段边界文字
-  expect(got.map(s => (s.do === 'submit' ? { do: 'submit' } : s))).toEqual([
-    { do: 'retry' }, { do: 'wait', ms: TRANSIENT_DELAY_MS }, { do: 'retry' }, { do: 'submit' }, { do: 'retry' }, { do: 'wait' },
+  // Then: 依次为 retry、wait(10000)、wake（timer 到点只唤醒）、submit、retry、wait（不带 ms）；submit 正文含拒绝原文与三段边界文字
+  expect(got.map(s => (s.do === 'submit' || s.do === 'wake' ? { do: s.do } : s))).toEqual([
+    { do: 'retry' }, { do: 'wait', ms: TRANSIENT_DELAY_MS }, { do: 'wake' }, { do: 'submit' }, { do: 'retry' }, { do: 'wait' },
   ])
   const text = got[3].do === 'submit' ? got[3].text : ''
   expect(['slice-gate lint 未通过：overlap', '只修工作区与本 change 工件', '改了计划需要人在批准带重新批准', '不要发 /opsx-apply'].filter(s => !text.includes(s))).toEqual([])
@@ -135,4 +136,30 @@ test('retry-bookkeeping/refused-again', () => {
   // Then: transientAgain 只有第一种为 true；新类依次为 transient、model、transient、transient
   expect(got.map(a => a.transientAgain)).toEqual([true, false, false, false])
   expect(got.map(a => a.cls)).toEqual(['transient', 'model', 'transient', 'transient'])
+})
+
+// scenario 来源：spec flight-wake-turn#timer-steps-never-retry
+test('timer-steps-never-retry', () => {
+  // Given: wait-baseline、wait-agents、transient 三类未唤醒的 demo 待命各一个；另有一个 awaitingWake=true 的 wait-baseline 待命
+  const baseline = arm({ cls: 'wait-baseline', reason: 'flight：slice-gate preflight 未通过：基线仍在跑' })
+  const agents = arm({ cls: 'wait-agents', reason: 'flight：demo 上一次飞行派出的 agent 仍在运行（attempt 2），等它们结束再起飞' })
+  const transient = arm({ cls: 'transient', reason: 'flight：起飞异常，不起飞（aborted）' })
+  const woken = arm({ cls: 'wait-baseline', reason: 'flight：slice-gate preflight 未通过：基线仍在跑', awaitingWake: true })
+  const cases: [Arm, ArmEvent][] = [
+    [baseline, { kind: 'tick' }],
+    [agents, { kind: 'tick' }],
+    [transient, { kind: 'timer' }],
+    [woken, { kind: 'tick' }],
+    [woken, { kind: 'main-turn' }],
+  ]
+
+  // When: 前三个依次遇 tick、tick、timer，第四个分别遇 tick 与 main-turn，逐个求 nextStep；再对第四个调用 beforeRetry
+  const got = cases.map(([a, e]) => nextStep(a, e, NOW))
+  const tried = beforeRetry(woken)
+
+  // Then: 前三个都给出 wake，正文含 demo 与「只回复「收到」」；第四个遇 tick 给 wait、遇 main-turn 给 retry；beforeRetry 之后 awaitingWake 为 false
+  expect(got.map(s => s.do)).toEqual(['wake', 'wake', 'wake', 'wait', 'retry'])
+  const texts = got.slice(0, 3).map(s => (s.do === 'wake' ? s.text : ''))
+  expect(texts.filter(t => !t.includes('demo') || !t.includes('只回复「收到」'))).toEqual([])
+  expect(tried.awaitingWake).toBe(false)
 })

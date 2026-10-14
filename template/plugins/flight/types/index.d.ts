@@ -38,6 +38,8 @@ export type FlightArmedItem = {
   tries: number
   /** 已提交「交模型」的一轮、尚未结束。 */
   awaitingModel: boolean
+  /** 已提交唤醒、尚未重试。 */
+  awaitingWake: boolean
   /** 上一次自动重试的结果也是 transient。 */
   transientAgain: boolean
   /** 交模型那一轮提交前的时刻 T0；缺失时 main-turn 按旧行为推进。 */

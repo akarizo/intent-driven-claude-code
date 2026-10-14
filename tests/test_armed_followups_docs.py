@@ -29,11 +29,11 @@ def test_docs_say_press_takes_off_everywhere():
         assert "按下即起飞" in text, f"{rel} 缺少「按下即起飞」"
 
 
-def test_plugin_version_0_10_1():
+def test_plugin_version_not_below_0_10_1():
     # Given: 插件清单 template/plugins/flight/.claude-plugin/plugin.json
     # When: 解析其 JSON
-    # Then: version 为 0.10.1；description 仍含起飞待命、按下即起飞、自愈、看门狗、续飞
+    # Then: version 按数字逐段比较不低于 0.10.1；description 仍含起飞待命、按下即起飞、自愈、看门狗、续飞
     data = json.loads(_read("template/plugins/flight/.claude-plugin/plugin.json"))
-    assert data["version"] == "0.10.1", data["version"]
+    assert tuple(int(p) for p in data["version"].split(".")) >= (0, 10, 1), data["version"]
     for word in ("起飞待命", "按下即起飞", "自愈", "看门狗", "续飞"):
         assert word in data["description"], data["description"]

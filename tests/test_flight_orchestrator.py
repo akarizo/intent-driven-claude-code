@@ -608,8 +608,8 @@ def test_refused_takeoff_arms():
 
 def test_wait_retries_takeoff():
     # Given: demo 因基线仍在跑进入待命，之后 preflight 通过；另一世界因上一次的 agent 仍在运行进入待命
-    # When: 时钟推进 60 秒；另一世界该 agent 结束（turn.complete 带 agentId）
-    # Then: 自动重试、账本追加 takeoff、待命清除、通知含已起飞；另一世界同样自动起飞
+    # When: 时钟推进 60 秒（只提交唤醒），随后主会话一轮结束；另一世界该 agent 结束（turn.complete 带 agentId）
+    # Then: 唤醒那一轮结束后自动重试、账本追加 takeoff、待命清除、通知含已起飞；另一世界同样自动起飞
     assert_ts_passed("wait-retries-takeoff")
     assert_ts_passed("wait-retries-takeoff/agents")
 
@@ -623,8 +623,8 @@ def test_model_fix_submits_then_retries():
 
 def test_transient_retries_once_with_diag():
     # Given: demo 已批准；plan_fp.py 前两次以 1 退出（plan_fp 超时）
-    # When: 发 /opsx-apply demo，推进 10 秒，再推进 10 秒
-    # Then: 进入待命并追加 diag where takeoff；10 秒后恰重试一次；仍失败则放弃并通知；之后不再重试
+    # When: 发 /opsx-apply demo，推进 10 秒（唤醒）后主会话一轮结束，再推进 10 秒后又一轮结束
+    # Then: 进入待命并追加 diag where takeoff；唤醒那一轮结束后恰重试一次；仍失败则放弃并通知；之后不再重试
     assert_ts_passed("transient-retries-once-with-diag")
 
 
@@ -646,7 +646,7 @@ def test_second_takeoff_refused_while_taking_off():
 
 
 def test_abort_waits_for_retry():
-    # Given: demo 因基线仍在跑待命；tick 触发的自动重试卡在起飞检查中
+    # Given: demo 因基线仍在跑待命；tick 提交唤醒，主会话那一轮结束触发的自动重试卡在起飞检查中
     # When: 发 /flight abort demo，随后放行重试，重试起飞成功
     # Then: abort 回复含「正在自动起飞」与「结束后再 /flight abort」；待命保留到重试结束；之后通知含「已起飞」
     assert_ts_passed("abort-waits-for-retry")
@@ -711,4 +711,33 @@ def test_restart_resumes():
     # When: 发 /flight resume demo
     # Then: 不回复「正在飞」，照常续飞
     assert_ts_passed("same-session-unfinished-resumes-after-restart")
+
+# ---------------------------------------------------------------- flight-dispatch-origin S1（骨架：实现后去掉 xfail 标记）
+
+def test_transient_timer_wakes_then_retries():
+    # Given: demo 已批准；plan_fp.py 第一次以 1 退出、之后正常；/opsx-apply demo 进入偶发类待命
+    # When: 时钟推进 10 秒，随后主会话一轮结束（开始时刻不早于唤醒提交时刻）
+    # Then: 一轮结束前 prompt.submit 恰一次、含 demo 与「只回复「收到」」、plan_fp 只运行 1 次、无派发；一轮结束后账本追加 takeoff 并派出执行体
+    assert_ts_passed("transient-timer-wakes-then-retries")
+
+
+def test_baseline_tick_probes_before_waking():
+    # Given: demo 因「基线仍在跑」进入待命；之后 preflight 第一次检查仍报基线仍在跑、再往后都通过
+    # When: 时钟依次推进 60 秒三次，随后主会话一轮结束
+    # Then: 第一次 tick 后没有唤醒；第二次 tick 后恰一次唤醒、第三次后仍只有一次；一轮结束后账本追加 takeoff
+    assert_ts_passed("baseline-tick-probes-before-waking")
+
+
+def test_watchdog_triage_via_wake():
+    # Given: 账本预置 3 条 heal（自愈预算已用尽）；demo 起飞，agent-1 的请求不结束
+    # When: 时钟推进 661 秒（看门狗停飞），随后主会话一轮结束
+    # Then: 一轮结束前没有派出诊断员、prompt.submit 收到含 demo 与「诊断员」的唤醒；一轮结束后账本有 role diagnostician、slice triage 的 dispatch
+    assert_ts_passed("watchdog-triage-via-wake")
+
+
+def test_stale_submit_keeps_new_arm():
+    # Given: demo 因 lint 红进入交模型待命甲；甲的修复请求提交被扣住
+    # When: 时钟推进 1 秒后人再发 /opsx-apply demo 进入新待命乙；随后放行甲的提交并让它失败
+    # Then: 最后一次状态行仍含 demo 与「起飞待命」；没有含「提交修复请求失败」的放弃通知
+    assert_ts_passed("stale-submit-keeps-new-arm")
 
