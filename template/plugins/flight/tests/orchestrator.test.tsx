@@ -2143,7 +2143,7 @@ test('watchdog-stops-stalled-agent/resumed-fixer', async ($, on) => {
   const log = useWorld(on, demoWorld({ ledger, paths: [FIX_TREE], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   const fixer = log.spawns.find(s => s.cwd === FIX_A2)
-  void step($, fixer?.agentId ?? '没有修复体')
+  void step($, fixer?.agentId ?? '没有修复体').catch(() => undefined)
   await flush()
   await advance(log, 661000)
 
@@ -2160,10 +2160,10 @@ test('watchdog-stops-stalled-agent', async ($, on) => {
   // Given: demo 已起飞（waves [[S1, S2]]，agent-1 = S1、agent-2 = S2，都在跑）；agent-1 的请求在 T0 开始、agent-2 的在 T0+181s 开始，两者都不结束；TaskStop 应答 isError「Task agent-1 is not running」
   const log = useWorld(on, demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2'], stopError: '<tool_use_error>Task agent-1 is not running (status: completed)</tool_use_error>', agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
   await advance(log, 181000)
-  void step($, 'agent-2')
+  void step($, 'agent-2').catch(() => undefined)
   await flush()
 
   // When: 时钟再推进 540s（到 T0+721s：agent-1 请求已等 12 分钟、agent-2 等 9 分钟），看门狗在 agent-1 超时后 tick 两次
@@ -2186,7 +2186,7 @@ test('watchdog-exhausted-halts', async ($, on) => {
   ]
   const log = useWorld(on, demoWorld({ ledger, waves: [['S1', 'S2']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] }))
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
 
   // When: 时钟推进 661s，看门狗 tick
@@ -2207,7 +2207,7 @@ test('watchdog-tracks-step-while-pending', async ($, on) => {
   const w = demoWorld({ waves: [['S1']], stalls: ['agent-1'], agents: [{ id: 'agent-1', status: 'running' }] })
   w.dispatchHold = async agent => {
     if (agent !== 'agent-1') return
-    void step($, 'agent-1')
+    void step($, 'agent-1').catch(() => undefined)
     await flush()
     await held
   }
@@ -2370,7 +2370,7 @@ test('watchdog-stops-stalled-diagnostician', async ($, on) => {
   const log = useWorld(on, w)
   const d1 = await haltWithDiagnostician($, log)
   w.stalls = [d1]
-  void step($, d1)
+  void step($, d1).catch(() => undefined)
   await flush()
   const heals = log.events.filter(x => x.ev === 'heal').length
 
@@ -2404,7 +2404,7 @@ test('watchdog-halt-drains-queue', async ($, on) => {
   const log = useWorld(on, w)
   const takeoff = $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
   await entered
-  void step($, 'agent-1')
+  void step($, 'agent-1').catch(() => undefined)
   await flush()
 
   // When: 时钟推进 661s，看门狗 tick（预算已用尽）；账本写入 halt 之后才放行 agent-2 的 dispatch
@@ -2433,8 +2433,8 @@ test('ticker-not-duplicated', async ($, on) => {
   const w = demoWorld({ waves: [['S1', 'S2']], stalls: ['agent-1', 'agent-2', 'x'], agents: [{ id: 'agent-1', status: 'running' }, { id: 'agent-2', status: 'running' }] })
   const log = useWorld(on, w)
   await $.command.run({ command: 'opsx-apply', args: 'demo', ...HUMAN } as never)
-  void step($, 'agent-1')
-  void step($, 'agent-2')
+  void step($, 'agent-1').catch(() => undefined)
+  void step($, 'agent-2').catch(() => undefined)
   await flush()
   w.ledgerHold = () => {
     w.ledgerHold = undefined
@@ -2444,7 +2444,7 @@ test('ticker-not-duplicated', async ($, on) => {
   await until(() => release.length > 0)
   const jump = log.clock.set(Date.UTC(2026, 9, 9, 12, 14, 0)) as Promise<unknown>
   await flush()
-  void step($, 'x')
+  void step($, 'x').catch(() => undefined)
   await flush()
 
   // When: 时钟再推进 60s，第二个计时器 tick；之后卡住的读账本放行，第一个计时器那次 tick 接着做完

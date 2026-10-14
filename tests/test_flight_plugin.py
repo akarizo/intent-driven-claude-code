@@ -24,6 +24,11 @@ def plugin_run():
     return validate, test, passed
 
 
+def suite_failures(text):
+    """按出现顺序返回 claude plugin test 输出里每个 `(fail) <名字> [` 行的名字；含文件级失败（`the file ran to its end`）。"""
+    return re.findall(r"^\(fail\) (.+?) \[", text, re.MULTILINE)
+
+
 def assert_ts_passed(name):
     _validate, test, passed = plugin_run()
     assert name in passed, "TS 测试「%s」未通过。claude plugin test 原始输出：\n%s%s" % (name, test.stdout, test.stderr)
