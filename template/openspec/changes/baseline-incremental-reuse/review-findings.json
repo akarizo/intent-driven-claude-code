@@ -1,0 +1,98 @@
+{
+  "blocked": [],
+  "blocking": [],
+  "deferred": [
+    {
+      "severity": "LOW",
+      "file": "template/.claude/commands/opsx-propose.md",
+      "line": 75,
+      "summary": "文档列出的增量条件少了 design D3 / 流程图里的「Δ 不涉及候选的预存红」一项（只写了只改 test_*.py 且补跑不红）。读者可能以为改了预存红所在的测试文件也会走增量。SKILL.md 同一行也是这样。措辞照抄了切片包，不影响测试，属于小的说明偏差。",
+      "fix": "在两份文档的这一条后补上「且这些文件不含上次全量的预存红」（两份同改），或者确认切片包的措辞是有意从简，维持现状。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1231,
+      "summary": "D6 运行期间改动判定对「上一轮基线留下的未跟踪副产物」会永久判红：第一次全量时 gate.test 新建的未跟踪、未 gitignore 的副产物（如 out/report.txt、coverage.xml）按设计只警告并留在工作区；下一次全量（含 --full、或增量不命中回全量）时它已在 s0 里（未跟踪文件必出现在 porcelain），内容只要不确定（时间戳等）就满足 `p in s0` → reasons 加「被修改，重跑 baseline」，重跑仍红，直到人手删掉或加 gitignore。现有测试 test_baseline_tolerates_new_byproduct 只覆盖首跑，测不到这条。实现与 design D6 字面一致，属设计层缺口，需进一步确认是否接受",
+      "fix": "二选一并补一条 GWT 测试（连续两次全量、副产物内容每次不同）：(a) 「开始时就存在」只认 HEAD 已跟踪路径或旧基线 snapshot 里记为非副产物的路径，上一轮基线 warnings 里登记过的副产物路径再次被改写仍只警告；(b) 维持现状，但在 reasons 文案里提示「未跟踪副产物请加入 .gitignore」，并在 design D6 写明这一取舍"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1231,
+      "summary": "D6 对比 s0/s1 时没有沿用 _delta 的 D2 排除规则：changes 根下其他 change 的文件（以及本 change 目录外的同类记账文件）在基线运行期间被改，也会判红；而这些路径按 D2 并不影响测试结果、不计入 Δ。两处口径不一致",
+      "fix": "moved 计算前按 _delta 同样的规则过滤：去掉 `<changes 根>/` 下非本 change 的路径（本 change 的计划工件已在 _snapshot 里排除）"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1389,
+      "summary": "_snapshot 把符号链接交给 `git hash-object --stdin-paths`：断链会让 hash-object 失败、_git_raw 抛 RuntimeError，cmd_baseline / cmd_preflight 未捕获直接 traceback；有效链接取的是目标内容的 hash，与 ls-tree 记的链接文本 blob 口径不同，链接从脏变干净（或反之）时会产生假 Δ（误回全量 / preflight 误判过期）",
+      "fix": "符号链接单独处理：用 os.readlink 取链接文本，按 blob 格式自行算 sha1（`blob <len>\\0<text>`），与 ls-tree 口径一致；其余文件再走 hash-object 批量"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1186,
+      "summary": "_try_reuse 返回的不复用理由被丢弃（`hit, _ =`），stdout JSON 与 gate-baseline.json 都不记录为何走了全量；增量没命中时用户与飞行记录无从归因耗时",
+      "fix": "把最后一个候选的 why 写进 bl（如 `bl[\"full_why\"]`，仅 mode=full 且有候选时），或加入 warnings；不改判定逻辑"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1567,
+      "summary": "_pool_write 在 mkstemp 与 os.replace 之间进程被杀（如后台基线被中断）会留下 .tmp-*.json；保留清理按 not n.startswith('.tmp-') 过滤掉它们，这类孤儿临时文件会一直留在共享池目录里",
+      "fix": "保留清理时顺带删除 mtime 早于一定时长（如 1 小时）的 .tmp-* 文件，遇到 ENOENT 忽略；或者在注释里写明这是已知的极小泄漏，接受它"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1264,
+      "summary": "cmd_key 为 None（命令指纹算不出）时仍会写池；_pool_candidates 对空 key 直接返回 []，这类条目永远匹配不上，却占用 30 条保留名额",
+      "fix": "写池条件加上 bl.get('cmd_key') 为真值，即 `if hit is None and bl['ok'] and key and (...)`"
+    },
+    {
+      "severity": "LOW",
+      "file": "tests/test_baseline_pool.py",
+      "line": 1,
+      "summary": "切片要求的保留最新 30 条、跳过坏 JSON、写池失败只警告这几条行为都没有测试覆盖（spec 没有列这些 scenario，门禁查不出它们回归）",
+      "fix": "可选：补一个用例，预置 31 条池文件加 1 条坏 JSON，跑一次全量基线，断言池里剩 30 条、坏文件不影响选候选；再补一个池目录不可写时 baseline 仍然退出 0 且带警告的用例"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/openspec/adr/DRAFT-baseline-reuse-by-content-fingerprint.md",
+      "line": 36,
+      "summary": "ADR 盲区一条与 design.md:155 都写「final 收口仍跑全量，最坏是收口时多出一条红，不会把红判成绿」，这个说法不成立。final 只对基线 test.failed 以外的失败判红（slice-gate.py:37-38）。跨 change 复用会把候选的 test.failed 整份沿用。如果候选那次的预存红来自指纹之外的差异，比如 change c 被 source 的 _env.sh（各 change 的 OWNED_PY 不同）、仓外环境，或测试读取 c 自己 changes 目录下的文件，那么 d 的基线白名单里就会多出 d 上本来是绿的用例 X。d 的切片之后真把 X 弄红，final 会把它当预存红放过，红被判成绿。用户接受的是「看不出 _env.sh 差异」，但审批文档对这个盲区的后果说轻了。",
+      "fix": "二选一。(a) 最小改动：改正 ADR 与 design Risks 里的说法，写明跨 change 复用时，指纹之外的差异可能让预存红白名单偏大，final 可能放过这些用例的回归，并给出 --full 的使用时机。(b) 收紧口径：跨 change 候选（cand.change 不等于本 change）只在 test.exit == 0、没有预存红时复用。这需要同步改 spec 的 cross-change-reuse-same-tree（目前它要求带预存红 1 条也复用），所以要先经人确认。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1402,
+      "summary": "_snapshot 把符号链接（os.path.islink）交给 git hash-object --stdin-paths。hash-object 会跟随链接读目标内容：链接指向目录或悬空时，git 直接报错，_git_raw 抛出 RuntimeError，baseline 与 preflight 都没有捕获，以 traceback 退出（s1 处抛出时还会留下运行标记，preflight 会误报「基线中断」）。链接正常时，算出的是目标内容的 blob，而 git 树里存的是链接文本的 blob。之后把这个链接提交，_delta 两边对不上，会误判过期或误判要跑全量。afa 有 raw-dlib 一类软链，未跟踪的软链、或改过目标的已跟踪软链都会触发（afa 实际是否命中需进一步确认）。",
+      "fix": "符号链接单独处理：用 os.readlink(full) 取链接文本，经 git hash-object --stdin 取 blob id（与树里的表示一致），不走 --stdin-paths。另外，_snapshot、cmd_key 里的 RuntimeError 在 cmd_baseline / cmd_preflight 入口改成 die(明确原因)，baseline 在 s1 失败时也要写成红基线，不要留下运行标记。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1241,
+      "summary": "运行副产物的处理前后不一致。gate.test 在仓库里写一个未忽略的非测试文件（如 out/report.txt），第一次跑因为文件是新出现的，只记警告，绿；第二次跑时它已经在 s0 里，又被改写（内容带时间戳等），按 p in s0 判红「被修改，重跑 baseline」，重跑仍是红，只有删掉它下一次才会绿。起飞时插件也会因为它不是工件而拒飞。人如果按提示撤销这个文件，preflight 会因 snapshot 里有它、当前没有而判「基线过期」；重跑 baseline 走全量，又把它生成出来，形成循环，只有提交或 gitignore 才能解开。",
+      "fix": "把副产物路径记进 gate-baseline.json（如 byproducts 列表）。下一次 baseline 里，s0 中属于上次 byproducts 的路径被改写时只警告不判红；preflight 求 Δ 时，排除基线 byproducts 中当前已不存在的路径。另外补一个 scenario 测试：连续两次 baseline，gate.test 每次写入内容不同的未跟踪副产物，两次都绿。"
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1192,
+      "summary": "候选循环会对同一组 Δ 测试文件重复补跑：每个候选都在 _try_reuse 里调一次 _pytest_outcomes，最多 11 个候选（本 change 旧基线加池里 10 条，常有同一 change 的历次全量）。Δ 一样时，补跑红或超时会被重复 11 次，每次都按 G7 超时上限算，然后才回到全量。这正好落在本 change 想提速的路径上（如 scenario full-when-changed-test-file-fails）。",
+      "fix": "在 cmd_baseline 里按（Δ 现存文件及其当前 blob 的元组）缓存补跑结论，传给 _try_reuse 复用。补跑红或超时与候选无关，命中一次就直接跳出循环走全量。"
+    },
+    {
+      "severity": "LOW",
+      "file": "template/.claude/hooks/slice-gate.py",
+      "line": 1193,
+      "summary": "_try_reuse 返回的不复用理由被丢掉了（hit, _ = ...）。走全量时，gate-baseline.json 和 stdout 都看不出为什么没走增量（cmd_key 不同、有非测试改动、补跑红……），人和模型只能猜。",
+      "fix": "保留各候选的理由，走全量时写进 bl 的一个字段（如 reuse_skipped: [{change, reason}]，至多几条）或 warnings，方便诊断与审计。"
+    }
+  ],
+  "fix": null
+}
